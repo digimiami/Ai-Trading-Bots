@@ -43,8 +43,26 @@ serve(async (req) => {
 
         if (error) throw error
 
+        // Transform the data to match frontend expectations
+        const transformedBots = bots.map(bot => ({
+          id: bot.id,
+          name: bot.name,
+          exchange: bot.exchange,
+          symbol: bot.symbol,
+          status: bot.status,
+          leverage: bot.leverage,
+          pnl: bot.pnl,
+          pnlPercentage: bot.pnl_percentage,
+          totalTrades: bot.total_trades,
+          winRate: bot.win_rate,
+          createdAt: bot.created_at,
+          lastTradeAt: bot.last_trade_at,
+          riskLevel: bot.risk_level,
+          strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy
+        }))
+
         return new Response(
-          JSON.stringify({ bots }),
+          JSON.stringify({ bots: transformedBots }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
@@ -54,18 +72,24 @@ serve(async (req) => {
       const body = await req.json()
 
       if (action === 'create') {
-        const { name, strategy, risk_level, initial_balance } = body
+        const { name, exchange, symbol, leverage, riskLevel, strategy, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt } = body
 
         const { data: bot, error } = await supabaseClient
           .from('trading_bots')
           .insert({
             user_id: user.id,
             name,
-            strategy,
-            risk_level,
-            initial_balance,
-            current_balance: initial_balance,
-            status: 'inactive',
+            exchange,
+            symbol,
+            leverage,
+            risk_level: riskLevel,
+            strategy: JSON.stringify(strategy),
+            status: status || 'stopped',
+            pnl: pnl || 0,
+            pnl_percentage: pnlPercentage || 0,
+            total_trades: totalTrades || 0,
+            win_rate: winRate || 0,
+            last_trade_at: lastTradeAt,
             created_at: new Date().toISOString()
           })
           .select()
@@ -82,9 +106,20 @@ serve(async (req) => {
       if (action === 'update') {
         const { id, ...updates } = body
 
+        // Transform frontend field names to database field names
+        const dbUpdates: any = {}
+        if (updates.status) dbUpdates.status = updates.status
+        if (updates.pnl !== undefined) dbUpdates.pnl = updates.pnl
+        if (updates.pnlPercentage !== undefined) dbUpdates.pnl_percentage = updates.pnlPercentage
+        if (updates.totalTrades !== undefined) dbUpdates.total_trades = updates.totalTrades
+        if (updates.winRate !== undefined) dbUpdates.win_rate = updates.winRate
+        if (updates.lastTradeAt !== undefined) dbUpdates.last_trade_at = updates.lastTradeAt
+        if (updates.riskLevel) dbUpdates.risk_level = updates.riskLevel
+        if (updates.strategy) dbUpdates.strategy = JSON.stringify(updates.strategy)
+
         const { data: bot, error } = await supabaseClient
           .from('trading_bots')
-          .update(updates)
+          .update(dbUpdates)
           .eq('id', id)
           .eq('user_id', user.id)
           .select()
@@ -92,8 +127,98 @@ serve(async (req) => {
 
         if (error) throw error
 
+        // Transform response to match frontend expectations
+        const transformedBot = {
+          id: bot.id,
+          name: bot.name,
+          exchange: bot.exchange,
+          symbol: bot.symbol,
+          status: bot.status,
+          leverage: bot.leverage,
+          pnl: bot.pnl,
+          pnlPercentage: bot.pnl_percentage,
+          totalTrades: bot.total_trades,
+          winRate: bot.win_rate,
+          createdAt: bot.created_at,
+          lastTradeAt: bot.last_trade_at,
+          riskLevel: bot.risk_level,
+          strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy
+        }
+
         return new Response(
-          JSON.stringify({ bot }),
+          JSON.stringify({ bot: transformedBot }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      if (action === 'start') {
+        const { id } = body
+
+        const { data: bot, error } = await supabaseClient
+          .from('trading_bots')
+          .update({ status: 'active' })
+          .eq('id', id)
+          .eq('user_id', user.id)
+          .select()
+          .single()
+
+        if (error) throw error
+
+        const transformedBot = {
+          id: bot.id,
+          name: bot.name,
+          exchange: bot.exchange,
+          symbol: bot.symbol,
+          status: bot.status,
+          leverage: bot.leverage,
+          pnl: bot.pnl,
+          pnlPercentage: bot.pnl_percentage,
+          totalTrades: bot.total_trades,
+          winRate: bot.win_rate,
+          createdAt: bot.created_at,
+          lastTradeAt: bot.last_trade_at,
+          riskLevel: bot.risk_level,
+          strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy
+        }
+
+        return new Response(
+          JSON.stringify({ bot: transformedBot }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      if (action === 'stop') {
+        const { id } = body
+
+        const { data: bot, error } = await supabaseClient
+          .from('trading_bots')
+          .update({ status: 'stopped' })
+          .eq('id', id)
+          .eq('user_id', user.id)
+          .select()
+          .single()
+
+        if (error) throw error
+
+        const transformedBot = {
+          id: bot.id,
+          name: bot.name,
+          exchange: bot.exchange,
+          symbol: bot.symbol,
+          status: bot.status,
+          leverage: bot.leverage,
+          pnl: bot.pnl,
+          pnlPercentage: bot.pnl_percentage,
+          totalTrades: bot.total_trades,
+          winRate: bot.win_rate,
+          createdAt: bot.created_at,
+          lastTradeAt: bot.last_trade_at,
+          riskLevel: bot.risk_level,
+          strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy
+        }
+
+        return new Response(
+          JSON.stringify({ bot: transformedBot }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }

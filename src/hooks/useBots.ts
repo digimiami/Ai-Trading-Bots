@@ -52,16 +52,13 @@ export const useBots = () => {
         throw new Error('No active session');
       }
 
-      const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management`, {
+      const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management?action=create`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          action: 'create',
-          botData
-        }),
+        body: JSON.stringify(botData),
       });
 
       if (!response.ok) {
@@ -82,6 +79,76 @@ export const useBots = () => {
     }
   };
 
+  const startBot = async (botId: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('No active session');
+      }
+
+      const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management?action=start`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ id: botId }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Bot start error:', response.status, errorText);
+        throw new Error(`Failed to start bot: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data.bot) {
+        setBots(prev => prev.map(bot => bot.id === botId ? data.bot : bot));
+        return data.bot;
+      }
+      throw new Error('No bot data returned');
+    } catch (err) {
+      console.error('Error starting bot:', err);
+      throw err;
+    }
+  };
+
+  const stopBot = async (botId: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('No active session');
+      }
+
+      const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management?action=stop`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ id: botId }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Bot stop error:', response.status, errorText);
+        throw new Error(`Failed to stop bot: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data.bot) {
+        setBots(prev => prev.map(bot => bot.id === botId ? data.bot : bot));
+        return data.bot;
+      }
+      throw new Error('No bot data returned');
+    } catch (err) {
+      console.error('Error stopping bot:', err);
+      throw err;
+    }
+  };
+
   const updateBot = async (botId: string, updates: Partial<TradingBot>) => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -90,16 +157,15 @@ export const useBots = () => {
         throw new Error('No active session');
       }
 
-      const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management`, {
+      const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management?action=update`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          action: 'update',
-          botId,
-          updates
+          id: botId,
+          ...updates
         }),
       });
 
@@ -130,14 +196,13 @@ export const useBots = () => {
       }
 
       const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management`, {
-        method: 'POST',
+        method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          action: 'delete',
-          botId
+          id: botId
         }),
       });
 
@@ -164,6 +229,8 @@ export const useBots = () => {
     error,
     fetchBots,
     createBot,
+    startBot,
+    stopBot,
     updateBot,
     deleteBot,
   };
