@@ -52,6 +52,9 @@ export const useBots = () => {
         throw new Error('No active session');
       }
 
+      console.log('useBots: About to send bot data:', botData);
+      console.log('useBots: Exchange value:', botData.exchange, 'Type:', typeof botData.exchange);
+
       const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management?action=create`, {
         method: 'POST',
         headers: {
@@ -60,6 +63,8 @@ export const useBots = () => {
         },
         body: JSON.stringify(botData),
       });
+
+      console.log('useBots: Response status:', response.status);
 
       if (!response.ok) {
         const errorText = await response.text();

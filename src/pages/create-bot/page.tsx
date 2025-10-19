@@ -49,8 +49,8 @@ export default function CreateBotPage() {
     setError(null);
     
     try {
-      // Create bot using the hook
-      await createBot({
+      // Debug: Log the form data being sent
+      const botData = {
         name: formData.name,
         exchange: formData.exchange,
         symbol: formData.symbol,
@@ -64,7 +64,13 @@ export default function CreateBotPage() {
         totalTrades: 0,
         winRate: 0,
         lastTradeAt: undefined
-      });
+      };
+      
+      console.log('Frontend: Sending bot data:', botData);
+      console.log('Frontend: Exchange value:', formData.exchange, 'Type:', typeof formData.exchange);
+      
+      // Create bot using the hook
+      await createBot(botData);
       
       // Navigate back to bots page with success message
       navigate('/bots', { state: { message: `Bot "${formData.name}" created successfully!` } });

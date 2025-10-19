@@ -76,11 +76,30 @@ serve(async (req) => {
 
         // Debug logging
         console.log('Received bot data:', { name, exchange, symbol, leverage, riskLevel, strategy, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt })
+        console.log('Exchange value:', exchange, 'Type:', typeof exchange, 'Is null:', exchange === null, 'Is undefined:', exchange === undefined)
 
         // Validate required fields
         if (!name || !exchange || !symbol) {
           throw new Error(`Missing required fields: name=${name}, exchange=${exchange}, symbol=${symbol}`)
         }
+
+        // Check if exchange is valid
+        if (exchange !== 'bybit' && exchange !== 'okx') {
+          throw new Error(`Invalid exchange value: ${exchange}. Must be 'bybit' or 'okx'`)
+        }
+
+        // Check if table exists by trying to select from it
+        const { data: tableCheck, error: tableError } = await supabaseClient
+          .from('trading_bots')
+          .select('id')
+          .limit(1)
+
+        if (tableError) {
+          console.error('Table check error:', tableError)
+          throw new Error(`Database table error: ${tableError.message}`)
+        }
+
+        console.log('Table exists, proceeding with insert...')
 
         const { data: bot, error } = await supabaseClient
           .from('trading_bots')
