@@ -170,7 +170,7 @@ export default function Settings() {
     setProfileData(prev => ({ ...prev, [field]: value }));
   };
 
-  const testApiConnection = async (exchange: 'bybit' | 'okx') => {
+  const handleTestConnection = async (exchange: 'bybit' | 'okx') => {
     try {
       let formData: ApiKeyFormData;
       
@@ -765,7 +765,7 @@ export default function Settings() {
                       </button>
                     </div>
                     <button
-                      onClick={() => testApiConnection('bybit')}
+                      onClick={() => handleTestConnection('bybit')}
                       className="w-full bg-orange-100 hover:bg-orange-200 text-orange-700 py-2 px-4 rounded-lg transition-colors text-sm"
                     >
                       Test Connection
@@ -832,7 +832,7 @@ export default function Settings() {
                       </button>
                     </div>
                     <button
-                      onClick={() => testApiConnection('okx')}
+                      onClick={() => handleTestConnection('okx')}
                       className="w-full bg-blue-100 hover:bg-blue-200 text-blue-700 py-2 px-4 rounded-lg transition-colors text-sm"
                     >
                       Test Connection

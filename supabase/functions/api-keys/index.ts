@@ -155,6 +155,36 @@ serve(async (req) => {
           const body = await req.json()
           const { exchange, apiKey, apiSecret, passphrase, isTestnet } = body
 
+          // Ensure user exists in users table
+          const { data: existingUser, error: userCheckError } = await supabaseClient
+            .from('users')
+            .select('id')
+            .eq('id', user.id)
+            .single()
+
+          if (userCheckError && userCheckError.code === 'PGRST116') {
+            // User doesn't exist, create them
+            const { error: createUserError } = await supabaseClient
+              .from('users')
+              .insert({
+                id: user.id,
+                email: user.email,
+                role: 'user',
+                name: user.user_metadata?.name || user.email?.split('@')[0] || 'User',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              })
+
+            if (createUserError) {
+              console.error('Error creating user:', createUserError)
+              throw createUserError
+            }
+            console.log('Created user:', user.id)
+          } else if (userCheckError) {
+            console.error('Error checking user:', userCheckError)
+            throw userCheckError
+          }
+
           // Encrypt sensitive data
           const encryptedApiKey = encrypt(apiKey)
           const encryptedApiSecret = encrypt(apiSecret)
