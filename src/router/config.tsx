@@ -1,49 +1,65 @@
 
 import { RouteObject } from 'react-router-dom';
 import { lazy } from 'react';
-import Trades from '../pages/trades/page';
-import AdminPage from '../pages/admin/page';
 
+// Lazy load components
 const Home = lazy(() => import('../pages/home/page'));
+const Auth = lazy(() => import('../pages/auth/page'));
 const Bots = lazy(() => import('../pages/bots/page'));
 const CreateBot = lazy(() => import('../pages/create-bot/page'));
+const Trades = lazy(() => import('../pages/trades/page'));
+const Reports = lazy(() => import('../pages/reports/page'));
 const Settings = lazy(() => import('../pages/settings/page'));
-const Auth = lazy(() => import('../pages/auth/page'));
+const Admin = lazy(() => import('../pages/admin/page'));
+const Onboarding = lazy(() => import('../pages/onboarding/page'));
+const Help = lazy(() => import('../pages/help/page'));
 const NotFound = lazy(() => import('../pages/NotFound'));
 
 const routes: RouteObject[] = [
   {
     path: '/',
-    element: <Home />,
-  },
-  {
-    path: '/bots',
-    element: <Bots />,
-  },
-  {
-    path: '/create-bot',
-    element: <CreateBot />,
-  },
-  {
-    path: '/settings',
-    element: <Settings />,
-  },
-  {
-    path: '/trades',
-    element: <Trades />,
+    element: <Home />
   },
   {
     path: '/auth',
-    element: <Auth />,
+    element: <Auth />
+  },
+  {
+    path: '/onboarding',
+    element: <Onboarding />
+  },
+  {
+    path: '/bots',
+    element: <Bots />
+  },
+  {
+    path: '/create-bot',
+    element: <CreateBot />
+  },
+  {
+    path: '/trades',
+    element: <Trades />
+  },
+  {
+    path: '/reports',
+    element: <Reports />
+  },
+  {
+    path: '/settings',
+    element: <Settings />
+  },
+  {
+    path: '/help',
+    element: <Help />
   },
   {
     path: '/admin',
-    element: <AdminPage />,
+    element: <Admin />
   },
   {
     path: '*',
-    element: <NotFound />,
-  },
+    element: <NotFound />
+  }
 ];
 
 export default routes;

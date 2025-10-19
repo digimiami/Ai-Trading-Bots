@@ -16,41 +16,73 @@ serve(async (req) => {
     const symbol = url.searchParams.get('symbol') || 'BTCUSDT'
     const interval = url.searchParams.get('interval') || '1h'
 
-    // Mock market data - in production, integrate with real exchange APIs
-    const mockData = {
-      symbol,
-      price: 45000 + Math.random() * 5000,
-      change24h: (Math.random() - 0.5) * 10,
-      volume24h: 1000000 + Math.random() * 500000,
-      high24h: 50000,
-      low24h: 44000,
-      timestamp: new Date().toISOString(),
-      klines: Array.from({ length: 24 }, (_, i) => ({
-        timestamp: new Date(Date.now() - (23 - i) * 3600000).toISOString(),
-        open: 45000 + Math.random() * 1000,
-        high: 46000 + Math.random() * 1000,
-        low: 44000 + Math.random() * 1000,
-        close: 45000 + Math.random() * 1000,
-        volume: 10000 + Math.random() * 5000
-      }))
+    // Real market data integration
+    let marketData;
+    
+    try {
+      switch (exchange.toLowerCase()) {
+        case 'bybit':
+          // Fetch real data from Bybit API
+          const bybitResponse = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${symbol}`);
+          const bybitData = await bybitResponse.json();
+          
+          if (bybitData.retCode === 0 && bybitData.result.list.length > 0) {
+            const ticker = bybitData.result.list[0];
+            marketData = {
+              symbol: ticker.symbol,
+              price: parseFloat(ticker.lastPrice),
+              change24h: parseFloat(ticker.price24hPcnt) * 100,
+              volume24h: parseFloat(ticker.volume24h),
+              high24h: parseFloat(ticker.highPrice24h),
+              low24h: parseFloat(ticker.lowPrice24h),
+              timestamp: new Date().toISOString(),
+              klines: [] // Will be populated by separate kline endpoint
+            };
+          } else {
+            throw new Error('Failed to fetch Bybit data');
+          }
+          break;
+          
+        case 'okx':
+          // Fetch real data from OKX API
+          const okxResponse = await fetch(`https://www.okx.com/api/v5/market/ticker?instId=${symbol}`);
+          const okxData = await okxResponse.json();
+          
+          if (okxData.code === '0' && okxData.data.length > 0) {
+            const ticker = okxData.data[0];
+            marketData = {
+              symbol: ticker.instId,
+              price: parseFloat(ticker.last),
+              change24h: parseFloat(ticker.sodUtc8) * 100,
+              volume24h: parseFloat(ticker.vol24h),
+              high24h: parseFloat(ticker.high24h),
+              low24h: parseFloat(ticker.low24h),
+              timestamp: new Date().toISOString(),
+              klines: [] // Will be populated by separate kline endpoint
+            };
+          } else {
+            throw new Error('Failed to fetch OKX data');
+          }
+          break;
+          
+        default:
+          throw new Error(`Unsupported exchange: ${exchange}`);
+      }
+      
+      return new Response(JSON.stringify(marketData), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+      
+    } catch (apiError) {
+      console.error('API Error:', apiError);
+      return new Response(JSON.stringify({ 
+        error: 'Failed to fetch market data',
+        details: apiError.message 
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
-
-    // Simulate different exchange endpoints
-    switch (exchange.toLowerCase()) {
-      case 'bybit':
-        // In production: fetch from Bybit API
-        break
-      case 'okx':
-        // In production: fetch from OKX API
-        break
-      default:
-        // Default to Bybit
-        break
-    }
-
-    return new Response(JSON.stringify(mockData), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    })
 
   } catch (error) {
     return new Response(JSON.stringify({ error: error.message }), {

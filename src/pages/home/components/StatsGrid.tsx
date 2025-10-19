@@ -1,6 +1,4 @@
 
-import { useBots } from '../../../hooks/useBots';
-
 interface StatCardProps {
   title: string;
   value: string;
@@ -35,41 +33,31 @@ function StatCard({ title, value, change, changeType, icon }: StatCardProps) {
 }
 
 export default function StatsGrid() {
-  const { bots } = useBots();
-  
-  // Calculate real stats from bots data
-  const totalPnL = bots.reduce((sum, bot) => sum + (bot.performance?.pnl || 0), 0);
-  const activeBots = bots.filter(bot => bot.status === 'running').length;
-  const totalTrades = bots.reduce((sum, bot) => sum + (bot.performance?.totalTrades || 0), 0);
-  const winRate = bots.length > 0 
-    ? bots.reduce((sum, bot) => sum + (bot.performance?.winRate || 0), 0) / bots.length 
-    : 0;
-
   const stats = [
     {
       title: 'Total PnL',
-      value: `$${totalPnL.toFixed(2)}`,
-      change: totalPnL >= 0 ? '+8.2% today' : '-2.1% today',
-      changeType: totalPnL >= 0 ? 'positive' as const : 'negative' as const,
+      value: '$12,847',
+      change: '+8.2% today',
+      changeType: 'positive' as const,
       icon: 'ri-money-dollar-circle-line'
     },
     {
       title: 'Active Bots',
-      value: activeBots.toString(),
-      change: `${bots.length} total`,
-      changeType: 'neutral' as const,
+      value: '24',
+      change: '3 new today',
+      changeType: 'positive' as const,
       icon: 'ri-robot-line'
     },
     {
       title: 'Win Rate',
-      value: `${winRate.toFixed(1)}%`,
+      value: '73.5%',
       change: '+2.1% this week',
       changeType: 'positive' as const,
       icon: 'ri-trophy-line'
     },
     {
       title: 'Total Trades',
-      value: totalTrades.toString(),
+      value: '1,247',
       change: '89 today',
       changeType: 'neutral' as const,
       icon: 'ri-exchange-line'

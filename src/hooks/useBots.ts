@@ -1,102 +1,162 @@
 
-import { useState, useEffect } from 'react'
-import { API_ENDPOINTS, apiCall } from '../lib/supabase'
+import { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+import type { TradingBot } from '../types/trading';
 
-export interface TradingBot {
-  id: string
-  name: string
-  strategy: string
-  exchange: string
-  symbol: string
-  status: 'running' | 'stopped' | 'paused'
-  config: Record<string, any>
-  performance: Record<string, any>
-  created_at: string
-  updated_at: string
-}
-
-export function useBots() {
-  const [bots, setBots] = useState<TradingBot[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+export const useBots = () => {
+  const [bots, setBots] = useState<TradingBot[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchBots = async () => {
     try {
-      setLoading(true)
-      const response = await apiCall(`${API_ENDPOINTS.BOT_MANAGEMENT}/bots`)
-      setBots(response.bots)
-      setError(null)
+      setLoading(true);
+      setError(null);
+      
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('No active session');
+      }
+
+      const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Bot fetch error:', response.status, errorText);
+        throw new Error(`Failed to fetch bots: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setBots(Array.isArray(data.bots) ? data.bots : []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch bots')
+      console.error('Error fetching bots:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch bots');
+      setBots([]);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
-  const createBot = async (botData: Partial<TradingBot>) => {
+  const createBot = async (botData: Omit<TradingBot, 'id' | 'createdAt'>) => {
     try {
-      const response = await apiCall(`${API_ENDPOINTS.BOT_MANAGEMENT}/create`, {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('No active session');
+      }
+
+      const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management`, {
         method: 'POST',
-        body: JSON.stringify(botData),
-      })
-      await fetchBots() // Refresh the list
-      return response.bot
-    } catch (err) {
-      throw new Error(err instanceof Error ? err.message : 'Failed to create bot')
-    }
-  }
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'create',
+          botData
+        }),
+      });
 
-  const updateBot = async (id: string, updates: Partial<TradingBot>) => {
-    try {
-      const response = await apiCall(`${API_ENDPOINTS.BOT_MANAGEMENT}/update`, {
-        method: 'PUT',
-        body: JSON.stringify({ id, ...updates }),
-      })
-      await fetchBots() // Refresh the list
-      return response.bot
-    } catch (err) {
-      throw new Error(err instanceof Error ? err.message : 'Failed to update bot')
-    }
-  }
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Bot creation error:', response.status, errorText);
+        throw new Error(`Failed to create bot: ${response.status}`);
+      }
 
-  const deleteBot = async (id: string) => {
-    try {
-      await apiCall(`${API_ENDPOINTS.BOT_MANAGEMENT}?id=${id}`, {
-        method: 'DELETE',
-      })
-      await fetchBots() // Refresh the list
+      const data = await response.json();
+      if (data.bot) {
+        setBots(prev => [data.bot, ...prev]);
+        return data.bot;
+      }
+      throw new Error('No bot data returned');
     } catch (err) {
-      throw new Error(err instanceof Error ? err.message : 'Failed to delete bot')
+      console.error('Error creating bot:', err);
+      throw err;
     }
-  }
+  };
 
-  const startBot = async (id: string) => {
+  const updateBot = async (botId: string, updates: Partial<TradingBot>) => {
     try {
-      await apiCall(API_ENDPOINTS.TRADING_ENGINE, {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('No active session');
+      }
+
+      const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management`, {
         method: 'POST',
-        body: JSON.stringify({ action: 'start_bot', botId: id }),
-      })
-      await fetchBots() // Refresh the list
-    } catch (err) {
-      throw new Error(err instanceof Error ? err.message : 'Failed to start bot')
-    }
-  }
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'update',
+          botId,
+          updates
+        }),
+      });
 
-  const stopBot = async (id: string) => {
-    try {
-      await apiCall(API_ENDPOINTS.TRADING_ENGINE, {
-        method: 'POST',
-        body: JSON.stringify({ action: 'stop_bot', botId: id }),
-      })
-      await fetchBots() // Refresh the list
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Bot update error:', response.status, errorText);
+        throw new Error(`Failed to update bot: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data.bot) {
+        setBots(prev => prev.map(bot => bot.id === botId ? data.bot : bot));
+        return data.bot;
+      }
+      throw new Error('No bot data returned');
     } catch (err) {
-      throw new Error(err instanceof Error ? err.message : 'Failed to stop bot')
+      console.error('Error updating bot:', err);
+      throw err;
     }
-  }
+  };
+
+  const deleteBot = async (botId: string) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('No active session');
+      }
+
+      const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'delete',
+          botId
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Bot deletion error:', response.status, errorText);
+        throw new Error(`Failed to delete bot: ${response.status}`);
+      }
+
+      setBots(prev => prev.filter(bot => bot.id !== botId));
+    } catch (err) {
+      console.error('Error deleting bot:', err);
+      throw err;
+    }
+  };
 
   useEffect(() => {
-    fetchBots()
-  }, [])
+    fetchBots();
+  }, []);
 
   return {
     bots,
@@ -106,7 +166,5 @@ export function useBots() {
     createBot,
     updateBot,
     deleteBot,
-    startBot,
-    stopBot,
-  }
-}
+  };
+};

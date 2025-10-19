@@ -86,7 +86,23 @@ export default function BotsPage() {
 
           {/* Bot List */}
           <div className="space-y-4">
-            {filteredBots.map((bot) => (
+            {loading ? (
+              <div className="text-center py-12">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p className="text-gray-600">Loading bots...</p>
+              </div>
+            ) : filteredBots.length === 0 ? (
+              <div className="text-center py-12">
+                <i className="ri-robot-line text-4xl text-gray-400 mb-4"></i>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No bots found</h3>
+                <p className="text-gray-500 mb-4">Create your first trading bot to get started</p>
+                <Button onClick={() => navigate('/create-bot')}>
+                  <i className="ri-add-line mr-2"></i>
+                  Create Bot
+                </Button>
+              </div>
+            ) : (
+              filteredBots.map((bot) => (
               <Card key={bot.id} className="space-y-4">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center space-x-3">
@@ -171,20 +187,9 @@ export default function BotsPage() {
                   </Button>
                 </div>
               </Card>
-            ))}
+              ))
+            )}
           </div>
-
-          {filteredBots.length === 0 && (
-            <div className="text-center py-12">
-              <i className="ri-robot-line text-4xl text-gray-400 mb-4"></i>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No bots found</h3>
-              <p className="text-gray-500 mb-4">Create your first trading bot to get started</p>
-              <Button onClick={() => navigate('/create-bot')}>
-                <i className="ri-add-line mr-2"></i>
-                Create Bot
-              </Button>
-            </div>
-          )}
         </div>
       </div>
       <Navigation />

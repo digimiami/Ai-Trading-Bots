@@ -55,10 +55,6 @@ export default function Trades() {
     return bot?.name || 'Unknown Bot';
   };
 
-  const handleRefresh = async () => {
-    await fetchTrades();
-  };
-
   return (
     <div className="min-h-screen bg-gray-50">
       <Header title="Trades" subtitle="Monitor your trading activity" />
@@ -128,7 +124,12 @@ export default function Trades() {
 
         {/* Trades List */}
         <div className="space-y-3">
-          {filteredTrades.length === 0 ? (
+          {tradesLoading ? (
+            <div className="text-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-gray-600">Loading trades...</p>
+            </div>
+          ) : filteredTrades.length === 0 ? (
             <Card className="p-8 text-center">
               <i className="ri-file-list-line text-4xl text-gray-300 mb-4"></i>
               <h3 className="text-lg font-medium text-gray-900 mb-2">No Trades Found</h3>
@@ -211,7 +212,7 @@ export default function Trades() {
               <i className="ri-download-line mr-2"></i>
               Export Trades
             </button>
-            <button className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-4 rounded-lg transition-colors flex items-center justify-center" onClick={handleRefresh}>
+            <button className="bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 px-4 rounded-lg transition-colors flex items-center justify-center">
               <i className="ri-refresh-line mr-2"></i>
               Refresh Data
             </button>

@@ -6,7 +6,6 @@ export interface TradingBot {
   symbol: string;
   status: 'active' | 'paused' | 'stopped';
   leverage: number;
-  balance: number;
   pnl: number;
   pnlPercentage: number;
   totalTrades: number;

@@ -1,9 +1,11 @@
+
+
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Button from '../../components/base/Button';
 import Card from '../../components/base/Card';
 import Header from '../../components/feature/Header';
-import { TradingStrategy } from '../../types/trading';
+import type { TradingStrategy } from '../../types/trading';
 import { useBots } from '../../hooks/useBots';
 
 export default function CreateBotPage() {
@@ -14,8 +16,9 @@ export default function CreateBotPage() {
     exchange: 'bybit' as 'bybit' | 'okx',
     symbol: 'BTCUSDT',
     leverage: 5,
-    balance: 1000,
-    riskLevel: 'medium' as 'low' | 'medium' | 'high'
+    riskLevel: 'medium' as 'low' | 'medium' | 'high',
+    stopLoss: 2.0,
+    takeProfit: 4.0
   });
 
   const [strategy, setStrategy] = useState<TradingStrategy>({
@@ -31,40 +34,42 @@ export default function CreateBotPage() {
   });
 
   const [isCreating, setIsCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const popularSymbols = [
     'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'ADAUSDT', 'DOTUSDT', 'AVAXUSDT',
     'BNBUSDT', 'XRPUSDT', 'MATICUSDT', 'LINKUSDT', 'UNIUSDT', 'LTCUSDT'
   ];
 
+  // Exchange balance validation removed - will be handled by real API integration
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsCreating(true);
+    setError(null);
     
     try {
-      const botData = {
+      // Create bot using the hook
+      await createBot({
         name: formData.name,
-        strategy: 'advanced_ml',
         exchange: formData.exchange,
         symbol: formData.symbol,
-        config: {
-          leverage: formData.leverage,
-          balance: formData.balance,
-          riskLevel: formData.riskLevel,
-          ...strategy
-        },
-        performance: {
-          pnl: 0,
-          totalTrades: 0,
-          winRate: 0
-        }
-      };
+        leverage: formData.leverage,
+        riskLevel: formData.riskLevel,
+        strategy: strategy,
+        // Initialize with default values
+        status: 'stopped' as const,
+        pnl: 0,
+        pnlPercentage: 0,
+        totalTrades: 0,
+        winRate: 0,
+        lastTradeAt: undefined
+      });
       
-      await createBot(botData);
-      navigate('/', { state: { message: `Bot "${formData.name}" created successfully!` } });
-    } catch (error) {
-      console.error('Failed to create bot:', error);
-      alert('Failed to create bot. Please try again.');
+      // Navigate back to bots page with success message
+      navigate('/bots', { state: { message: `Bot "${formData.name}" created successfully!` } });
+    } catch (error: any) {
+      setError(error.message || 'Failed to create bot');
     } finally {
       setIsCreating(false);
     }
@@ -80,19 +85,28 @@ export default function CreateBotPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header />
+      <Header title="Create New Bot" />
       
       <div className="pt-16 pb-6 px-4">
         <div className="max-w-2xl mx-auto">
           <div className="flex items-center mb-6">
             <button
-              onClick={() => navigate('/')}
+              onClick={() => navigate('/bots')}
               className="mr-3 p-2 hover:bg-gray-100 rounded-lg transition-colors"
             >
               <i className="ri-arrow-left-line text-xl"></i>
             </button>
             <h1 className="text-2xl font-bold text-gray-900">Create New Bot</h1>
           </div>
+
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
+              <div className="flex items-center">
+                <i className="ri-error-warning-line text-red-500 mr-2"></i>
+                <span className="text-red-700">{error}</span>
+              </div>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Basic Configuration */}
@@ -163,21 +177,6 @@ export default function CreateBotPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Initial Balance (USDT)
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.balance}
-                    onChange={(e) => handleInputChange('balance', parseFloat(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    min="100"
-                    step="100"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
                     Risk Level
                   </label>
                   <select
@@ -189,6 +188,44 @@ export default function CreateBotPage() {
                     <option value="medium">Medium Risk</option>
                     <option value="high">High Risk</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Stop Loss (%)
+                  </label>
+                  <input
+                    type="number"
+                    value={(formData as any).stopLoss}
+                    onChange={(e) => handleInputChange('stopLoss', parseFloat(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    min="0.5"
+                    max="10"
+                    step="0.5"
+                    required
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Maximum loss percentage before closing position
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Take Profit (%)
+                  </label>
+                  <input
+                    type="number"
+                    value={(formData as any).takeProfit}
+                    onChange={(e) => handleInputChange('takeProfit', parseFloat(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    min="1"
+                    max="20"
+                    step="0.5"
+                    required
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Target profit percentage before closing position
+                  </p>
                 </div>
               </div>
             </Card>
@@ -339,7 +376,7 @@ export default function CreateBotPage() {
               <Button
                 type="button"
                 variant="secondary"
-                onClick={() => navigate('/')}
+                onClick={() => navigate('/bots')}
                 className="flex-1"
               >
                 Cancel
@@ -359,3 +396,4 @@ export default function CreateBotPage() {
     </div>
   );
 }
+

@@ -1,4 +1,5 @@
 
+
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../../components/feature/Header';
@@ -60,12 +61,38 @@ export default function Settings() {
     pushAlerts: true,
     webhookAlerts: false,
     telegramBot: '',
-    discordWebhook: ''
+    discordWebhook: '',
+    // New risk management alerts
+    lowBalanceAlert: true,
+    lowBalanceThreshold: 100,
+    liquidationAlert: true,
+    liquidationThreshold: 80,
+    newTradeAlert: true,
+    closePositionAlert: true,
+    profitAlert: true,
+    profitThreshold: 5,
+    lossAlert: true,
+    lossThreshold: 5,
+    dailyPnlAlert: true,
+    weeklyPnlAlert: false,
+    monthlyPnlAlert: true
+  });
+
+  const [riskManagement, setRiskManagement] = useState({
+    maxDailyLoss: 500,
+    maxPositionSize: 1000,
+    stopLossPercentage: 5,
+    takeProfitPercentage: 10,
+    maxOpenPositions: 5,
+    riskPerTrade: 2,
+    autoStopTrading: true,
+    emergencyStopLoss: 20
   });
 
   const [showEditProfile, setShowEditProfile] = useState(false);
   const [showApiConfig, setShowApiConfig] = useState(false);
   const [showAlertsConfig, setShowAlertsConfig] = useState(false);
+  const [showRiskConfig, setShowRiskConfig] = useState(false);
   const [profileData, setProfileData] = useState({
     name: 'Alex Johnson',
     email: 'alex.johnson@email.com',
@@ -132,6 +159,15 @@ export default function Settings() {
     } catch (error) {
       console.error('Sign out failed:', error);
     }
+  };
+
+  const handleRiskChange = (key: string, value: any) => {
+    setRiskManagement(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleRiskSave = () => {
+    // Save risk management settings
+    setShowRiskConfig(false);
   };
 
   return (
@@ -230,10 +266,58 @@ export default function Settings() {
           </div>
         </Card>
 
+        {/* Risk Management */}
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Risk Management</h3>
+            <button
+              onClick={() => setShowRiskConfig(true)}
+              className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+            >
+              Configure
+            </button>
+          </div>
+          <p className="text-gray-500 text-sm mb-4">Protect your capital with automated risk controls</p>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div className="p-3 bg-red-50 rounded-lg">
+              <div className="flex items-center space-x-2 mb-1">
+                <i className="ri-shield-line text-red-600"></i>
+                <span className="text-sm font-medium text-gray-900">Max Daily Loss</span>
+              </div>
+              <p className="text-xs text-gray-500">${riskManagement.maxDailyLoss}</p>
+            </div>
+            
+            <div className="p-3 bg-orange-50 rounded-lg">
+              <div className="flex items-center space-x-2 mb-1">
+                <i className="ri-pie-chart-line text-orange-600"></i>
+                <span className="text-sm font-medium text-gray-900">Position Size</span>
+              </div>
+              <p className="text-xs text-gray-500">Max ${riskManagement.maxPositionSize}</p>
+            </div>
+            
+            <div className="p-3 bg-blue-50 rounded-lg">
+              <div className="flex items-center space-x-2 mb-1">
+                <i className="ri-stop-line text-blue-600"></i>
+                <span className="text-sm font-medium text-gray-900">Stop Loss</span>
+              </div>
+              <p className="text-xs text-gray-500">{riskManagement.stopLossPercentage}%</p>
+            </div>
+            
+            <div className="p-3 bg-green-50 rounded-lg">
+              <div className="flex items-center space-x-2 mb-1">
+                <i className="ri-trophy-line text-green-600"></i>
+                <span className="text-sm font-medium text-gray-900">Take Profit</span>
+              </div>
+              <p className="text-xs text-gray-500">{riskManagement.takeProfitPercentage}%</p>
+            </div>
+          </div>
+        </Card>
+
         {/* Alerts Configuration */}
         <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Alert Settings</h3>
+            <h3 className="text-lg font-semibold text-gray-900">Alert Preferences</h3>
             <button
               onClick={() => setShowAlertsConfig(true)}
               className="text-blue-600 hover:text-blue-700 text-sm font-medium"
@@ -241,40 +325,41 @@ export default function Settings() {
               Configure
             </button>
           </div>
-          <p className="text-gray-500 text-sm mb-4">Set up price alerts and trading notifications</p>
+          <p className="text-gray-500 text-sm mb-4">Choose which alerts you want to receive</p>
           
-          <div className="grid grid-cols-2 gap-4">
-            <div className="p-3 bg-gray-50 rounded-lg">
-              <div className="flex items-center space-x-2 mb-1">
-                <i className="ri-line-chart-line text-blue-600"></i>
-                <span className="text-sm font-medium text-gray-900">Price Alerts</span>
+          <div className="space-y-3">
+            {[
+              { key: 'newTradeAlert', label: 'New Trade Alerts', desc: 'Get notified when bots open new positions', icon: 'ri-add-circle-line', color: 'blue' },
+              { key: 'closePositionAlert', label: 'Position Closed', desc: 'Alerts when positions are closed', icon: 'ri-close-circle-line', color: 'green' },
+              { key: 'profitAlert', label: 'Profit Alerts', desc: 'Notifications for profitable trades', icon: 'ri-arrow-up-line', color: 'green' },
+              { key: 'lossAlert', label: 'Loss Alerts', desc: 'Notifications for losing trades', icon: 'ri-arrow-down-line', color: 'red' },
+              { key: 'lowBalanceAlert', label: 'Low Balance Alert', desc: 'Warning when account balance is low', icon: 'ri-wallet-line', color: 'orange' },
+              { key: 'liquidationAlert', label: 'Liquidation Risk', desc: 'Alert when positions are at risk', icon: 'ri-alarm-warning-line', color: 'red' }
+            ].map(({ key, label, desc, icon, color }) => (
+              <div key={key} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div className="flex items-center space-x-3">
+                  <div className={`w-8 h-8 bg-${color}-100 rounded-full flex items-center justify-center`}>
+                    <i className={`${icon} text-${color}-600`}></i>
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-900">{label}</p>
+                    <p className="text-sm text-gray-500">{desc}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleAlertsChange(key, !alerts[key as keyof typeof alerts])}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                    alerts[key as keyof typeof alerts] ? 'bg-blue-600' : 'bg-gray-200'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      alerts[key as keyof typeof alerts] ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
               </div>
-              <p className="text-xs text-gray-500">±{alerts.priceThreshold}% threshold</p>
-            </div>
-            
-            <div className="p-3 bg-gray-50 rounded-lg">
-              <div className="flex items-center space-x-2 mb-1">
-                <i className="ri-funds-line text-green-600"></i>
-                <span className="text-sm font-medium text-gray-900">P&amp;L Alerts</span>
-              </div>
-              <p className="text-xs text-gray-500">±{alerts.pnlThreshold}% threshold</p>
-            </div>
-            
-            <div className="p-3 bg-gray-50 rounded-lg">
-              <div className="flex items-center space-x-2 mb-1">
-                <i className="ri-bar-chart-line text-purple-600"></i>
-                <span className="text-sm font-medium text-gray-900">RSI Alerts</span>
-              </div>
-              <p className="text-xs text-gray-500">&lt;{alerts.rsiOversold} | &gt;{alerts.rsiOverbought}</p>
-            </div>
-            
-            <div className="p-3 bg-gray-50 rounded-lg">
-              <div className="flex items-center space-x-2 mb-1">
-                <i className="ri-volume-up-line text-orange-600"></i>
-                <span className="text-sm font-medium text-gray-900">Volume Alerts</span>
-              </div>
-              <p className="text-xs text-gray-500">&gt;{alerts.volumeThreshold}% spike</p>
-            </div>
+            ))}
           </div>
         </Card>
 
@@ -475,7 +560,7 @@ export default function Settings() {
               <select
                 value={appearance.currency}
                 onChange={(e) => handleAppearanceChange('currency', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus-ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="USD">USD ($)</option>
                 <option value="EUR">EUR (€)</option>
@@ -491,7 +576,7 @@ export default function Settings() {
               <select
                 value={appearance.language}
                 onChange={(e) => handleAppearanceChange('language', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus-ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="English">English</option>
                 <option value="Spanish">Español</option>
@@ -745,13 +830,188 @@ export default function Settings() {
         </div>
       )}
 
+      {/* Risk Management Configuration Modal */}
+      {showRiskConfig && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-semibold text-gray-900">Risk Management</h2>
+                <button
+                  onClick={() => setShowRiskConfig(false)}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <i className="ri-close-line text-xl text-gray-500"></i>
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                {/* Daily Limits */}
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-3">Daily Limits</h3>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Maximum Daily Loss ($)
+                      </label>
+                      <input
+                        type="number"
+                        value={riskManagement.maxDailyLoss}
+                        onChange={(e) => handleRiskChange('maxDailyLoss', parseFloat(e.target.value))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        min="50"
+                        max="10000"
+                        step="50"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Maximum Position Size ($)
+                      </label>
+                      <input
+                        type="number"
+                        value={riskManagement.maxPositionSize}
+                        onChange={(e) => handleRiskChange('maxPositionSize', parseFloat(e.target.value))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        min="100"
+                        max="50000"
+                        step="100"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Maximum Open Positions
+                      </label>
+                      <input
+                        type="number"
+                        value={riskManagement.maxOpenPositions}
+                        onChange={(e) => handleRiskChange('maxOpenPositions', parseInt(e.target.value))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        min="1"
+                        max="20"
+                        step="1"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Risk Percentages */}
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-3">Risk Percentages</h3>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Stop Loss Percentage (%)
+                      </label>
+                      <input
+                        type="number"
+                        value={riskManagement.stopLossPercentage}
+                        onChange={(e) => handleRiskChange('stopLossPercentage', parseFloat(e.target.value))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        min="1"
+                        max="20"
+                        step="0.5"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Take Profit Percentage (%)
+                      </label>
+                      <input
+                        type="number"
+                        value={riskManagement.takeProfitPercentage}
+                        onChange={(e) => handleRiskChange('takeProfitPercentage', parseFloat(e.target.value))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        min="1"
+                        max="50"
+                        step="0.5"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Risk Per Trade (%)
+                      </label>
+                      <input
+                        type="number"
+                        value={riskManagement.riskPerTrade}
+                        onChange={(e) => handleRiskChange('riskPerTrade', parseFloat(e.target.value))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        min="0.5"
+                        max="10"
+                        step="0.1"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Emergency Stop Loss (%)
+                      </label>
+                      <input
+                        type="number"
+                        value={riskManagement.emergencyStopLoss}
+                        onChange={(e) => handleRiskChange('emergencyStopLoss', parseFloat(e.target.value))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        min="10"
+                        max="50"
+                        step="1"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Auto Controls */}
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-3">Automatic Controls</h3>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-sm font-medium text-gray-700">Auto Stop Trading</span>
+                        <p className="text-xs text-gray-500">Stop all bots when daily loss limit is reached</p>
+                      </div>
+                      <button
+                        onClick={() => handleRiskChange('autoStopTrading', !riskManagement.autoStopTrading)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          riskManagement.autoStopTrading ? 'bg-blue-600' : 'bg-gray-200'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            riskManagement.autoStopTrading ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex space-x-3 mt-6">
+                <Button
+                  variant="secondary"
+                  onClick={() => setShowRiskConfig(false)}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={handleRiskSave}
+                  className="flex-1"
+                >
+                  Save Settings
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Alerts Configuration Modal */}
       {showAlertsConfig && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="p-6">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-semibold text-gray-900">Alert Settings</h2>
+                <h2 className="text-xl font-semibold text-gray-900">Alert Configuration</h2>
                 <button
                   onClick={() => setShowAlertsConfig(false)}
                   className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -761,86 +1021,256 @@ export default function Settings() {
               </div>
 
               <div className="space-y-6">
-                {/* Price Alerts */}
+                {/* Trading Alerts */}
                 <div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-3">Price Alerts</h3>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Price Change Threshold (%)
-                      </label>
-                      <input
-                        type="number"
-                        value={alerts.priceThreshold}
-                        onChange={(e) => handleAlertsChange('priceThreshold', parseFloat(e.target.value))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                        min="1"
-                        max="50"
-                        step="0.5"
-                      />
+                  <h3 className="text-lg font-medium text-gray-900 mb-3">Trading Alerts</h3>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-sm font-medium text-gray-700">New Trade Alerts</span>
+                        <p className="text-xs text-gray-500">Notify when bots open new positions</p>
+                      </div>
+                      <button
+                        onClick={() => handleAlertsChange('newTradeAlert', !alerts.newTradeAlert)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          alerts.newTradeAlert ? 'bg-blue-600' : 'bg-gray-200'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            alerts.newTradeAlert ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        P&amp;L Threshold (%)
-                      </label>
-                      <input
-                        type="number"
-                        value={alerts.pnlThreshold}
-                        onChange={(e) => handleAlertsChange('pnlThreshold', parseFloat(e.target.value))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                        min="1"
-                        max="100"
-                        step="1"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Volume Spike Threshold (%)
-                      </label>
-                      <input
-                        type="number"
-                        value={alerts.volumeThreshold}
-                        onChange={(e) => handleAlertsChange('volumeThreshold', parseFloat(e.target.value))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                        min="10"
-                        max="500"
-                        step="10"
-                      />
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-sm font-medium text-gray-700">Close Position Alerts</span>
+                        <p className="text-xs text-gray-500">Notify when positions are closed</p>
+                      </div>
+                      <button
+                        onClick={() => handleAlertsChange('closePositionAlert', !alerts.closePositionAlert)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          alerts.closePositionAlert ? 'bg-blue-600' : 'bg-gray-200'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            alerts.closePositionAlert ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
                     </div>
                   </div>
                 </div>
 
-                {/* Technical Indicators */}
+                {/* P&L Alerts */}
                 <div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-3">Technical Indicators</h3>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        RSI Overbought Level
-                      </label>
-                      <input
-                        type="number"
-                        value={alerts.rsiOverbought}
-                        onChange={(e) => handleAlertsChange('rsiOverbought', parseInt(e.target.value))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                        min="50"
-                        max="90"
-                        step="5"
-                      />
+                  <h3 className="text-lg font-medium text-gray-900 mb-3">P&L Alerts</h3>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-sm font-medium text-gray-700">Profit Alerts</span>
+                        <p className="text-xs text-gray-500">Notify for profitable trades</p>
+                      </div>
+                      <button
+                        onClick={() => handleAlertsChange('profitAlert', !alerts.profitAlert)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          alerts.profitAlert ? 'bg-blue-600' : 'bg-gray-200'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            alerts.profitAlert ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        RSI Oversold Level
-                      </label>
-                      <input
-                        type="number"
-                        value={alerts.rsiOversold}
-                        onChange={(e) => handleAlertsChange('rsiOversold', parseInt(e.target.value))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-5 0 focus:border-transparent text-sm"
-                        min="10"
-                        max="50"
-                        step="5"
-                      />
+                    {alerts.profitAlert && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Profit Threshold (%)
+                        </label>
+                        <input
+                          type="number"
+                          value={alerts.profitThreshold}
+                          onChange={(e) => handleAlertsChange('profitThreshold', parseFloat(e.target.value))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                          min="1"
+                          max="50"
+                          step="0.5"
+                        />
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-sm font-medium text-gray-700">Loss Alerts</span>
+                        <p className="text-xs text-gray-500">Notify for losing trades</p>
+                      </div>
+                      <button
+                        onClick={() => handleAlertsChange('lossAlert', !alerts.lossAlert)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          alerts.lossAlert ? 'bg-blue-600' : 'bg-gray-200'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            alerts.lossAlert ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                    {alerts.lossAlert && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Loss Threshold (%)
+                        </label>
+                        <input
+                          type="number"
+                          value={alerts.lossThreshold}
+                          onChange={(e) => handleAlertsChange('lossThreshold', parseFloat(e.target.value))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                          min="1"
+                          max="20"
+                          step="0.5"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Risk Alerts */}
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-3">Risk Alerts</h3>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-sm font-medium text-gray-700">Low Balance Alert</span>
+                        <p className="text-xs text-gray-500">Warning when balance is low</p>
+                      </div>
+                      <button
+                        onClick={() => handleAlertsChange('lowBalanceAlert', !alerts.lowBalanceAlert)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          alerts.lowBalanceAlert ? 'bg-blue-600' : 'bg-gray-200'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            alerts.lowBalanceAlert ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                    {alerts.lowBalanceAlert && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Low Balance Threshold ($)
+                        </label>
+                        <input
+                          type="number"
+                          value={alerts.lowBalanceThreshold}
+                          onChange={(e) => handleAlertsChange('lowBalanceThreshold', parseFloat(e.target.value))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                          min="10"
+                          max="1000"
+                          step="10"
+                        />
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-sm font-medium text-gray-700">Liquidation Risk Alert</span>
+                        <p className="text-xs text-gray-500">Alert when positions are at risk</p>
+                      </div>
+                      <button
+                        onClick={() => handleAlertsChange('liquidationAlert', !alerts.liquidationAlert)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          alerts.liquidationAlert ? 'bg-blue-600' : 'bg-gray-200'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            alerts.liquidationAlert ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                    {alerts.liquidationAlert && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Liquidation Threshold (%)
+                        </label>
+                        <input
+                          type="number"
+                          value={alerts.liquidationThreshold}
+                          onChange={(e) => handleAlertsChange('liquidationThreshold', parseFloat(e.target.value))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                          min="50"
+                          max="95"
+                          step="5"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Reporting Alerts */}
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-3">P&L Reports</h3>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-sm font-medium text-gray-700">Daily P&L Report</span>
+                        <p className="text-xs text-gray-500">Daily profit/loss summary</p>
+                      </div>
+                      <button
+                        onClick={() => handleAlertsChange('dailyPnlAlert', !alerts.dailyPnlAlert)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          alerts.dailyPnlAlert ? 'bg-blue-600' : 'bg-gray-200'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            alerts.dailyPnlAlert ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-sm font-medium text-gray-700">Weekly P&L Report</span>
+                        <p className="text-xs text-gray-500">Weekly profit/loss summary</p>
+                      </div>
+                      <button
+                        onClick={() => handleAlertsChange('weeklyPnlAlert', !alerts.weeklyPnlAlert)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          alerts.weeklyPnlAlert ? 'bg-blue-600' : 'bg-gray-200'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            alerts.weeklyPnlAlert ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="text-sm font-medium text-gray-700">Monthly P&L Report</span>
+                        <p className="text-xs text-gray-500">Monthly profit/loss summary</p>
+                      </div>
+                      <button
+                        onClick={() => handleAlertsChange('monthlyPnlAlert', !alerts.monthlyPnlAlert)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          alerts.monthlyPnlAlert ? 'bg-blue-600' : 'bg-gray-200'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            alerts.monthlyPnlAlert ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -878,52 +1308,6 @@ export default function Settings() {
                           }`}
                         />
                       </button>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-700">Webhook Alerts</span>
-                      <button
-                        onClick={() => handleAlertsChange('webhookAlerts', !alerts.webhookAlerts)}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                          alerts.webhookAlerts ? 'bg-blue-600' : 'bg-gray-200'
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                            alerts.webhookAlerts ? 'translate-x-6' : 'translate-x-1'
-                          }`}
-                        />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* External Integrations */}
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-3">External Integrations</h3>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Telegram Bot Token
-                      </label>
-                      <input
-                        type="text"
-                        value={alerts.telegramBot}
-                        onChange={(e) => handleAlertsChange('telegramBot', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                        placeholder="Enter Telegram bot token"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Discord Webhook URL
-                      </label>
-                      <input
-                        type="url"
-                        value={alerts.discordWebhook}
-                        onChange={(e) => handleAlertsChange('discordWebhook', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                        placeholder="https://discord.com/api/webhooks/..."
-                      />
                     </div>
                   </div>
                 </div>
@@ -987,7 +1371,7 @@ export default function Settings() {
                     type="email"
                     value={profileData.email}
                     onChange={(e) => handleProfileChange('email', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus-ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="Enter your email"
                   />
                 </div>
@@ -1000,7 +1384,7 @@ export default function Settings() {
                     type="tel"
                     value={profileData.phone}
                     onChange={(e) => handleProfileChange('phone', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus-ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="Enter your phone number"
                   />
                 </div>
@@ -1049,3 +1433,4 @@ export default function Settings() {
     </div>
   );
 }
+

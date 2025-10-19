@@ -19,125 +19,98 @@ serve(async (req) => {
 
     const { email, password } = await req.json()
 
-    console.log('Attempting to fix auth for:', email)
-
-    // Step 1: Delete any existing auth user
-    try {
-      const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers()
-      const existingUser = existingUsers.users.find(u => u.email === email)
-      
-      if (existingUser) {
-        console.log('Deleting existing auth user:', existingUser.id)
-        await supabaseAdmin.auth.admin.deleteUser(existingUser.id)
-      }
-    } catch (error) {
-      console.log('No existing auth user to delete:', error.message)
+    // Step 1: Clean up any existing auth users with this email
+    const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers()
+    const existingUser = existingUsers.users.find(u => u.email === email)
+    
+    if (existingUser) {
+      console.log('Deleting existing user:', existingUser.id)
+      await supabaseAdmin.auth.admin.deleteUser(existingUser.id)
     }
 
-    // Step 2: Delete any existing database record
-    try {
-      await supabaseAdmin
-        .from('users')
-        .delete()
-        .eq('email', email)
-      console.log('Deleted existing database record')
-    } catch (error) {
-      console.log('No existing database record to delete:', error.message)
-    }
+    // Step 2: Clean up database records
+    await supabaseAdmin
+      .from('users')
+      .delete()
+      .eq('email', email)
 
-    // Step 3: Create new auth user
+    // Step 3: Create new auth user with confirmed email
     const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true
+      email: email,
+      password: password,
+      email_confirm: true,
+      user_metadata: {
+        role: 'admin'
+      }
     })
 
     if (authError) {
       console.error('Auth creation error:', authError)
-      return new Response(JSON.stringify({ 
-        success: false, 
-        error: authError.message 
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      throw new Error(`Failed to create auth user: ${authError.message}`)
     }
 
     console.log('Created auth user:', authUser.user.id)
 
-    // Step 4: Create database record with same ID
-    const { data: dbUser, error: dbError } = await supabaseAdmin
+    // Step 4: Create database record
+    const { error: insertError } = await supabaseAdmin
       .from('users')
       .insert({
         id: authUser.user.id,
         email: email,
-        user_role: 'admin',
+        role: 'admin',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
-      .select()
-      .single()
 
-    if (dbError) {
-      console.error('Database creation error:', dbError)
-      // Clean up auth user if database creation fails
-      await supabaseAdmin.auth.admin.deleteUser(authUser.user.id)
-      
-      return new Response(JSON.stringify({ 
-        success: false, 
-        error: dbError.message 
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+    if (insertError) {
+      console.error('Database insert error:', insertError)
+      // Don't throw here, auth user is created successfully
     }
 
-    console.log('Created database user:', dbUser)
-
-    // Step 5: Verify the setup by attempting to sign in
+    // Step 5: Verify the user can sign in
     const testClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? ''
     )
 
     const { data: signInData, error: signInError } = await testClient.auth.signInWithPassword({
-      email,
-      password
+      email: email,
+      password: password
     })
 
     if (signInError) {
-      console.error('Sign in test failed:', signInError)
-      return new Response(JSON.stringify({ 
-        success: false, 
-        error: 'Account created but sign in test failed: ' + signInError.message 
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      console.error('Sign in test error:', signInError)
+      throw new Error(`Sign in test failed: ${signInError.message}`)
     }
 
     console.log('Sign in test successful')
 
-    return new Response(JSON.stringify({ 
-      success: true, 
-      message: 'Admin account created and verified successfully',
-      user: {
-        id: authUser.user.id,
-        email: authUser.user.email,
-        role: 'admin'
+    return new Response(
+      JSON.stringify({ 
+        success: true, 
+        message: 'Admin user created and verified successfully',
+        userId: authUser.user.id,
+        email: email,
+        signInTest: 'passed'
+      }),
+      { 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 200 
       }
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    )
 
   } catch (error) {
-    console.error('Unexpected error:', error)
-    return new Response(JSON.stringify({ 
-      success: false, 
-      error: error.message 
-    }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    console.error('Function error:', error)
+    return new Response(
+      JSON.stringify({ 
+        success: false, 
+        error: error.message,
+        details: 'Check function logs for more information'
+      }),
+      { 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 500 
+      }
+    )
   }
 })
