@@ -8,7 +8,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
 // API endpoints for Edge Functions
 export const API_ENDPOINTS = {
-  BOT_MANAGEMENT: `${supabaseUrl}/functions/v1/bot-management-fixed`,
+  BOT_MANAGEMENT: `${supabaseUrl}/functions/v1/bot-management`,
   TRADING_ENGINE: `${supabaseUrl}/functions/v1/trading-engine`,
   MARKET_DATA: `${supabaseUrl}/functions/v1/market-data`,
   ALERTS_SYSTEM: `${supabaseUrl}/functions/v1/alerts-system`,

@@ -74,6 +74,14 @@ serve(async (req) => {
       if (action === 'create') {
         const { name, exchange, symbol, leverage, riskLevel, strategy, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt } = body
 
+        // Debug logging
+        console.log('Received bot data:', { name, exchange, symbol, leverage, riskLevel, strategy, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt })
+
+        // Validate required fields
+        if (!name || !exchange || !symbol) {
+          throw new Error(`Missing required fields: name=${name}, exchange=${exchange}, symbol=${symbol}`)
+        }
+
         const { data: bot, error } = await supabaseClient
           .from('trading_bots')
           .insert({
@@ -95,7 +103,10 @@ serve(async (req) => {
           .select()
           .single()
 
-        if (error) throw error
+        if (error) {
+          console.error('Database insert error:', error)
+          throw error
+        }
 
         return new Response(
           JSON.stringify({ bot }),

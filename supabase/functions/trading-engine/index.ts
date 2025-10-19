@@ -26,6 +26,35 @@ serve(async (req) => {
       })
     }
 
+    // Handle GET requests for fetching trades
+    if (req.method === 'GET') {
+      const url = new URL(req.url)
+      const path = url.pathname
+      
+      if (path.includes('/trades')) {
+        const botId = url.searchParams.get('botId')
+        
+        let query = supabaseClient
+          .from('trades')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('executed_at', { ascending: false })
+        
+        if (botId) {
+          query = query.eq('bot_id', botId)
+        }
+        
+        const { data: trades, error } = await query
+        
+        if (error) throw error
+        
+        return new Response(JSON.stringify({ trades: trades || [] }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+    }
+
+    // Handle POST requests for bot actions
     const body = await req.json()
     const { action, botId, tradeData } = body
 
