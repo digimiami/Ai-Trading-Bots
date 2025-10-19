@@ -15,6 +15,49 @@ function decrypt(encryptedText: string): string {
   return atob(encryptedText) // Base64 decoding - use proper decryption in production
 }
 
+// Exchange API functions
+async function fetchBybitBalance(apiKey: string, apiSecret: string, isTestnet: boolean) {
+  const baseUrl = isTestnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com'
+  
+  // For demo purposes, return mock data
+  // In production, implement actual Bybit API calls with proper authentication
+  return {
+    exchange: 'bybit',
+    totalBalance: 1250.75,
+    availableBalance: 1100.25,
+    lockedBalance: 150.50,
+    assets: [
+      { asset: 'USDT', free: 1100.25, locked: 150.50, total: 1250.75 },
+      { asset: 'BTC', free: 0.05, locked: 0.01, total: 0.06 },
+      { asset: 'ETH', free: 2.5, locked: 0.5, total: 3.0 },
+      { asset: 'BNB', free: 10.0, locked: 0.0, total: 10.0 }
+    ],
+    lastUpdated: new Date().toISOString(),
+    status: 'connected'
+  }
+}
+
+async function fetchOKXBalance(apiKey: string, apiSecret: string, passphrase: string, isTestnet: boolean) {
+  const baseUrl = isTestnet ? 'https://www.okx.com' : 'https://www.okx.com'
+  
+  // For demo purposes, return mock data
+  // In production, implement actual OKX API calls with proper authentication
+  return {
+    exchange: 'okx',
+    totalBalance: 2100.30,
+    availableBalance: 1950.80,
+    lockedBalance: 149.50,
+    assets: [
+      { asset: 'USDT', free: 1950.80, locked: 149.50, total: 2100.30 },
+      { asset: 'BTC', free: 0.08, locked: 0.02, total: 0.10 },
+      { asset: 'ETH', free: 3.2, locked: 0.8, total: 4.0 },
+      { asset: 'SOL', free: 25.0, locked: 5.0, total: 30.0 }
+    ],
+    lastUpdated: new Date().toISOString(),
+    status: 'connected'
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -51,6 +94,57 @@ serve(async (req) => {
           if (error) throw error
 
           return new Response(JSON.stringify({ apiKeys }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        if (action === 'balances') {
+          // Fetch balances from connected exchanges
+          const { data: apiKeys, error } = await supabaseClient
+            .from('api_keys')
+            .select('exchange, api_key, api_secret, passphrase, is_testnet')
+            .eq('user_id', user.id)
+            .eq('is_active', true)
+
+          if (error) throw error
+
+          const balances = []
+
+          for (const apiKey of apiKeys) {
+            try {
+              const decryptedApiKey = decrypt(apiKey.api_key)
+              const decryptedApiSecret = decrypt(apiKey.api_secret)
+              const decryptedPassphrase = apiKey.passphrase ? decrypt(apiKey.passphrase) : null
+
+              let exchangeBalance = null
+
+              // Fetch balance from exchange API
+              if (apiKey.exchange === 'bybit') {
+                exchangeBalance = await fetchBybitBalance(decryptedApiKey, decryptedApiSecret, apiKey.is_testnet)
+              } else if (apiKey.exchange === 'okx') {
+                exchangeBalance = await fetchOKXBalance(decryptedApiKey, decryptedApiSecret, decryptedPassphrase, apiKey.is_testnet)
+              }
+
+              if (exchangeBalance) {
+                balances.push(exchangeBalance)
+              }
+            } catch (err) {
+              console.error(`Error fetching ${apiKey.exchange} balance:`, err)
+              // Add error balance entry
+              balances.push({
+                exchange: apiKey.exchange,
+                totalBalance: 0,
+                availableBalance: 0,
+                lockedBalance: 0,
+                assets: [],
+                lastUpdated: new Date().toISOString(),
+                status: 'error',
+                error: err.message
+              })
+            }
+          }
+
+          return new Response(JSON.stringify({ balances }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         }

@@ -13,6 +13,8 @@ export interface ExchangeBalance {
     total: number
   }>
   lastUpdated: string
+  status: 'connected' | 'disconnected' | 'error'
+  error?: string
 }
 
 export function useExchangeBalance() {

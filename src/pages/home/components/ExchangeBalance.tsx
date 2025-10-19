@@ -37,6 +37,32 @@ export default function ExchangeBalanceDisplay({ balances }: ExchangeBalanceProp
     }
   };
 
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'connected':
+        return 'text-green-600 bg-green-100';
+      case 'disconnected':
+        return 'text-gray-600 bg-gray-100';
+      case 'error':
+        return 'text-red-600 bg-red-100';
+      default:
+        return 'text-gray-600 bg-gray-100';
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'connected':
+        return 'ri-check-line';
+      case 'disconnected':
+        return 'ri-close-line';
+      case 'error':
+        return 'ri-error-warning-line';
+      default:
+        return 'ri-question-line';
+    }
+  };
+
   if (!balances || balances.length === 0) {
     return (
       <Card className="p-6">
@@ -72,10 +98,21 @@ export default function ExchangeBalanceDisplay({ balances }: ExchangeBalanceProp
                   <i className={`${getExchangeIcon(balance.exchange)} text-lg`}></i>
                 </div>
                 <div>
-                  <h4 className="font-medium text-gray-900">{balance.exchange.toUpperCase()}</h4>
+                  <div className="flex items-center space-x-2">
+                    <h4 className="font-medium text-gray-900">{balance.exchange.toUpperCase()}</h4>
+                    <div className={`px-2 py-1 rounded-full text-xs font-medium flex items-center space-x-1 ${getStatusColor(balance.status)}`}>
+                      <i className={`${getStatusIcon(balance.status)} text-xs`}></i>
+                      <span>{balance.status}</span>
+                    </div>
+                  </div>
                   <p className="text-sm text-gray-500">
                     Updated {new Date(balance.lastUpdated).toLocaleTimeString()}
                   </p>
+                  {balance.error && (
+                    <p className="text-sm text-red-500 mt-1">
+                      Error: {balance.error}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="text-right">
@@ -85,18 +122,23 @@ export default function ExchangeBalanceDisplay({ balances }: ExchangeBalanceProp
                 <p className="text-sm text-gray-500">
                   Available: {formatBalance(balance.availableBalance)}
                 </p>
+                <p className="text-sm text-gray-500">
+                  Locked: {formatBalance(balance.lockedBalance)}
+                </p>
               </div>
             </div>
             
             {/* Top Assets */}
-            <div className="grid grid-cols-2 gap-2">
-              {balance.assets.slice(0, 4).map((asset, assetIndex) => (
-                <div key={assetIndex} className="flex justify-between text-sm">
-                  <span className="text-gray-600">{asset.asset}</span>
-                  <span className="font-medium">{asset.total.toFixed(4)}</span>
-                </div>
-              ))}
-            </div>
+            {balance.assets && balance.assets.length > 0 && (
+              <div className="grid grid-cols-2 gap-2">
+                {balance.assets.slice(0, 4).map((asset, assetIndex) => (
+                  <div key={assetIndex} className="flex justify-between text-sm">
+                    <span className="text-gray-600">{asset.asset}</span>
+                    <span className="font-medium">{asset.total.toFixed(4)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </div>

@@ -7,10 +7,12 @@ import Navigation from '../../components/feature/Navigation';
 import Button from '../../components/base/Button';
 import Card from '../../components/base/Card';
 import { useAuth } from '../../hooks/useAuth';
+import { useApiKeys, ApiKeyFormData } from '../../hooks/useApiKeys';
 
 export default function Settings() {
   const navigate = useNavigate();
   const { signOut } = useAuth();
+  const { apiKeys, loading: apiKeysLoading, saveApiKey, testApiConnection: testConnection, toggleApiKey, deleteApiKey } = useApiKeys();
 
   const [notifications, setNotifications] = useState({
     push: true,
@@ -129,9 +131,34 @@ export default function Settings() {
     setShowEditProfile(false);
   };
 
-  const handleApiSave = () => {
-    // Save API settings
-    setShowApiConfig(false);
+  const handleApiSave = async () => {
+    try {
+      // Save Bybit API key if provided
+      if (apiSettings.bybitApiKey && apiSettings.bybitApiSecret) {
+        await saveApiKey({
+          exchange: 'bybit',
+          apiKey: apiSettings.bybitApiKey,
+          apiSecret: apiSettings.bybitApiSecret,
+          isTestnet: apiSettings.bybitTestnet,
+        });
+      }
+
+      // Save OKX API key if provided
+      if (apiSettings.okxApiKey && apiSettings.okxApiSecret) {
+        await saveApiKey({
+          exchange: 'okx',
+          apiKey: apiSettings.okxApiKey,
+          apiSecret: apiSettings.okxApiSecret,
+          passphrase: apiSettings.okxPassphrase,
+          isTestnet: apiSettings.okxTestnet,
+        });
+      }
+
+      setShowApiConfig(false);
+      alert('API keys saved successfully!');
+    } catch (error: any) {
+      alert(`Failed to save API keys: ${error.message}`);
+    }
   };
 
   const handleAlertsSave = () => {
@@ -143,9 +170,37 @@ export default function Settings() {
     setProfileData(prev => ({ ...prev, [field]: value }));
   };
 
-  const testApiConnection = (exchange: 'bybit' | 'okx') => {
-    // Test API connection
-    alert(`Testing ${exchange.toUpperCase()} API connection...`);
+  const testApiConnection = async (exchange: 'bybit' | 'okx') => {
+    try {
+      let formData: ApiKeyFormData;
+      
+      if (exchange === 'bybit') {
+        formData = {
+          exchange: 'bybit',
+          apiKey: apiSettings.bybitApiKey,
+          apiSecret: apiSettings.bybitApiSecret,
+          isTestnet: apiSettings.bybitTestnet,
+        };
+      } else {
+        formData = {
+          exchange: 'okx',
+          apiKey: apiSettings.okxApiKey,
+          apiSecret: apiSettings.okxApiSecret,
+          passphrase: apiSettings.okxPassphrase,
+          isTestnet: apiSettings.okxTestnet,
+        };
+      }
+
+      const result = await testConnection(formData);
+      
+      if (result.success) {
+        alert(`${exchange.toUpperCase()} API connection successful!`);
+      } else {
+        alert(`${exchange.toUpperCase()} API connection failed: ${result.message}`);
+      }
+    } catch (error: any) {
+      alert(`Failed to test ${exchange.toUpperCase()} API: ${error.message}`);
+    }
   };
 
   const handleSignOut = async () => {
@@ -201,69 +256,80 @@ export default function Settings() {
         {/* API Configuration */}
         <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">API Configuration</h3>
+            <h3 className="text-lg font-semibold text-gray-900">Exchange Connections</h3>
             <div className="flex items-center space-x-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-              <span className="text-sm text-green-600">Connected</span>
+              <div className={`w-2 h-2 rounded-full ${apiKeys.length > 0 ? 'bg-green-500' : 'bg-gray-400'}`}></div>
+              <span className={`text-sm ${apiKeys.length > 0 ? 'text-green-600' : 'text-gray-600'}`}>
+                {apiKeys.length > 0 ? `${apiKeys.length} Connected` : 'Not Connected'}
+              </span>
             </div>
           </div>
-          <p className="text-gray-500 text-sm mb-4">Configure your exchange API keys for automated trading</p>
+          <p className="text-gray-500 text-sm mb-4">Configure your exchange API keys to view balances and enable trading</p>
           
-          <div className="space-y-3">
-            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-              <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">
-                  <i className="ri-currency-line text-orange-600"></i>
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900">Bybit API</p>
-                  <p className="text-sm text-gray-500">
-                    {apiSettings.bybitApiKey ? 'Configured' : 'Not configured'}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center space-x-2">
-                {apiSettings.bybitTestnet && (
-                  <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">
-                    Testnet
-                  </span>
-                )}
-                <button
-                  onClick={() => setShowApiConfig(true)}
-                  className="text-blue-600 hover:text-blue-700 text-sm font-medium"
-                >
-                  Configure
-                </button>
-              </div>
+          {apiKeysLoading ? (
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+              <p className="text-gray-600">Loading connections...</p>
             </div>
-
-            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-              <div className="flex items-center space-x-3">
-                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                  <i className="ri-exchange-line text-blue-600"></i>
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900">OKX API</p>
-                  <p className="text-sm text-gray-500">
-                    {apiSettings.okxApiKey ? 'Configured' : 'Not configured'}
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center space-x-2">
-                {apiSettings.okxTestnet && (
-                  <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">
-                    Testnet
-                  </span>
-                )}
-                <button
-                  onClick={() => setShowApiConfig(true)}
-                  className="text-blue-600 hover:text-blue-700 text-sm font-medium"
-                >
-                  Configure
-                </button>
-              </div>
+          ) : apiKeys.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <i className="ri-exchange-line text-4xl mb-2"></i>
+              <p>No exchange connections found</p>
+              <p className="text-sm">Connect your exchange API keys to get started</p>
+              <button
+                onClick={() => setShowApiConfig(true)}
+                className="mt-4 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg transition-colors"
+              >
+                <i className="ri-add-line mr-2"></i>
+                Connect Exchange
+              </button>
             </div>
-          </div>
+          ) : (
+            <div className="space-y-3">
+              {apiKeys.map((apiKey) => (
+                <div key={apiKey.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div className="flex items-center space-x-3">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                      apiKey.exchange === 'bybit' ? 'bg-orange-100' : 'bg-blue-100'
+                    }`}>
+                      <i className={`${apiKey.exchange === 'bybit' ? 'ri-currency-line text-orange-600' : 'ri-exchange-line text-blue-600'}`}></i>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900">{apiKey.exchange.toUpperCase()} API</p>
+                      <p className="text-sm text-gray-500">
+                        {apiKey.isActive ? 'Active' : 'Inactive'} • {apiKey.isTestnet ? 'Testnet' : 'Live'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() => toggleApiKey(apiKey.id, !apiKey.isActive)}
+                      className={`px-3 py-1 rounded-full text-xs font-medium ${
+                        apiKey.isActive 
+                          ? 'bg-green-100 text-green-800 hover:bg-green-200' 
+                          : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                      }`}
+                    >
+                      {apiKey.isActive ? 'Active' : 'Inactive'}
+                    </button>
+                    <button
+                      onClick={() => deleteApiKey(apiKey.id)}
+                      className="text-red-600 hover:text-red-700 text-sm font-medium"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ))}
+              <button
+                onClick={() => setShowApiConfig(true)}
+                className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 px-4 rounded-lg transition-colors"
+              >
+                <i className="ri-add-line mr-2"></i>
+                Add Exchange Connection
+              </button>
+            </div>
+          )}
         </Card>
 
         {/* Risk Management */}
