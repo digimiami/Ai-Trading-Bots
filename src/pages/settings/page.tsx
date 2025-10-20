@@ -8,6 +8,7 @@ import Button from '../../components/base/Button';
 import Card from '../../components/base/Card';
 import { useAuth } from '../../hooks/useAuth';
 import { useApiKeys, ApiKeyFormData } from '../../hooks/useApiKeys';
+import { supabase } from '../../lib/supabase';
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -131,8 +132,57 @@ export default function Settings() {
     setShowEditProfile(false);
   };
 
+  const ensureUserExists = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return false;
+
+      // Check if user exists in users table
+      const { data: existingUser, error: userCheckError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', user.id)
+        .single();
+
+      if (userCheckError && userCheckError.code === 'PGRST116') {
+        // User doesn't exist, create them
+        const { error: createUserError } = await supabase
+          .from('users')
+          .insert({
+            id: user.id,
+            email: user.email,
+            role: 'user',
+            name: user.user_metadata?.name || user.email?.split('@')[0] || 'User',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+
+        if (createUserError) {
+          console.error('Error creating user:', createUserError);
+          return false;
+        }
+        console.log('Created user:', user.id);
+        return true;
+      } else if (userCheckError) {
+        console.error('Error checking user:', userCheckError);
+        return false;
+      }
+      return true; // User already exists
+    } catch (error) {
+      console.error('Error ensuring user exists:', error);
+      return false;
+    }
+  };
+
   const handleApiSave = async () => {
     try {
+      // Ensure user exists before saving API keys
+      const userExists = await ensureUserExists();
+      if (!userExists) {
+        alert('Failed to create user account. Please try again.');
+        return;
+      }
+
       // Save Bybit API key if provided
       if (apiSettings.bybitApiKey && apiSettings.bybitApiSecret) {
         await saveApiKey({
