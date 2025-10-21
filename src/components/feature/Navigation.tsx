@@ -8,8 +8,8 @@ export default function Navigation() {
   const navItems = [
     { path: '/', icon: 'ri-home-line', label: 'Home' },
     { path: '/bots', icon: 'ri-robot-line', label: 'Bots' },
+    { path: '/bot-activity', icon: 'ri-file-list-line', label: 'Activity' },
     { path: '/trades', icon: 'ri-exchange-line', label: 'Trades' },
-    { path: '/reports', icon: 'ri-bar-chart-line', label: 'Reports' },
     { path: '/settings', icon: 'ri-settings-line', label: 'Settings' }
   ];
 

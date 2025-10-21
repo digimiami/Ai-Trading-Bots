@@ -20,8 +20,8 @@ serve(async (req) => {
     let marketData;
     
     try {
-      switch (exchange.toLowerCase()) {
-        case 'bybit':
+    switch (exchange.toLowerCase()) {
+      case 'bybit':
           // Fetch real data from Bybit API
           const bybitResponse = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${symbol}`);
           const bybitData = await bybitResponse.json();
@@ -43,7 +43,7 @@ serve(async (req) => {
           }
           break;
           
-        case 'okx':
+      case 'okx':
           // Fetch real data from OKX API
           const okxResponse = await fetch(`https://www.okx.com/api/v5/market/ticker?instId=${symbol}`);
           const okxData = await okxResponse.json();
@@ -65,12 +65,12 @@ serve(async (req) => {
           }
           break;
           
-        default:
+      default:
           throw new Error(`Unsupported exchange: ${exchange}`);
-      }
-      
+    }
+
       return new Response(JSON.stringify(marketData), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
       
     } catch (apiError) {

@@ -328,7 +328,10 @@ export default function Onboarding() {
         {currentStep < steps.length - 1 && (
           <div className="text-center mt-4">
             <button
-              onClick={() => navigate('/')}
+              onClick={() => {
+                localStorage.setItem('onboarding_completed', 'true');
+                navigate('/');
+              }}
               className="text-gray-500 text-sm hover:text-gray-700 transition-colors"
             >
               Skip setup

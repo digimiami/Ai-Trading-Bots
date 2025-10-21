@@ -186,13 +186,16 @@ serve(async (req) => {
 
         const { data: bot, error } = await supabaseClient
           .from('trading_bots')
-          .update({ status: 'active' })
+          .update({ status: 'running' })
           .eq('id', id)
           .eq('user_id', user.id)
           .select()
           .single()
 
         if (error) throw error
+
+        // Log bot start activity
+        console.log(`Bot ${id} started by user ${user.id}`)
 
         const transformedBot = {
           id: bot.id,

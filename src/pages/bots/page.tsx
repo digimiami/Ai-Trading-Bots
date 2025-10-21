@@ -7,19 +7,54 @@ import Card from '../../components/base/Card';
 import { TradingBot } from '../../types/trading';
 import { useNavigate } from 'react-router-dom';
 import { useBots } from '../../hooks/useBots';
+import { useBotActivity } from '../../hooks/useBotActivity';
+import { useBotExecutor } from '../../hooks/useBotExecutor';
 
 export default function BotsPage() {
   const navigate = useNavigate();
-  const { bots, loading, startBot, stopBot, updateBot } = useBots();
-  const [filter, setFilter] = useState<'all' | 'active' | 'paused' | 'stopped'>('all');
+  const { bots, loading, startBot, stopBot, updateBot, deleteBot } = useBots();
+  const { activities, addLog } = useBotActivity(bots);
+  const { isExecuting, lastExecution, timeSync, executeBot, executeAllBots } = useBotExecutor();
+  const [filter, setFilter] = useState<'all' | 'running' | 'paused' | 'stopped'>('all');
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [expandedBot, setExpandedBot] = useState<string | null>(null);
 
   const filteredBots = bots.filter(bot => 
     filter === 'all' || bot.status === filter
   );
 
+  const getBotActivity = (botId: string) => {
+    return activities.find(activity => activity.botId === botId);
+  };
+
+  const getLogLevelColor = (level: string) => {
+    switch (level) {
+      case 'info': return 'text-blue-600 bg-blue-50';
+      case 'warning': return 'text-yellow-600 bg-yellow-50';
+      case 'error': return 'text-red-600 bg-red-50';
+      case 'success': return 'text-green-600 bg-green-50';
+      default: return 'text-gray-600 bg-gray-50';
+    }
+  };
+
+  const getCategoryIcon = (category: string) => {
+    switch (category) {
+      case 'market': return 'ri-line-chart-line';
+      case 'trade': return 'ri-exchange-line';
+      case 'strategy': return 'ri-brain-line';
+      case 'system': return 'ri-settings-line';
+      case 'error': return 'ri-error-warning-line';
+      default: return 'ri-information-line';
+    }
+  };
+
+  const formatTime = (timestamp: string) => {
+    return new Date(timestamp).toLocaleTimeString();
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'active': return 'bg-green-100 text-green-800';
+      case 'running': return 'bg-green-100 text-green-800';
       case 'paused': return 'bg-yellow-100 text-yellow-800';
       case 'stopped': return 'bg-red-100 text-red-800';
       default: return 'bg-gray-100 text-gray-800';
@@ -39,13 +74,63 @@ export default function BotsPage() {
     try {
       if (action === 'start') {
         await startBot(botId);
+        await addLog(botId, {
+          level: 'success',
+          category: 'system',
+          message: 'Bot started successfully',
+          details: { action: 'start', timestamp: new Date().toISOString() }
+        });
       } else if (action === 'stop') {
         await stopBot(botId);
+        await addLog(botId, {
+          level: 'info',
+          category: 'system',
+          message: 'Bot stopped by user',
+          details: { action: 'stop', timestamp: new Date().toISOString() }
+        });
       } else if (action === 'pause') {
         await updateBot(botId, { status: 'paused' });
+        await addLog(botId, {
+          level: 'warning',
+          category: 'system',
+          message: 'Bot paused by user',
+          details: { action: 'pause', timestamp: new Date().toISOString() }
+        });
       }
     } catch (error) {
       console.error('Failed to update bot:', error);
+      await addLog(botId, {
+        level: 'error',
+        category: 'error',
+        message: `Failed to ${action} bot: ${error}`,
+        details: { action, error: error instanceof Error ? error.message : String(error) }
+      });
+    }
+  };
+
+  const handleStartAll = async () => {
+    setBulkLoading(true);
+    try {
+      const stoppedBots = filteredBots.filter(bot => bot.status === 'stopped' || bot.status === 'paused');
+      await Promise.all(stoppedBots.map(bot => startBot(bot.id)));
+    } catch (error) {
+      console.error('Failed to start all bots:', error);
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    if (!confirm('Are you sure you want to delete all bots? This action cannot be undone.')) {
+      return;
+    }
+    setBulkLoading(true);
+    try {
+      await Promise.all(filteredBots.map(bot => deleteBot(bot.id)));
+    } catch (error) {
+      console.error('Failed to delete all bots:', error);
+    } finally {
+      setBulkLoading(false);
     }
   };
 
@@ -54,22 +139,78 @@ export default function BotsPage() {
       <Header 
         title="Trading Bots"
         action={
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => navigate('/create-bot')}
-          >
-            <i className="ri-add-line mr-1"></i>
-            New Bot
-          </Button>
+          <div className="flex space-x-2">
+            <Button
+              variant="warning"
+              size="sm"
+              onClick={executeAllBots}
+              disabled={isExecuting || filteredBots.filter(bot => bot.status === 'running').length === 0}
+            >
+              <i className="ri-play-circle-line mr-1"></i>
+              Execute All
+            </Button>
+            <Button
+              variant="success"
+              size="sm"
+              onClick={handleStartAll}
+              disabled={bulkLoading || filteredBots.filter(bot => bot.status === 'stopped' || bot.status === 'paused').length === 0}
+            >
+              <i className="ri-play-line mr-1"></i>
+              Start All
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={handleDeleteAll}
+              disabled={bulkLoading || filteredBots.length === 0}
+            >
+              <i className="ri-delete-bin-line mr-1"></i>
+              Delete All
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => navigate('/create-bot')}
+            >
+              <i className="ri-add-line mr-1"></i>
+              New Bot
+            </Button>
+          </div>
         }
       />
       
       <div className="pt-20 pb-20 px-4">
         <div className="max-w-6xl mx-auto space-y-4">
+          {/* Execution Status */}
+          <Card className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-2">
+                  <div className={`w-3 h-3 rounded-full ${isExecuting ? 'bg-yellow-500 animate-pulse' : 'bg-green-500'}`}></div>
+                  <span className="text-sm text-gray-600">
+                    {isExecuting ? 'Executing...' : 'Ready'}
+                  </span>
+                </div>
+                {lastExecution && (
+                  <div className="text-xs text-gray-500">
+                    Last execution: {new Date(lastExecution).toLocaleTimeString()}
+                  </div>
+                )}
+                {timeSync && (
+                  <div className="text-xs text-gray-500">
+                    Time sync: {timeSync.offset > 0 ? '+' : ''}{timeSync.offset}ms
+                  </div>
+                )}
+              </div>
+              <div className="text-xs text-gray-500">
+                Auto-execution every 5 minutes
+              </div>
+            </div>
+          </Card>
+
           {/* Filter Tabs */}
           <div className="flex space-x-2 overflow-x-auto">
-            {['all', 'active', 'paused', 'stopped'].map((status) => (
+            {['all', 'running', 'paused', 'stopped'].map((status) => (
               <button
                 key={status}
                 onClick={() => setFilter(status as any)}
@@ -149,18 +290,116 @@ export default function BotsPage() {
                   </div>
                 </div>
 
+                {/* Bot Activity Logs */}
+                {(() => {
+                  const activity = getBotActivity(bot.id);
+                  const recentLogs = activity?.logs.slice(0, 3) || [];
+                  
+                  return (
+                    <div className="pt-4 border-t border-gray-100">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="text-sm font-medium text-gray-700">Recent Activity</h4>
+                        <button
+                          onClick={() => setExpandedBot(expandedBot === bot.id ? null : bot.id)}
+                          className="text-xs text-blue-600 hover:text-blue-800"
+                        >
+                          {expandedBot === bot.id ? 'Hide' : 'Show All'}
+                        </button>
+                      </div>
+                      
+                      {/* Activity Stats */}
+                      {activity && (
+                        <div className="flex space-x-4 mb-3 text-xs">
+                          <span className="text-green-600">✓ {activity.successCount}</span>
+                          <span className="text-yellow-600">⚠ {activity.logs.filter(l => l.level === 'warning').length}</span>
+                          <span className="text-red-600">✗ {activity.errorCount}</span>
+                          <span className="text-gray-500">📊 {activity.logs.length} total</span>
+                        </div>
+                      )}
+
+                      {/* Recent Logs */}
+                      <div className="space-y-2">
+                        {recentLogs.length === 0 ? (
+                          <div className="text-center py-4 text-gray-500 text-sm">
+                            <i className="ri-file-list-line text-lg mb-1"></i>
+                            <p>No activity logs yet</p>
+                          </div>
+                        ) : (
+                          recentLogs.map((log) => (
+                            <div key={log.id} className="flex items-start space-x-2 p-2 bg-gray-50 rounded text-xs">
+                              <div className={`w-5 h-5 rounded-full flex items-center justify-center ${getLogLevelColor(log.level)}`}>
+                                <i className={`${getCategoryIcon(log.category)} text-xs`}></i>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between">
+                                  <span className={`px-1 py-0.5 rounded text-xs font-medium ${getLogLevelColor(log.level)}`}>
+                                    {log.level}
+                                  </span>
+                                  <span className="text-gray-500">{formatTime(log.timestamp)}</span>
+                                </div>
+                                <p className="text-gray-700 mt-1 truncate">{log.message}</p>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      {/* Expanded Logs */}
+                      {expandedBot === bot.id && activity && activity.logs.length > 3 && (
+                        <div className="mt-3 space-y-2 max-h-48 overflow-y-auto">
+                          {activity.logs.slice(3).map((log) => (
+                            <div key={log.id} className="flex items-start space-x-2 p-2 bg-gray-50 rounded text-xs">
+                              <div className={`w-5 h-5 rounded-full flex items-center justify-center ${getLogLevelColor(log.level)}`}>
+                                <i className={`${getCategoryIcon(log.category)} text-xs`}></i>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between">
+                                  <span className={`px-1 py-0.5 rounded text-xs font-medium ${getLogLevelColor(log.level)}`}>
+                                    {log.level}
+                                  </span>
+                                  <span className="text-gray-500">{formatTime(log.timestamp)}</span>
+                                </div>
+                                <p className="text-gray-700 mt-1">{log.message}</p>
+                                {log.details && (
+                                  <details className="mt-1">
+                                    <summary className="cursor-pointer text-gray-500 hover:text-gray-700">Details</summary>
+                                    <pre className="mt-1 p-1 bg-white rounded border text-xs overflow-x-auto">
+                                      {JSON.stringify(log.details, null, 2)}
+                                    </pre>
+                                  </details>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {/* Bot Actions */}
                 <div className="flex space-x-2 pt-4 border-t border-gray-100">
-                  {bot.status === 'active' ? (
-                    <Button 
-                      variant="secondary" 
-                      size="sm" 
-                      className="flex-1"
-                      onClick={() => handleBotAction(bot.id, 'pause')}
-                    >
-                      <i className="ri-pause-line mr-1"></i>
-                      Pause
-                    </Button>
+                  {bot.status === 'running' ? (
+                    <>
+                      <Button 
+                        variant="warning" 
+                        size="sm" 
+                        className="flex-1"
+                        onClick={() => executeBot(bot.id)}
+                        disabled={isExecuting}
+                      >
+                        <i className="ri-play-circle-line mr-1"></i>
+                        Execute
+                      </Button>
+                      <Button 
+                        variant="secondary" 
+                        size="sm" 
+                        onClick={() => handleBotAction(bot.id, 'pause')}
+                      >
+                        <i className="ri-pause-line mr-1"></i>
+                        Pause
+                      </Button>
+                    </>
                   ) : (
                     <Button 
                       variant="success" 
@@ -182,8 +421,9 @@ export default function BotsPage() {
                   <Button 
                     variant="secondary" 
                     size="sm"
+                    onClick={() => navigate('/bot-activity')}
                   >
-                    <i className="ri-settings-line"></i>
+                    <i className="ri-file-list-line"></i>
                   </Button>
                 </div>
               </Card>

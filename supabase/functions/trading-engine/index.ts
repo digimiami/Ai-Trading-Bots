@@ -52,10 +52,24 @@ serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
       }
+      
+      // Default GET response
+      return new Response(JSON.stringify({ message: 'Trading Engine API' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
     }
 
     // Handle POST requests for bot actions
-    const body = await req.json()
+    let body;
+    try {
+      body = await req.json()
+    } catch (error) {
+      return new Response(JSON.stringify({ error: 'Invalid JSON in request body' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
     const { action, botId, tradeData } = body
 
     switch (action) {

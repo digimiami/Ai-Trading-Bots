@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Header from '../../components/feature/Header';
 import Navigation from '../../components/feature/Navigation';
 import Card from '../../components/base/Card';
+import Button from '../../components/base/Button';
 import { Trade } from '../../types/trading';
 import { useTrades } from '../../hooks/useTrades';
 import { useBots } from '../../hooks/useBots';
@@ -50,6 +51,14 @@ export default function Trades() {
     );
   };
 
+  const handleReset = () => {
+    if (confirm('Are you sure you want to reset all trade data? This will clear all trade history.')) {
+      // Clear trades from localStorage or call API to clear
+      localStorage.removeItem('trades');
+      fetchTrades(); // Refresh the trades
+    }
+  };
+
   const getBotName = (botId: string) => {
     const bot = bots.find(b => b.id === botId);
     return bot?.name || 'Unknown Bot';
@@ -57,7 +66,20 @@ export default function Trades() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Header title="Trades" subtitle="Monitor your trading activity" />
+      <Header 
+        title="Trades" 
+        subtitle="Monitor your trading activity"
+        rightAction={
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={handleReset}
+          >
+            <i className="ri-refresh-line mr-1"></i>
+            Reset
+          </Button>
+        }
+      />
       
       <div className="pt-20 pb-20 px-4 space-y-4">
         {/* Filters */}

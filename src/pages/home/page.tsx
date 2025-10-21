@@ -11,12 +11,15 @@ import MarketOverview from './components/MarketOverview';
 import { useAuth } from '../../hooks/useAuth';
 import { useBots } from '../../hooks/useBots';
 import { useMarketData } from '../../hooks/useMarketData';
+import { useExchangeBalance } from '../../hooks/useExchangeBalance';
+import ExchangeBalanceDisplay from './components/ExchangeBalance';
 
 export default function Home() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { bots, loading: botsLoading } = useBots();
   const { marketData, loading: marketLoading } = useMarketData();
+  const { balances, loading: balancesLoading } = useExchangeBalance();
   const [showWelcome, setShowWelcome] = useState(false);
 
   useEffect(() => {
@@ -39,18 +42,37 @@ export default function Home() {
     navigate('/onboarding');
   };
 
+  const handleReset = () => {
+    if (confirm('Are you sure you want to reset all data? This will clear all bots, trades, and settings.')) {
+      // Clear localStorage
+      localStorage.clear();
+      // Reload the page
+      window.location.reload();
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header 
         title="Pablo" 
         subtitle="AI Trading Platform"
         rightAction={
-          <button
-            onClick={() => navigate('/help')}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <i className="ri-notification-line text-xl text-gray-600"></i>
-          </button>
+          <div className="flex space-x-2">
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={handleReset}
+            >
+              <i className="ri-refresh-line mr-1"></i>
+              Reset
+            </Button>
+            <button
+              onClick={() => navigate('/help')}
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <i className="ri-notification-line text-xl text-gray-600"></i>
+            </button>
+          </div>
         }
       />
       
@@ -124,6 +146,9 @@ export default function Home() {
 
         {/* Active Bots */}
         <ActiveBots />
+
+        {/* Exchange Balances */}
+        <ExchangeBalanceDisplay balances={balances} />
 
         {/* Market Overview */}
         <MarketOverview />

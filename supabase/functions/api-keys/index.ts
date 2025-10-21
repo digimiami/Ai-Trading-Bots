@@ -4,6 +4,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
 }
 
 // Simple encryption/decryption (in production, use proper encryption)
@@ -19,43 +20,292 @@ function decrypt(encryptedText: string): string {
 async function fetchBybitBalance(apiKey: string, apiSecret: string, isTestnet: boolean) {
   const baseUrl = isTestnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com'
   
-  // For demo purposes, return mock data
-  // In production, implement actual Bybit API calls with proper authentication
-  return {
-    exchange: 'bybit',
-    totalBalance: 1250.75,
-    availableBalance: 1100.25,
-    lockedBalance: 150.50,
-    assets: [
-      { asset: 'USDT', free: 1100.25, locked: 150.50, total: 1250.75 },
-      { asset: 'BTC', free: 0.05, locked: 0.01, total: 0.06 },
-      { asset: 'ETH', free: 2.5, locked: 0.5, total: 3.0 },
-      { asset: 'BNB', free: 10.0, locked: 0.0, total: 10.0 }
-    ],
-    lastUpdated: new Date().toISOString(),
-    status: 'connected'
+  try {
+    const timestamp = Date.now().toString()
+    const recvWindow = '5000'
+    
+    // Bybit V5 API signature format - CORRECTED approach
+    // Step 1: Create parameters object with ALL parameters including api_key
+    const params = {
+      api_key: apiKey,
+      accountType: 'UNIFIED',
+      recv_window: recvWindow,
+      timestamp: timestamp
+    }
+    
+    // Step 2: Sort parameters alphabetically (Bybit requirement)
+    const sortedParams = Object.keys(params)
+      .sort()
+      .map(key => `${key}=${params[key]}`)
+      .join('&')
+    
+    console.log('=== BYBIT SIGNATURE DEBUG (CORRECTED) ===')
+    console.log('1. Original params:', params)
+    console.log('2. Sorted params string:', sortedParams)
+    console.log('3. API Key (first 10 chars):', apiKey.substring(0, 10) + '...')
+    console.log('4. Secret (first 10 chars):', apiSecret.substring(0, 10) + '...')
+    
+    // Step 3: Create signature using the sorted parameter string
+    const signature = await createBybitSignature(sortedParams, apiSecret)
+    
+    console.log('5. Generated signature:', signature)
+    
+    // Step 4: Build final URL with signature
+    const finalUrl = `${baseUrl}/v5/account/wallet-balance?${sortedParams}&sign=${signature}`
+    
+    console.log('6. Final URL:', finalUrl)
+    console.log('=== END DEBUG ===')
+    
+    const response = await fetch(finalUrl, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    })
+    
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('Bybit API HTTP Error:', response.status, errorText)
+      throw new Error(`Bybit API error: ${response.status} - ${errorText}`)
+    }
+    
+    const data = await response.json()
+    console.log('Bybit API Response:', data)
+    
+    if (data.retCode !== 0) {
+      throw new Error(`Bybit API error: ${data.retMsg}`)
+    }
+    
+    const account = data.result?.list?.[0]
+    if (!account) {
+      return {
+        exchange: 'bybit',
+        totalBalance: 0,
+        availableBalance: 0,
+        lockedBalance: 0,
+        assets: [],
+        lastUpdated: new Date().toISOString(),
+        status: 'connected'
+      }
+    }
+    
+    let totalBalance = 0
+    let availableBalance = 0
+    let lockedBalance = 0
+    const assets: any[] = []
+    
+    // Process coin balances
+    for (const coin of account.coin || []) {
+      const free = parseFloat(coin.free || '0')
+      const locked = parseFloat(coin.locked || '0')
+      const total = free + locked
+      
+      totalBalance += total
+      availableBalance += free
+      lockedBalance += locked
+      
+      assets.push({
+        asset: coin.coin,
+        free,
+        locked,
+        total
+      })
+    }
+    
+    return {
+      exchange: 'bybit',
+      totalBalance,
+      availableBalance,
+      lockedBalance,
+      assets,
+      lastUpdated: new Date().toISOString(),
+      status: 'connected'
+    }
+  } catch (error) {
+    console.error('Bybit balance fetch error:', error)
+    return {
+      exchange: 'bybit',
+      totalBalance: 0,
+      availableBalance: 0,
+      lockedBalance: 0,
+      assets: [],
+      lastUpdated: new Date().toISOString(),
+      status: 'error',
+      error: error.message
+    }
   }
 }
 
 async function fetchOKXBalance(apiKey: string, apiSecret: string, passphrase: string, isTestnet: boolean) {
   const baseUrl = isTestnet ? 'https://www.okx.com' : 'https://www.okx.com'
   
-  // For demo purposes, return mock data
-  // In production, implement actual OKX API calls with proper authentication
-  return {
-    exchange: 'okx',
-    totalBalance: 2100.30,
-    availableBalance: 1950.80,
-    lockedBalance: 149.50,
-    assets: [
-      { asset: 'USDT', free: 1950.80, locked: 149.50, total: 2100.30 },
-      { asset: 'BTC', free: 0.08, locked: 0.02, total: 0.10 },
-      { asset: 'ETH', free: 3.2, locked: 0.8, total: 4.0 },
-      { asset: 'SOL', free: 25.0, locked: 5.0, total: 30.0 }
-    ],
-    lastUpdated: new Date().toISOString(),
-    status: 'connected'
+  try {
+    // OKX requires timestamp in ISO format with milliseconds
+    const timestamp = new Date().toISOString()
+    const method = 'GET'
+    const requestPath = '/api/v5/account/balance'
+    const body = ''
+    
+    console.log('=== OKX SIGNATURE DEBUG ===')
+    console.log('1. Timestamp:', timestamp)
+    console.log('2. Method:', method)
+    console.log('3. Request Path:', requestPath)
+    console.log('4. Body:', body)
+    console.log('5. API Key (first 10 chars):', apiKey.substring(0, 10) + '...')
+    console.log('6. Secret (first 10 chars):', apiSecret.substring(0, 10) + '...')
+    console.log('7. Passphrase (first 10 chars):', passphrase.substring(0, 10) + '...')
+    
+    // Create signature
+    const signature = await createOKXSignature(timestamp, method, requestPath, body, apiSecret)
+    
+    console.log('8. Generated signature:', signature)
+    console.log('9. Full URL:', `${baseUrl}${requestPath}`)
+    console.log('=== END OKX DEBUG ===')
+    
+    const response = await fetch(`${baseUrl}${requestPath}`, {
+      method,
+      headers: {
+        'OK-ACCESS-KEY': apiKey,
+        'OK-ACCESS-SIGN': signature,
+        'OK-ACCESS-TIMESTAMP': timestamp,
+        'OK-ACCESS-PASSPHRASE': passphrase,
+        'Content-Type': 'application/json'
+      }
+    })
+    
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('OKX API HTTP Error:', response.status, errorText)
+      throw new Error(`OKX API error: ${response.status} - ${errorText}`)
+    }
+    
+    const data = await response.json()
+    console.log('OKX API Response:', data)
+    
+    if (data.code !== '0') {
+      throw new Error(`OKX API error: ${data.msg}`)
+    }
+    
+    const account = data.data?.[0]
+    if (!account) {
+      return {
+        exchange: 'okx',
+        totalBalance: 0,
+        availableBalance: 0,
+        lockedBalance: 0,
+        assets: [],
+        lastUpdated: new Date().toISOString(),
+        status: 'connected'
+      }
+    }
+    
+    let totalBalance = 0
+    let availableBalance = 0
+    let lockedBalance = 0
+    const assets: any[] = []
+    
+    // Process coin balances
+    for (const coin of account.details || []) {
+      const free = parseFloat(coin.availBal || '0')
+      const locked = parseFloat(coin.frozenBal || '0')
+      const total = free + locked
+      
+      totalBalance += total
+      availableBalance += free
+      lockedBalance += locked
+      
+      assets.push({
+        asset: coin.ccy,
+        free,
+        locked,
+        total
+      })
+    }
+    
+    return {
+      exchange: 'okx',
+      totalBalance,
+      availableBalance,
+      lockedBalance,
+      assets,
+      lastUpdated: new Date().toISOString(),
+      status: 'connected'
+    }
+  } catch (error) {
+    console.error('OKX balance fetch error:', error)
+    return {
+      exchange: 'okx',
+      totalBalance: 0,
+      availableBalance: 0,
+      lockedBalance: 0,
+      assets: [],
+      lastUpdated: new Date().toISOString(),
+      status: 'error',
+      error: error.message
+    }
   }
+}
+
+// Helper function to create Bybit signature
+async function createBybitSignature(params: string, secret: string): Promise<string> {
+  console.log('Creating signature for params:', params)
+  console.log('Using secret (first 10 chars):', secret.substring(0, 10) + '...')
+  
+  // Bybit expects HMAC-SHA256 signature in lowercase hex format
+  const encoder = new TextEncoder();
+  const keyData = encoder.encode(secret);
+  const messageData = encoder.encode(params);
+  
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    keyData,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  
+  const signature = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+  const hashArray = Array.from(new Uint8Array(signature));
+  
+  // Convert to lowercase hex string as required by Bybit
+  const hexSignature = hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toLowerCase();
+  
+  console.log('Generated signature:', hexSignature)
+  
+  return hexSignature;
+}
+
+// Helper function to create OKX signature
+async function createOKXSignature(timestamp: string, method: string, requestPath: string, body: string, secret: string): Promise<string> {
+  const message = timestamp + method + requestPath + body
+  
+  console.log('OKX Signature Debug:')
+  console.log('- Timestamp:', timestamp)
+  console.log('- Method:', method)
+  console.log('- Request Path:', requestPath)
+  console.log('- Body:', body)
+  console.log('- Message to sign:', message)
+  console.log('- Secret (first 10 chars):', secret.substring(0, 10) + '...')
+  
+  const encoder = new TextEncoder()
+  const keyData = encoder.encode(secret)
+  const messageData = encoder.encode(message)
+  
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    keyData,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  )
+  
+  const signature = await crypto.subtle.sign('HMAC', cryptoKey, messageData)
+  const hashArray = Array.from(new Uint8Array(signature))
+  const base64Signature = btoa(String.fromCharCode(...hashArray))
+  
+  console.log('- Generated signature:', base64Signature)
+  
+  return base64Signature
 }
 
 serve(async (req) => {
