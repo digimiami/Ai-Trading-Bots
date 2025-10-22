@@ -476,15 +476,20 @@ class BotExecutor {
       // Bybit V5 API requires capitalized side: "Buy" or "Sell"
       const capitalizedSide = side.charAt(0).toUpperCase() + side.slice(1).toLowerCase();
       
-      // Calculate Stop Loss and Take Profit for risk management
-      // SL: 2% from entry, TP: 3% from entry
-      const stopLossPrice = capitalizedSide === 'Buy' 
-        ? parseFloat((price * 0.98).toFixed(2))  // 2% below for Buy
-        : parseFloat((price * 1.02).toFixed(2)); // 2% above for Sell
-      
-      const takeProfitPrice = capitalizedSide === 'Buy'
-        ? parseFloat((price * 1.03).toFixed(2))  // 3% above for Buy
-        : parseFloat((price * 0.97).toFixed(2)); // 3% below for Sell
+      // Fetch current market price for accurate SL/TP calculation
+      let currentMarketPrice = price;
+      if (!currentMarketPrice || currentMarketPrice === 0) {
+        try {
+          const tradingType = bybitCategory === 'linear' ? 'linear' : 'spot';
+          const priceResponse = await fetch(`https://api.bybit.com/v5/market/tickers?category=${tradingType}&symbol=${symbol}`);
+          const priceData = await priceResponse.json();
+          currentMarketPrice = parseFloat(priceData.result?.list?.[0]?.lastPrice || '0');
+          console.log(`📊 Fetched current price for ${symbol}: ${currentMarketPrice}`);
+        } catch (error) {
+          console.warn('Failed to fetch current price, using provided price:', price);
+          currentMarketPrice = price;
+        }
+      }
       
       // Order parameters for the request BODY (and the signature string)
       const requestBody: any = {
@@ -495,11 +500,23 @@ class BotExecutor {
         qty: formattedQty,
       };
       
-      // Add SL/TP for futures (linear) trading only
+      // Add SL/TP for futures (linear) trading only if price is valid
       // Spot trading doesn't support SL/TP in the same way
-      if (bybitCategory === 'linear') {
-        requestBody.stopLoss = stopLossPrice.toString();
-        requestBody.takeProfit = takeProfitPrice.toString();
+      if (bybitCategory === 'linear' && currentMarketPrice > 0) {
+        // Calculate Stop Loss and Take Profit for risk management
+        // SL: 2% from entry, TP: 3% from entry
+        const stopLossPrice = capitalizedSide === 'Buy' 
+          ? (currentMarketPrice * 0.98).toFixed(2)  // 2% below for Buy
+          : (currentMarketPrice * 1.02).toFixed(2); // 2% above for Sell
+        
+        const takeProfitPrice = capitalizedSide === 'Buy'
+          ? (currentMarketPrice * 1.03).toFixed(2)  // 3% above for Buy
+          : (currentMarketPrice * 0.97).toFixed(2); // 3% below for Sell
+        
+        requestBody.stopLoss = stopLossPrice;
+        requestBody.takeProfit = takeProfitPrice;
+        
+        console.log(`💡 SL/TP for ${symbol}: Entry ~${currentMarketPrice}, SL=${stopLossPrice}, TP=${takeProfitPrice}`);
       }
       
       // V5 POST Signature Rule: timestamp + apiKey + recv_window + JSON.stringify(requestBody)
@@ -514,9 +531,10 @@ class BotExecutor {
       console.log('Symbol:', symbol);
       console.log('Side:', capitalizedSide, '(original:', side + ')');
       console.log('Quantity:', formattedQty);
-      if (bybitCategory === 'linear') {
-        console.log('Stop Loss:', stopLossPrice);
-        console.log('Take Profit:', takeProfitPrice);
+      console.log('Price:', currentMarketPrice);
+      if (bybitCategory === 'linear' && requestBody.stopLoss) {
+        console.log('Stop Loss:', requestBody.stopLoss);
+        console.log('Take Profit:', requestBody.takeProfit);
       }
       console.log('=== END DEBUG ===');
       
