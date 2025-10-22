@@ -120,6 +120,18 @@ export default function BotsPage() {
     }
   };
 
+  const handleStopAll = async () => {
+    setBulkLoading(true);
+    try {
+      const runningBots = filteredBots.filter(bot => bot.status === 'running' || bot.status === 'paused');
+      await Promise.all(runningBots.map(bot => stopBot(bot.id)));
+    } catch (error) {
+      console.error('Failed to stop all bots:', error);
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
   const handleDeleteAll = async () => {
     if (!confirm('Are you sure you want to delete all bots? This action cannot be undone.')) {
       return;
@@ -157,6 +169,15 @@ export default function BotsPage() {
             >
               <i className="ri-play-line mr-1"></i>
               Start All
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleStopAll}
+              disabled={bulkLoading || filteredBots.filter(bot => bot.status === 'running' || bot.status === 'paused').length === 0}
+            >
+              <i className="ri-stop-line mr-1"></i>
+              Stop All
             </Button>
             <Button
               variant="danger"
