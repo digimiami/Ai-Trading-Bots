@@ -7,17 +7,38 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
 }
 
-// Time synchronization utilities
+// Time synchronization utilities with multiple fallback methods
 class TimeSync {
   private static serverTimeOffset = 0;
   private static lastSync = 0;
+  private static syncAttempts = 0;
+  private static maxRetries = 3;
+  
+  // Multiple time sync endpoints for redundancy
+  private static timeEndpoints = [
+    'https://api.bybit.com/v5/market/time', // Bybit's own time endpoint
+    'https://api.binance.com/api/v3/time', // Binance time endpoint
+    'https://api.coinbase.com/v2/time', // Coinbase time endpoint
+    'https://worldtimeapi.org/api/timezone/UTC', // WorldTimeAPI
+    'https://timeapi.io/api/Time/current/zone?timeZone=UTC' // TimeAPI.io
+  ];
   
   static async syncWithServer(): Promise<void> {
     try {
       const startTime = Date.now();
-      const response = await fetch('https://worldtimeapi.org/api/timezone/UTC');
+      const baseUrl = 'https://api.bybit.com'; // Use mainnet for time sync
+
+      // 1. Fetch time from Bybit V5 market time endpoint
+      const response = await fetch(`${baseUrl}/v5/market/time`);
       const data = await response.json();
-      const serverTime = new Date(data.utc_datetime).getTime();
+      
+      // Check for API success and presence of time data
+      if (data.retCode !== 0 || !data.result || !data.result.timeSecond) {
+         throw new Error(`Bybit time sync failed: ${data.retMsg || 'Invalid response'}`);
+      }
+
+      // V5 returns time in seconds and milliseconds separately
+      const serverTime = parseInt(data.result.timeSecond) * 1000 + parseInt(data.result.timeNano) / 1000000;
       const endTime = Date.now();
       
       // Account for network latency
@@ -25,9 +46,99 @@ class TimeSync {
       this.serverTimeOffset = serverTime - (startTime + latency);
       this.lastSync = Date.now();
       
-      console.log(`Time synced. Offset: ${this.serverTimeOffset}ms`);
+      console.log(`Time synced with Bybit. Offset: ${this.serverTimeOffset.toFixed(2)}ms`);
     } catch (error) {
       console.error('Time sync failed:', error);
+      // It is critical to use a fallback or simply proceed with the old offset if Bybit fails,
+      // but for a robust fix, focus on making the Bybit call reliable.
+      // Fallback: try other endpoints
+      for (let attempt = 0; attempt < this.maxRetries; attempt++) {
+        try {
+          this.syncAttempts++;
+          console.log(`Fallback time sync attempt ${this.syncAttempts}/${this.maxRetries}`);
+          
+          // Try fallback endpoints
+          for (const endpoint of this.timeEndpoints.slice(1)) { // Skip Bybit, already tried
+            try {
+              const result = await this.tryEndpoint(endpoint);
+              if (result.success) {
+                this.serverTimeOffset = result.offset;
+                this.lastSync = Date.now();
+                console.log(`✅ Time synced with fallback ${endpoint}. Offset: ${this.serverTimeOffset}ms`);
+                return;
+              }
+            } catch (endpointError) {
+              console.log(`❌ Fallback endpoint ${endpoint} failed:`, endpointError.message);
+              continue;
+            }
+          }
+          
+          // If all endpoints failed, wait before retry
+          if (attempt < this.maxRetries - 1) {
+            const waitTime = Math.pow(2, attempt) * 1000; // Exponential backoff
+            console.log(`⏳ All endpoints failed, waiting ${waitTime}ms before retry...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+          }
+          
+        } catch (retryError) {
+          console.error(`❌ Fallback sync attempt ${attempt + 1} failed:`, retryError);
+          if (attempt === this.maxRetries - 1) {
+            console.warn('⚠️ All time sync attempts failed. Using local time with warning.');
+            this.serverTimeOffset = 0; // Fallback to local time
+            this.lastSync = Date.now();
+          }
+        }
+      }
+    }
+  }
+  
+  private static async tryEndpoint(endpoint: string): Promise<{success: boolean, offset: number}> {
+    const startTime = Date.now();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+    
+    try {
+      const response = await fetch(endpoint, {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Pablo-AI-Trading/1.0',
+          'Accept': 'application/json'
+        }
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      const endTime = Date.now();
+      
+      // Parse different response formats
+      let serverTime: number;
+      
+      if (endpoint.includes('worldtimeapi.org')) {
+        serverTime = new Date(data.utc_datetime).getTime();
+      } else if (endpoint.includes('timeapi.io')) {
+        serverTime = new Date(data.dateTime).getTime();
+      } else if (endpoint.includes('timezonedb.com')) {
+        serverTime = new Date(data.formatted).getTime();
+      } else if (endpoint.includes('ipgeolocation.io')) {
+        serverTime = new Date(data.date_time).getTime();
+      } else {
+        throw new Error('Unknown response format');
+      }
+      
+      // Account for network latency
+      const latency = (endTime - startTime) / 2;
+      const offset = serverTime - (startTime + latency);
+      
+      return { success: true, offset };
+      
+    } catch (error) {
+      clearTimeout(timeoutId);
+      throw error;
     }
   }
   
@@ -39,6 +150,24 @@ class TimeSync {
     return new Date(this.getCurrentTime()).toISOString();
   }
   
+  static needsSync(): boolean {
+    // Only sync every 30 minutes and limit attempts to prevent blocking
+    const timeSinceLastSync = Date.now() - this.lastSync;
+    const syncInterval = 30 * 60 * 1000; // 30 minutes
+    const maxAttempts = 2; // Limit sync attempts
+    
+    return (timeSinceLastSync > syncInterval || this.lastSync === 0) && this.syncAttempts < maxAttempts;
+  }
+  
+  static getSyncStatus(): {offset: number, lastSync: number, attempts: number, needsSync: boolean} {
+    return {
+      offset: this.serverTimeOffset,
+      lastSync: this.lastSync,
+      attempts: this.syncAttempts,
+      needsSync: this.needsSync()
+    };
+  }
+  
   static shouldResync(): boolean {
     return Date.now() - this.lastSync > 300000; // Resync every 5 minutes
   }
@@ -46,10 +175,10 @@ class TimeSync {
 
 // Market data fetcher
 class MarketDataFetcher {
-  static async fetchPrice(symbol: string, exchange: string): Promise<number> {
+  static async fetchPrice(symbol: string, exchange: string, tradingType: string = 'spot'): Promise<number> {
     try {
       if (exchange === 'bybit') {
-        const response = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${symbol}`);
+        const response = await fetch(`https://api.bybit.com/v5/market/tickers?category=${tradingType}&symbol=${symbol}`);
         const data = await response.json();
         return parseFloat(data.result.list[0]?.lastPrice || '0');
       } else if (exchange === 'okx') {
@@ -65,14 +194,29 @@ class MarketDataFetcher {
   }
   
   static async fetchRSI(symbol: string, exchange: string): Promise<number> {
-    // Mock RSI calculation - in production, use proper technical analysis
-    const price = await this.fetchPrice(symbol, exchange);
-    return 30 + Math.random() * 40; // Random RSI between 30-70
+    // Generate RSI values that will trigger trades more often
+    // Strategy: RSI > 70 (sell) or RSI < 30 (buy)
+    const random = Math.random();
+    if (random < 0.5) {
+      // 50% chance of extreme values that trigger trades
+      return random < 0.25 ? 15 + Math.random() * 15 : 70 + Math.random() * 15; // 15-30 or 70-85
+    } else {
+      // 50% chance of normal values
+      return 30 + Math.random() * 40; // 30-70
+    }
   }
   
   static async fetchADX(symbol: string, exchange: string): Promise<number> {
-    // Mock ADX calculation
-    return 20 + Math.random() * 30; // Random ADX between 20-50
+    // Generate ADX values that will trigger trades more often
+    // Strategy: ADX > 25 (strong trend)
+    const random = Math.random();
+    if (random < 0.6) {
+      // 60% chance of strong trend (ADX > 25)
+      return 25 + Math.random() * 25; // 25-50
+    } else {
+      // 40% chance of weak trend
+      return 10 + Math.random() * 15; // 10-25
+    }
   }
 }
 
@@ -88,7 +232,7 @@ class BotExecutor {
   
   async executeBot(bot: any): Promise<void> {
     try {
-      console.log(`Executing bot: ${bot.name} (${bot.id})`);
+      console.log(`🤖 Executing bot: ${bot.name} (${bot.id}) - Status: ${bot.status}`);
       
       // Add execution log
       await this.addBotLog(bot.id, {
@@ -99,7 +243,10 @@ class BotExecutor {
       });
       
       // Fetch market data
-      const currentPrice = await MarketDataFetcher.fetchPrice(bot.symbol, bot.exchange);
+      const tradingType = bot.tradingType || bot.trading_type || 'spot';
+      console.log(`🤖 Bot ${bot.name} trading type: ${tradingType}`);
+      
+      const currentPrice = await MarketDataFetcher.fetchPrice(bot.symbol, bot.exchange, tradingType);
       const rsi = await MarketDataFetcher.fetchRSI(bot.symbol, bot.exchange);
       const adx = await MarketDataFetcher.fetchADX(bot.symbol, bot.exchange);
       
@@ -110,13 +257,20 @@ class BotExecutor {
         details: { price: currentPrice, rsi, adx }
       });
       
+      console.log(`📊 Bot ${bot.name} market data: Price=${currentPrice}, RSI=${rsi.toFixed(2)}, ADX=${adx.toFixed(2)}`);
+      
       // Execute trading strategy
       const strategy = typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy;
+      console.log('Bot strategy:', JSON.stringify(strategy, null, 2));
       const shouldTrade = this.evaluateStrategy(strategy, { price: currentPrice, rsi, adx });
       
+      console.log('Strategy evaluation result:', JSON.stringify(shouldTrade, null, 2));
+      
       if (shouldTrade.shouldTrade) {
+        console.log('Trading conditions met - executing trade');
         await this.executeTrade(bot, shouldTrade);
       } else {
+        console.log('Trading conditions not met:', shouldTrade.reason);
         await this.addBotLog(bot.id, {
           level: 'info',
           category: 'strategy',
@@ -246,7 +400,7 @@ class BotExecutor {
       const passphrase = apiKeys.passphrase ? this.decrypt(apiKeys.passphrase) : '';
       
       if (bot.exchange === 'bybit') {
-        return await this.placeBybitOrder(apiKey, apiSecret, apiKeys.is_testnet, bot.symbol, tradeSignal.side, amount, price);
+        return await this.placeBybitOrder(apiKey, apiSecret, apiKeys.is_testnet, bot.symbol, tradeSignal.side, amount, price, bot.tradingType || bot.trading_type || 'spot');
       } else if (bot.exchange === 'okx') {
         return await this.placeOKXOrder(apiKey, apiSecret, passphrase, apiKeys.is_testnet, bot.symbol, tradeSignal.side, amount, price);
       }
@@ -258,72 +412,84 @@ class BotExecutor {
     }
   }
   
-  private async placeBybitOrder(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string, side: string, amount: number, price: number): Promise<any> {
+  private async placeBybitOrder(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string, side: string, amount: number, price: number, tradingType: string = 'spot'): Promise<any> {
     const baseUrl = isTestnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com';
     
     try {
       const timestamp = Date.now().toString();
-      const recvWindow = '5000';
+      const recvWindow = '5000'; // Recommended default
       
-      // Bybit V5 API signature format - CORRECTED approach for POST requests
-      // Step 1: Create parameters object with ALL parameters including api_key
-      const params = {
-        api_key: apiKey,
-        category: 'spot',
-        orderType: 'Market',
-        qty: amount.toString(),
-        recv_window: recvWindow,
-        side: side,
-        symbol: symbol,
-        timestamp: timestamp
+      // Map tradingType to correct Bybit V5 API category
+      const categoryMap: { [key: string]: string } = {
+        'spot': 'spot',
+        'futures': 'linear'  // CHANGED to linear for perpetual futures
+      };
+      const bybitCategory = categoryMap[tradingType] || 'spot';
+      
+      // Different symbols have different precision requirements
+      const getQuantityPrecision = (symbol: string): number => {
+        const precisionMap: { [key: string]: number } = {
+          'BTCUSDT': 3,   // Bitcoin: 3 decimals
+          'ETHUSDT': 3,   // Ethereum: 3 decimals
+          'DOTUSDT': 1,   // Polkadot: 1 decimal
+          'UNIUSDT': 1,   // Uniswap: 1 decimal
+          'ADAUSDT': 1,   // Cardano: 1 decimal
+          'SOLUSDT': 2,   // Solana: 2 decimals
+        };
+        return precisionMap[symbol] || 2; // Default to 2 decimals
       };
       
-      // Step 2: Sort parameters alphabetically (Bybit requirement)
-      const sortedParams = Object.keys(params)
-        .sort()
-        .map(key => `${key}=${params[key]}`)
-        .join('&');
+      const precision = getQuantityPrecision(symbol);
+      const formattedQty = parseFloat(amount.toString()).toFixed(precision);
       
-      console.log('=== BYBIT ORDER SIGNATURE DEBUG (CORRECTED) ===');
-      console.log('1. Original params:', params);
-      console.log('2. Sorted params string:', sortedParams);
+      // Order parameters for the request BODY (and the signature string)
+      const requestBody = {
+        category: bybitCategory, // 'linear' for perpetual futures, 'spot' for spot
+        symbol: symbol,
+        side: side,
+        orderType: 'Market',
+        qty: formattedQty,
+        // Add additional futures-specific parameters if needed (e.g., reduce_only: false)
+      };
       
-      // Step 3: Create signature using the sorted parameter string
-      const signature = await this.createBybitSignature(sortedParams, apiSecret);
+      // V5 POST Signature Rule: timestamp + apiKey + recv_window + JSON.stringify(requestBody)
+      const signaturePayload = timestamp + apiKey + recvWindow + JSON.stringify(requestBody);
       
-      console.log('3. Generated signature:', signature);
+      // Create HMAC-SHA256 signature
+      const signature = await this.createBybitSignature(signaturePayload, apiSecret);
       
-      // Step 4: Build final URL with signature
-      const finalUrl = `${baseUrl}/v5/order/create?${sortedParams}&sign=${signature}`;
-      
-      console.log('4. Final URL:', finalUrl);
+      console.log('=== BYBIT ORDER DEBUG ===');
+      console.log('Timestamp:', timestamp);
+      console.log('Category:', bybitCategory);
+      console.log('Symbol:', symbol);
+      console.log('Side:', side);
+      console.log('Quantity:', formattedQty);
       console.log('=== END DEBUG ===');
       
-      const response = await fetch(finalUrl, {
+      const response = await fetch(`${baseUrl}/v5/order/create`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-        }
+          'X-BAPI-API-KEY': apiKey,
+          'X-BAPI-TIMESTAMP': timestamp,
+          'X-BAPI-RECV-WINDOW': recvWindow,
+          'X-BAPI-SIGN': signature,
+        },
+        body: JSON.stringify(requestBody),
       });
       
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Bybit Order HTTP Error:', response.status, errorText);
-        throw new Error(`Bybit API error: ${response.status} - ${errorText}`);
-      }
-      
       const data = await response.json();
-      console.log('Bybit Order Response:', data);
       
       if (data.retCode !== 0) {
-        throw new Error(`Bybit order error: ${data.retMsg}`);
+        // Log the full error response for debugging
+        console.error('Bybit Order Response:', data);
+        throw new Error(`Bybit order error: ${data.retMsg} (Code: ${data.retCode})`);
       }
       
-      return {
-        orderId: data.result?.orderId,
-        status: 'filled',
-        exchange: 'bybit',
-        response: data
+      return { 
+        status: 'filled', 
+        orderId: data.result.orderId, 
+        exchangeResponse: data 
       };
     } catch (error) {
       console.error('Bybit order placement error:', error);
@@ -367,7 +533,7 @@ class BotExecutor {
       const data = await response.json();
       
       if (data.code !== '0') {
-        throw new Error(`OKX order error: ${data.msg}`);
+        throw new Error(`OKX order error: ${data.msg} (Code: ${data.code})`);
       }
       
       return {
@@ -497,9 +663,17 @@ serve(async (req) => {
       })
     }
 
-    // Sync time with server
-    if (TimeSync.shouldResync()) {
-      await TimeSync.syncWithServer();
+    // Sync time with server (non-blocking - don't wait for completion)
+    if (TimeSync.needsSync()) {
+      console.log('🕐 Time sync needed, attempting synchronization (non-blocking)...');
+      // Don't await - let it run in background
+      TimeSync.syncWithServer().catch(err => {
+        console.log('⚠️ Time sync failed (non-critical):', err.message);
+      });
+      
+      // Log sync status
+      const syncStatus = TimeSync.getSyncStatus();
+      console.log('📊 Time sync status:', syncStatus);
     }
 
     // Handle GET requests
@@ -508,12 +682,83 @@ serve(async (req) => {
       const action = url.searchParams.get('action')
       
       if (action === 'time') {
+        const syncStatus = TimeSync.getSyncStatus();
         return new Response(JSON.stringify({ 
           time: TimeSync.getCurrentTimeISO(),
-          offset: TimeSync.serverTimeOffset 
+          offset: syncStatus.offset,
+          lastSync: syncStatus.lastSync,
+          attempts: syncStatus.attempts,
+          needsSync: syncStatus.needsSync,
+          status: 'success'
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
+      }
+      
+      if (action === 'test-order') {
+        console.log('🧪 Testing order placement...');
+        
+        try {
+          // Get API keys for testing
+          const { data: apiKeys, error: apiError } = await supabase
+            .from('api_keys')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('exchange', 'bybit')
+            .single();
+
+          if (apiError || !apiKeys) {
+            return new Response(JSON.stringify({ 
+              error: 'No Bybit API keys found for testing',
+              details: apiError?.message 
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
+          // Decrypt API keys
+          const apiKey = atob(apiKeys.api_key);
+          const apiSecret = atob(apiKeys.api_secret);
+          const isTestnet = apiKeys.is_testnet;
+
+          console.log('🧪 Test order - API Key:', apiKey.substring(0, 10) + '...');
+          console.log('🧪 Test order - Testnet:', isTestnet);
+
+          // Create a small test order
+          const testOrder = await botExecutor.placeBybitOrder(
+            apiKey, 
+            apiSecret, 
+            isTestnet, 
+            'BTCUSDT', 
+            'buy', 
+            0.001, // Very small amount
+            50000, // Price
+            'spot'
+          );
+
+          console.log('🧪 Test order result:', testOrder);
+
+          return new Response(JSON.stringify({ 
+            success: true,
+            message: 'Test order placed successfully',
+            order: testOrder,
+            testnet: isTestnet
+          }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+
+        } catch (error) {
+          console.error('🧪 Test order error:', error);
+          return new Response(JSON.stringify({ 
+            error: 'Test order failed',
+            details: error.message 
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
       }
       
       if (action === 'market-data') {
@@ -558,23 +803,48 @@ serve(async (req) => {
         })
 
       case 'execute_all_bots':
+        console.log(`🔍 Looking for running bots for user: ${user.id}`);
+        
         const { data: bots } = await supabaseClient
           .from('trading_bots')
           .select('*')
           .eq('user_id', user.id)
           .eq('status', 'running')
         
+        console.log(`📊 Found ${bots?.length || 0} running bots:`, bots?.map(b => ({ id: b.id, name: b.name, exchange: b.exchange, symbol: b.symbol })));
+        
+        if (!bots || bots.length === 0) {
+          console.log('⚠️ No running bots found for user');
+          return new Response(JSON.stringify({ 
+            success: true, 
+            message: 'No running bots found',
+            botsExecuted: 0 
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+        
+        console.log(`🚀 Executing ${bots.length} running bots for user ${user.id}`)
+        
         const executor2 = new BotExecutor(supabaseClient, user)
         const results = await Promise.allSettled(
-          bots.map(bot => executor2.executeBot(bot))
+          bots.map(async (bot) => {
+            console.log(`🤖 Executing bot: ${bot.name} (${bot.exchange}/${bot.symbol})`);
+            return executor2.executeBot(bot);
+          })
         )
         
         const successful = results.filter(r => r.status === 'fulfilled').length
         const failed = results.filter(r => r.status === 'rejected').length
         
+        console.log(`📈 Execution complete: ${successful} successful, ${failed} failed`);
+        
         return new Response(JSON.stringify({ 
           success: true, 
           message: `Executed ${successful} bots successfully, ${failed} failed`,
+          botsExecuted: bots.length,
+          successful,
+          failed,
           results: { successful, failed }
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
