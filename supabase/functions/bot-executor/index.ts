@@ -509,24 +509,10 @@ class BotExecutor {
         qty: formattedQty,
       };
       
-      // Add SL/TP for futures (linear) trading only if price is valid
-      // Spot trading doesn't support SL/TP in the same way
-      if (bybitCategory === 'linear' && currentMarketPrice > 0) {
-        // Calculate Stop Loss and Take Profit for risk management
-        // SL: 2% from entry, TP: 3% from entry
-        const stopLossPrice = capitalizedSide === 'Buy' 
-          ? (currentMarketPrice * 0.98).toFixed(2)  // 2% below for Buy
-          : (currentMarketPrice * 1.02).toFixed(2); // 2% above for Sell
-        
-        const takeProfitPrice = capitalizedSide === 'Buy'
-          ? (currentMarketPrice * 1.03).toFixed(2)  // 3% above for Buy
-          : (currentMarketPrice * 0.97).toFixed(2); // 3% below for Sell
-        
-        requestBody.stopLoss = stopLossPrice;
-        requestBody.takeProfit = takeProfitPrice;
-        
-        console.log(`💡 SL/TP for ${symbol}: Entry ~${currentMarketPrice}, SL=${stopLossPrice}, TP=${takeProfitPrice}`);
-      }
+      // NOTE: SL/TP disabled for now - will be implemented after position is opened
+      // Bybit V5 API has specific requirements for SL/TP format and position mode
+      // For now, focus on getting basic market orders working
+      // TODO: Implement SL/TP using separate API calls after position is opened
       
       // V5 POST Signature Rule: timestamp + apiKey + recv_window + JSON.stringify(requestBody)
       const signaturePayload = timestamp + apiKey + recvWindow + JSON.stringify(requestBody);
@@ -541,10 +527,6 @@ class BotExecutor {
       console.log('Side:', capitalizedSide, '(original:', side + ')');
       console.log('Quantity:', formattedQty);
       console.log('Price:', currentMarketPrice);
-      if (bybitCategory === 'linear' && requestBody.stopLoss) {
-        console.log('Stop Loss:', requestBody.stopLoss);
-        console.log('Take Profit:', requestBody.takeProfit);
-      }
       console.log('=== END DEBUG ===');
       
       const response = await fetch(`${baseUrl}/v5/order/create`, {
