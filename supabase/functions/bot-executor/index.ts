@@ -463,11 +463,14 @@ class BotExecutor {
       const precision = getQuantityPrecision(symbol);
       const formattedQty = parseFloat(amount.toString()).toFixed(precision);
       
+      // Bybit V5 API requires capitalized side: "Buy" or "Sell"
+      const capitalizedSide = side.charAt(0).toUpperCase() + side.slice(1).toLowerCase();
+      
       // Order parameters for the request BODY (and the signature string)
       const requestBody = {
         category: bybitCategory, // 'linear' for perpetual futures, 'spot' for spot
         symbol: symbol,
-        side: side,
+        side: capitalizedSide, // "Buy" or "Sell" (capitalized for Bybit V5)
         orderType: 'Market',
         qty: formattedQty,
         // Add additional futures-specific parameters if needed (e.g., reduce_only: false)
