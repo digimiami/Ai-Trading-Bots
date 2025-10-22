@@ -118,7 +118,28 @@ class TimeSync {
       // Parse different response formats
       let serverTime: number;
       
-      if (endpoint.includes('worldtimeapi.org')) {
+      if (endpoint.includes('bybit.com')) {
+        // Bybit V5 format: { retCode: 0, result: { timeSecond: "1234567890", timeNano: "123456789" } }
+        if (data.retCode === 0 && data.result && data.result.timeSecond) {
+          serverTime = parseInt(data.result.timeSecond) * 1000 + parseInt(data.result.timeNano || '0') / 1000000;
+        } else {
+          throw new Error('Invalid Bybit time response');
+        }
+      } else if (endpoint.includes('binance.com')) {
+        // Binance format: { serverTime: 1234567890123 }
+        if (data.serverTime) {
+          serverTime = parseInt(data.serverTime);
+        } else {
+          throw new Error('Invalid Binance time response');
+        }
+      } else if (endpoint.includes('coinbase.com')) {
+        // Coinbase format: { data: { iso: "...", epoch: 1234567890 } }
+        if (data.data && data.data.epoch) {
+          serverTime = parseInt(data.data.epoch) * 1000;
+        } else {
+          throw new Error('Invalid Coinbase time response');
+        }
+      } else if (endpoint.includes('worldtimeapi.org')) {
         serverTime = new Date(data.utc_datetime).getTime();
       } else if (endpoint.includes('timeapi.io')) {
         serverTime = new Date(data.dateTime).getTime();
