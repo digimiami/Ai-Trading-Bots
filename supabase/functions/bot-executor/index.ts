@@ -427,10 +427,19 @@ class BotExecutor {
       // Decrypt API keys
       const apiKey = this.decrypt(apiKeys.api_key);
       const apiSecret = this.decrypt(apiKeys.api_secret);
-      const passphrase = apiKeys.passphrase ? this.decrypt(apiKeys.passphrase) : '';
+      const passphrase = apiKeys.passphrase ? this.decrypt(apiKeys.api_secret) : '';
+      
+      const tradingType = bot.tradingType || bot.trading_type || 'spot';
+      
+      // For spot trading: can only buy with USDT (can't sell if we don't own the asset)
+      // For futures: can both buy (long) and sell (short)
+      if (tradingType === 'spot' && (tradeSignal.side.toLowerCase() === 'sell')) {
+        console.log(`⚠️ Spot trading: Cannot sell ${bot.symbol} without owning it. Skipping sell signal.`);
+        throw new Error('Cannot sell on spot market without owning the asset. Only buy orders are supported for spot trading.');
+      }
       
       if (bot.exchange === 'bybit') {
-        return await this.placeBybitOrder(apiKey, apiSecret, apiKeys.is_testnet, bot.symbol, tradeSignal.side, amount, price, bot.tradingType || bot.trading_type || 'spot');
+        return await this.placeBybitOrder(apiKey, apiSecret, apiKeys.is_testnet, bot.symbol, tradeSignal.side, amount, price, tradingType);
       } else if (bot.exchange === 'okx') {
         return await this.placeOKXOrder(apiKey, apiSecret, passphrase, apiKeys.is_testnet, bot.symbol, tradeSignal.side, amount, price);
       }
