@@ -358,7 +358,10 @@ class BotExecutor {
       // Place actual order on exchange
       const orderResult = await this.placeOrder(bot, tradeSignal, tradeAmount, currentPrice);
       
-      // Record trade
+      console.log('📝 Recording trade in database...');
+      console.log('Order result:', JSON.stringify(orderResult, null, 2));
+      
+      // Record trade - using actual database schema columns
       const { data: trade, error } = await this.supabaseClient
         .from('trades')
         .insert({
@@ -370,15 +373,20 @@ class BotExecutor {
           amount: tradeAmount,
           price: currentPrice,
           status: orderResult.status || 'filled',
+          exchange_order_id: orderResult.orderId || orderResult.exchangeResponse?.result?.orderId || null,
           executed_at: TimeSync.getCurrentTimeISO(),
-          strategy_data: tradeSignal,
-          order_id: orderResult.orderId,
-          exchange_response: orderResult
+          fee: 0,
+          pnl: 0
         })
         .select()
         .single();
       
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Database insert error:', error);
+        throw error;
+      }
+      
+      console.log('✅ Trade recorded successfully:', trade);
       
       // Update bot performance
       await this.updateBotPerformance(bot.id, trade);
@@ -391,6 +399,7 @@ class BotExecutor {
       });
       
     } catch (error) {
+      console.error('❌ Trade execution error:', error);
       await this.addBotLog(bot.id, {
         level: 'error',
         category: 'trade',
