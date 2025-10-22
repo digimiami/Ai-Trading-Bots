@@ -721,12 +721,15 @@ class BotExecutor {
   }
   
   private calculateTradeAmount(bot: any, price: number): number {
-    // Simple position sizing based on leverage and risk level
-    const baseAmount = 100; // Base amount in USD
+    // Position sizing based on bot's configured trade amount, leverage, and risk level
+    const baseAmount = bot.trade_amount || 100; // Use bot's trade amount or default to $100
     const leverageMultiplier = bot.leverage || 1;
     const riskMultiplier = bot.risk_level === 'high' ? 2 : bot.risk_level === 'medium' ? 1.5 : 1;
     
-    return (baseAmount * leverageMultiplier * riskMultiplier) / price;
+    const totalAmount = baseAmount * leverageMultiplier * riskMultiplier;
+    console.log(`💰 Trade calculation: Base=$${baseAmount}, Leverage=${leverageMultiplier}x, Risk=${bot.risk_level}(${riskMultiplier}x) = Total=$${totalAmount}`);
+    
+    return totalAmount / price;
   }
   
   private async updateBotPerformance(botId: string, trade: any): Promise<void> {

@@ -14,9 +14,11 @@ export default function CreateBotPage() {
   const [formData, setFormData] = useState({
     name: '',
     exchange: 'bybit' as 'bybit' | 'okx',
+    tradingType: 'spot' as 'spot' | 'futures',
     symbol: 'BTCUSDT',
     leverage: 5,
     riskLevel: 'medium' as 'low' | 'medium' | 'high',
+    tradeAmount: 100, // Amount in USD per trade
     stopLoss: 2.0,
     takeProfit: 4.0
   });
@@ -53,9 +55,11 @@ export default function CreateBotPage() {
       const botData = {
         name: formData.name,
         exchange: formData.exchange,
+        tradingType: formData.tradingType,
         symbol: formData.symbol,
         leverage: formData.leverage,
         riskLevel: formData.riskLevel,
+        tradeAmount: formData.tradeAmount,
         strategy: strategy,
         // Initialize with default values
         status: 'stopped' as const,
@@ -150,6 +154,20 @@ export default function CreateBotPage() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Trading Type
+                  </label>
+                  <select
+                    value={formData.tradingType}
+                    onChange={(e) => handleInputChange('tradingType', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="spot">Spot Trading</option>
+                    <option value="futures">Futures Trading</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
                     Trading Pair
                   </label>
                   <select
@@ -194,6 +212,25 @@ export default function CreateBotPage() {
                     <option value="medium">Medium Risk</option>
                     <option value="high">High Risk</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Trade Amount (USD)
+                  </label>
+                  <input
+                    type="number"
+                    value={formData.tradeAmount}
+                    onChange={(e) => handleInputChange('tradeAmount', parseFloat(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    min="10"
+                    max="10000"
+                    step="10"
+                    required
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Base trade amount in USD (will be multiplied by leverage and risk level)
+                  </p>
                 </div>
 
                 <div>
