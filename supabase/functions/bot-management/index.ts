@@ -51,6 +51,7 @@ serve(async (req) => {
           exchange: bot.exchange,
           tradingType: bot.trading_type || 'spot',
           symbol: bot.symbol,
+          timeframe: bot.timeframe || '1h',
           status: bot.status,
           leverage: bot.leverage,
           tradeAmount: bot.trade_amount || 100,
@@ -77,10 +78,10 @@ serve(async (req) => {
       const body = await req.json()
 
       if (action === 'create') {
-        const { name, exchange, tradingType, symbol, leverage, riskLevel, tradeAmount, stopLoss, takeProfit, strategy, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt } = body
+        const { name, exchange, tradingType, symbol, timeframe, leverage, riskLevel, tradeAmount, stopLoss, takeProfit, strategy, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt } = body
 
         // Debug logging
-        console.log('Received bot data:', { name, exchange, symbol, leverage, riskLevel, tradeAmount, stopLoss, takeProfit, strategy, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt })
+        console.log('Received bot data:', { name, exchange, symbol, timeframe, leverage, riskLevel, tradeAmount, stopLoss, takeProfit, strategy, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt })
         console.log('Exchange value:', exchange, 'Type:', typeof exchange, 'Is null:', exchange === null, 'Is undefined:', exchange === undefined)
 
         // Validate required fields
@@ -114,6 +115,7 @@ serve(async (req) => {
             exchange,
             trading_type: tradingType || 'spot',
             symbol,
+            timeframe: timeframe || '1h',
             leverage,
             risk_level: riskLevel,
             trade_amount: tradeAmount || 100,
@@ -151,6 +153,7 @@ serve(async (req) => {
         if (updates.exchange) dbUpdates.exchange = updates.exchange
         if (updates.tradingType) dbUpdates.trading_type = updates.tradingType
         if (updates.symbol) dbUpdates.symbol = updates.symbol
+        if (updates.timeframe) dbUpdates.timeframe = updates.timeframe
         if (updates.leverage) dbUpdates.leverage = updates.leverage
         if (updates.tradeAmount) dbUpdates.trade_amount = updates.tradeAmount
         if (updates.stopLoss) dbUpdates.stop_loss = updates.stopLoss
@@ -181,6 +184,7 @@ serve(async (req) => {
           exchange: bot.exchange,
           tradingType: bot.trading_type || 'spot',
           symbol: bot.symbol,
+          timeframe: bot.timeframe || '1h',
           status: bot.status,
           leverage: bot.leverage,
           tradeAmount: bot.trade_amount || 100,

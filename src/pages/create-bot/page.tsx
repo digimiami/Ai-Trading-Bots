@@ -16,6 +16,7 @@ export default function CreateBotPage() {
     exchange: 'bybit' as 'bybit' | 'okx',
     tradingType: 'spot' as 'spot' | 'futures',
     symbol: 'BTCUSDT',
+    timeframe: '1h' as '1m' | '5m' | '15m' | '1h' | '2h' | '3h' | '4h' | '1d' | '1w',
     leverage: 5,
     riskLevel: 'medium' as 'low' | 'medium' | 'high',
     tradeAmount: 100, // Amount in USD per trade
@@ -57,9 +58,12 @@ export default function CreateBotPage() {
         exchange: formData.exchange,
         tradingType: formData.tradingType,
         symbol: formData.symbol,
+        timeframe: formData.timeframe,
         leverage: formData.leverage,
         riskLevel: formData.riskLevel,
         tradeAmount: formData.tradeAmount,
+        stopLoss: formData.stopLoss,
+        takeProfit: formData.takeProfit,
         strategy: strategy,
         // Initialize with default values
         status: 'stopped' as const,
@@ -179,6 +183,30 @@ export default function CreateBotPage() {
                       <option key={symbol} value={symbol}>{symbol}</option>
                     ))}
                   </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Time Frame
+                  </label>
+                  <select
+                    value={formData.timeframe}
+                    onChange={(e) => handleInputChange('timeframe', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="1m">1 Minute</option>
+                    <option value="5m">5 Minutes</option>
+                    <option value="15m">15 Minutes</option>
+                    <option value="1h">1 Hour</option>
+                    <option value="2h">2 Hours</option>
+                    <option value="3h">3 Hours</option>
+                    <option value="4h">4 Hours</option>
+                    <option value="1d">1 Day</option>
+                    <option value="1w">1 Week</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Chart interval for technical analysis
+                  </p>
                 </div>
 
                 <div>
