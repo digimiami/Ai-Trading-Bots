@@ -549,13 +549,80 @@ class BotExecutor {
         throw new Error(`Bybit order error: ${data.retMsg} (Code: ${data.retCode})`);
       }
       
-      return { 
+      const orderResult = { 
         status: 'filled', 
         orderId: data.result.orderId, 
         exchangeResponse: data 
       };
+      
+      // Set SL/TP on the position after order is filled (for futures only)
+      if (bybitCategory === 'linear' && currentMarketPrice > 0) {
+        try {
+          await this.setBybitSLTP(apiKey, apiSecret, isTestnet, symbol, capitalizedSide, currentMarketPrice);
+        } catch (slTpError) {
+          console.warn('⚠️ Failed to set SL/TP (non-critical):', slTpError);
+          // Don't fail the whole trade if SL/TP fails - order was already placed
+        }
+      }
+      
+      return orderResult;
     } catch (error) {
       console.error('Bybit order placement error:', error);
+      throw error;
+    }
+  }
+  
+  private async setBybitSLTP(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string, side: string, entryPrice: number): Promise<void> {
+    const baseUrl = isTestnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com';
+    
+    try {
+      const timestamp = Date.now().toString();
+      const recvWindow = '5000';
+      
+      // Calculate SL/TP prices
+      const stopLossPrice = side === 'Buy' 
+        ? (entryPrice * 0.98).toFixed(2)   // Buy: SL 2% below
+        : (entryPrice * 1.02).toFixed(2);  // Sell: SL 2% above
+      
+      const takeProfitPrice = side === 'Buy'
+        ? (entryPrice * 1.03).toFixed(2)   // Buy: TP 3% above
+        : (entryPrice * 0.97).toFixed(2);  // Sell: TP 3% below
+      
+      const requestBody = {
+        category: 'linear',
+        symbol: symbol,
+        stopLoss: stopLossPrice,
+        takeProfit: takeProfitPrice,
+        positionIdx: 0  // 0 for one-way mode, 1 for Buy side in hedge mode, 2 for Sell side
+      };
+      
+      const signaturePayload = timestamp + apiKey + recvWindow + JSON.stringify(requestBody);
+      const signature = await this.createBybitSignature(signaturePayload, apiSecret);
+      
+      console.log(`🛡️ Setting SL/TP for ${symbol}: SL=${stopLossPrice}, TP=${takeProfitPrice}`);
+      
+      const response = await fetch(`${baseUrl}/v5/position/trading-stop`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-BAPI-API-KEY': apiKey,
+          'X-BAPI-TIMESTAMP': timestamp,
+          'X-BAPI-RECV-WINDOW': recvWindow,
+          'X-BAPI-SIGN': signature,
+        },
+        body: JSON.stringify(requestBody),
+      });
+      
+      const data = await response.json();
+      
+      if (data.retCode !== 0) {
+        console.error('SL/TP Response:', data);
+        throw new Error(`Failed to set SL/TP: ${data.retMsg} (Code: ${data.retCode})`);
+      }
+      
+      console.log('✅ SL/TP set successfully');
+    } catch (error) {
+      console.error('SL/TP setting error:', error);
       throw error;
     }
   }
