@@ -46,6 +46,7 @@ export default function EditBotPage() {
   useEffect(() => {
     if (botId && bots.length > 0) {
       const bot = bots.find(b => b.id === botId);
+      console.log('Edit bot: Found bot:', bot);
       if (bot) {
         setFormData({
           name: bot.name,
@@ -62,6 +63,9 @@ export default function EditBotPage() {
         if (bot.strategy) {
           setStrategy(bot.strategy as TradingStrategy);
         }
+        console.log('Edit bot: Form data set:', formData);
+      } else {
+        console.log('Edit bot: Bot not found with ID:', botId);
       }
     }
   }, [botId, bots]);
@@ -87,12 +91,15 @@ export default function EditBotPage() {
         strategy: strategy
       };
       
-      console.log('Updating bot data:', botData);
+      console.log('Edit bot: Updating bot data:', botData);
+      console.log('Edit bot: Bot ID:', botId);
       
       await updateBot(botId, botData);
       
+      console.log('Edit bot: Update successful, navigating...');
       navigate('/bots', { state: { message: `Bot "${formData.name}" updated successfully!` } });
     } catch (error: any) {
+      console.error('Edit bot: Update failed:', error);
       setError(error.message || 'Failed to update bot');
     } finally {
       setIsUpdating(false);

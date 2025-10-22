@@ -48,9 +48,13 @@ serve(async (req) => {
           id: bot.id,
           name: bot.name,
           exchange: bot.exchange,
+          tradingType: bot.trading_type || 'spot',
           symbol: bot.symbol,
           status: bot.status,
           leverage: bot.leverage,
+          tradeAmount: bot.trade_amount || 100,
+          stopLoss: bot.stop_loss || 2.0,
+          takeProfit: bot.take_profit || 4.0,
           pnl: bot.pnl,
           pnlPercentage: bot.pnl_percentage,
           totalTrades: bot.total_trades,
@@ -72,10 +76,10 @@ serve(async (req) => {
       const body = await req.json()
 
       if (action === 'create') {
-        const { name, exchange, symbol, leverage, riskLevel, strategy, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt } = body
+        const { name, exchange, tradingType, symbol, leverage, riskLevel, tradeAmount, stopLoss, takeProfit, strategy, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt } = body
 
         // Debug logging
-        console.log('Received bot data:', { name, exchange, symbol, leverage, riskLevel, strategy, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt })
+        console.log('Received bot data:', { name, exchange, symbol, leverage, riskLevel, tradeAmount, stopLoss, takeProfit, strategy, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt })
         console.log('Exchange value:', exchange, 'Type:', typeof exchange, 'Is null:', exchange === null, 'Is undefined:', exchange === undefined)
 
         // Validate required fields
@@ -107,11 +111,15 @@ serve(async (req) => {
             user_id: user.id,
             name,
             exchange,
+            trading_type: tradingType || 'spot',
             symbol,
             leverage,
             risk_level: riskLevel,
+            trade_amount: tradeAmount || 100,
+            stop_loss: stopLoss || 2.0,
+            take_profit: takeProfit || 4.0,
             strategy: JSON.stringify(strategy),
-            status: status || 'stopped',
+            status: status || 'running', // Auto-start bots instead of 'stopped'
             pnl: pnl || 0,
             pnl_percentage: pnlPercentage || 0,
             total_trades: totalTrades || 0,
@@ -138,6 +146,14 @@ serve(async (req) => {
 
         // Transform frontend field names to database field names
         const dbUpdates: any = {}
+        if (updates.name) dbUpdates.name = updates.name
+        if (updates.exchange) dbUpdates.exchange = updates.exchange
+        if (updates.tradingType) dbUpdates.trading_type = updates.tradingType
+        if (updates.symbol) dbUpdates.symbol = updates.symbol
+        if (updates.leverage) dbUpdates.leverage = updates.leverage
+        if (updates.tradeAmount) dbUpdates.trade_amount = updates.tradeAmount
+        if (updates.stopLoss) dbUpdates.stop_loss = updates.stopLoss
+        if (updates.takeProfit) dbUpdates.take_profit = updates.takeProfit
         if (updates.status) dbUpdates.status = updates.status
         if (updates.pnl !== undefined) dbUpdates.pnl = updates.pnl
         if (updates.pnlPercentage !== undefined) dbUpdates.pnl_percentage = updates.pnlPercentage
@@ -162,9 +178,13 @@ serve(async (req) => {
           id: bot.id,
           name: bot.name,
           exchange: bot.exchange,
+          tradingType: bot.trading_type || 'spot',
           symbol: bot.symbol,
           status: bot.status,
           leverage: bot.leverage,
+          tradeAmount: bot.trade_amount || 100,
+          stopLoss: bot.stop_loss || 2.0,
+          takeProfit: bot.take_profit || 4.0,
           pnl: bot.pnl,
           pnlPercentage: bot.pnl_percentage,
           totalTrades: bot.total_trades,
@@ -196,6 +216,9 @@ serve(async (req) => {
 
         // Log bot start activity
         console.log(`Bot ${id} started by user ${user.id}`)
+        
+        // Also log the bot status for debugging
+        console.log(`Bot ${id} status updated to: ${bot.status}`)
 
         const transformedBot = {
           id: bot.id,
