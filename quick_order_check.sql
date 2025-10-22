@@ -11,43 +11,37 @@ FROM trades
 WHERE created_at >= CURRENT_DATE
 UNION ALL
 SELECT 
-    'CLOSED TODAY',
+    'FILLED TODAY',
     COUNT(*)
 FROM trades
-WHERE created_at >= CURRENT_DATE AND status = 'closed'
+WHERE created_at >= CURRENT_DATE AND status = 'filled'
 UNION ALL
 SELECT 
-    'OPEN POSITIONS',
+    'PENDING TRADES',
     COUNT(*)
 FROM trades
-WHERE status = 'open'
+WHERE status = 'pending'
 UNION ALL
 SELECT 
     'LAST HOUR',
     COUNT(*)
 FROM trades
-WHERE created_at >= NOW() - INTERVAL '1 hour'
-UNION ALL
-SELECT 
-    'PNL TODAY ($)',
-    ROUND(SUM(pnl)::numeric, 2)
-FROM trades
-WHERE created_at >= CURRENT_DATE AND status = 'closed';
+WHERE created_at >= NOW() - INTERVAL '1 hour';
 
 -- ============================================
 -- LAST 10 TRADES
 SELECT 
     t.id,
     t.created_at,
+    t.executed_at,
     b.name as bot,
     t.exchange,
     t.symbol,
     t.side,
-    t.size,
-    t.entry_price,
-    t.exit_price,
-    t.pnl,
-    t.status
+    t.amount,
+    t.price,
+    t.status,
+    t.order_id
 FROM trades t
 LEFT JOIN trading_bots b ON t.bot_id = b.id
 ORDER BY t.created_at DESC
