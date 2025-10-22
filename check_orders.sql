@@ -1,205 +1,231 @@
 -- ============================================
--- SQL Script to Check Orders Being Placed
+-- SQL Script to Check Trades Being Placed
 -- Pablo AI Trading Bot
 -- ============================================
 
--- 1. Check recent orders (last 24 hours)
+-- 1. Check recent trades (last 24 hours)
 SELECT 
     id,
     bot_id,
+    user_id,
     exchange,
     symbol,
     side,
-    order_type,
-    quantity,
-    price,
+    size as quantity,
+    entry_price as price,
+    exit_price,
+    pnl,
     status,
+    timestamp as executed_at,
     created_at,
-    updated_at,
-    error_message
-FROM orders
+    updated_at
+FROM trades
 WHERE created_at >= NOW() - INTERVAL '24 hours'
 ORDER BY created_at DESC;
 
 -- ============================================
--- 2. Count orders by status
+-- 2. Count trades by status
 SELECT 
     status,
     COUNT(*) as count,
-    MIN(created_at) as first_order,
-    MAX(created_at) as last_order
-FROM orders
+    MIN(created_at) as first_trade,
+    MAX(created_at) as last_trade
+FROM trades
 GROUP BY status
 ORDER BY count DESC;
 
 -- ============================================
--- 3. Count orders by exchange
+-- 3. Count trades by exchange
 SELECT 
     exchange,
-    COUNT(*) as total_orders,
-    SUM(CASE WHEN status = 'filled' THEN 1 ELSE 0 END) as filled,
-    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
-    SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending
-FROM orders
+    COUNT(*) as total_trades,
+    SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) as closed,
+    SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) as open_positions
+FROM trades
 GROUP BY exchange
-ORDER BY total_orders DESC;
+ORDER BY total_trades DESC;
 
 -- ============================================
--- 4. Count orders by bot
+-- 4. Count trades by bot
 SELECT 
     b.name as bot_name,
     b.id as bot_id,
-    COUNT(o.id) as total_orders,
-    SUM(CASE WHEN o.status = 'filled' THEN 1 ELSE 0 END) as successful,
-    SUM(CASE WHEN o.status = 'failed' THEN 1 ELSE 0 END) as failed,
-    MAX(o.created_at) as last_order_time
-FROM bots b
-LEFT JOIN orders o ON b.id = o.bot_id
+    COUNT(t.id) as total_trades,
+    SUM(CASE WHEN t.status = 'closed' THEN 1 ELSE 0 END) as closed_trades,
+    SUM(CASE WHEN t.status = 'open' THEN 1 ELSE 0 END) as open_positions,
+    SUM(t.pnl) as total_pnl,
+    MAX(t.created_at) as last_trade_time
+FROM trading_bots b
+LEFT JOIN trades t ON b.id = t.bot_id
 GROUP BY b.id, b.name
-ORDER BY total_orders DESC;
+ORDER BY total_trades DESC;
 
 -- ============================================
--- 5. Recent failed orders with error messages
-SELECT 
-    o.id,
-    b.name as bot_name,
-    o.exchange,
-    o.symbol,
-    o.side,
-    o.quantity,
-    o.error_message,
-    o.created_at
-FROM orders o
-LEFT JOIN bots b ON o.bot_id = b.id
-WHERE o.status = 'failed'
-ORDER BY o.created_at DESC
-LIMIT 20;
-
--- ============================================
--- 6. Orders by symbol (last 7 days)
+-- 5. Trades by symbol (last 7 days)
 SELECT 
     symbol,
     exchange,
-    COUNT(*) as total_orders,
-    SUM(CASE WHEN side = 'Buy' THEN 1 ELSE 0 END) as buy_orders,
-    SUM(CASE WHEN side = 'Sell' THEN 1 ELSE 0 END) as sell_orders,
-    SUM(CASE WHEN status = 'filled' THEN 1 ELSE 0 END) as filled,
-    SUM(quantity::numeric) as total_quantity
-FROM orders
+    COUNT(*) as total_trades,
+    SUM(CASE WHEN side = 'long' THEN 1 ELSE 0 END) as long_trades,
+    SUM(CASE WHEN side = 'short' THEN 1 ELSE 0 END) as short_trades,
+    SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) as closed,
+    SUM(size) as total_size,
+    SUM(pnl) FILTER (WHERE status = 'closed') as total_pnl
+FROM trades
 WHERE created_at >= NOW() - INTERVAL '7 days'
 GROUP BY symbol, exchange
-ORDER BY total_orders DESC;
+ORDER BY total_trades DESC;
 
 -- ============================================
--- 7. Order success rate by bot (last 30 days)
+-- 6. Trade success rate by bot (last 30 days)
 SELECT 
     b.name as bot_name,
     b.exchange,
     b.symbol,
-    COUNT(o.id) as total_orders,
-    SUM(CASE WHEN o.status = 'filled' THEN 1 ELSE 0 END) as successful,
-    SUM(CASE WHEN o.status = 'failed' THEN 1 ELSE 0 END) as failed,
+    COUNT(t.id) as total_trades,
+    SUM(CASE WHEN t.status = 'closed' AND t.pnl > 0 THEN 1 ELSE 0 END) as winning_trades,
+    SUM(CASE WHEN t.status = 'closed' AND t.pnl < 0 THEN 1 ELSE 0 END) as losing_trades,
+    SUM(CASE WHEN t.status = 'open' THEN 1 ELSE 0 END) as open_positions,
     ROUND(
-        (SUM(CASE WHEN o.status = 'filled' THEN 1 ELSE 0 END)::numeric / 
-         NULLIF(COUNT(o.id), 0) * 100), 
+        (SUM(CASE WHEN t.status = 'closed' AND t.pnl > 0 THEN 1 ELSE 0 END)::numeric / 
+         NULLIF(SUM(CASE WHEN t.status = 'closed' THEN 1 ELSE 0 END), 0) * 100), 
         2
-    ) as success_rate_percentage
-FROM bots b
-LEFT JOIN orders o ON b.id = o.bot_id 
-    AND o.created_at >= NOW() - INTERVAL '30 days'
+    ) as win_rate_percentage,
+    SUM(t.pnl) FILTER (WHERE t.status = 'closed') as total_pnl
+FROM trading_bots b
+LEFT JOIN trades t ON b.id = t.bot_id 
+    AND t.created_at >= NOW() - INTERVAL '30 days'
 WHERE b.status = 'running'
 GROUP BY b.id, b.name, b.exchange, b.symbol
-ORDER BY total_orders DESC;
+ORDER BY total_trades DESC;
 
 -- ============================================
--- 8. Most recent orders with bot details
+-- 7. Most recent trades with bot details
 SELECT 
-    o.id as order_id,
-    o.created_at,
+    t.id as trade_id,
+    t.created_at,
     b.name as bot_name,
     b.exchange,
-    o.symbol,
-    o.side,
-    o.order_type,
-    o.quantity,
-    o.price,
-    o.status,
-    o.exchange_order_id,
-    o.error_message
-FROM orders o
-LEFT JOIN bots b ON o.bot_id = b.id
-ORDER BY o.created_at DESC
+    t.symbol,
+    t.side,
+    t.size,
+    t.entry_price,
+    t.exit_price,
+    t.pnl,
+    t.status
+FROM trades t
+LEFT JOIN trading_bots b ON t.bot_id = b.id
+ORDER BY t.created_at DESC
 LIMIT 50;
 
 -- ============================================
--- 9. Orders placed in the last hour (for real-time monitoring)
+-- 8. Trades placed in the last hour (for real-time monitoring)
 SELECT 
-    o.id,
-    o.created_at,
+    t.id,
+    t.created_at,
     b.name as bot_name,
-    o.exchange,
-    o.symbol,
-    o.side,
-    o.quantity,
-    o.status,
-    EXTRACT(EPOCH FROM (NOW() - o.created_at)) as seconds_ago
-FROM orders o
-LEFT JOIN bots b ON o.bot_id = b.id
-WHERE o.created_at >= NOW() - INTERVAL '1 hour'
-ORDER BY o.created_at DESC;
+    t.exchange,
+    t.symbol,
+    t.side,
+    t.size,
+    t.entry_price,
+    t.status,
+    t.pnl,
+    EXTRACT(EPOCH FROM (NOW() - t.created_at)) as seconds_ago
+FROM trades t
+LEFT JOIN trading_bots b ON t.bot_id = b.id
+WHERE t.created_at >= NOW() - INTERVAL '1 hour'
+ORDER BY t.created_at DESC;
 
 -- ============================================
--- 10. Check if any orders were placed today
+-- 9. Check if any trades were placed today
 SELECT 
-    DATE(created_at) as order_date,
-    COUNT(*) as total_orders,
-    SUM(CASE WHEN status = 'filled' THEN 1 ELSE 0 END) as filled,
-    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
+    DATE(created_at) as trade_date,
+    COUNT(*) as total_trades,
+    SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) as closed,
+    SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) as open_positions,
+    SUM(pnl) FILTER (WHERE status = 'closed') as total_pnl,
     STRING_AGG(DISTINCT exchange, ', ') as exchanges_used
-FROM orders
+FROM trades
 WHERE created_at >= CURRENT_DATE
 GROUP BY DATE(created_at);
 
 -- ============================================
--- 11. Order volume by hour (today)
+-- 10. Trade volume by hour (today)
 SELECT 
     DATE_TRUNC('hour', created_at) as hour,
-    COUNT(*) as orders_count,
-    SUM(CASE WHEN status = 'filled' THEN 1 ELSE 0 END) as successful,
+    COUNT(*) as trades_count,
+    SUM(CASE WHEN status = 'closed' THEN 1 ELSE 0 END) as closed_trades,
+    SUM(pnl) FILTER (WHERE status = 'closed') as hourly_pnl,
     STRING_AGG(DISTINCT symbol, ', ') as symbols_traded
-FROM orders
+FROM trades
 WHERE created_at >= CURRENT_DATE
 GROUP BY DATE_TRUNC('hour', created_at)
 ORDER BY hour DESC;
 
 -- ============================================
--- 12. Check for duplicate or stuck orders
+-- 11. PnL Summary
 SELECT 
-    bot_id,
-    symbol,
-    side,
-    quantity,
-    COUNT(*) as duplicate_count,
-    MIN(created_at) as first_created,
-    MAX(created_at) as last_created
-FROM orders
-WHERE created_at >= NOW() - INTERVAL '1 hour'
-GROUP BY bot_id, symbol, side, quantity
-HAVING COUNT(*) > 1
-ORDER BY duplicate_count DESC;
+    'Today' as period,
+    COUNT(*) as total_trades,
+    SUM(CASE WHEN status = 'closed' AND pnl > 0 THEN 1 ELSE 0 END) as winners,
+    SUM(CASE WHEN status = 'closed' AND pnl < 0 THEN 1 ELSE 0 END) as losers,
+    SUM(pnl) FILTER (WHERE status = 'closed') as total_pnl,
+    AVG(pnl) FILTER (WHERE status = 'closed') as avg_pnl
+FROM trades
+WHERE created_at >= CURRENT_DATE
+UNION ALL
+SELECT 
+    'Last 7 Days',
+    COUNT(*),
+    SUM(CASE WHEN status = 'closed' AND pnl > 0 THEN 1 ELSE 0 END),
+    SUM(CASE WHEN status = 'closed' AND pnl < 0 THEN 1 ELSE 0 END),
+    SUM(pnl) FILTER (WHERE status = 'closed'),
+    AVG(pnl) FILTER (WHERE status = 'closed')
+FROM trades
+WHERE created_at >= NOW() - INTERVAL '7 days'
+UNION ALL
+SELECT 
+    'Last 30 Days',
+    COUNT(*),
+    SUM(CASE WHEN status = 'closed' AND pnl > 0 THEN 1 ELSE 0 END),
+    SUM(CASE WHEN status = 'closed' AND pnl < 0 THEN 1 ELSE 0 END),
+    SUM(pnl) FILTER (WHERE status = 'closed'),
+    AVG(pnl) FILTER (WHERE status = 'closed')
+FROM trades
+WHERE created_at >= NOW() - INTERVAL '30 days';
 
 -- ============================================
--- QUICK CHECK: Latest order status
+-- QUICK CHECK: Latest trade status
 SELECT 
-    'Latest Order' as info,
-    id as order_id,
-    created_at,
-    exchange,
-    symbol,
-    side,
-    status,
-    error_message
-FROM orders
-ORDER BY created_at DESC
+    'Latest Trade' as info,
+    t.id as trade_id,
+    t.created_at,
+    b.name as bot_name,
+    t.exchange,
+    t.symbol,
+    t.side,
+    t.size,
+    t.entry_price,
+    t.status,
+    t.pnl
+FROM trades t
+LEFT JOIN trading_bots b ON t.bot_id = b.id
+ORDER BY t.created_at DESC
 LIMIT 1;
 
+-- ============================================
+-- Active Bots with Trade Count
+SELECT 
+    b.name,
+    b.exchange,
+    b.symbol,
+    b.status,
+    b.total_trades as bot_total_trades,
+    COUNT(t.id) as recent_trades_24h,
+    SUM(t.pnl) FILTER (WHERE t.status = 'closed' AND t.created_at >= NOW() - INTERVAL '24 hours') as pnl_24h
+FROM trading_bots b
+LEFT JOIN trades t ON b.id = t.bot_id AND t.created_at >= NOW() - INTERVAL '24 hours'
+WHERE b.status IN ('running', 'paused')
+GROUP BY b.id, b.name, b.exchange, b.symbol, b.status, b.total_trades
+ORDER BY recent_trades_24h DESC;
