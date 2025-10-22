@@ -7,6 +7,7 @@ const Home = lazy(() => import('../pages/home/page'));
 const Auth = lazy(() => import('../pages/auth/page'));
 const Bots = lazy(() => import('../pages/bots/page'));
 const CreateBot = lazy(() => import('../pages/create-bot/page'));
+const EditBot = lazy(() => import('../pages/edit-bot/page'));
 const BotActivity = lazy(() => import('../pages/bot-activity/page'));
 const Trades = lazy(() => import('../pages/trades/page'));
 const Reports = lazy(() => import('../pages/reports/page'));
@@ -36,6 +37,10 @@ const routes: RouteObject[] = [
   {
     path: '/create-bot',
     element: <CreateBot />
+  },
+  {
+    path: '/edit-bot/:botId',
+    element: <EditBot />
   },
   {
     path: '/bot-activity',

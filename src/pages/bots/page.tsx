@@ -138,7 +138,7 @@ export default function BotsPage() {
     }
     setBulkLoading(true);
     try {
-      await Promise.all(filteredBots.map(bot => 
+      await Promise.all(filteredBots.map(bot =>
         updateBot(bot.id, {
           total_trades: 0,
           win_rate: 0,
@@ -162,11 +162,47 @@ export default function BotsPage() {
     setBulkLoading(true);
     try {
       await Promise.all(filteredBots.map(bot => deleteBot(bot.id)));
+      console.log('All bots deleted successfully');
     } catch (error) {
       console.error('Failed to delete all bots:', error);
     } finally {
       setBulkLoading(false);
     }
+  };
+
+  // Individual bot actions
+  const handleResetBot = async (botId: string, botName: string) => {
+    if (!confirm(`Are you sure you want to reset "${botName}" statistics? This will set PnL, trades count, and win rate to zero.`)) {
+      return;
+    }
+    try {
+      await updateBot(botId, {
+        total_trades: 0,
+        win_rate: 0,
+        pnl: 0,
+        pnl_percentage: 0,
+        last_trade_at: null
+      });
+      console.log(`Bot "${botName}" statistics reset successfully`);
+    } catch (error) {
+      console.error(`Failed to reset bot "${botName}":`, error);
+    }
+  };
+
+  const handleDeleteBot = async (botId: string, botName: string) => {
+    if (!confirm(`Are you sure you want to delete "${botName}"? This action cannot be undone.`)) {
+      return;
+    }
+    try {
+      await deleteBot(botId);
+      console.log(`Bot "${botName}" deleted successfully`);
+    } catch (error) {
+      console.error(`Failed to delete bot "${botName}":`, error);
+    }
+  };
+
+  const handleEditBot = (botId: string) => {
+    navigate(`/edit-bot/${botId}`);
   };
 
   return (
@@ -431,53 +467,87 @@ export default function BotsPage() {
                 })()}
 
                 {/* Bot Actions */}
-                <div className="flex space-x-2 pt-4 border-t border-gray-100">
-                  {bot.status === 'running' ? (
-                    <>
+                <div className="pt-4 border-t border-gray-100">
+                  {/* Primary Actions Row */}
+                  <div className="flex space-x-2 mb-2">
+                    {bot.status === 'running' ? (
+                      <>
+                        <Button 
+                          variant="warning" 
+                          size="sm" 
+                          className="flex-1"
+                          onClick={() => executeBot(bot.id)}
+                          disabled={isExecuting}
+                        >
+                          <i className="ri-play-circle-line mr-1"></i>
+                          Execute
+                        </Button>
+                        <Button 
+                          variant="secondary" 
+                          size="sm" 
+                          onClick={() => handleBotAction(bot.id, 'pause')}
+                        >
+                          <i className="ri-pause-line mr-1"></i>
+                          Pause
+                        </Button>
+                      </>
+                    ) : (
                       <Button 
-                        variant="warning" 
+                        variant="success" 
                         size="sm" 
                         className="flex-1"
-                        onClick={() => executeBot(bot.id)}
-                        disabled={isExecuting}
+                        onClick={() => handleBotAction(bot.id, 'start')}
                       >
-                        <i className="ri-play-circle-line mr-1"></i>
-                        Execute
+                        <i className="ri-play-line mr-1"></i>
+                        Start
                       </Button>
-                      <Button 
-                        variant="secondary" 
-                        size="sm" 
-                        onClick={() => handleBotAction(bot.id, 'pause')}
-                      >
-                        <i className="ri-pause-line mr-1"></i>
-                        Pause
-                      </Button>
-                    </>
-                  ) : (
+                    )}
                     <Button 
-                      variant="success" 
+                      variant="danger" 
+                      size="sm"
+                      onClick={() => handleBotAction(bot.id, 'stop')}
+                    >
+                      <i className="ri-stop-line"></i>
+                    </Button>
+                    <Button 
+                      variant="secondary" 
+                      size="sm"
+                      onClick={() => navigate('/bot-activity')}
+                    >
+                      <i className="ri-file-list-line"></i>
+                    </Button>
+                  </div>
+                  
+                  {/* Management Actions Row */}
+                  <div className="flex space-x-2">
+                    <Button 
+                      variant="primary" 
                       size="sm" 
                       className="flex-1"
-                      onClick={() => handleBotAction(bot.id, 'start')}
+                      onClick={() => handleEditBot(bot.id)}
                     >
-                      <i className="ri-play-line mr-1"></i>
-                      Start
+                      <i className="ri-edit-line mr-1"></i>
+                      Edit
                     </Button>
-                  )}
-                  <Button 
-                    variant="danger" 
-                    size="sm"
-                    onClick={() => handleBotAction(bot.id, 'stop')}
-                  >
-                    <i className="ri-stop-line"></i>
-                  </Button>
-                  <Button 
-                    variant="secondary" 
-                    size="sm"
-                    onClick={() => navigate('/bot-activity')}
-                  >
-                    <i className="ri-file-list-line"></i>
-                  </Button>
+                    <Button 
+                      variant="warning" 
+                      size="sm" 
+                      className="flex-1"
+                      onClick={() => handleResetBot(bot.id, bot.name)}
+                    >
+                      <i className="ri-refresh-line mr-1"></i>
+                      Reset
+                    </Button>
+                    <Button 
+                      variant="danger" 
+                      size="sm" 
+                      className="flex-1"
+                      onClick={() => handleDeleteBot(bot.id, bot.name)}
+                    >
+                      <i className="ri-delete-bin-line mr-1"></i>
+                      Delete
+                    </Button>
+                  </div>
                 </div>
               </Card>
               ))
