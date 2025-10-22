@@ -132,6 +132,29 @@ export default function BotsPage() {
     }
   };
 
+  const handleResetAll = async () => {
+    if (!confirm('Are you sure you want to reset all bot statistics? This will set PnL, trades count, and win rate to zero.')) {
+      return;
+    }
+    setBulkLoading(true);
+    try {
+      await Promise.all(filteredBots.map(bot => 
+        updateBot(bot.id, {
+          total_trades: 0,
+          win_rate: 0,
+          pnl: 0,
+          pnl_percentage: 0,
+          last_trade_at: null
+        })
+      ));
+      console.log('All bot statistics reset successfully');
+    } catch (error) {
+      console.error('Failed to reset all bots:', error);
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
   const handleDeleteAll = async () => {
     if (!confirm('Are you sure you want to delete all bots? This action cannot be undone.')) {
       return;
@@ -178,6 +201,15 @@ export default function BotsPage() {
             >
               <i className="ri-stop-line mr-1"></i>
               Stop All
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleResetAll}
+              disabled={bulkLoading || filteredBots.length === 0}
+            >
+              <i className="ri-refresh-line mr-1"></i>
+              Reset All
             </Button>
             <Button
               variant="danger"
