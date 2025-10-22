@@ -459,12 +459,13 @@ class BotExecutor {
       // Different symbols have different precision requirements
       const getQuantityPrecision = (symbol: string): number => {
         const precisionMap: { [key: string]: number } = {
-          'BTCUSDT': 3,   // Bitcoin: 3 decimals
-          'ETHUSDT': 3,   // Ethereum: 3 decimals
-          'DOTUSDT': 1,   // Polkadot: 1 decimal
-          'UNIUSDT': 1,   // Uniswap: 1 decimal
-          'ADAUSDT': 1,   // Cardano: 1 decimal
-          'SOLUSDT': 2,   // Solana: 2 decimals
+          'BTCUSDT': 3,    // Bitcoin: 3 decimals (0.001 minimum)
+          'ETHUSDT': 2,    // Ethereum: 2 decimals (0.01 minimum)
+          'DOTUSDT': 0,    // Polkadot: whole numbers (1 minimum)
+          'UNIUSDT': 1,    // Uniswap: 1 decimal (0.1 minimum)
+          'ADAUSDT': 0,    // Cardano: whole numbers
+          'AVAXUSDT': 1,   // Avalanche: 1 decimal (0.1 minimum)
+          'SOLUSDT': 1,    // Solana: 1 decimal
         };
         return precisionMap[symbol] || 2; // Default to 2 decimals
       };
@@ -475,15 +476,31 @@ class BotExecutor {
       // Bybit V5 API requires capitalized side: "Buy" or "Sell"
       const capitalizedSide = side.charAt(0).toUpperCase() + side.slice(1).toLowerCase();
       
+      // Calculate Stop Loss and Take Profit for risk management
+      // SL: 2% from entry, TP: 3% from entry
+      const stopLossPrice = capitalizedSide === 'Buy' 
+        ? parseFloat((price * 0.98).toFixed(2))  // 2% below for Buy
+        : parseFloat((price * 1.02).toFixed(2)); // 2% above for Sell
+      
+      const takeProfitPrice = capitalizedSide === 'Buy'
+        ? parseFloat((price * 1.03).toFixed(2))  // 3% above for Buy
+        : parseFloat((price * 0.97).toFixed(2)); // 3% below for Sell
+      
       // Order parameters for the request BODY (and the signature string)
-      const requestBody = {
+      const requestBody: any = {
         category: bybitCategory, // 'linear' for perpetual futures, 'spot' for spot
         symbol: symbol,
         side: capitalizedSide, // "Buy" or "Sell" (capitalized for Bybit V5)
         orderType: 'Market',
         qty: formattedQty,
-        // Add additional futures-specific parameters if needed (e.g., reduce_only: false)
       };
+      
+      // Add SL/TP for futures (linear) trading only
+      // Spot trading doesn't support SL/TP in the same way
+      if (bybitCategory === 'linear') {
+        requestBody.stopLoss = stopLossPrice.toString();
+        requestBody.takeProfit = takeProfitPrice.toString();
+      }
       
       // V5 POST Signature Rule: timestamp + apiKey + recv_window + JSON.stringify(requestBody)
       const signaturePayload = timestamp + apiKey + recvWindow + JSON.stringify(requestBody);
@@ -495,8 +512,12 @@ class BotExecutor {
       console.log('Timestamp:', timestamp);
       console.log('Category:', bybitCategory);
       console.log('Symbol:', symbol);
-      console.log('Side:', side);
+      console.log('Side:', capitalizedSide, '(original:', side + ')');
       console.log('Quantity:', formattedQty);
+      if (bybitCategory === 'linear') {
+        console.log('Stop Loss:', stopLossPrice);
+        console.log('Take Profit:', takeProfitPrice);
+      }
       console.log('=== END DEBUG ===');
       
       const response = await fetch(`${baseUrl}/v5/order/create`, {
