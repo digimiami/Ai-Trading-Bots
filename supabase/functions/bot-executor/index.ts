@@ -546,6 +546,16 @@ class BotExecutor {
       if (data.retCode !== 0) {
         // Log the full error response for debugging
         console.error('Bybit Order Response:', data);
+        
+        // Handle specific error codes with better messages
+        if (data.retCode === 10001) {
+          const constraints = this.getQuantityConstraints(symbol);
+          console.error(`❌ Quantity validation failed for ${symbol}: ${formattedQty}`);
+          console.error(`📏 Constraints: min=${constraints.min}, max=${constraints.max}`);
+          console.error(`💰 Trade amount: $${totalAmount}, Price: $${currentMarketPrice}`);
+          throw new Error(`Invalid quantity for ${symbol}: ${formattedQty}. Min: ${constraints.min}, Max: ${constraints.max}. Please adjust trade amount or check symbol requirements.`);
+        }
+        
         throw new Error(`Bybit order error: ${data.retMsg} (Code: ${data.retCode})`);
       }
       
@@ -726,10 +736,41 @@ class BotExecutor {
     const leverageMultiplier = bot.leverage || 1;
     const riskMultiplier = bot.risk_level === 'high' ? 2 : bot.risk_level === 'medium' ? 1.5 : 1;
     
-    const totalAmount = baseAmount * leverageMultiplier * riskMultiplier;
-    console.log(`💰 Trade calculation: Base=$${baseAmount}, Leverage=${leverageMultiplier}x, Risk=${bot.risk_level}(${riskMultiplier}x) = Total=$${totalAmount}`);
+    // Ensure minimum trade amount for futures trading
+    const minTradeAmount = bot.tradingType === 'futures' ? 50 : 10; // Minimum $50 for futures, $10 for spot
+    const effectiveBaseAmount = Math.max(minTradeAmount, baseAmount);
     
-    return totalAmount / price;
+    const totalAmount = effectiveBaseAmount * leverageMultiplier * riskMultiplier;
+    console.log(`💰 Trade calculation: Base=$${effectiveBaseAmount} (min=$${minTradeAmount}), Leverage=${leverageMultiplier}x, Risk=${bot.risk_level}(${riskMultiplier}x) = Total=$${totalAmount}`);
+    
+    const calculatedQuantity = totalAmount / price;
+    
+    // Apply minimum and maximum quantity constraints based on symbol
+    const constraints = this.getQuantityConstraints(bot.symbol);
+    const finalQuantity = Math.max(constraints.min, Math.min(constraints.max, calculatedQuantity));
+    
+    console.log(`📏 Quantity constraints for ${bot.symbol}: min=${constraints.min}, max=${constraints.max}, calculated=${calculatedQuantity.toFixed(6)}, final=${finalQuantity.toFixed(6)}`);
+    
+    return finalQuantity;
+  }
+
+  private getQuantityConstraints(symbol: string): { min: number, max: number } {
+    const constraints: { [key: string]: { min: number, max: number } } = {
+      'BTCUSDT': { min: 0.001, max: 10 },
+      'ETHUSDT': { min: 0.01, max: 100 },
+      'XRPUSDT': { min: 1, max: 10000 },
+      'ADAUSDT': { min: 1, max: 50000 },
+      'DOTUSDT': { min: 0.1, max: 1000 },
+      'UNIUSDT': { min: 0.1, max: 1000 },
+      'AVAXUSDT': { min: 0.1, max: 1000 },
+      'SOLUSDT': { min: 0.1, max: 1000 },
+      'BNBUSDT': { min: 0.01, max: 100 },
+      'MATICUSDT': { min: 1, max: 10000 },
+      'LINKUSDT': { min: 0.1, max: 1000 },
+      'LTCUSDT': { min: 0.01, max: 100 }
+    };
+    
+    return constraints[symbol] || { min: 0.001, max: 100 };
   }
   
   private async updateBotPerformance(botId: string, trade: any): Promise<void> {
