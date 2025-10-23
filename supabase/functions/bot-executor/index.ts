@@ -554,6 +554,10 @@ class BotExecutor {
           console.error(`📏 Constraints: min=${constraints.min}, max=${constraints.max}`);
           console.error(`💰 Price: $${currentMarketPrice}`);
           throw new Error(`Invalid quantity for ${symbol}: ${formattedQty}. Min: ${constraints.min}, Max: ${constraints.max}. Please adjust trade amount or check symbol requirements.`);
+        } else if (data.retCode === 110007) {
+          console.error(`❌ Insufficient balance for ${symbol} order`);
+          console.error(`💰 Order value: $${(parseFloat(formattedQty) * currentMarketPrice).toFixed(2)}`);
+          throw new Error(`Insufficient balance for ${symbol} order. Order value: $${(parseFloat(formattedQty) * currentMarketPrice).toFixed(2)}. Please check your account balance.`);
         }
         
         throw new Error(`Bybit order error: ${data.retMsg} (Code: ${data.retCode})`);
@@ -607,6 +611,8 @@ class BotExecutor {
       const tpValue = parseFloat(takeProfitPrice);
       const slValue = parseFloat(stopLossPrice);
       
+      console.log(`🔍 SL/TP Validation: Side=${side}, Entry=${entryPrice}, TP=${tpValue}, SL=${slValue}`);
+      
       if (side === 'Buy' && tpValue <= entryPrice) {
         console.warn(`⚠️ Invalid TP for Buy: ${tpValue} <= ${entryPrice}. Adjusting...`);
         takeProfitPrice = (entryPrice * 1.01).toFixed(2); // At least 1% above
@@ -614,6 +620,8 @@ class BotExecutor {
         console.warn(`⚠️ Invalid TP for Sell: ${tpValue} >= ${entryPrice}. Adjusting...`);
         takeProfitPrice = (entryPrice * 0.99).toFixed(2); // At least 1% below
       }
+      
+      console.log(`✅ Final SL/TP: SL=${stopLossPrice}, TP=${takeProfitPrice}`);
       
       const requestBody = {
         category: 'linear',
@@ -780,14 +788,14 @@ class BotExecutor {
     const constraints: { [key: string]: { min: number, max: number } } = {
       'BTCUSDT': { min: 0.001, max: 10 },
       'ETHUSDT': { min: 0.01, max: 100 },
-      'XRPUSDT': { min: 1, max: 10000 },
-      'ADAUSDT': { min: 1, max: 50000 },
+      'XRPUSDT': { min: 10, max: 1000 }, // Reduced max from 10000 to 1000 for Bybit compliance
+      'ADAUSDT': { min: 10, max: 10000 }, // Increased min from 1 to 10
       'DOTUSDT': { min: 0.1, max: 1000 },
       'UNIUSDT': { min: 0.1, max: 1000 },
       'AVAXUSDT': { min: 0.1, max: 1000 },
       'SOLUSDT': { min: 0.1, max: 1000 },
       'BNBUSDT': { min: 0.01, max: 100 },
-      'MATICUSDT': { min: 1, max: 10000 },
+      'MATICUSDT': { min: 10, max: 10000 }, // Increased min from 1 to 10
       'LINKUSDT': { min: 0.1, max: 1000 },
       'LTCUSDT': { min: 0.01, max: 100 }
     };
