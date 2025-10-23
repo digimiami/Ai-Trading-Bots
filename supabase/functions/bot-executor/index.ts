@@ -552,7 +552,7 @@ class BotExecutor {
           const constraints = this.getQuantityConstraints(symbol);
           console.error(`❌ Quantity validation failed for ${symbol}: ${formattedQty}`);
           console.error(`📏 Constraints: min=${constraints.min}, max=${constraints.max}`);
-          console.error(`💰 Trade amount: $${totalAmount}, Price: $${currentMarketPrice}`);
+          console.error(`💰 Price: $${currentMarketPrice}`);
           throw new Error(`Invalid quantity for ${symbol}: ${formattedQty}. Min: ${constraints.min}, Max: ${constraints.max}. Please adjust trade amount or check symbol requirements.`);
         }
         
@@ -589,14 +589,31 @@ class BotExecutor {
       const timestamp = Date.now().toString();
       const recvWindow = '5000';
       
-      // Calculate SL/TP prices
-      const stopLossPrice = side === 'Buy' 
-        ? (entryPrice * 0.98).toFixed(2)   // Buy: SL 2% below
-        : (entryPrice * 1.02).toFixed(2);  // Sell: SL 2% above
+      // Calculate SL/TP prices with proper validation
+      let stopLossPrice: string;
+      let takeProfitPrice: string;
       
-      const takeProfitPrice = side === 'Buy'
-        ? (entryPrice * 1.03).toFixed(2)   // Buy: TP 3% above
-        : (entryPrice * 0.97).toFixed(2);  // Sell: TP 3% below
+      if (side === 'Buy') {
+        // Long position: SL below entry, TP above entry
+        stopLossPrice = (entryPrice * 0.98).toFixed(2);   // 2% below
+        takeProfitPrice = (entryPrice * 1.03).toFixed(2); // 3% above
+      } else {
+        // Short position: SL above entry, TP below entry
+        stopLossPrice = (entryPrice * 1.02).toFixed(2);   // 2% above
+        takeProfitPrice = (entryPrice * 0.97).toFixed(2); // 3% below
+      }
+      
+      // Validate TP is in correct direction
+      const tpValue = parseFloat(takeProfitPrice);
+      const slValue = parseFloat(stopLossPrice);
+      
+      if (side === 'Buy' && tpValue <= entryPrice) {
+        console.warn(`⚠️ Invalid TP for Buy: ${tpValue} <= ${entryPrice}. Adjusting...`);
+        takeProfitPrice = (entryPrice * 1.01).toFixed(2); // At least 1% above
+      } else if (side === 'Sell' && tpValue >= entryPrice) {
+        console.warn(`⚠️ Invalid TP for Sell: ${tpValue} >= ${entryPrice}. Adjusting...`);
+        takeProfitPrice = (entryPrice * 0.99).toFixed(2); // At least 1% below
+      }
       
       const requestBody = {
         category: 'linear',
@@ -739,6 +756,11 @@ class BotExecutor {
     // Ensure minimum trade amount for futures trading
     const minTradeAmount = bot.tradingType === 'futures' ? 50 : 10; // Minimum $50 for futures, $10 for spot
     const effectiveBaseAmount = Math.max(minTradeAmount, baseAmount);
+    
+    // Debug: Check if we're actually using the minimum
+    if (baseAmount < minTradeAmount) {
+      console.log(`⚠️ Trade amount $${baseAmount} below minimum $${minTradeAmount} for ${bot.tradingType} trading. Using $${effectiveBaseAmount}.`);
+    }
     
     const totalAmount = effectiveBaseAmount * leverageMultiplier * riskMultiplier;
     console.log(`💰 Trade calculation: Base=$${effectiveBaseAmount} (min=$${minTradeAmount}), Leverage=${leverageMultiplier}x, Risk=${bot.risk_level}(${riskMultiplier}x) = Total=$${totalAmount}`);
