@@ -806,7 +806,7 @@ class BotExecutor {
   private async updateBotPerformance(botId: string, trade: any): Promise<void> {
     const { data: bot } = await this.supabaseClient
       .from('trading_bots')
-      .select('total_trades, pnl, pnl_percentage')
+      .select('total_trades, pnl, pnl_percentage, win_rate')
       .eq('id', botId)
       .single();
     
@@ -815,12 +815,26 @@ class BotExecutor {
     const newPnL = (bot?.pnl || 0) + tradePnL;
     const newPnLPercentage = (newPnL / 1000) * 100; // Mock percentage calculation
     
+    // Calculate win rate based on profitable trades
+    const { data: allTrades } = await this.supabaseClient
+      .from('trades')
+      .select('pnl')
+      .eq('bot_id', botId)
+      .eq('status', 'filled');
+    
+    const profitableTrades = allTrades?.filter(t => (t.pnl || 0) > 0).length || 0;
+    const totalFilledTrades = allTrades?.length || 0;
+    const newWinRate = totalFilledTrades > 0 ? (profitableTrades / totalFilledTrades) * 100 : 0;
+    
+    console.log(`📊 Win rate calculation: ${profitableTrades}/${totalFilledTrades} = ${newWinRate.toFixed(2)}%`);
+    
     await this.supabaseClient
       .from('trading_bots')
       .update({
         total_trades: newTotalTrades,
         pnl: newPnL,
         pnl_percentage: newPnLPercentage,
+        win_rate: newWinRate,
         last_trade_at: TimeSync.getCurrentTimeISO(),
         updated_at: TimeSync.getCurrentTimeISO()
       })

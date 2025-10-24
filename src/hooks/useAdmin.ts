@@ -19,6 +19,59 @@ interface InvitationCode {
   expires_at: string;
 }
 
+interface TradingBot {
+  id: string;
+  name: string;
+  status: string;
+  total_trades: number;
+  win_rate: number;
+  pnl: number;
+  users: { email: string };
+}
+
+interface SystemStats {
+  totalUsers: number;
+  totalBots: number;
+  totalTrades: number;
+  totalAlerts: number;
+  platformPnL: number;
+  recentTrades: number;
+}
+
+interface TradingAnalytics {
+  totalTrades: number;
+  filledTrades: number;
+  failedTrades: number;
+  pendingTrades: number;
+  totalPnL: number;
+  successRate: number;
+  exchangeStats: Record<string, { count: number; pnl: number }>;
+  trades: any[];
+}
+
+interface FinancialOverview {
+  totalVolume: number;
+  totalFees: number;
+  totalPnL: number;
+  dailyPnL: Record<string, number>;
+  netProfit: number;
+}
+
+interface UserActivity {
+  id: string;
+  email: string;
+  created_at: string;
+  last_sign_in_at: string;
+  trading_bots: any[];
+  trades: any[];
+}
+
+interface RiskMetrics {
+  largeTrades: any[];
+  failedTrades: any[];
+  riskScore: number;
+}
+
 export function useAdmin() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,6 +95,7 @@ export function useAdmin() {
     }
   };
 
+  // Existing user management functions
   const getUsers = async (): Promise<User[]> => {
     const data = await callAdminFunction('getUsers');
     return data.users || [];
@@ -64,13 +118,86 @@ export function useAdmin() {
     return await callAdminFunction('generateInvitationCode', { email, expiresInDays });
   };
 
+  // NEW: Trading Bot Management
+  const getAllBots = async (): Promise<TradingBot[]> => {
+    const data = await callAdminFunction('getAllBots');
+    return data.bots || [];
+  };
+
+  const adminControlBot = async (botId: string, action: string) => {
+    return await callAdminFunction('adminControlBot', { botId, action });
+  };
+
+  const getBotAnalytics = async () => {
+    const data = await callAdminFunction('getBotAnalytics');
+    return data.analytics || [];
+  };
+
+  // NEW: System Monitoring
+  const getSystemStats = async (): Promise<SystemStats> => {
+    const data = await callAdminFunction('getSystemStats');
+    return data.stats;
+  };
+
+  const getTradingAnalytics = async (period: string = '7'): Promise<TradingAnalytics> => {
+    const data = await callAdminFunction('getTradingAnalytics', { period });
+    return data.analytics;
+  };
+
+  // NEW: Financial Oversight
+  const getFinancialOverview = async (): Promise<FinancialOverview> => {
+    const data = await callAdminFunction('getFinancialOverview');
+    return data.financial;
+  };
+
+  // NEW: User Activity Monitoring
+  const getUserActivity = async (): Promise<UserActivity[]> => {
+    const data = await callAdminFunction('getUserActivity');
+    return data.userActivity || [];
+  };
+
+  // NEW: System Logs
+  const getSystemLogs = async (limit: number = 100) => {
+    const data = await callAdminFunction('getSystemLogs', { limit });
+    return data.logs || [];
+  };
+
+  // NEW: Risk Monitoring
+  const getRiskMetrics = async (): Promise<RiskMetrics> => {
+    const data = await callAdminFunction('getRiskMetrics');
+    return data.risk;
+  };
+
+  // NEW: Data Export
+  const exportData = async (type: string, userId?: string) => {
+    const data = await callAdminFunction('exportData', { type, userId });
+    return data.data;
+  };
+
   return {
     loading,
     error,
+    // User Management
     getUsers,
     createUser,
     deleteUser,
     getInvitationCodes,
-    generateInvitationCode
+    generateInvitationCode,
+    // Trading Bot Management
+    getAllBots,
+    adminControlBot,
+    getBotAnalytics,
+    // System Monitoring
+    getSystemStats,
+    getTradingAnalytics,
+    // Financial Oversight
+    getFinancialOverview,
+    // User Activity
+    getUserActivity,
+    // System Administration
+    getSystemLogs,
+    // Risk & Security
+    getRiskMetrics,
+    exportData
   };
 }

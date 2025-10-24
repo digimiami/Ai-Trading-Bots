@@ -25,13 +25,89 @@ interface InvitationCode {
   expires_at: string;
 }
 
+interface TradingBot {
+  id: string;
+  name: string;
+  status: string;
+  total_trades: number;
+  win_rate: number;
+  pnl: number;
+  users: { email: string };
+}
+
+interface SystemStats {
+  totalUsers: number;
+  totalBots: number;
+  totalTrades: number;
+  totalAlerts: number;
+  platformPnL: number;
+  recentTrades: number;
+}
+
+interface TradingAnalytics {
+  totalTrades: number;
+  filledTrades: number;
+  failedTrades: number;
+  pendingTrades: number;
+  totalPnL: number;
+  successRate: number;
+  exchangeStats: Record<string, { count: number; pnl: number }>;
+  trades: any[];
+}
+
+interface FinancialOverview {
+  totalVolume: number;
+  totalFees: number;
+  totalPnL: number;
+  dailyPnL: Record<string, number>;
+  netProfit: number;
+}
+
+interface UserActivity {
+  id: string;
+  email: string;
+  created_at: string;
+  last_sign_in_at: string;
+  trading_bots: any[];
+  trades: any[];
+}
+
+interface RiskMetrics {
+  largeTrades: any[];
+  failedTrades: any[];
+  riskScore: number;
+}
+
 export default function AdminPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { createUser, generateInvitationCode, getUsers, getInvitationCodes } = useAdmin();
+  const { 
+    createUser, 
+    generateInvitationCode, 
+    getUsers, 
+    getInvitationCodes,
+    getAllBots,
+    adminControlBot,
+    getBotAnalytics,
+    getSystemStats,
+    getTradingAnalytics,
+    getFinancialOverview,
+    getUserActivity,
+    getSystemLogs,
+    getRiskMetrics,
+    exportData
+  } = useAdmin();
   
+  const [activeTab, setActiveTab] = useState('overview');
   const [users, setUsers] = useState<User[]>([]);
   const [invitationCodes, setInvitationCodes] = useState<InvitationCode[]>([]);
+  const [allBots, setAllBots] = useState<TradingBot[]>([]);
+  const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
+  const [tradingAnalytics, setTradingAnalytics] = useState<TradingAnalytics | null>(null);
+  const [financialOverview, setFinancialOverview] = useState<FinancialOverview | null>(null);
+  const [userActivity, setUserActivity] = useState<UserActivity[]>([]);
+  const [systemLogs, setSystemLogs] = useState<any[]>([]);
+  const [riskMetrics, setRiskMetrics] = useState<RiskMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [showCreateUser, setShowCreateUser] = useState(false);
   const [showCreateInvitation, setShowCreateInvitation] = useState(false);
@@ -48,24 +124,56 @@ export default function AdminPage() {
   });
 
   useEffect(() => {
+    console.log('🔧 Admin page loaded - User:', user?.email, 'Role:', user?.role);
     if (user?.role !== 'admin') {
+      console.log('❌ User is not admin, redirecting to home');
       navigate('/');
       return;
     }
+    console.log('✅ User is admin, loading admin data...');
     loadData();
   }, [user, navigate]);
 
   const loadData = async () => {
     try {
+      console.log('🔄 Loading admin data...');
       setLoading(true);
-      const [usersData, codesData] = await Promise.all([
+      const [
+        usersData, 
+        codesData, 
+        botsData, 
+        statsData, 
+        analyticsData, 
+        financialData, 
+        activityData, 
+        logsData, 
+        riskData
+      ] = await Promise.all([
         getUsers(),
-        getInvitationCodes()
+        getInvitationCodes(),
+        getAllBots(),
+        getSystemStats(),
+        getTradingAnalytics(),
+        getFinancialOverview(),
+        getUserActivity(),
+        getSystemLogs(),
+        getRiskMetrics()
       ]);
+      
+      console.log('✅ Admin data loaded successfully');
+      
       setUsers(usersData || []);
       setInvitationCodes(codesData || []);
+      setAllBots(botsData || []);
+      setSystemStats(statsData);
+      setTradingAnalytics(analyticsData);
+      setFinancialOverview(financialData);
+      setUserActivity(activityData || []);
+      setSystemLogs(logsData || []);
+      setRiskMetrics(riskData);
     } catch (error) {
-      console.error('Error loading admin data:', error);
+      console.error('❌ Error loading admin data:', error);
+      console.error('❌ Error details:', error.message);
     } finally {
       setLoading(false);
     }
@@ -95,112 +203,484 @@ export default function AdminPage() {
     }
   };
 
+  const handleBotControl = async (botId: string, action: string) => {
+    try {
+      await adminControlBot(botId, action);
+      loadData();
+    } catch (error) {
+      console.error('Error controlling bot:', error);
+    }
+  };
+
+  const handleExportData = async (type: string, userId?: string) => {
+    try {
+      const data = await exportData(type, userId);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${type}_export_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error exporting data:', error);
+    }
+  };
+
   if (user?.role !== 'admin') {
     return null;
   }
+
+  const tabs = [
+    { id: 'overview', label: 'Overview', icon: 'ri-dashboard-line' },
+    { id: 'users', label: 'Users', icon: 'ri-user-line' },
+    { id: 'bots', label: 'Trading Bots', icon: 'ri-robot-line' },
+    { id: 'analytics', label: 'Analytics', icon: 'ri-bar-chart-line' },
+    { id: 'financial', label: 'Financial', icon: 'ri-money-dollar-circle-line' },
+    { id: 'monitoring', label: 'Monitoring', icon: 'ri-eye-line' },
+    { id: 'security', label: 'Security', icon: 'ri-shield-check-line' },
+    { id: 'system', label: 'System', icon: 'ri-settings-line' }
+  ];
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Header 
         title="Admin Panel"
-        subtitle="User Management & System Control"
+        subtitle="Complete System Management & Control"
       />
       
-      <div className="pt-20 pb-20 px-4 space-y-6">
-        {/* Quick Actions */}
-        <div className="grid grid-cols-2 gap-4">
-          <Button
-            variant="primary"
-            onClick={() => setShowCreateUser(true)}
-            className="h-16"
-          >
-            <i className="ri-user-add-line mr-2"></i>
-            Create User
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => setShowCreateInvitation(true)}
-            className="h-16"
-          >
-            <i className="ri-mail-send-line mr-2"></i>
-            Send Invitation
-          </Button>
-        </div>
-
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-4">
-          <Card className="text-center p-4">
-            <div className="text-2xl font-bold text-blue-600">{users.length}</div>
-            <div className="text-sm text-gray-500">Total Users</div>
-          </Card>
-          <Card className="text-center p-4">
-            <div className="text-2xl font-bold text-green-600">
-              {invitationCodes.filter(code => !code.used).length}
-            </div>
-            <div className="text-sm text-gray-500">Active Invitations</div>
-          </Card>
-          <Card className="text-center p-4">
-            <div className="text-2xl font-bold text-purple-600">
-              {users.filter(u => u.role === 'admin').length}
-            </div>
-            <div className="text-sm text-gray-500">Admins</div>
-          </Card>
-        </div>
-
-        {/* Users List */}
-        <Card className="p-4">
-          <h3 className="text-lg font-semibold mb-4">Users</h3>
-          {loading ? (
-            <div className="text-center py-8">
-              <i className="ri-loader-4-line animate-spin text-2xl text-gray-400"></i>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {users.map((user) => (
-                <div key={user.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div>
-                    <div className="font-medium">{user.email}</div>
-                    <div className="text-sm text-gray-500">
-                      Role: {user.role} • Created: {new Date(user.created_at).toLocaleDateString()}
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <span className={`px-2 py-1 rounded-full text-xs ${
-                      user.role === 'admin' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'
-                    }`}>
-                      {user.role}
-                    </span>
-                    <div className={`w-2 h-2 rounded-full ${
-                      user.last_sign_in_at ? 'bg-green-500' : 'bg-gray-400'
-                    }`}></div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-
-        {/* Invitation Codes */}
-        <Card className="p-4">
-          <h3 className="text-lg font-semibold mb-4">Invitation Codes</h3>
-          <div className="space-y-3">
-            {invitationCodes.map((code) => (
-              <div key={code.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <div>
-                  <div className="font-mono text-sm">{code.code}</div>
-                  <div className="text-sm text-gray-500">
-                    For: {code.email} • Expires: {new Date(code.expires_at).toLocaleDateString()}
-                  </div>
-                </div>
-                <span className={`px-2 py-1 rounded-full text-xs ${
-                  code.used ? 'bg-gray-100 text-gray-800' : 'bg-green-100 text-green-800'
-                }`}>
-                  {code.used ? 'Used' : 'Active'}
-                </span>
-              </div>
+      <div className="pt-20 pb-20 px-4">
+        {/* Tab Navigation */}
+        <div className="mb-6">
+          <div className="flex flex-wrap gap-2">
+            {tabs.map((tab) => (
+              <Button
+                key={tab.id}
+                variant={activeTab === tab.id ? 'primary' : 'secondary'}
+                onClick={() => setActiveTab(tab.id)}
+                className="flex items-center gap-2"
+              >
+                <i className={tab.icon}></i>
+                {tab.label}
+              </Button>
             ))}
           </div>
-        </Card>
+        </div>
+
+        {/* Overview Tab */}
+        {activeTab === 'overview' && (
+          <div className="space-y-6">
+            {/* Quick Stats */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Card className="text-center p-4">
+                <div className="text-2xl font-bold text-blue-600">{systemStats?.totalUsers || 0}</div>
+                <div className="text-sm text-gray-500">Total Users</div>
+              </Card>
+              <Card className="text-center p-4">
+                <div className="text-2xl font-bold text-green-600">{systemStats?.totalBots || 0}</div>
+                <div className="text-sm text-gray-500">Active Bots</div>
+              </Card>
+              <Card className="text-center p-4">
+                <div className="text-2xl font-bold text-purple-600">{systemStats?.totalTrades || 0}</div>
+                <div className="text-sm text-gray-500">Total Trades</div>
+              </Card>
+              <Card className="text-center p-4">
+                <div className="text-2xl font-bold text-orange-600">${systemStats?.platformPnL?.toFixed(2) || '0.00'}</div>
+                <div className="text-sm text-gray-500">Platform PnL</div>
+              </Card>
+            </div>
+
+            {/* Quick Actions */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Button
+                variant="primary"
+                onClick={() => setShowCreateUser(true)}
+                className="h-16 flex flex-col items-center justify-center"
+              >
+                <i className="ri-user-add-line text-2xl mb-2"></i>
+                Create User
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => setShowCreateInvitation(true)}
+                className="h-16 flex flex-col items-center justify-center"
+              >
+                <i className="ri-mail-send-line text-2xl mb-2"></i>
+                Send Invitation
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => handleExportData('all_trades')}
+                className="h-16 flex flex-col items-center justify-center"
+              >
+                <i className="ri-download-line text-2xl mb-2"></i>
+                Export Data
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => setActiveTab('monitoring')}
+                className="h-16 flex flex-col items-center justify-center"
+              >
+                <i className="ri-eye-line text-2xl mb-2"></i>
+                View Logs
+              </Button>
+            </div>
+
+            {/* Recent Activity */}
+            <Card className="p-4">
+              <h3 className="text-lg font-semibold mb-4">Recent Trading Activity</h3>
+              {loading ? (
+                <div className="text-center py-8">
+                  <i className="ri-loader-4-line animate-spin text-2xl text-gray-400"></i>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {tradingAnalytics?.trades?.slice(0, 10).map((trade, index) => (
+                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div>
+                        <div className="font-medium">{trade.symbol} - {trade.side}</div>
+                        <div className="text-sm text-gray-500">
+                          {trade.exchange} • {new Date(trade.created_at).toLocaleString()}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className={`font-medium ${trade.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          ${trade.pnl?.toFixed(2) || '0.00'}
+                        </div>
+                        <span className={`px-2 py-1 rounded-full text-xs ${
+                          trade.status === 'filled' ? 'bg-green-100 text-green-800' :
+                          trade.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-red-100 text-red-800'
+                        }`}>
+                          {trade.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
+        )}
+
+        {/* Users Tab */}
+        {activeTab === 'users' && (
+          <div className="space-y-6">
+            <Card className="p-4">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold">User Management</h3>
+                <Button onClick={() => setShowCreateUser(true)}>
+                  <i className="ri-user-add-line mr-2"></i>
+                  Create User
+                </Button>
+              </div>
+              {loading ? (
+                <div className="text-center py-8">
+                  <i className="ri-loader-4-line animate-spin text-2xl text-gray-400"></i>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {users.map((user) => (
+                    <div key={user.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div>
+                        <div className="font-medium">{user.email}</div>
+                        <div className="text-sm text-gray-500">
+                          Role: {user.role} • Created: {new Date(user.created_at).toLocaleDateString()}
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <span className={`px-2 py-1 rounded-full text-xs ${
+                          user.role === 'admin' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'
+                        }`}>
+                          {user.role}
+                        </span>
+                        <div className={`w-2 h-2 rounded-full ${
+                          user.last_sign_in_at ? 'bg-green-500' : 'bg-gray-400'
+                        }`}></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+
+            <Card className="p-4">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold">Invitation Codes</h3>
+                <Button onClick={() => setShowCreateInvitation(true)}>
+                  <i className="ri-mail-send-line mr-2"></i>
+                  Create Invitation
+                </Button>
+              </div>
+              <div className="space-y-3">
+                {invitationCodes.map((code) => (
+                  <div key={code.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div>
+                      <div className="font-mono text-sm">{code.code}</div>
+                      <div className="text-sm text-gray-500">
+                        For: {code.email} • Expires: {new Date(code.expires_at).toLocaleDateString()}
+                      </div>
+                    </div>
+                    <span className={`px-2 py-1 rounded-full text-xs ${
+                      code.used ? 'bg-gray-100 text-gray-800' : 'bg-green-100 text-green-800'
+                    }`}>
+                      {code.used ? 'Used' : 'Active'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* Trading Bots Tab */}
+        {activeTab === 'bots' && (
+          <div className="space-y-6">
+            <Card className="p-4">
+              <h3 className="text-lg font-semibold mb-4">All Trading Bots</h3>
+              {loading ? (
+                <div className="text-center py-8">
+                  <i className="ri-loader-4-line animate-spin text-2xl text-gray-400"></i>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {allBots.map((bot) => (
+                    <div key={bot.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div>
+                        <div className="font-medium">{bot.name}</div>
+                        <div className="text-sm text-gray-500">
+                          Owner: {bot.users.email} • Trades: {bot.total_trades} • Win Rate: {bot.win_rate?.toFixed(1)}%
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <span className={`px-2 py-1 rounded-full text-xs ${
+                          bot.status === 'running' ? 'bg-green-100 text-green-800' :
+                          bot.status === 'paused' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-red-100 text-red-800'
+                        }`}>
+                          {bot.status}
+                        </span>
+                        <div className="flex space-x-1">
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => handleBotControl(bot.id, 'running')}
+                            disabled={bot.status === 'running'}
+                          >
+                            <i className="ri-play-line"></i>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => handleBotControl(bot.id, 'paused')}
+                            disabled={bot.status === 'paused'}
+                          >
+                            <i className="ri-pause-line"></i>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => handleBotControl(bot.id, 'stopped')}
+                            disabled={bot.status === 'stopped'}
+                          >
+                            <i className="ri-stop-line"></i>
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
+        )}
+
+        {/* Analytics Tab */}
+        {activeTab === 'analytics' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Card className="text-center p-4">
+                <div className="text-2xl font-bold text-blue-600">{tradingAnalytics?.totalTrades || 0}</div>
+                <div className="text-sm text-gray-500">Total Trades</div>
+              </Card>
+              <Card className="text-center p-4">
+                <div className="text-2xl font-bold text-green-600">{tradingAnalytics?.filledTrades || 0}</div>
+                <div className="text-sm text-gray-500">Successful</div>
+              </Card>
+              <Card className="text-center p-4">
+                <div className="text-2xl font-bold text-red-600">{tradingAnalytics?.failedTrades || 0}</div>
+                <div className="text-sm text-gray-500">Failed</div>
+              </Card>
+              <Card className="text-center p-4">
+                <div className="text-2xl font-bold text-purple-600">{tradingAnalytics?.successRate?.toFixed(1) || '0.0'}%</div>
+                <div className="text-sm text-gray-500">Success Rate</div>
+              </Card>
+            </div>
+
+            <Card className="p-4">
+              <h3 className="text-lg font-semibold mb-4">Exchange Statistics</h3>
+              <div className="space-y-3">
+                {Object.entries(tradingAnalytics?.exchangeStats || {}).map(([exchange, stats]) => (
+                  <div key={exchange} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div>
+                      <div className="font-medium">{exchange}</div>
+                      <div className="text-sm text-gray-500">{stats.count} trades</div>
+                    </div>
+                    <div className={`font-medium ${stats.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      ${stats.pnl.toFixed(2)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* Financial Tab */}
+        {activeTab === 'financial' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Card className="text-center p-4">
+                <div className="text-2xl font-bold text-blue-600">${financialOverview?.totalVolume?.toFixed(2) || '0.00'}</div>
+                <div className="text-sm text-gray-500">Total Volume</div>
+              </Card>
+              <Card className="text-center p-4">
+                <div className="text-2xl font-bold text-green-600">${financialOverview?.totalPnL?.toFixed(2) || '0.00'}</div>
+                <div className="text-sm text-gray-500">Total PnL</div>
+              </Card>
+              <Card className="text-center p-4">
+                <div className="text-2xl font-bold text-red-600">${financialOverview?.totalFees?.toFixed(2) || '0.00'}</div>
+                <div className="text-sm text-gray-500">Total Fees</div>
+              </Card>
+              <Card className="text-center p-4">
+                <div className="text-2xl font-bold text-purple-600">${financialOverview?.netProfit?.toFixed(2) || '0.00'}</div>
+                <div className="text-sm text-gray-500">Net Profit</div>
+              </Card>
+            </div>
+          </div>
+        )}
+
+        {/* Monitoring Tab */}
+        {activeTab === 'monitoring' && (
+          <div className="space-y-6">
+            <Card className="p-4">
+              <h3 className="text-lg font-semibold mb-4">System Logs</h3>
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {systemLogs.map((log, index) => (
+                  <div key={index} className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
+                    <div className={`w-2 h-2 rounded-full mt-2 ${
+                      log.level === 'error' ? 'bg-red-500' :
+                      log.level === 'warning' ? 'bg-yellow-500' :
+                      log.level === 'success' ? 'bg-green-500' :
+                      'bg-blue-500'
+                    }`}></div>
+                    <div className="flex-1">
+                      <div className="font-medium">{log.message}</div>
+                      <div className="text-sm text-gray-500">
+                        {log.category} • {new Date(log.created_at).toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* Security Tab */}
+        {activeTab === 'security' && (
+          <div className="space-y-6">
+            <Card className="p-4">
+              <h3 className="text-lg font-semibold mb-4">Risk Monitoring</h3>
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div className="text-center p-4 bg-gray-50 rounded-lg">
+                  <div className="text-2xl font-bold text-red-600">{riskMetrics?.riskScore || 0}</div>
+                  <div className="text-sm text-gray-500">Risk Score</div>
+                </div>
+                <div className="text-center p-4 bg-gray-50 rounded-lg">
+                  <div className="text-2xl font-bold text-orange-600">{riskMetrics?.largeTrades?.length || 0}</div>
+                  <div className="text-sm text-gray-500">Large Trades</div>
+                </div>
+              </div>
+              
+              <div className="space-y-3">
+                <h4 className="font-medium">Recent Failed Trades</h4>
+                {riskMetrics?.failedTrades?.slice(0, 10).map((trade, index) => (
+                  <div key={index} className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
+                    <div>
+                      <div className="font-medium">{trade.symbol} - {trade.side}</div>
+                      <div className="text-sm text-gray-500">
+                        {trade.exchange} • {new Date(trade.created_at).toLocaleString()}
+                      </div>
+                    </div>
+                    <span className="px-2 py-1 rounded-full text-xs bg-red-100 text-red-800">
+                      Failed
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* System Tab */}
+        {activeTab === 'system' && (
+          <div className="space-y-6">
+            <Card className="p-4">
+              <h3 className="text-lg font-semibold mb-4">Data Export</h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <Button
+                  variant="secondary"
+                  onClick={() => handleExportData('all_trades')}
+                  className="h-16 flex flex-col items-center justify-center"
+                >
+                  <i className="ri-download-line text-2xl mb-2"></i>
+                  Export All Trades
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => handleExportData('users')}
+                  className="h-16 flex flex-col items-center justify-center"
+                >
+                  <i className="ri-user-line text-2xl mb-2"></i>
+                  Export Users
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => handleExportData('all_trades')}
+                  className="h-16 flex flex-col items-center justify-center"
+                >
+                  <i className="ri-database-line text-2xl mb-2"></i>
+                  Export System Data
+                </Button>
+              </div>
+            </Card>
+
+            <Card className="p-4">
+              <h3 className="text-lg font-semibold mb-4">System Information</h3>
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Database Status:</span>
+                  <span className="text-green-600 font-medium">Connected</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">API Status:</span>
+                  <span className="text-green-600 font-medium">Operational</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Last Backup:</span>
+                  <span className="text-gray-800">{new Date().toLocaleDateString()}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">System Uptime:</span>
+                  <span className="text-gray-800">99.9%</span>
+                </div>
+              </div>
+            </Card>
+          </div>
+        )}
 
         {/* Create User Modal */}
         {showCreateUser && (

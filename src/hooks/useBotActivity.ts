@@ -35,24 +35,35 @@ export function useBotActivity(bots?: any[]) {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('No active session');
 
-      const newLog: Omit<BotActivityLog, 'id'> = {
-        ...log,
-        botId,
+      const newLog = {
+        bot_id: botId,
+        level: log.level,
+        category: log.category,
+        message: log.message,
+        details: log.details,
         timestamp: new Date().toISOString(),
       };
 
-      // Store in localStorage for now (in production, use database)
-      const existingLogs = JSON.parse(localStorage.getItem(`bot_logs_${botId}`) || '[]');
-      const updatedLogs = [...existingLogs, { ...newLog, id: Date.now().toString() }];
-      localStorage.setItem(`bot_logs_${botId}`, JSON.stringify(updatedLogs));
+      // Save to database
+      const { error } = await supabase
+        .from('bot_activity_logs')
+        .insert(newLog);
+
+      if (error) {
+        console.error('Error saving log to database:', error);
+        // Fallback to localStorage
+        const existingLogs = JSON.parse(localStorage.getItem(`bot_logs_${botId}`) || '[]');
+        const updatedLogs = [...existingLogs, { ...log, id: Date.now().toString(), botId, timestamp: new Date().toISOString() }];
+        localStorage.setItem(`bot_logs_${botId}`, JSON.stringify(updatedLogs));
+      }
 
       // Update activities state
       setActivities(prev => prev.map(activity => 
         activity.botId === botId 
           ? {
               ...activity,
-              logs: [...activity.logs, { ...newLog, id: Date.now().toString() }],
-              lastActivity: newLog.timestamp,
+              logs: [{ ...log, id: Date.now().toString(), botId, timestamp: new Date().toISOString() }, ...activity.logs.slice(0, 49)],
+              lastActivity: new Date().toISOString(),
               errorCount: log.level === 'error' ? activity.errorCount + 1 : activity.errorCount,
               successCount: log.level === 'success' ? activity.successCount + 1 : activity.successCount,
             }
@@ -68,13 +79,33 @@ export function useBotActivity(bots?: any[]) {
 
   const fetchBotLogs = async (botId: string) => {
     try {
-      const logs = JSON.parse(localStorage.getItem(`bot_logs_${botId}`) || '[]');
-      return logs.sort((a: BotActivityLog, b: BotActivityLog) => 
-        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-      );
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('No active session');
+
+      const { data: logs, error } = await supabase
+        .from('bot_activity_logs')
+        .select('*')
+        .eq('bot_id', botId)
+        .order('timestamp', { ascending: false })
+        .limit(100);
+
+      if (error) {
+        console.error('Error fetching bot logs from database:', error);
+        // Fallback to localStorage if database fails
+        const fallbackLogs = JSON.parse(localStorage.getItem(`bot_logs_${botId}`) || '[]');
+        return fallbackLogs.sort((a: BotActivityLog, b: BotActivityLog) => 
+          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        );
+      }
+
+      return logs || [];
     } catch (err) {
       console.error('Error fetching bot logs:', err);
-      return [];
+      // Fallback to localStorage
+      const fallbackLogs = JSON.parse(localStorage.getItem(`bot_logs_${botId}`) || '[]');
+      return fallbackLogs.sort((a: BotActivityLog, b: BotActivityLog) => 
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+      );
     }
   };
 

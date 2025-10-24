@@ -24,8 +24,9 @@ async function fetchBybitBalance(apiKey: string, apiSecret: string, isTestnet: b
     const timestamp = Date.now().toString()
     const recvWindow = '5000'
     
-    // Bybit V5 API signature format - CORRECTED approach
-    // Step 1: Create parameters object with ALL parameters including api_key
+    // Bybit V5 API - Use HEADER authentication
+    // Step 1: Create parameters for signature (INCLUDE api_key)
+    // Bybit only supports UNIFIED account type for wallet balance
     const params = {
       api_key: apiKey,
       accountType: 'UNIFIED',
@@ -33,32 +34,54 @@ async function fetchBybitBalance(apiKey: string, apiSecret: string, isTestnet: b
       timestamp: timestamp
     }
     
-    // Step 2: Sort parameters alphabetically (Bybit requirement)
+    // Step 2: Sort parameters alphabetically
+    console.log('=== PARAMETER DEBUG (API-KEYS) ===');
+    console.log('Raw params:', params);
+    console.log('Param keys:', Object.keys(params));
+    console.log('Sorted keys:', Object.keys(params).sort());
+    
     const sortedParams = Object.keys(params)
       .sort()
       .map(key => `${key}=${params[key]}`)
       .join('&')
     
-    console.log('=== BYBIT SIGNATURE DEBUG (CORRECTED) ===')
-    console.log('1. Original params:', params)
+    console.log('Sorted params string:', sortedParams);
+    console.log('Sorted params length:', sortedParams.length);
+    
+    // Step 3: Create signature string (timestamp + api_key + recv_window + parameters)
+    const signatureString = timestamp + apiKey + recvWindow + sortedParams
+    
+    console.log('=== BYBIT SIGNATURE DEBUG (HEADER AUTH) ===')
+    console.log('0. Environment:', isTestnet ? 'TESTNET' : 'MAINNET')
+    console.log('0. Base URL:', baseUrl)
+    console.log('0. Endpoint: /v5/account/wallet-balance')
+    console.log('0. IMPORTANT: If TESTNET, account might be empty - need testnet funds!')
+    console.log('1. Params for signature:', params)
     console.log('2. Sorted params string:', sortedParams)
-    console.log('3. API Key (first 10 chars):', apiKey.substring(0, 10) + '...')
-    console.log('4. Secret (first 10 chars):', apiSecret.substring(0, 10) + '...')
+    console.log('3. Signature string length:', signatureString.length)
+    console.log('4. Signature string (first 100 chars):', signatureString.substring(0, 100))
+    console.log('5. Signature string (last 100 chars):', signatureString.substring(Math.max(0, signatureString.length - 100)))
+    console.log('6. API Key (first 10 chars):', apiKey.substring(0, 10) + '...')
+    console.log('7. Secret (first 10 chars):', apiSecret.substring(0, 10) + '...')
     
-    // Step 3: Create signature using the sorted parameter string
-    const signature = await createBybitSignature(sortedParams, apiSecret)
+    // Step 4: Create signature using the signature string
+    const signature = await createBybitSignature(signatureString, apiSecret)
     
-    console.log('5. Generated signature:', signature)
+    console.log('6. Generated signature:', signature)
     
-    // Step 4: Build final URL with signature
-    const finalUrl = `${baseUrl}/v5/account/wallet-balance?${sortedParams}&sign=${signature}`
+    // Step 5: Build URL with parameters (no signature in URL)
+    const finalUrl = `${baseUrl}/v5/account/wallet-balance?${sortedParams}`
     
-    console.log('6. Final URL:', finalUrl)
+    console.log('7. Final URL:', finalUrl)
     console.log('=== END DEBUG ===')
     
     const response = await fetch(finalUrl, {
       method: 'GET',
       headers: {
+        'X-BAPI-API-KEY': apiKey,
+        'X-BAPI-SIGN': signature,
+        'X-BAPI-TIMESTAMP': timestamp,
+        'X-BAPI-RECV-WINDOW': recvWindow,
         'Content-Type': 'application/json',
       }
     })
@@ -70,14 +93,29 @@ async function fetchBybitBalance(apiKey: string, apiSecret: string, isTestnet: b
     }
     
     const data = await response.json()
-    console.log('Bybit API Response:', data)
+    console.log('Bybit API Response:', JSON.stringify(data, null, 2))
+    console.log('Bybit Response Status:', response.status)
+    console.log('Bybit Response Headers:', Object.fromEntries(response.headers.entries()))
     
     if (data.retCode !== 0) {
+      console.error('Bybit API Error:', data.retCode, data.retMsg)
       throw new Error(`Bybit API error: ${data.retMsg}`)
     }
     
-    const account = data.result?.list?.[0]
-    if (!account) {
+    console.log('Bybit API Success - Processing balance data...')
+    console.log('Full API Response Structure:', JSON.stringify(data, null, 2))
+    console.log('Result object:', data.result)
+    console.log('Result list length:', data.result?.list?.length || 0)
+    console.log('Result list:', data.result?.list)
+    
+    // Check if we have any accounts at all
+    if (!data.result || !data.result.list || data.result.list.length === 0) {
+      console.log('No accounts found in UNIFIED response')
+      console.log('This might mean:')
+      console.log('1. Account has no funds')
+      console.log('2. API key lacks permissions')
+      console.log('3. Account structure is different')
+      
       return {
         exchange: 'bybit',
         totalBalance: 0,
@@ -85,9 +123,21 @@ async function fetchBybitBalance(apiKey: string, apiSecret: string, isTestnet: b
         lockedBalance: 0,
         assets: [],
         lastUpdated: new Date().toISOString(),
-        status: 'connected'
+        status: 'connected',
+        note: 'No account data found in UNIFIED account - check if account has funds or API permissions'
       }
     }
+    
+    const account = data.result?.list?.[0]
+    
+    console.log('Found account data:', JSON.stringify(account, null, 2))
+    console.log('Account type:', account.accountType)
+    console.log('Account coins:', account.coin)
+    console.log('Account total wallet balance:', account.totalWalletBalance)
+    console.log('Account total equity:', account.totalEquity)
+    console.log('Account total margin balance:', account.totalMarginBalance)
+    console.log('Account total available balance:', account.totalAvailableBalance)
+    console.log('All account fields:', Object.keys(account))
     
     let totalBalance = 0
     let availableBalance = 0
@@ -95,10 +145,54 @@ async function fetchBybitBalance(apiKey: string, apiSecret: string, isTestnet: b
     const assets: any[] = []
     
     // Process coin balances
-    for (const coin of account.coin || []) {
+    console.log('Processing coin balances...')
+    const coins = account.coin || []
+    console.log('Number of coins:', coins.length)
+    
+    // Try to use total wallet balance first (more reliable)
+    if (account.totalWalletBalance && parseFloat(account.totalWalletBalance) > 0) {
+      console.log('Using totalWalletBalance:', account.totalWalletBalance)
+      
+      // Still process coins for asset breakdown
+      for (const coin of coins) {
+        const free = parseFloat(coin.free || '0')
+        const locked = parseFloat(coin.locked || '0')
+        const total = free + locked
+        
+        console.log(`Coin: ${coin.coin}, Free: ${free}, Locked: ${locked}, Total: ${total}`)
+        
+        if (total > 0) {
+          assets.push({
+            asset: coin.coin,
+            free,
+            locked,
+            total
+          })
+        }
+      }
+      
+      return {
+        exchange: 'bybit',
+        totalBalance: parseFloat(account.totalWalletBalance),
+        availableBalance: parseFloat(account.totalWalletBalance),
+        lockedBalance: 0,
+        assets,
+        lastUpdated: new Date().toISOString(),
+        status: 'connected',
+        accountType: 'UNIFIED',
+        note: 'Using totalWalletBalance'
+      }
+    }
+    
+    // Fallback to coin-by-coin calculation if totalWalletBalance not available
+    console.log('totalWalletBalance not available, calculating from coins...')
+    
+    for (const coin of coins) {
       const free = parseFloat(coin.free || '0')
       const locked = parseFloat(coin.locked || '0')
       const total = free + locked
+      
+      console.log(`Coin: ${coin.coin}, Free: ${free}, Locked: ${locked}, Total: ${total}`)
       
       totalBalance += total
       availableBalance += free
@@ -111,6 +205,8 @@ async function fetchBybitBalance(apiKey: string, apiSecret: string, isTestnet: b
         total
       })
     }
+    
+    console.log(`Final balances - Total: ${totalBalance}, Available: ${availableBalance}, Locked: ${lockedBalance}`)
     
     return {
       exchange: 'bybit',
@@ -137,7 +233,7 @@ async function fetchBybitBalance(apiKey: string, apiSecret: string, isTestnet: b
 }
 
 async function fetchOKXBalance(apiKey: string, apiSecret: string, passphrase: string, isTestnet: boolean) {
-  const baseUrl = isTestnet ? 'https://www.okx.com' : 'https://www.okx.com'
+  const baseUrl = 'https://www.okx.com' // OKX uses same URL for both testnet and live
   
   try {
     // OKX requires timestamp in ISO format with milliseconds
@@ -147,6 +243,8 @@ async function fetchOKXBalance(apiKey: string, apiSecret: string, passphrase: st
     const body = ''
     
     console.log('=== OKX SIGNATURE DEBUG ===')
+    console.log('0. Environment:', isTestnet ? 'TESTNET' : 'MAINNET')
+    console.log('0. Base URL:', baseUrl)
     console.log('1. Timestamp:', timestamp)
     console.log('2. Method:', method)
     console.log('3. Request Path:', requestPath)
@@ -162,15 +260,22 @@ async function fetchOKXBalance(apiKey: string, apiSecret: string, passphrase: st
     console.log('9. Full URL:', `${baseUrl}${requestPath}`)
     console.log('=== END OKX DEBUG ===')
     
+    const headers: any = {
+      'OK-ACCESS-KEY': apiKey,
+      'OK-ACCESS-SIGN': signature,
+      'OK-ACCESS-TIMESTAMP': timestamp,
+      'OK-ACCESS-PASSPHRASE': passphrase,
+      'Content-Type': 'application/json'
+    }
+    
+    // Add simulated trading header for testnet
+    if (isTestnet) {
+      headers['x-simulated-trading'] = '1'
+    }
+    
     const response = await fetch(`${baseUrl}${requestPath}`, {
       method,
-      headers: {
-        'OK-ACCESS-KEY': apiKey,
-        'OK-ACCESS-SIGN': signature,
-        'OK-ACCESS-TIMESTAMP': timestamp,
-        'OK-ACCESS-PASSPHRASE': passphrase,
-        'Content-Type': 'application/json'
-      }
+      headers
     })
     
     if (!response.ok) {
@@ -350,6 +455,9 @@ serve(async (req) => {
 
         if (action === 'balances') {
           // Fetch balances from connected exchanges
+          console.log('=== BALANCES ENDPOINT DEBUG ===')
+          console.log('User ID:', user.id)
+          
           const { data: apiKeys, error } = await supabaseClient
             .from('api_keys')
             .select('exchange, api_key, api_secret, passphrase, is_testnet')
@@ -357,6 +465,9 @@ serve(async (req) => {
             .eq('is_active', true)
 
           if (error) throw error
+
+          console.log('Found API keys:', apiKeys?.length || 0)
+          console.log('API keys data:', apiKeys)
 
           const balances = []
 

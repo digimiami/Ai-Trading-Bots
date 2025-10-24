@@ -3,6 +3,7 @@ export interface TradingBot {
   id: string;
   name: string;
   exchange: 'bybit' | 'okx';
+  tradingType: 'spot' | 'futures';
   symbol: string;
   status: 'active' | 'paused' | 'stopped';
   leverage: number;

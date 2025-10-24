@@ -45,6 +45,7 @@ serve(async (req) => {
     const { action, ...params } = await req.json()
 
     switch (action) {
+      // Existing user management functions
       case 'getUsers':
         const { data: users, error: usersError } = await supabaseClient
           .from('users')
@@ -59,7 +60,6 @@ serve(async (req) => {
       case 'createUser':
         const { email, password, role } = params
         
-        // Create user in auth
         const { data: newUser, error: createError } = await supabaseClient.auth.admin.createUser({
           email,
           password,
@@ -68,7 +68,6 @@ serve(async (req) => {
 
         if (createError) throw createError
 
-        // Create user record in database
         const { error: dbError } = await supabaseClient
           .from('users')
           .insert({
@@ -101,7 +100,6 @@ serve(async (req) => {
       case 'generateInvitationCode':
         const { email: inviteEmail, expiresInDays } = params
         
-        // Generate unique code
         const code = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
         const expiresAt = new Date()
         expiresAt.setDate(expiresAt.getDate() + (expiresInDays || 7))
@@ -130,11 +128,9 @@ serve(async (req) => {
       case 'deleteUser':
         const { userId } = params
         
-        // Delete from auth
         const { error: deleteAuthError } = await supabaseClient.auth.admin.deleteUser(userId)
         if (deleteAuthError) throw deleteAuthError
 
-        // Delete from database
         const { error: deleteDbError } = await supabaseClient
           .from('users')
           .delete()
@@ -146,6 +142,264 @@ serve(async (req) => {
           success: true, 
           message: 'User deleted successfully' 
         }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+
+      // NEW: Trading Bot Management
+      case 'getAllBots':
+        const { data: allBots, error: allBotsError } = await supabaseClient
+          .from('trading_bots')
+          .select(`
+            *,
+            users!inner(email)
+          `)
+          .order('created_at', { ascending: false })
+
+        if (allBotsError) throw allBotsError
+        return new Response(JSON.stringify({ bots: allBots }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+
+      case 'adminControlBot':
+        const { botId, action: botAction } = params
+        
+        const { error: botControlError } = await supabaseClient
+          .from('trading_bots')
+          .update({ status: botAction })
+          .eq('id', botId)
+
+        if (botControlError) throw botControlError
+
+        return new Response(JSON.stringify({ 
+          success: true, 
+          message: `Bot ${botAction} successfully` 
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+
+      case 'getBotAnalytics':
+        const { data: botStats, error: botStatsError } = await supabaseClient
+          .from('trading_bots')
+          .select(`
+            id,
+            name,
+            status,
+            total_trades,
+            win_rate,
+            pnl,
+            users!inner(email)
+          `)
+
+        if (botStatsError) throw botStatsError
+        return new Response(JSON.stringify({ analytics: botStats }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+
+      // NEW: System Monitoring
+      case 'getSystemStats':
+        const { data: userCount } = await supabaseClient
+          .from('users')
+          .select('id', { count: 'exact' })
+
+        const { data: botCount } = await supabaseClient
+          .from('trading_bots')
+          .select('id', { count: 'exact' })
+
+        const { data: tradeCount } = await supabaseClient
+          .from('trades')
+          .select('id', { count: 'exact' })
+
+        const { data: alertCount } = await supabaseClient
+          .from('alerts')
+          .select('id', { count: 'exact' })
+
+        // Get recent trading activity
+        const { data: recentTrades } = await supabaseClient
+          .from('trades')
+          .select('id, created_at, status, pnl')
+          .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+          .order('created_at', { ascending: false })
+
+        // Calculate platform PnL
+        const { data: platformPnL } = await supabaseClient
+          .from('trades')
+          .select('pnl')
+          .eq('status', 'filled')
+
+        const totalPnL = platformPnL?.reduce((sum, trade) => sum + (trade.pnl || 0), 0) || 0
+
+        return new Response(JSON.stringify({
+          stats: {
+            totalUsers: userCount?.length || 0,
+            totalBots: botCount?.length || 0,
+            totalTrades: tradeCount?.length || 0,
+            totalAlerts: alertCount?.length || 0,
+            platformPnL: totalPnL,
+            recentTrades: recentTrades?.length || 0
+          }
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+
+      case 'getTradingAnalytics':
+        const { period = '7' } = params
+        const daysAgo = new Date(Date.now() - parseInt(period) * 24 * 60 * 60 * 1000)
+
+        const { data: trades } = await supabaseClient
+          .from('trades')
+          .select('*')
+          .gte('created_at', daysAgo.toISOString())
+          .order('created_at', { ascending: false })
+
+        // Calculate analytics
+        const totalTrades = trades?.length || 0
+        const filledTrades = trades?.filter(t => t.status === 'filled').length || 0
+        const failedTrades = trades?.filter(t => t.status === 'failed').length || 0
+        const pendingTrades = trades?.filter(t => t.status === 'pending').length || 0
+        const totalPnL = trades?.reduce((sum, t) => sum + (t.pnl || 0), 0) || 0
+        const successRate = totalTrades > 0 ? (filledTrades / totalTrades) * 100 : 0
+
+        // Group by exchange
+        const exchangeStats = trades?.reduce((acc, trade) => {
+          if (!acc[trade.exchange]) {
+            acc[trade.exchange] = { count: 0, pnl: 0 }
+          }
+          acc[trade.exchange].count++
+          acc[trade.exchange].pnl += trade.pnl || 0
+          return acc
+        }, {} as Record<string, { count: number; pnl: number }>) || {}
+
+        return new Response(JSON.stringify({
+          analytics: {
+            totalTrades,
+            filledTrades,
+            failedTrades,
+            pendingTrades,
+            totalPnL,
+            successRate,
+            exchangeStats,
+            trades: trades?.slice(0, 50) || [] // Last 50 trades
+          }
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+
+      // NEW: Financial Oversight
+      case 'getFinancialOverview':
+        const { data: allTrades } = await supabaseClient
+          .from('trades')
+          .select('pnl, fee, amount, price, created_at, status')
+          .eq('status', 'filled')
+
+        const totalVolume = allTrades?.reduce((sum, t) => sum + (t.amount * t.price), 0) || 0
+        const totalFees = allTrades?.reduce((sum, t) => sum + (t.fee || 0), 0) || 0
+        const totalPnL = allTrades?.reduce((sum, t) => sum + (t.pnl || 0), 0) || 0
+
+        // Daily PnL for last 30 days
+        const dailyPnL = allTrades?.reduce((acc, trade) => {
+          const date = trade.created_at.split('T')[0]
+          if (!acc[date]) acc[date] = 0
+          acc[date] += trade.pnl || 0
+          return acc
+        }, {} as Record<string, number>) || {}
+
+        return new Response(JSON.stringify({
+          financial: {
+            totalVolume,
+            totalFees,
+            totalPnL,
+            dailyPnL,
+            netProfit: totalPnL - totalFees
+          }
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+
+      // NEW: User Activity Monitoring
+      case 'getUserActivity':
+        const { data: userActivity } = await supabaseClient
+          .from('users')
+          .select(`
+            id,
+            email,
+            created_at,
+            last_sign_in_at,
+            trading_bots(id, name, status, total_trades, pnl),
+            trades(id, created_at, status, pnl)
+          `)
+          .order('last_sign_in_at', { ascending: false })
+
+        return new Response(JSON.stringify({ userActivity }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+
+      // NEW: System Logs
+      case 'getSystemLogs':
+        const { limit = 100 } = params
+        
+        const { data: logs } = await supabaseClient
+          .from('bot_activity_logs')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(limit)
+
+        return new Response(JSON.stringify({ logs }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+
+      // NEW: Risk Monitoring
+      case 'getRiskMetrics':
+        const { data: largeTrades } = await supabaseClient
+          .from('trades')
+          .select('*')
+          .gte('amount', 1000) // Large trades
+          .order('created_at', { ascending: false })
+          .limit(20)
+
+        const { data: failedTrades } = await supabaseClient
+          .from('trades')
+          .select('*')
+          .eq('status', 'failed')
+          .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+          .order('created_at', { ascending: false })
+
+        return new Response(JSON.stringify({
+          risk: {
+            largeTrades,
+            failedTrades,
+            riskScore: failedTrades?.length || 0
+          }
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+
+      // NEW: Data Export
+      case 'exportData':
+        const { type, userId } = params
+        
+        let data
+        switch (type) {
+          case 'user_trades':
+            data = await supabaseClient
+              .from('trades')
+              .select('*')
+              .eq('user_id', userId)
+            break
+          case 'all_trades':
+            data = await supabaseClient
+              .from('trades')
+              .select('*')
+            break
+          case 'users':
+            data = await supabaseClient
+              .from('users')
+              .select('*')
+            break
+          default:
+            throw new Error('Invalid export type')
+        }
+
+        return new Response(JSON.stringify({ data }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
 

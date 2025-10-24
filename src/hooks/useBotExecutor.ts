@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { API_ENDPOINTS, apiCall } from '../lib/supabase';
+import { useAuth } from './useAuth';
 
 export interface TimeSyncData {
   time: string;
@@ -20,6 +21,7 @@ export function useBotExecutor() {
   const [lastExecution, setLastExecution] = useState<string | null>(null);
   const [timeSync, setTimeSync] = useState<TimeSyncData | null>(null);
   const [marketData, setMarketData] = useState<MarketData | null>(null);
+  const { user } = useAuth();
 
   // Time synchronization
   const syncTime = async () => {
@@ -70,6 +72,7 @@ export function useBotExecutor() {
   // Execute all running bots
   const executeAllBots = async () => {
     try {
+      console.log('🚀 Starting execution of all running bots...');
       setIsExecuting(true);
       const response = await apiCall(API_ENDPOINTS.BOT_EXECUTOR, {
         method: 'POST',
@@ -79,23 +82,28 @@ export function useBotExecutor() {
       });
       
       setLastExecution(new Date().toISOString());
-      console.log('All bots executed:', response);
+      console.log('✅ All bots executed successfully:', response);
       return response;
     } catch (error) {
-      console.error('All bots execution failed:', error);
+      console.error('❌ All bots execution failed:', error);
       throw error;
     } finally {
       setIsExecuting(false);
     }
   };
 
-  // Auto-execution setup
+  // Auto-execution setup (only when user is authenticated)
   useEffect(() => {
+    if (!user) return; // Don't run if user is not authenticated
+    
+    console.log('🤖 Bot executor initialized for user:', user.email);
+    
     // Initial time sync
     syncTime();
     
     // Set up periodic execution every 5 minutes
     const executionInterval = setInterval(() => {
+      console.log('🔄 Executing all bots automatically...');
       executeAllBots().catch(console.error);
     }, 300000); // 5 minutes
 
@@ -108,7 +116,7 @@ export function useBotExecutor() {
       clearInterval(executionInterval);
       clearInterval(timeSyncInterval);
     };
-  }, []);
+  }, [user]);
 
   return {
     isExecuting,

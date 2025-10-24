@@ -1,6 +1,6 @@
 
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../../components/feature/Header';
 import Navigation from '../../components/feature/Navigation';
@@ -8,12 +8,14 @@ import Button from '../../components/base/Button';
 import Card from '../../components/base/Card';
 import { useAuth } from '../../hooks/useAuth';
 import { useApiKeys, ApiKeyFormData } from '../../hooks/useApiKeys';
+import { useProfile, ProfileData } from '../../hooks/useProfile';
 import { supabase } from '../../lib/supabase';
 
 export default function Settings() {
   const navigate = useNavigate();
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
   const { apiKeys, loading: apiKeysLoading, saveApiKey, testApiConnection: testConnection, toggleApiKey, deleteApiKey } = useApiKeys();
+  const { getProfile, updateProfile, loading: profileLoading, error: profileError } = useProfile();
 
   const [notifications, setNotifications] = useState({
     push: true,
@@ -96,35 +98,139 @@ export default function Settings() {
   const [showApiConfig, setShowApiConfig] = useState(false);
   const [showAlertsConfig, setShowAlertsConfig] = useState(false);
   const [showRiskConfig, setShowRiskConfig] = useState(false);
-  const [profileData, setProfileData] = useState({
-    name: 'Alex Johnson',
-    email: 'alex.johnson@email.com',
-    phone: '+1 (555) 123-4567',
-    timezone: 'UTC-5 (EST)',
-    profilePicture: null as File | null,
-    profilePictureUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face'
+  const [profileData, setProfileData] = useState<ProfileData>({
+    id: '',
+    email: '',
+    name: '',
+    bio: '',
+    location: '',
+    website: '',
+    profile_picture_url: ''
   });
+
+  const [profilePicture, setProfilePicture] = useState<File | null>(null);
+  const [profilePicturePreview, setProfilePicturePreview] = useState<string>('');
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  // Load profile data on component mount
+  useEffect(() => {
+    const loadProfile = async () => {
+      try {
+        console.log('🔄 Loading profile for user:', user?.email);
+        
+        // First, set current user data as default
+        if (user) {
+          const currentUserProfile = {
+            id: user.id,
+            email: user.email || '',
+            name: user.user_metadata?.name || user.email?.split('@')[0] || 'User',
+            bio: '',
+            location: '',
+            website: '',
+            profile_picture_url: ''
+          };
+          console.log('📋 Setting current user profile as default:', currentUserProfile);
+          setProfileData(currentUserProfile);
+        }
+        
+        // Then try to get profile from backend
+        const profile = await getProfile();
+        console.log('📋 Profile loaded from backend:', profile);
+        
+        // Only use backend data if it has the correct email
+        if (profile.email === user?.email) {
+          console.log('✅ Using backend profile data');
+          setProfileData(profile);
+          if (profile.profile_picture_url) {
+            setProfilePicturePreview(profile.profile_picture_url);
+          }
+        } else {
+          console.log('⚠️ Backend profile has wrong email, keeping current user data');
+        }
+      } catch (error) {
+        console.error('❌ Error loading profile:', error);
+        // Keep the current user data that was already set
+        console.log('📋 Keeping current user data due to error');
+      }
+    };
+
+    if (user) {
+      loadProfile();
+    }
+  }, [user, getProfile]);
 
   const handleProfilePictureChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setProfileData(prev => ({ ...prev, profilePicture: file }));
+      setProfilePicture(file);
       // Create a preview URL
       const reader = new FileReader();
       reader.onload = (event) => {
         if (event.target?.result) {
-          setProfileData(prev => ({ ...prev, profilePictureUrl: event.target!.result as string }));
+          setProfilePicturePreview(event.target.result as string);
         }
       };
       reader.readAsDataURL(file);
     }
   };
 
-  const handleSaveProfile = () => {
-    // Here you would typically upload the profile picture to Supabase Storage
-    // and update the user profile in the database
-    console.log('Saving profile with picture:', profileData);
-    setShowEditProfile(false);
+  const handleSaveProfile = async () => {
+    if (isSavingProfile) {
+      console.log('⚠️ Profile save already in progress, ignoring duplicate click');
+      return;
+    }
+    
+    try {
+      setIsSavingProfile(true);
+      console.log('🔄 Starting profile save...');
+      let profilePictureBase64 = '';
+      
+      // Convert profile picture to base64 if provided
+      if (profilePicture) {
+        console.log('📸 Converting profile picture to base64...');
+        profilePictureBase64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            if (event.target?.result) {
+              resolve(event.target.result as string);
+            } else {
+              reject(new Error('Failed to read file'));
+            }
+          };
+          reader.onerror = () => reject(new Error('File read error'));
+          reader.readAsDataURL(profilePicture);
+        });
+      }
+
+      console.log('💾 Updating profile with backend...');
+      // Update profile with backend
+      const result = await updateProfile({
+        name: profileData.name,
+        bio: profileData.bio,
+        location: profileData.location,
+        website: profileData.website,
+        profilePicture: profilePictureBase64
+      });
+
+      console.log('✅ Profile update result:', result);
+      if (result.success) {
+        // Update local state with returned data
+        if (result.profilePictureUrl) {
+          setProfilePicturePreview(result.profilePictureUrl);
+          setProfileData(prev => ({ ...prev, profile_picture_url: result.profilePictureUrl }));
+        }
+        
+        alert('Profile saved successfully!');
+        setShowEditProfile(false);
+      } else {
+        alert(`Failed to save profile: ${result.message || 'Unknown error'}`);
+      }
+    } catch (error: any) {
+      console.error('❌ Error saving profile:', error);
+      alert(`Failed to save profile: ${error.message}`);
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
   const handleSecurityChange = (key: string, value: any) => {
@@ -147,10 +253,6 @@ export default function Settings() {
     setAlerts(prev => ({ ...prev, [key]: value }));
   };
 
-  const handleProfileSave = () => {
-    // Save profile changes
-    setShowEditProfile(false);
-  };
 
   const ensureUserExists = async () => {
     try {
@@ -236,8 +338,48 @@ export default function Settings() {
     setShowAlertsConfig(false);
   };
 
-  const handleProfileChange = (field: string, value: string) => {
+  const handleProfileChange = (field: keyof ProfileData, value: string) => {
     setProfileData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleOpenEditProfile = async () => {
+    console.log('🔄 Opening Edit Profile modal for user:', user?.email);
+    
+    // Force use current user data instead of database data
+    if (user) {
+      console.log('🔄 Forcing current user data for profile');
+      const currentUserProfile = {
+        id: user.id,
+        email: user.email || '',
+        name: user.user_metadata?.name || user.email?.split('@')[0] || 'User',
+        bio: '',
+        location: '',
+        website: '',
+        profile_picture_url: ''
+      };
+      console.log('📋 Current user profile data:', currentUserProfile);
+      setProfileData(currentUserProfile);
+    }
+    
+    // Also try to get profile from backend as backup
+    try {
+      const profile = await getProfile();
+      console.log('📋 Backend profile data:', profile);
+      // Only use backend data if it has the correct email
+      if (profile.email === user?.email) {
+        console.log('✅ Using backend profile data');
+        setProfileData(profile);
+        if (profile.profile_picture_url) {
+          setProfilePicturePreview(profile.profile_picture_url);
+        }
+      } else {
+        console.log('⚠️ Backend profile has wrong email, using current user data');
+      }
+    } catch (error) {
+      console.error('❌ Error refreshing profile:', error);
+    }
+    
+    setShowEditProfile(true);
   };
 
   const handleTestConnection = async (exchange: 'bybit' | 'okx') => {
@@ -300,43 +442,64 @@ export default function Settings() {
       <Header title="Settings" />
       
       <div className="pt-20 pb-20 px-4 space-y-6">
+
         {/* Profile Section */}
         <Card className="p-6">
           <div className="flex items-center space-x-4 mb-4">
             <div className="relative">
-              <img 
-                src={profileData.profilePictureUrl} 
-                alt="Profile" 
-                className="w-16 h-16 rounded-full object-cover border-2 border-gray-200"
-              />
-              <button
-                onClick={() => document.getElementById('profile-picture-input')?.click()}
-                className="absolute -bottom-1 -right-1 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs hover:bg-blue-700 transition-colors"
-              >
-                <i className="ri-camera-line"></i>
-              </button>
-              <input
-                id="profile-picture-input"
-                type="file"
-                accept="image/*"
-                onChange={handleProfilePictureChange}
-                className="hidden"
-              />
+              {profilePicturePreview || profileData.profile_picture_url ? (
+                <img 
+                  src={profilePicturePreview || profileData.profile_picture_url} 
+                  alt="Profile" 
+                  className="w-16 h-16 rounded-full object-cover border-2 border-gray-200"
+                />
+              ) : (
+                <div className="w-16 h-16 rounded-full bg-gray-200 border-2 border-gray-200 flex items-center justify-center">
+                  <i className="ri-user-line text-2xl text-gray-400"></i>
+                </div>
+              )}
             </div>
             <div className="flex-1">
-              <h3 className="text-lg font-semibold text-gray-900">{profileData.name}</h3>
-              <p className="text-gray-500">{profileData.email}</p>
-              <span className="inline-block px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full mt-1">
-                Pro Member
+              <h3 className="text-lg font-semibold text-gray-900">
+                {profileData.name || user?.email?.split('@')[0] || 'User'}
+              </h3>
+              <p className="text-gray-500">{user?.email || 'No email'}</p>
+              {profileData.bio && (
+                <p className="text-sm text-gray-600 mt-1">{profileData.bio}</p>
+              )}
+              <span className={`inline-block px-2 py-1 text-xs rounded-full mt-1 ${
+                user?.role === 'admin' 
+                  ? 'bg-red-100 text-red-800' 
+                  : 'bg-green-100 text-green-800'
+              }`}>
+                {user?.role === 'admin' ? 'Admin' : 'Pro Member'}
               </span>
             </div>
           </div>
           <button 
-            onClick={() => setShowEditProfile(true)}
+            onClick={handleOpenEditProfile}
             className="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 px-4 rounded-lg transition-colors"
           >
             <i className="ri-edit-line mr-2"></i>
             Edit Profile
+          </button>
+          <button 
+            onClick={async () => {
+              console.log('🔄 Manual profile refresh for user:', user?.email);
+              try {
+                const profile = await getProfile();
+                console.log('📋 Manual refresh - Profile data:', profile);
+                setProfileData(profile);
+                alert('Profile refreshed! Check console for details.');
+              } catch (error) {
+                console.error('❌ Manual refresh failed:', error);
+                alert('Profile refresh failed! Check console for details.');
+              }
+            }}
+            className="w-full bg-blue-100 hover:bg-blue-200 text-blue-700 py-2 px-4 rounded-lg transition-colors mt-2"
+          >
+            <i className="ri-refresh-line mr-2"></i>
+            Refresh Profile Data
           </button>
         </Card>
 
@@ -1503,6 +1666,45 @@ export default function Settings() {
               </div>
 
               <div className="space-y-4">
+                {/* Profile Picture */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Profile Picture
+                  </label>
+                  <div className="flex items-center space-x-4">
+                    <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-200">
+                      {profilePicturePreview ? (
+                        <img 
+                          src={profilePicturePreview} 
+                          alt="Profile" 
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <i className="ri-user-line text-2xl text-gray-400"></i>
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleProfilePictureChange}
+                        className="hidden"
+                        id="profile-picture"
+                      />
+                      <label
+                        htmlFor="profile-picture"
+                        className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 cursor-pointer transition-colors"
+                      >
+                        <i className="ri-upload-line mr-2"></i>
+                        Upload Photo
+                      </label>
+                      <p className="text-xs text-gray-500 mt-1">JPG, PNG up to 5MB</p>
+                    </div>
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Full Name
@@ -1523,41 +1725,49 @@ export default function Settings() {
                   <input
                     type="email"
                     value={profileData.email}
-                    onChange={(e) => handleProfileChange('email', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Enter your email"
+                    disabled
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500"
+                    placeholder="Email cannot be changed"
                   />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Phone Number
+                    Bio
+                  </label>
+                  <textarea
+                    value={profileData.bio || ''}
+                    onChange={(e) => handleProfileChange('bio', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Tell us about yourself"
+                    rows={3}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Location
                   </label>
                   <input
-                    type="tel"
-                    value={profileData.phone}
-                    onChange={(e) => handleProfileChange('phone', e.target.value)}
+                    type="text"
+                    value={profileData.location || ''}
+                    onChange={(e) => handleProfileChange('location', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="Enter your phone number"
+                    placeholder="City, Country"
                   />
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Timezone
+                    Website
                   </label>
-                  <select
-                    value={profileData.timezone}
-                    onChange={(e) => handleProfileChange('timezone', e.target.value)}
+                  <input
+                    type="url"
+                    value={profileData.website || ''}
+                    onChange={(e) => handleProfileChange('website', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  >
-                    <option value="UTC-8 (PST)">UTC-8 (PST)</option>
-                    <option value="UTC-5 (EST)">UTC-5 (EST)</option>
-                    <option value="UTC+0 (GMT)">UTC+0 (GMT)</option>
-                    <option value="UTC+1 (CET)">UTC+1 (CET)</option>
-                    <option value="UTC+8 (CST)">UTC+8 (CST)</option>
-                    <option value="UTC+9 (JST)">UTC+9 (JST)</option>
-                  </select>
+                    placeholder="https://yourwebsite.com"
+                  />
                 </div>
               </div>
 
@@ -1571,10 +1781,18 @@ export default function Settings() {
                 </Button>
                 <Button
                   variant="primary"
-                  onClick={handleProfileSave}
+                  onClick={handleSaveProfile}
                   className="flex-1"
+                  disabled={isSavingProfile}
                 >
-                  Save Changes
+                  {isSavingProfile ? (
+                    <>
+                      <i className="ri-loader-4-line animate-spin mr-2"></i>
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Changes'
+                  )}
                 </Button>
               </div>
             </div>

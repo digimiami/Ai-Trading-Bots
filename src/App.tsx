@@ -4,11 +4,15 @@ import { Suspense, useEffect } from 'react';
 import { useRoutes, useNavigate } from 'react-router-dom';
 import routes from './router/config';
 import { useAuth } from './hooks/useAuth';
+import { useBotExecutor } from './hooks/useBotExecutor';
 
 function AppRoutes() {
   const element = useRoutes(routes);
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  
+  // Initialize bot executor for automatic trading (only when user is logged in)
+  useBotExecutor();
 
   useEffect(() => {
     if (!loading) {

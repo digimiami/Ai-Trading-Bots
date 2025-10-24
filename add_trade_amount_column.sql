@@ -11,3 +11,4 @@ UPDATE trading_bots
 SET trade_amount = 100.00
 WHERE trade_amount IS NULL;
 
+

@@ -1,9 +1,16 @@
 
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../hooks/useAuth';
 
 export default function Navigation() {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, loading } = useAuth();
+
+  // Don't render navigation until user data is loaded
+  if (loading || !user || user.role === undefined) {
+    return null;
+  }
 
   const navItems = [
     { path: '/', icon: 'ri-home-line', label: 'Home' },
@@ -13,9 +20,14 @@ export default function Navigation() {
     { path: '/settings', icon: 'ri-settings-line', label: 'Settings' }
   ];
 
+  // Add admin link if user is admin
+  if (user?.role === 'admin') {
+    navItems.push({ path: '/admin', icon: 'ri-admin-line', label: 'Admin' });
+  }
+
   return (
     <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40">
-      <div className="grid grid-cols-5 h-16">
+      <div className={`grid ${user?.role === 'admin' ? 'grid-cols-6' : 'grid-cols-5'} h-16`}>
         {navItems.map((item) => {
           const isActive = location.pathname === item.path;
           return (
