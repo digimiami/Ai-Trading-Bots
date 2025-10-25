@@ -15,6 +15,7 @@ export interface TradingBot {
   lastTradeAt?: string;
   riskLevel: 'low' | 'medium' | 'high';
   strategy: TradingStrategy;
+  aiMlEnabled?: boolean;
 }
 
 export interface TradingStrategy {

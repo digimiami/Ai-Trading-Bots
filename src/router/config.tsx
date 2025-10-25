@@ -17,6 +17,9 @@ const Onboarding = lazy(() => import('../pages/onboarding/page'));
 const Help = lazy(() => import('../pages/help/page'));
 const NotFound = lazy(() => import('../pages/NotFound'));
 
+// AI/ML Dashboard - only loads when feature flag is enabled
+const AiMlDashboard = lazy(() => import('../pages/ai-ml-dashboard/page'));
+
 const routes: RouteObject[] = [
   {
     path: '/',
@@ -65,6 +68,10 @@ const routes: RouteObject[] = [
   {
     path: '/admin',
     element: <Admin />
+  },
+  {
+    path: '/ai-ml/dashboard',
+    element: <AiMlDashboard />
   },
   {
     path: '*',

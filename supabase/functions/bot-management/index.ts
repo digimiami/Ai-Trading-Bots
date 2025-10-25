@@ -64,7 +64,8 @@ serve(async (req) => {
           createdAt: bot.created_at,
           lastTradeAt: bot.last_trade_at,
           riskLevel: bot.risk_level,
-          strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy
+          strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy,
+          aiMlEnabled: bot.ai_ml_enabled || false
         }))
 
         return new Response(
@@ -147,6 +148,11 @@ serve(async (req) => {
       if (action === 'update') {
         const { id, ...updates } = body
 
+        // Validate bot ID
+        if (!id) {
+          throw new Error('Bot ID is required for update')
+        }
+
         // Transform frontend field names to database field names
         const dbUpdates: any = {}
         if (updates.name) dbUpdates.name = updates.name
@@ -166,16 +172,48 @@ serve(async (req) => {
         if (updates.lastTradeAt !== undefined) dbUpdates.last_trade_at = updates.lastTradeAt
         if (updates.riskLevel) dbUpdates.risk_level = updates.riskLevel
         if (updates.strategy) dbUpdates.strategy = JSON.stringify(updates.strategy)
+        
+        // Handle AI/ML field
+        if (updates.aiMlEnabled !== undefined) {
+          dbUpdates.ai_ml_enabled = updates.aiMlEnabled
+        }
 
-        const { data: bot, error } = await supabaseClient
+        // First check if bot exists and belongs to user
+        const { data: existingBot, error: checkError } = await supabaseClient
+          .from('trading_bots')
+          .select('id')
+          .eq('id', id)
+          .eq('user_id', user.id)
+          .maybeSingle()
+
+        if (checkError) {
+          console.error('Bot existence check error:', checkError)
+          throw new Error(`Failed to verify bot: ${checkError.message}`)
+        }
+
+        if (!existingBot) {
+          throw new Error('Bot not found or access denied')
+        }
+
+        // Now update the bot
+        const { data: bots, error } = await supabaseClient
           .from('trading_bots')
           .update(dbUpdates)
           .eq('id', id)
           .eq('user_id', user.id)
           .select()
-          .single()
 
-        if (error) throw error
+        if (error) {
+          console.error('Bot update error:', error)
+          throw error
+        }
+
+        // Check if update succeeded
+        if (!bots || bots.length === 0) {
+          throw new Error('Bot update failed - no rows affected')
+        }
+
+        const bot = bots[0]
 
         // Transform response to match frontend expectations
         const transformedBot = {
@@ -197,7 +235,8 @@ serve(async (req) => {
           createdAt: bot.created_at,
           lastTradeAt: bot.last_trade_at,
           riskLevel: bot.risk_level,
-          strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy
+          strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy,
+          aiMlEnabled: bot.ai_ml_enabled || false
         }
 
         return new Response(
@@ -239,7 +278,8 @@ serve(async (req) => {
           createdAt: bot.created_at,
           lastTradeAt: bot.last_trade_at,
           riskLevel: bot.risk_level,
-          strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy
+          strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy,
+          aiMlEnabled: bot.ai_ml_enabled || false
         }
 
         return new Response(
@@ -275,7 +315,8 @@ serve(async (req) => {
           createdAt: bot.created_at,
           lastTradeAt: bot.last_trade_at,
           riskLevel: bot.risk_level,
-          strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy
+          strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy,
+          aiMlEnabled: bot.ai_ml_enabled || false
         }
 
         return new Response(

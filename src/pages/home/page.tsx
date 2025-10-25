@@ -145,13 +145,13 @@ export default function Home() {
         </Card>
 
         {/* Active Bots */}
-        <ActiveBots />
+        <ActiveBots bots={activeBots} />
 
         {/* Exchange Balances */}
         <ExchangeBalanceDisplay balances={balances} />
 
         {/* Market Overview */}
-        <MarketOverview />
+        <MarketOverview marketData={marketData} />
 
         {/* Recent Activity */}
         <Card className="p-6">
@@ -215,16 +215,24 @@ export default function Home() {
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Today's Performance</h3>
           <div className="grid grid-cols-2 gap-4">
             <div className="text-center p-4 bg-green-50 rounded-lg">
-              <div className="text-2xl font-bold text-green-600">+$156.30</div>
+              <div className={`text-2xl font-bold ${totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {totalPnL >= 0 ? '+' : ''}${totalPnL.toFixed(2)}
+              </div>
               <div className="text-sm text-gray-600">Total P&L</div>
             </div>
             <div className="text-center p-4 bg-blue-50 rounded-lg">
-              <div className="text-2xl font-bold text-blue-600">12</div>
-              <div className="text-sm text-gray-600">Trades Executed</div>
+              <div className="text-2xl font-bold text-blue-600">
+                {bots.reduce((sum, bot) => sum + (bot.totalTrades || 0), 0)}
+              </div>
+              <div className="text-sm text-gray-600">Total Trades</div>
             </div>
             <div className="text-center p-4 bg-purple-50 rounded-lg">
-              <div className="text-2xl font-bold text-purple-600">75%</div>
-              <div className="text-sm text-gray-600">Win Rate</div>
+              <div className="text-2xl font-bold text-purple-600">
+                {bots.length > 0 
+                  ? (bots.reduce((sum, bot) => sum + (bot.winRate || 0), 0) / bots.length).toFixed(1)
+                  : '0.0'}%
+              </div>
+              <div className="text-sm text-gray-600">Avg Win Rate</div>
             </div>
             <div className="text-center p-4 bg-orange-50 rounded-lg">
               <div className="text-2xl font-bold text-orange-600">{activeBots.length}</div>

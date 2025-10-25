@@ -20,14 +20,27 @@ export default function Navigation() {
     { path: '/settings', icon: 'ri-settings-line', label: 'Settings' }
   ];
 
+  // Add AI/ML Dashboard if feature is enabled
+  if (import.meta.env.VITE_FEATURE_AI_ML === '1') {
+    navItems.push({ path: '/ai-ml/dashboard', icon: 'ri-brain-line', label: 'AI/ML' });
+  }
+
   // Add admin link if user is admin
   if (user?.role === 'admin') {
     navItems.push({ path: '/admin', icon: 'ri-admin-line', label: 'Admin' });
   }
 
+  // Calculate grid columns based on number of nav items
+  const getGridCols = () => {
+    if (navItems.length === 5) return 'grid-cols-5';
+    if (navItems.length === 6) return 'grid-cols-6';
+    if (navItems.length === 7) return 'grid-cols-7';
+    return 'grid-cols-5'; // fallback
+  };
+
   return (
     <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40">
-      <div className={`grid ${user?.role === 'admin' ? 'grid-cols-6' : 'grid-cols-5'} h-16`}>
+      <div className={`grid ${getGridCols()} h-16`}>
         {navItems.map((item) => {
           const isActive = location.pathname === item.path;
           return (

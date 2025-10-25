@@ -18,6 +18,7 @@ export default function BotsPage() {
   const [filter, setFilter] = useState<'all' | 'running' | 'paused' | 'stopped'>('all');
   const [bulkLoading, setBulkLoading] = useState(false);
   const [expandedBot, setExpandedBot] = useState<string | null>(null);
+  const [togglingAiMl, setTogglingAiMl] = useState<string | null>(null);
 
   const filteredBots = bots.filter(bot => 
     filter === 'all' || bot.status === filter
@@ -203,6 +204,33 @@ export default function BotsPage() {
 
   const handleEditBot = (botId: string) => {
     navigate(`/edit-bot/${botId}`);
+  };
+
+  const handleToggleAiMl = async (botId: string, currentStatus: boolean) => {
+    // Prevent multiple simultaneous toggles for the same bot
+    if (togglingAiMl === botId) {
+      console.log('Already toggling AI/ML for this bot, please wait...');
+      return;
+    }
+
+    try {
+      setTogglingAiMl(botId);
+      await updateBot(botId, { aiMlEnabled: !currentStatus });
+      addLog(botId, {
+        level: 'info',
+        category: 'system',
+        message: `AI/ML ${!currentStatus ? 'enabled' : 'disabled'} for bot`
+      });
+    } catch (error) {
+      console.error('Failed to toggle AI/ML:', error);
+      addLog(botId, {
+        level: 'error',
+        category: 'system',
+        message: 'Failed to toggle AI/ML'
+      });
+    } finally {
+      setTogglingAiMl(null);
+    }
   };
 
   return (
@@ -516,6 +544,29 @@ export default function BotsPage() {
                     >
                       <i className="ri-file-list-line"></i>
                     </Button>
+                  </div>
+                  
+                  {/* AI/ML Toggle */}
+                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center space-x-2">
+                      <i className="ri-brain-line text-purple-600"></i>
+                      <span className="text-sm font-medium text-gray-700">AI/ML System</span>
+                    </div>
+                    <button
+                      onClick={() => handleToggleAiMl(bot.id, bot.aiMlEnabled || false)}
+                      disabled={togglingAiMl === bot.id}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        togglingAiMl === bot.id ? 'opacity-50 cursor-not-allowed' : ''
+                      } ${
+                        bot.aiMlEnabled ? 'bg-purple-600' : 'bg-gray-300'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          bot.aiMlEnabled ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
                   </div>
                   
                   {/* Management Actions Row */}

@@ -1,5 +1,6 @@
 
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { Button } from '../../components/base/Button'
 import { Card } from '../../components/base/Card'
@@ -15,7 +16,15 @@ export default function AuthPage() {
   const [inviteValid, setInviteValid] = useState<boolean | null>(null)
   const [showFixAuth, setShowFixAuth] = useState(false)
   
-  const { signIn, signUp } = useAuth()
+  const navigate = useNavigate()
+  const { user, loading: authLoading, signIn, signUp } = useAuth()
+
+  // Redirect authenticated users to home page
+  useEffect(() => {
+    if (!authLoading && user) {
+      navigate('/')
+    }
+  }, [user, authLoading, navigate])
 
   // Check for invitation code in URL
   useEffect(() => {
@@ -27,6 +36,19 @@ export default function AuthPage() {
       validateInviteCode(invite)
     }
   }, [])
+
+  // Show loading while checking authentication
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Card title="Loading...">
+          <div className="text-center">
+            <p className="text-gray-600">Checking authentication...</p>
+          </div>
+        </Card>
+      </div>
+    )
+  }
 
   const validateInviteCode = async (code: string) => {
     try {
