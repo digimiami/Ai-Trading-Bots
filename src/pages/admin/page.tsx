@@ -80,7 +80,7 @@ interface RiskMetrics {
 
 export default function AdminPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { 
     createUser, 
     generateInvitationCode, 
@@ -124,15 +124,24 @@ export default function AdminPage() {
   });
 
   useEffect(() => {
-    console.log('🔧 Admin page loaded - User:', user?.email, 'Role:', user?.role);
-    if (user?.role !== 'admin') {
+    console.log('🔧 Admin page loaded - User:', user?.email, 'Role:', user?.role, 'Auth Loading:', authLoading);
+    
+    // Wait for auth to finish loading before checking role
+    if (authLoading) {
+      console.log('⏳ Still loading auth data...');
+      return;
+    }
+    
+    // After loading is complete, check if user is admin
+    if (!user || user?.role !== 'admin') {
       console.log('❌ User is not admin, redirecting to home');
       navigate('/');
       return;
     }
+    
     console.log('✅ User is admin, loading admin data...');
     loadData();
-  }, [user, navigate]);
+  }, [user, authLoading, navigate]);
 
   const loadData = async () => {
     try {
@@ -229,7 +238,20 @@ export default function AdminPage() {
     }
   };
 
-  if (user?.role !== 'admin') {
+  // Show loading state while auth is loading
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <i className="ri-loader-4-line animate-spin text-4xl text-blue-600"></i>
+          <p className="mt-4 text-gray-600">**Loading admin panel...**</p>
+        </div>
+      </div>
+    );
+  }
+
+  // After loading, check if user is admin
+  if (!user || user?.role !== 'admin') {
     return null;
   }
 
