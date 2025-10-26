@@ -123,14 +123,17 @@ export default function Settings() {
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   // Load profile data on component mount
-  // Apply theme on mount
+  // Apply theme whenever it changes
   useEffect(() => {
     if (appearance.theme === 'dark') {
       document.documentElement.classList.add('dark');
+      document.body.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
+      document.body.classList.remove('dark');
     }
-  }, []); // Run only once on mount
+    console.log(`🎨 Theme applied: ${appearance.theme}`);
+  }, [appearance.theme]); // Watch for theme changes
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -261,18 +264,27 @@ export default function Settings() {
   };
 
   const handleAppearanceChange = (key: string, value: any) => {
+    console.log(`⚙️ Appearance change: ${key} = ${value}`);
+    
     const newAppearance = { ...appearance, [key]: value };
     setAppearance(newAppearance);
     
     // Save to localStorage
     localStorage.setItem('appearance_settings', JSON.stringify(newAppearance));
+    console.log(`💾 Saved to localStorage:`, newAppearance);
     
-    // Apply theme immediately
+    // Apply theme immediately (useEffect will handle the actual application)
     if (key === 'theme') {
+      console.log(`🎨 Theme will change to: ${value}`);
+      // Force immediate application
       if (value === 'dark') {
         document.documentElement.classList.add('dark');
+        document.body.classList.add('dark');
+        alert('✅ Dark mode enabled!');
       } else {
         document.documentElement.classList.remove('dark');
+        document.body.classList.remove('dark');
+        alert('✅ Light mode enabled!');
       }
     }
     
@@ -294,18 +306,16 @@ export default function Settings() {
       const i18nCode = languageMap[value] || 'en';
       localStorage.setItem('i18nextLng', i18nCode);
       console.log(`🌍 Language changed to: ${value} (${i18nCode})`);
-      alert(`Language changed to ${value}! The page will reload to apply changes.`);
-      setTimeout(() => window.location.reload(), 1000); // Reload to apply language
-    }
-    
-    // Show confirmation for theme changes
-    if (key === 'theme') {
-      console.log(`🎨 Theme changed to: ${value}`);
+      
+      if (confirm(`Change language to ${value}?\n\nThe page will reload to apply the new language.`)) {
+        window.location.reload();
+      }
     }
     
     // Show confirmation for currency changes
     if (key === 'currency') {
       console.log(`💰 Currency changed to: ${value}`);
+      alert(`✅ Currency changed to ${value}!`);
     }
   };
 
