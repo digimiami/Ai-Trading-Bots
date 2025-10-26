@@ -160,7 +160,7 @@ export default function Settings() {
     if (user) {
       loadProfile();
     }
-  }, [user, getProfile]);
+  }, [user]); // Removed getProfile from dependencies to prevent infinite loop
 
   const handleProfilePictureChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
