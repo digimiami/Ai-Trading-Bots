@@ -40,10 +40,17 @@ export default function Settings() {
     stopLoss: 5
   });
 
-  const [appearance, setAppearance] = useState({
-    theme: 'light',
-    currency: 'USD',
-    language: 'English'
+  const [appearance, setAppearance] = useState(() => {
+    // Load from localStorage
+    const saved = localStorage.getItem('appearance_settings');
+    if (saved) {
+      return JSON.parse(saved);
+    }
+    return {
+      theme: 'light',
+      currency: 'USD',
+      language: 'English'
+    };
   });
 
   const [apiSettings, setApiSettings] = useState({
@@ -116,6 +123,15 @@ export default function Settings() {
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
   // Load profile data on component mount
+  // Apply theme on mount
+  useEffect(() => {
+    if (appearance.theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, []); // Run only once on mount
+
   useEffect(() => {
     const loadProfile = async () => {
       try {
@@ -245,7 +261,52 @@ export default function Settings() {
   };
 
   const handleAppearanceChange = (key: string, value: any) => {
-    setAppearance(prev => ({ ...prev, [key]: value }));
+    const newAppearance = { ...appearance, [key]: value };
+    setAppearance(newAppearance);
+    
+    // Save to localStorage
+    localStorage.setItem('appearance_settings', JSON.stringify(newAppearance));
+    
+    // Apply theme immediately
+    if (key === 'theme') {
+      if (value === 'dark') {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    }
+    
+    // Apply language immediately
+    if (key === 'language') {
+      // Map display names to i18n codes
+      const languageMap: { [key: string]: string } = {
+        'English': 'en',
+        'Spanish': 'es',
+        'French': 'fr',
+        'German': 'de',
+        'Chinese': 'zh',
+        'Japanese': 'ja',
+        'Korean': 'ko',
+        'Russian': 'ru',
+        'Portuguese': 'pt',
+        'Italian': 'it'
+      };
+      const i18nCode = languageMap[value] || 'en';
+      localStorage.setItem('i18nextLng', i18nCode);
+      console.log(`🌍 Language changed to: ${value} (${i18nCode})`);
+      alert(`Language changed to ${value}! The page will reload to apply changes.`);
+      setTimeout(() => window.location.reload(), 1000); // Reload to apply language
+    }
+    
+    // Show confirmation for theme changes
+    if (key === 'theme') {
+      console.log(`🎨 Theme changed to: ${value}`);
+    }
+    
+    // Show confirmation for currency changes
+    if (key === 'currency') {
+      console.log(`💰 Currency changed to: ${value}`);
+    }
   };
 
   const handleApiChange = (key: string, value: any) => {
@@ -855,21 +916,33 @@ export default function Settings() {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Theme
               </label>
-              <div className="flex space-x-2">
-                {['light', 'dark'].map((theme) => (
-                  <button
-                    key={theme}
-                    onClick={() => handleAppearanceChange('theme', theme)}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                      appearance.theme === theme
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    {theme.charAt(0).toUpperCase() + theme.slice(1)}
-                  </button>
-                ))}
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => handleAppearanceChange('theme', 'light')}
+                  className={`flex-1 flex items-center justify-center px-4 py-3 rounded-lg border-2 transition-all ${
+                    appearance.theme === 'light'
+                      ? 'border-blue-600 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <i className="ri-sun-line text-xl mr-2"></i>
+                  <span className="font-medium">Light</span>
+                </button>
+                <button
+                  onClick={() => handleAppearanceChange('theme', 'dark')}
+                  className={`flex-1 flex items-center justify-center px-4 py-3 rounded-lg border-2 transition-all ${
+                    appearance.theme === 'dark'
+                      ? 'border-blue-600 bg-blue-50 text-blue-700'
+                      : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                  }`}
+                >
+                  <i className="ri-moon-line text-xl mr-2"></i>
+                  <span className="font-medium">Dark</span>
+                </button>
               </div>
+              <p className="text-xs text-gray-500 mt-2">
+                Current theme: <strong className="capitalize">{appearance.theme}</strong> mode
+              </p>
             </div>
 
             <div>
@@ -881,10 +954,17 @@ export default function Settings() {
                 onChange={(e) => handleAppearanceChange('currency', e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
-                <option value="USD">USD ($)</option>
-                <option value="EUR">EUR (€)</option>
-                <option value="GBP">GBP (£)</option>
-                <option value="JPY">JPY (¥)</option>
+                <option value="USD">🇺🇸 USD ($)</option>
+                <option value="EUR">🇪🇺 EUR (€)</option>
+                <option value="GBP">🇬🇧 GBP (£)</option>
+                <option value="JPY">🇯🇵 JPY (¥)</option>
+                <option value="CNY">🇨🇳 CNY (¥)</option>
+                <option value="KRW">🇰🇷 KRW (₩)</option>
+                <option value="AUD">🇦🇺 AUD ($)</option>
+                <option value="CAD">🇨🇦 CAD ($)</option>
+                <option value="CHF">🇨🇭 CHF (Fr)</option>
+                <option value="BTC">₿ Bitcoin (BTC)</option>
+                <option value="ETH">Ξ Ethereum (ETH)</option>
               </select>
             </div>
 
@@ -897,11 +977,24 @@ export default function Settings() {
                 onChange={(e) => handleAppearanceChange('language', e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
-                <option value="English">English</option>
-                <option value="Spanish">Español</option>
-                <option value="French">Français</option>
-                <option value="German">Deutsch</option>
+                <option value="English">🇺🇸 English</option>
+                <option value="Spanish">🇪🇸 Español</option>
+                <option value="French">🇫🇷 Français</option>
+                <option value="German">🇩🇪 Deutsch</option>
+                <option value="Chinese">🇨🇳 中文</option>
+                <option value="Japanese">🇯🇵 日本語</option>
+                <option value="Korean">🇰🇷 한국어</option>
+                <option value="Russian">🇷🇺 Русский</option>
+                <option value="Portuguese">🇵🇹 Português</option>
+                <option value="Italian">🇮🇹 Italiano</option>
               </select>
+            </div>
+
+            <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm text-blue-800">
+                <strong>💡 Note:</strong> Theme and currency changes apply immediately. 
+                Language changes will refresh the page to apply translations.
+              </p>
             </div>
           </div>
         </Card>
