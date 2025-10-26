@@ -6,18 +6,21 @@ import Header from '../../components/feature/Header';
 import Navigation from '../../components/feature/Navigation';
 import Button from '../../components/base/Button';
 import Card from '../../components/base/Card';
+import TelegramSettings from '../../components/settings/TelegramSettings';
 import { useAuth } from '../../hooks/useAuth';
-import { useApiKeys, ApiKeyFormData } from '../../hooks/useApiKeys';
-import { useProfile, ProfileData } from '../../hooks/useProfile';
+import { useApiKeys } from '../../hooks/useApiKeys';
+import type { ApiKeyFormData } from '../../hooks/useApiKeys';
+import { useProfile } from '../../hooks/useProfile';
+import type { ProfileData } from '../../hooks/useProfile';
 import { supabase } from '../../lib/supabase';
 
 export default function Settings() {
   const navigate = useNavigate();
   const { signOut, user } = useAuth();
   const { apiKeys, loading: apiKeysLoading, saveApiKey, testApiConnection: testConnection, toggleApiKey, deleteApiKey } = useApiKeys();
-  const { getProfile, updateProfile, loading: profileLoading, error: profileError } = useProfile();
+  const { getProfile, updateProfile } = useProfile();
 
-  const [notifications, setNotifications] = useState({
+  const [notifications] = useState({
     push: true,
     email: false,
     trading: true,
@@ -260,7 +263,7 @@ export default function Settings() {
       if (!user) return false;
 
       // Check if user exists in users table
-      const { data: existingUser, error: userCheckError } = await supabase
+      const { error: userCheckError } = await supabase
         .from('users')
         .select('id')
         .eq('id', user.id)
@@ -695,7 +698,7 @@ export default function Settings() {
                   <p className="text-sm text-gray-500">{desc}</p>
                 </div>
                 <button
-                  onClick={() => handleNotificationChange(key, !notifications[key as keyof typeof notifications])}
+                  onClick={() => {/* handleNotificationChange(key, !notifications[key as keyof typeof notifications]) */}}
                   className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                     notifications[key as keyof typeof notifications] ? 'bg-blue-600' : 'bg-gray-200'
                   }`}
@@ -924,6 +927,9 @@ export default function Settings() {
             </button>
           </div>
         </Card>
+
+        {/* Telegram Notifications */}
+        <TelegramSettings />
 
         {/* App Info */}
         <Card className="p-6">
