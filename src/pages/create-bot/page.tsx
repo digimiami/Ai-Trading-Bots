@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import Button from '../../components/base/Button';
 import Card from '../../components/base/Card';
 import Header from '../../components/feature/Header';
-import type { TradingStrategy } from '../../types/trading';
+import type { TradingStrategy, AdvancedStrategyConfig } from '../../types/trading';
 import { useBots } from '../../hooks/useBots';
 
 export default function CreateBotPage() {
@@ -36,6 +36,59 @@ export default function CreateBotPage() {
     minSamplesForML: 100
   });
 
+  const [advancedConfig, setAdvancedConfig] = useState<AdvancedStrategyConfig>({
+    // Directional Bias
+    bias_mode: 'auto',
+    htf_timeframe: '4h',
+    htf_trend_indicator: 'EMA200',
+    ema_fast_period: 50,
+    require_price_vs_trend: 'any',
+    adx_min_htf: 23,
+    require_adx_rising: true,
+    
+    // Regime Filter
+    regime_mode: 'auto',
+    adx_trend_min: 25,
+    adx_meanrev_max: 19,
+    
+    // Session/Timing
+    session_filter_enabled: false,
+    allowed_hours_utc: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23],
+    cooldown_bars: 8,
+    
+    // Volatility/Liquidity Gates
+    atr_percentile_min: 20,
+    bb_width_min: 0.012,
+    bb_width_max: 0.03,
+    min_24h_volume_usd: 500000000,
+    max_spread_bps: 3,
+    
+    // Risk & Exits
+    risk_per_trade_pct: 0.75,
+    daily_loss_limit_pct: 3.0,
+    weekly_loss_limit_pct: 6.0,
+    max_trades_per_day: 8,
+    max_concurrent: 2,
+    sl_atr_mult: 1.3,
+    tp1_r: 1.0,
+    tp2_r: 2.0,
+    tp1_size: 0.5,
+    breakeven_at_r: 0.8,
+    trail_after_tp1_atr: 1.0,
+    time_stop_hours: 48,
+    
+    // Technical Indicators
+    rsi_period: 14,
+    rsi_oversold: 30,
+    rsi_overbought: 70,
+    
+    // ML/AI Settings
+    use_ml_prediction: true,
+    ml_confidence_threshold: 0.6,
+    ml_min_samples: 100
+  });
+
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,6 +118,7 @@ export default function CreateBotPage() {
         stopLoss: formData.stopLoss,
         takeProfit: formData.takeProfit,
         strategy: strategy,
+        strategyConfig: advancedConfig,  // Include advanced configuration
         // Initialize with default values
         status: 'stopped' as const,
         pnl: 0,
@@ -440,6 +494,302 @@ export default function CreateBotPage() {
                   </span>
                 </label>
               </div>
+            </Card>
+
+            {/* Advanced Configuration - Collapsible */}
+            <Card className="p-6">
+              <button
+                type="button"
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                className="w-full flex items-center justify-between text-left"
+              >
+                <h2 className="text-lg font-semibold text-gray-900">
+                  ⚙️ Advanced Strategy Configuration
+                </h2>
+                <i className={`ri-arrow-${showAdvanced ? 'up' : 'down'}-s-line text-2xl text-gray-600`}></i>
+              </button>
+              
+              {showAdvanced && (
+                <div className="mt-6 space-y-6">
+                  {/* Directional Bias */}
+                  <div className="border-l-4 border-purple-500 pl-4">
+                    <h3 className="text-md font-semibold text-gray-800 mb-3">🎯 Directional Bias</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Bias Mode
+                        </label>
+                        <select
+                          value={advancedConfig.bias_mode}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, bias_mode: e.target.value as any }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="auto">Auto (Follow HTF Trend)</option>
+                          <option value="long-only">Long Only</option>
+                          <option value="short-only">Short Only</option>
+                          <option value="both">Both Directions</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          HTF Timeframe
+                        </label>
+                        <select
+                          value={advancedConfig.htf_timeframe}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, htf_timeframe: e.target.value as any }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="4h">4 Hours</option>
+                          <option value="1d">1 Day</option>
+                          <option value="1h">1 Hour</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          HTF Trend Indicator
+                        </label>
+                        <select
+                          value={advancedConfig.htf_trend_indicator}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, htf_trend_indicator: e.target.value as any }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="EMA200">EMA 200</option>
+                          <option value="SMA200">SMA 200</option>
+                          <option value="Supertrend">Supertrend</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          ADX Min (HTF): {advancedConfig.adx_min_htf}
+                        </label>
+                        <input
+                          type="range"
+                          value={advancedConfig.adx_min_htf}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, adx_min_htf: parseFloat(e.target.value) }))}
+                          className="w-full"
+                          min="15"
+                          max="35"
+                          step="1"
+                        />
+                        <p className="text-xs text-gray-500">Minimum ADX for trend confirmation</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Regime Filter */}
+                  <div className="border-l-4 border-blue-500 pl-4">
+                    <h3 className="text-md font-semibold text-gray-800 mb-3">📊 Regime Filter</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Regime Mode
+                        </label>
+                        <select
+                          value={advancedConfig.regime_mode}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, regime_mode: e.target.value as any }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="auto">Auto Detect</option>
+                          <option value="trend">Trend Only</option>
+                          <option value="mean-reversion">Mean Reversion Only</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          ADX Trend Min: {advancedConfig.adx_trend_min}
+                        </label>
+                        <input
+                          type="range"
+                          value={advancedConfig.adx_trend_min}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, adx_trend_min: parseFloat(e.target.value) }))}
+                          className="w-full"
+                          min="20"
+                          max="35"
+                          step="1"
+                        />
+                        <p className="text-xs text-gray-500">ADX ≥ this = trending</p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          ADX Mean Rev Max: {advancedConfig.adx_meanrev_max}
+                        </label>
+                        <input
+                          type="range"
+                          value={advancedConfig.adx_meanrev_max}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, adx_meanrev_max: parseFloat(e.target.value) }))}
+                          className="w-full"
+                          min="15"
+                          max="25"
+                          step="1"
+                        />
+                        <p className="text-xs text-gray-500">ADX ≤ this = ranging</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Risk Management */}
+                  <div className="border-l-4 border-red-500 pl-4">
+                    <h3 className="text-md font-semibold text-gray-800 mb-3">🛡️ Risk Management</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Risk Per Trade: {advancedConfig.risk_per_trade_pct}%
+                        </label>
+                        <input
+                          type="range"
+                          value={advancedConfig.risk_per_trade_pct}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, risk_per_trade_pct: parseFloat(e.target.value) }))}
+                          className="w-full"
+                          min="0.25"
+                          max="2.0"
+                          step="0.25"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Daily Loss Limit: {advancedConfig.daily_loss_limit_pct}%
+                        </label>
+                        <input
+                          type="range"
+                          value={advancedConfig.daily_loss_limit_pct}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, daily_loss_limit_pct: parseFloat(e.target.value) }))}
+                          className="w-full"
+                          min="1"
+                          max="10"
+                          step="0.5"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Max Trades/Day: {advancedConfig.max_trades_per_day}
+                        </label>
+                        <input
+                          type="range"
+                          value={advancedConfig.max_trades_per_day}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, max_trades_per_day: parseInt(e.target.value) }))}
+                          className="w-full"
+                          min="2"
+                          max="20"
+                          step="1"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Exit Strategy */}
+                  <div className="border-l-4 border-green-500 pl-4">
+                    <h3 className="text-md font-semibold text-gray-800 mb-3">🎯 Exit Strategy</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          TP1 (R): {advancedConfig.tp1_r}
+                        </label>
+                        <input
+                          type="range"
+                          value={advancedConfig.tp1_r}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, tp1_r: parseFloat(e.target.value) }))}
+                          className="w-full"
+                          min="0.5"
+                          max="3.0"
+                          step="0.25"
+                        />
+                        <p className="text-xs text-gray-500">First take profit (R = Risk units)</p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          TP2 (R): {advancedConfig.tp2_r}
+                        </label>
+                        <input
+                          type="range"
+                          value={advancedConfig.tp2_r}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, tp2_r: parseFloat(e.target.value) }))}
+                          className="w-full"
+                          min="1.0"
+                          max="5.0"
+                          step="0.25"
+                        />
+                        <p className="text-xs text-gray-500">Second take profit</p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          TP1 Size: {(advancedConfig.tp1_size * 100).toFixed(0)}%
+                        </label>
+                        <input
+                          type="range"
+                          value={advancedConfig.tp1_size}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, tp1_size: parseFloat(e.target.value) }))}
+                          className="w-full"
+                          min="0.25"
+                          max="0.75"
+                          step="0.05"
+                        />
+                        <p className="text-xs text-gray-500">% to close at TP1</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Quick Presets */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <h4 className="font-semibold text-blue-900 mb-3">⚡ Quick Presets</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setAdvancedConfig({
+                          ...advancedConfig,
+                          bias_mode: 'auto',
+                          regime_mode: 'trend',
+                          risk_per_trade_pct: 0.5,
+                          max_trades_per_day: 6,
+                          tp1_r: 1.5,
+                          tp2_r: 3.0
+                        })}
+                        className="px-4 py-2 bg-white border-2 border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50 font-medium"
+                      >
+                        🐢 Conservative
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAdvancedConfig({
+                          ...advancedConfig,
+                          bias_mode: 'auto',
+                          regime_mode: 'auto',
+                          risk_per_trade_pct: 0.75,
+                          max_trades_per_day: 8,
+                          tp1_r: 1.0,
+                          tp2_r: 2.0
+                        })}
+                        className="px-4 py-2 bg-white border-2 border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50 font-medium"
+                      >
+                        ⚖️ Balanced
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAdvancedConfig({
+                          ...advancedConfig,
+                          bias_mode: 'both',
+                          regime_mode: 'auto',
+                          risk_per_trade_pct: 1.0,
+                          max_trades_per_day: 12,
+                          tp1_r: 0.8,
+                          tp2_r: 1.5
+                        })}
+                        className="px-4 py-2 bg-white border-2 border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50 font-medium"
+                      >
+                        🚀 Aggressive
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </Card>
 
             {/* Action Buttons */}

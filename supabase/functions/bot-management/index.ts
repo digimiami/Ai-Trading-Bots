@@ -79,7 +79,7 @@ serve(async (req) => {
       const body = await req.json()
 
       if (action === 'create') {
-        const { name, exchange, tradingType, symbol, timeframe, leverage, riskLevel, tradeAmount, stopLoss, takeProfit, strategy, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt } = body
+        const { name, exchange, tradingType, symbol, timeframe, leverage, riskLevel, tradeAmount, stopLoss, takeProfit, strategy, strategyConfig, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt } = body
 
         // Debug logging
         console.log('Received bot data:', { name, exchange, symbol, timeframe, leverage, riskLevel, tradeAmount, stopLoss, takeProfit, strategy, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt })
@@ -123,6 +123,7 @@ serve(async (req) => {
             stop_loss: stopLoss || 2.0,
             take_profit: takeProfit || 4.0,
             strategy: JSON.stringify(strategy),
+            strategy_config: strategyConfig ? JSON.stringify(strategyConfig) : null,
             status: status || 'running', // Auto-start bots instead of 'stopped'
             pnl: pnl || 0,
             pnl_percentage: pnlPercentage || 0,
