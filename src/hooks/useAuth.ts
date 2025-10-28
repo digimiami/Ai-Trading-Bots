@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import type { User, Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 
@@ -83,8 +83,6 @@ export function useAuth() {
         email_confirmed_at: new Date().toISOString(),
         phone_confirmed_at: '',
         confirmed_at: new Date().toISOString(),
-        email_change_confirm_status: 0,
-        banned_until: '',
         reauthentication_sent_at: '',
         reauthentication_confirm_status: 0,
         is_sso_user: false,
@@ -96,21 +94,12 @@ export function useAuth() {
       return
     }
 
-    // Get initial session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session)
-      if (session?.user) {
-        const role = await fetchUserRole(session.user.id)
-        setUser({ ...session.user, role: role || 'user' })
-      } else {
-        setUser(null)
-      }
-      setLoading(false)
-    })
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+    let isMounted = true
+    
+    // Get initial session with timeout
+    supabase.auth.getSession()
+      .then(async ({ data: { session } }) => {
+        if (!isMounted) return
         setSession(session)
         if (session?.user) {
           const role = await fetchUserRole(session.user.id)
@@ -119,11 +108,51 @@ export function useAuth() {
           setUser(null)
         }
         setLoading(false)
+      })
+      .catch((error) => {
+        console.error('Auth session error:', error)
+        if (!isMounted) return
+        setUser(null)
+        setLoading(false)
+      })
+    
+    // Set a timeout to prevent infinite loading
+    const timeout = setTimeout(() => {
+      console.warn('Auth loading timeout - setting loading to false')
+      if (isMounted) {
+        setLoading(false)
       }
-    )
+    }, 5000) // 5 second timeout
+    
+    // Listen for auth changes
+    let subscription: any = null
+    try {
+      const { data } = supabase.auth.onAuthStateChange(
+        async (_event, session) => {
+          setSession(session)
+          if (session?.user) {
+            const role = await fetchUserRole(session.user.id)
+            setUser({ ...session.user, role: role || 'user' })
+          } else {
+            setUser(null)
+          }
+          setLoading(false)
+        }
+      )
+      subscription = data?.subscription
+    } catch (error) {
+      console.error('Auth state change listener error:', error)
+    }
 
-    return () => subscription.unsubscribe()
-  }, [DEMO_MODE])
+    // Combined cleanup function
+    return () => {
+      isMounted = false
+      clearTimeout(timeout)
+      if (subscription) {
+        subscription.unsubscribe()
+      }
+    }
+  }, [DEMO_MODE, fetchUserRole])
 
   const signIn = async (email: string, password: string) => {
     if (DEMO_MODE) {
@@ -148,8 +177,6 @@ export function useAuth() {
         email_confirmed_at: new Date().toISOString(),
         phone_confirmed_at: '',
         confirmed_at: new Date().toISOString(),
-        email_change_confirm_status: 0,
-        banned_until: '',
         reauthentication_sent_at: '',
         reauthentication_confirm_status: 0,
         is_sso_user: false,
@@ -197,8 +224,6 @@ export function useAuth() {
         email_confirmed_at: new Date().toISOString(),
         phone_confirmed_at: '',
         confirmed_at: new Date().toISOString(),
-        email_change_confirm_status: 0,
-        banned_until: '',
         reauthentication_sent_at: '',
         reauthentication_confirm_status: 0,
         is_sso_user: false,
