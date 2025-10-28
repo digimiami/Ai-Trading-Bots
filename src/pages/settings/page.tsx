@@ -512,7 +512,7 @@ export default function Settings() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Header title="Settings" />
       
       <div className="pt-20 pb-20 px-4 space-y-6">
@@ -920,10 +920,10 @@ export default function Settings() {
 
         {/* Appearance */}
         <Card className="p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Appearance</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Appearance</h3>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Theme
               </label>
               <div className="flex space-x-3">
@@ -931,8 +931,8 @@ export default function Settings() {
                   onClick={() => handleAppearanceChange('theme', 'light')}
                   className={`flex-1 flex items-center justify-center px-4 py-3 rounded-lg border-2 transition-all ${
                     appearance.theme === 'light'
-                      ? 'border-blue-600 bg-blue-50 text-blue-700'
-                      : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                      ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                      : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
                   }`}
                 >
                   <i className="ri-sun-line text-xl mr-2"></i>
@@ -942,27 +942,27 @@ export default function Settings() {
                   onClick={() => handleAppearanceChange('theme', 'dark')}
                   className={`flex-1 flex items-center justify-center px-4 py-3 rounded-lg border-2 transition-all ${
                     appearance.theme === 'dark'
-                      ? 'border-blue-600 bg-blue-50 text-blue-700'
-                      : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
+                      ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                      : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
                   }`}
                 >
                   <i className="ri-moon-line text-xl mr-2"></i>
                   <span className="font-medium">Dark</span>
                 </button>
               </div>
-              <p className="text-xs text-gray-500 mt-2">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
                 Current theme: <strong className="capitalize">{appearance.theme}</strong> mode
               </p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Currency
               </label>
               <select
                 value={appearance.currency}
                 onChange={(e) => handleAppearanceChange('currency', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
                 <option value="USD">🇺🇸 USD ($)</option>
                 <option value="EUR">🇪🇺 EUR (€)</option>
@@ -979,13 +979,13 @@ export default function Settings() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Language
               </label>
               <select
                 value={appearance.language}
                 onChange={(e) => handleAppearanceChange('language', e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
                 <option value="English">🇺🇸 English</option>
                 <option value="Spanish">🇪🇸 Español</option>
@@ -1000,8 +1000,8 @@ export default function Settings() {
               </select>
             </div>
 
-            <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <p className="text-sm text-blue-800">
+            <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <p className="text-sm text-blue-800 dark:text-blue-300">
                 <strong>💡 Note:</strong> Theme and currency changes apply immediately. 
                 Language changes will refresh the page to apply translations.
               </p>

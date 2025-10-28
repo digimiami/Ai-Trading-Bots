@@ -52,7 +52,7 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Header 
         title="Pablo" 
         subtitle="AI Trading Platform"
@@ -68,9 +68,9 @@ export default function Home() {
             </Button>
             <button
               onClick={() => navigate('/help')}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
             >
-              <i className="ri-notification-line text-xl text-gray-600"></i>
+              <i className="ri-notification-line text-xl text-gray-600 dark:text-gray-300"></i>
             </button>
           </div>
         }
