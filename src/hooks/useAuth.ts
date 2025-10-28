@@ -13,9 +13,6 @@ export function useAuth() {
   const [loading, setLoading] = useState(true)
   const [roleCache, setRoleCache] = useState<Record<string, string>>({})
 
-  // Demo mode - bypass authentication for testing
-  const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === '1'
-
   const fetchUserRole = useCallback(async (userId: string): Promise<string | null> => {
     // Check cache first
     if (roleCache[userId]) {
@@ -61,39 +58,6 @@ export function useAuth() {
   }
 
   useEffect(() => {
-    if (DEMO_MODE) {
-      // Demo mode - create a mock user
-      const mockUser: UserWithRole = {
-        id: 'demo-user-id',
-        email: 'demo@example.com',
-        role: 'admin',
-        user_metadata: { name: 'Demo User' },
-        app_metadata: {},
-        aud: 'authenticated',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        phone: '',
-        confirmation_sent_at: '',
-        recovery_sent_at: '',
-        email_change_sent_at: '',
-        new_email: '',
-        new_phone: '',
-        invited_at: '',
-        action_link: '',
-        email_confirmed_at: new Date().toISOString(),
-        phone_confirmed_at: '',
-        confirmed_at: new Date().toISOString(),
-        reauthentication_sent_at: '',
-        reauthentication_confirm_status: 0,
-        is_sso_user: false,
-        deleted_at: '',
-        is_anonymous: false,
-      }
-      setUser(mockUser)
-      setLoading(false)
-      return
-    }
-
     let isMounted = true
     
     // Get initial session with timeout
@@ -152,45 +116,9 @@ export function useAuth() {
         subscription.unsubscribe()
       }
     }
-  }, [DEMO_MODE, fetchUserRole])
+  }, [fetchUserRole])
 
   const signIn = async (email: string, password: string) => {
-    if (DEMO_MODE) {
-      // Demo mode - simulate successful login
-      console.log('✅ DEMO MODE: Signing in with demo user')
-      const mockUser: UserWithRole = {
-        id: 'demo-user-id',
-        email: email || 'demo@example.com',
-        role: 'admin',
-        user_metadata: { name: 'Demo User' },
-        app_metadata: {},
-        aud: 'authenticated',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        phone: '',
-        confirmation_sent_at: '',
-        recovery_sent_at: '',
-        email_change_sent_at: '',
-        new_email: '',
-        new_phone: '',
-        invited_at: '',
-        action_link: '',
-        email_confirmed_at: new Date().toISOString(),
-        phone_confirmed_at: '',
-        confirmed_at: new Date().toISOString(),
-        reauthentication_sent_at: '',
-        reauthentication_confirm_status: 0,
-        is_sso_user: false,
-        deleted_at: '',
-        is_anonymous: false,
-      }
-      console.log('✅ DEMO MODE: Setting user and returning success')
-      setUser(mockUser)
-      // Add small delay to simulate network
-      await new Promise(resolve => setTimeout(resolve, 100))
-      return { data: { user: mockUser, session: null }, error: null }
-    }
-
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
@@ -211,42 +139,6 @@ export function useAuth() {
   }
 
   const signUp = async (email: string, password: string) => {
-    if (DEMO_MODE) {
-      // Demo mode - simulate successful signup
-      console.log('✅ DEMO MODE: Signing up with demo user')
-      const mockUser: UserWithRole = {
-        id: 'demo-user-id',
-        email: email || 'demo@example.com',
-        role: 'admin',
-        user_metadata: { name: 'Demo User' },
-        app_metadata: {},
-        aud: 'authenticated',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        phone: '',
-        confirmation_sent_at: '',
-        recovery_sent_at: '',
-        email_change_sent_at: '',
-        new_email: '',
-        new_phone: '',
-        invited_at: '',
-        action_link: '',
-        email_confirmed_at: new Date().toISOString(),
-        phone_confirmed_at: '',
-        confirmed_at: new Date().toISOString(),
-        reauthentication_sent_at: '',
-        reauthentication_confirm_status: 0,
-        is_sso_user: false,
-        deleted_at: '',
-        is_anonymous: false,
-      }
-      console.log('✅ DEMO MODE: Setting user and returning success')
-      setUser(mockUser)
-      // Add small delay to simulate network
-      await new Promise(resolve => setTimeout(resolve, 100))
-      return { data: { user: mockUser, session: null }, error: null }
-    }
-
     try {
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -260,13 +152,8 @@ export function useAuth() {
   }
 
   const signOut = async () => {
-    if (DEMO_MODE) {
-      // Demo mode - simulate sign out
-      setUser(null)
-      return { error: null }
-    }
-
     const { error } = await supabase.auth.signOut()
+    setUser(null)
     return { error }
   }
 
