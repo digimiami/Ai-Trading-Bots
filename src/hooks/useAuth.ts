@@ -15,13 +15,6 @@ export function useAuth() {
 
   // Demo mode - bypass authentication for testing
   const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === '1'
-  
-  // Debug logging
-  console.log('🔍 Auth Debug:', {
-    VITE_DEMO_MODE: import.meta.env.VITE_DEMO_MODE,
-    DEMO_MODE_ENABLED: DEMO_MODE,
-    SUPABASE_URL: import.meta.env.VITE_PUBLIC_SUPABASE_URL
-  })
 
   const fetchUserRole = useCallback(async (userId: string): Promise<string | null> => {
     // Check cache first
