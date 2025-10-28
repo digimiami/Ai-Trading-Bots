@@ -15,6 +15,13 @@ export function useAuth() {
 
   // Demo mode - bypass authentication for testing
   const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === '1'
+  
+  // Debug logging
+  console.log('🔍 Auth Debug:', {
+    VITE_DEMO_MODE: import.meta.env.VITE_DEMO_MODE,
+    DEMO_MODE_ENABLED: DEMO_MODE,
+    SUPABASE_URL: import.meta.env.VITE_PUBLIC_SUPABASE_URL
+  })
 
   const fetchUserRole = useCallback(async (userId: string): Promise<string | null> => {
     // Check cache first
@@ -157,6 +164,7 @@ export function useAuth() {
   const signIn = async (email: string, password: string) => {
     if (DEMO_MODE) {
       // Demo mode - simulate successful login
+      console.log('✅ DEMO MODE: Signing in with demo user')
       const mockUser: UserWithRole = {
         id: 'demo-user-id',
         email: email || 'demo@example.com',
@@ -183,27 +191,36 @@ export function useAuth() {
         deleted_at: '',
         is_anonymous: false,
       }
+      console.log('✅ DEMO MODE: Setting user and returning success')
       setUser(mockUser)
-      return { data: { user: mockUser }, error: null }
+      // Add small delay to simulate network
+      await new Promise(resolve => setTimeout(resolve, 100))
+      return { data: { user: mockUser, session: null }, error: null }
     }
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
-    
-    // If sign in successful, fetch user role
-    if (data?.user && !error) {
-      const role = await fetchUserRole(data.user.id)
-      setUser({ ...data.user, role: role || 'user' })
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+      
+      // If sign in successful, fetch user role
+      if (data?.user && !error) {
+        const role = await fetchUserRole(data.user.id)
+        setUser({ ...data.user, role: role || 'user' })
+      }
+      
+      return { data, error }
+    } catch (error) {
+      console.error('Sign in error:', error)
+      return { data: null, error: error as any }
     }
-    
-    return { data, error }
   }
 
   const signUp = async (email: string, password: string) => {
     if (DEMO_MODE) {
       // Demo mode - simulate successful signup
+      console.log('✅ DEMO MODE: Signing up with demo user')
       const mockUser: UserWithRole = {
         id: 'demo-user-id',
         email: email || 'demo@example.com',
@@ -230,15 +247,23 @@ export function useAuth() {
         deleted_at: '',
         is_anonymous: false,
       }
+      console.log('✅ DEMO MODE: Setting user and returning success')
       setUser(mockUser)
-      return { data: { user: mockUser }, error: null }
+      // Add small delay to simulate network
+      await new Promise(resolve => setTimeout(resolve, 100))
+      return { data: { user: mockUser, session: null }, error: null }
     }
 
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-    })
-    return { data, error }
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+      })
+      return { data, error }
+    } catch (error) {
+      console.error('Sign up error:', error)
+      return { data: null, error: error as any }
+    }
   }
 
   const signOut = async () => {
