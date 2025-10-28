@@ -4,7 +4,20 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co'
 const supabaseAnonKey = import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || 'placeholder_key'
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Create Supabase client with better error handling
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    storage: typeof window !== 'undefined' ? window.localStorage : undefined
+  }
+})
+
+// Log Supabase status on client side
+if (typeof window !== 'undefined' && (supabaseUrl.includes('placeholder') || supabaseAnonKey.includes('placeholder'))) {
+  console.warn('⚠️ Supabase not properly configured. Using placeholder credentials.')
+}
 
 // API endpoints for Edge Functions
 export const API_ENDPOINTS = {
