@@ -26,7 +26,7 @@ jobs:
         run: |
             cat -A .env | head
             echo "Linking project without loading .env"
-            supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_ID }} --no-env
+            supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_ID }} --debug
         
       
       - name: 🚀 Deploy Edge Functions
