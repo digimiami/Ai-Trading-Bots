@@ -3,8 +3,9 @@ import { useNavigate, useParams } from 'react-router-dom';
 import Button from '../../components/base/Button';
 import Card from '../../components/base/Card';
 import Header from '../../components/feature/Header';
-import type { TradingStrategy } from '../../types/trading';
+import type { TradingStrategy, TradingBot } from '../../types/trading';
 import { useBots } from '../../hooks/useBots';
+import AutoOptimizer from '../../components/bot/AutoOptimizer';
 
 export default function EditBotPage() {
   const navigate = useNavigate();
@@ -507,6 +508,11 @@ export default function EditBotPage() {
               </div>
             </Card>
           </form>
+
+          {/* AI Auto-Optimization Component */}
+          {botId && bots.find(b => b.id === botId) && (
+            <AutoOptimizer bot={bots.find(b => b.id === botId) as TradingBot} />
+          )}
         </div>
       </div>
     </div>

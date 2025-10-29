@@ -3,6 +3,8 @@
  * Provides self-learning capabilities for trading bots
  */
 
+import type { TradingStrategy, AdvancedStrategyConfig } from '../types/trading';
+
 interface TradeAnalysis {
   symbol: string;
   entryPrice: number;
@@ -100,24 +102,46 @@ class OpenAIService {
 
   /**
    * Learn from trades and suggest parameter optimizations
+   * Now supports both TradingStrategy and AdvancedStrategyConfig
    */
   async optimizeStrategy(
-    strategy: any,
+    strategies: {
+      strategy: TradingStrategy;
+      advancedConfig?: AdvancedStrategyConfig;
+    },
     recentTrades: TradeAnalysis[],
     performanceMetrics: any
-  ): Promise<any> {
+  ): Promise<{
+    strategy: TradingStrategy;
+    advancedConfig?: AdvancedStrategyConfig;
+    reasoning: string;
+    expectedImprovement: string;
+    confidence: number;
+  }> {
     if (!this.apiKey) {
-      return strategy; // Return unchanged if no API key
+      return {
+        strategy: strategies.strategy,
+        advancedConfig: strategies.advancedConfig,
+        reasoning: 'AI optimization not available - configure OpenAI API key',
+        expectedImprovement: 'N/A',
+        confidence: 0
+      };
     }
 
     try {
-      const prompt = this.buildOptimizationPrompt(strategy, recentTrades, performanceMetrics);
+      const prompt = this.buildOptimizationPrompt(strategies, recentTrades, performanceMetrics);
       const response = await this.callOpenAI(prompt);
       
-      return this.parseOptimizationResponse(response, strategy);
+      return this.parseOptimizationResponse(response, strategies);
     } catch (error) {
       console.error('Error optimizing strategy:', error);
-      return strategy;
+      return {
+        strategy: strategies.strategy,
+        advancedConfig: strategies.advancedConfig,
+        reasoning: 'Optimization failed',
+        expectedImprovement: 'Unknown',
+        confidence: 0
+      };
     }
   }
 
@@ -188,64 +212,122 @@ Provide a JSON response with:
   }
 
   /**
-   * Build optimization prompt
+   * Build optimization prompt for both strategy types
    */
-  private buildOptimizationPrompt(strategy: any, recentTrades: TradeAnalysis[], metrics: any): string {
+  private buildOptimizationPrompt(
+    strategies: { strategy: TradingStrategy; advancedConfig?: AdvancedStrategyConfig },
+    recentTrades: TradeAnalysis[],
+    metrics: any
+  ): string {
     return `
-Optimize this trading strategy based on recent performance.
+You are an expert trading strategy optimizer. Analyze the trading bot's performance and optimize both basic strategy parameters and advanced configuration.
 
-Current Strategy:
-${JSON.stringify(strategy, null, 2)}
+CURRENT BASIC STRATEGY:
+${JSON.stringify(strategies.strategy, null, 2)}
 
-Performance Metrics:
+${strategies.advancedConfig ? `CURRENT ADVANCED CONFIGURATION:
+${JSON.stringify(strategies.advancedConfig, null, 2)}` : ''}
+
+PERFORMANCE METRICS:
 - Win Rate: ${metrics.winRate}%
+- Total PnL: $${metrics.totalPnL}
 - Avg Win: $${metrics.avgWin}
 - Avg Loss: $${metrics.avgLoss}
 - Profit Factor: ${metrics.profitFactor}
+- Sharpe Ratio: ${metrics.sharpeRatio}
+- Max Drawdown: ${metrics.maxDrawdown}%
 
-Recent Trades:
-${recentTrades.map(t => 
-  `- ${t.symbol}: ${t.outcome}, PnL: $${t.pnl}, Indicators: RSI=${t.indicators.rsi}, ADX=${t.indicators.adx}`
+RECENT TRADES (last 20):
+${recentTrades.slice(0, 20).map(t => 
+  `- ${t.symbol} ${t.side.toUpperCase()}: ${t.outcome}, PnL: $${t.pnl?.toFixed(2) || 0}, Entry: $${t.entryPrice}, Exit: $${t.exitPrice || 'N/A'}`
 ).join('\n')}
 
-Suggest optimized parameters as JSON:
+Provide optimized parameters as JSON. Keep values realistic and within trading best practices:
 {
-  "rsiThreshold": number,
-  "adxThreshold": number,
-  "stopLoss": number,
-  "takeProfit": number,
-  "reasoning": "Why these changes"
+  "strategy": {
+    "rsiThreshold": number (0-100),
+    "adxThreshold": number (0-100),
+    "bbWidthThreshold": number,
+    "emaSlope": number,
+    "atrPercentage": number,
+    "vwapDistance": number,
+    "momentumThreshold": number,
+    "useMLPrediction": boolean,
+    "minSamplesForML": number
+  },
+  ${strategies.advancedConfig ? `"advancedConfig": {
+    "bias_mode": "long-only|short-only|both|auto",
+    "htf_timeframe": "4h|1d|1h|15m",
+    "risk_per_trade_pct": number (0.5-5.0),
+    "sl_atr_mult": number (1.0-3.0),
+    "tp1_r": number (1.5-4.0),
+    "tp2_r": number (2.0-6.0),
+    "adx_min_htf": number (20-50),
+    "regime_mode": "trend|mean-reversion|auto",
+    "adx_trend_min": number (25-40),
+    "adx_meanrev_max": number (15-25)
+  },` : ''}
+  "reasoning": "Detailed explanation of why these changes will improve performance",
+  "expectedImprovement": "Expected win rate improvement (e.g., +5% win rate, +10% profit factor)",
+  "confidence": number (0-1) representing confidence in these optimizations
 }
 `.trim();
   }
 
   /**
-   * Call OpenAI API
+   * Call OpenAI API with JSON mode support
    */
-  private async callOpenAI(prompt: string): Promise<any> {
+  private async callOpenAI(prompt: string, useJsonMode: boolean = true): Promise<any> {
+    const body: any = {
+      model: 'gpt-4o', // Use latest GPT-4 model
+      messages: [
+        { 
+          role: 'system', 
+          content: 'You are a professional trading analyst and quantitative strategist. Provide detailed, data-driven recommendations. Always respond with valid JSON only.' 
+        },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.3, // Lower temperature for more consistent, logical responses
+      max_tokens: 2000 // Increased for detailed optimization responses
+    };
+
+    // Use JSON mode if available (for better JSON parsing)
+    if (useJsonMode) {
+      body.response_format = { type: 'json_object' };
+    }
+
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${this.apiKey}`
       },
-      body: JSON.stringify({
-        model: 'gpt-4',
-        messages: [
-          { role: 'system', content: 'You are a professional trading analyst. Provide JSON responses only.' },
-          { role: 'user', content: prompt }
-        ],
-        temperature: 0.3,
-        max_tokens: 1000
-      })
+      body: JSON.stringify(body)
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error('OpenAI API error:', response.status, errorText);
       throw new Error(`OpenAI API error: ${response.status}`);
     }
 
     const data = await response.json();
-    return JSON.parse(data.choices[0].message.content);
+    const content = data.choices[0]?.message?.content;
+    
+    if (!content) {
+      throw new Error('No content in OpenAI response');
+    }
+
+    try {
+      return JSON.parse(content);
+    } catch (parseError) {
+      // Try to extract JSON from markdown code blocks
+      const jsonMatch = content.match(/```json\s*(\{.*\})\s*```/s) || content.match(/(\{.*\})/s);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[1]);
+      }
+      throw new Error('Failed to parse OpenAI response as JSON');
+    }
   }
 
   /**
@@ -274,14 +356,39 @@ Suggest optimized parameters as JSON:
   }
 
   /**
-   * Parse optimization response
+   * Parse optimization response for both strategy types
    */
-  private parseOptimizationResponse(response: any, currentStrategy: any): any {
+  private parseOptimizationResponse(
+    response: any, 
+    currentStrategies: { strategy: TradingStrategy; advancedConfig?: AdvancedStrategyConfig }
+  ): {
+    strategy: TradingStrategy;
+    advancedConfig?: AdvancedStrategyConfig;
+    reasoning: string;
+    expectedImprovement: string;
+    confidence: number;
+  } {
+    // Merge suggested strategy parameters with current strategy
+    const optimizedStrategy: TradingStrategy = {
+      ...currentStrategies.strategy,
+      ...(response.strategy || response.suggestedParameters || {})
+    };
+
+    // Merge advanced config if provided
+    let optimizedAdvancedConfig: AdvancedStrategyConfig | undefined;
+    if (currentStrategies.advancedConfig || response.advancedConfig) {
+      optimizedAdvancedConfig = {
+        ...currentStrategies.advancedConfig,
+        ...(response.advancedConfig || {})
+      };
+    }
+
     return {
-      ...currentStrategy,
-      ...response.suggestedParameters,
-      aiOptimized: true,
-      optimizationReasoning: response.reasoning
+      strategy: optimizedStrategy,
+      advancedConfig: optimizedAdvancedConfig,
+      reasoning: response.reasoning || 'AI-generated optimization',
+      expectedImprovement: response.expectedImprovement || 'Performance improvement expected',
+      confidence: response.confidence || 0.7
     };
   }
 
