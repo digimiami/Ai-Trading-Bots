@@ -70,6 +70,15 @@ export default defineConfig({
     sourcemap: true,
     outDir: 'out',
   },
+  preview: {
+    port: 4173,
+    host: '0.0.0.0',
+    allowedHosts: [
+      'pablobots.net',
+      'localhost',
+      '127.0.0.1'
+    ]
+  },
   resolve: {
     alias: {
       '@': resolve(__dirname, './src')
