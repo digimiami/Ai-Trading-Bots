@@ -9,6 +9,7 @@ const Bots = lazy(() => import('../pages/bots/page'));
 const CreateBot = lazy(() => import('../pages/create-bot/page'));
 const EditBot = lazy(() => import('../pages/edit-bot/page'));
 const BotActivity = lazy(() => import('../pages/bot-activity/page'));
+const Backtest = lazy(() => import('../pages/backtest/page'));
 const Trades = lazy(() => import('../pages/trades/page'));
 const Reports = lazy(() => import('../pages/reports/page'));
 const Settings = lazy(() => import('../pages/settings/page'));
@@ -48,6 +49,10 @@ const routes: RouteObject[] = [
   {
     path: '/bot-activity',
     element: <BotActivity />
+  },
+  {
+    path: '/backtest',
+    element: <Backtest />
   },
   {
     path: '/trades',
