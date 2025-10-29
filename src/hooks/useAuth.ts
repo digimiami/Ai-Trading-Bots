@@ -57,17 +57,153 @@ export function useAuth() {
     }
   }
 
+  // Helper to restore session from localStorage if getSession() times out
+  const restoreSessionFromStorage = async (): Promise<any> => {
+    try {
+      if (typeof window === 'undefined') return null
+      
+      // Supabase uses format: sb-{project-ref}-auth-token
+      // Extract project ref from Supabase URL
+      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || ''
+      const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || 'default'
+      const expectedKey = `sb-${projectRef}-auth-token`
+      
+      // Check all keys starting with 'sb-' (in case format is different)
+      const allKeys = Object.keys(localStorage).filter(k => k.startsWith('sb-'))
+      console.log('🔍 Checking localStorage keys:', allKeys, 'Expected:', expectedKey)
+      
+      // Try expected key first
+      const keysToCheck = [expectedKey, ...allKeys.filter(k => k !== expectedKey)]
+      
+      for (const key of keysToCheck) {
+        const value = localStorage.getItem(key)
+        if (value) {
+          try {
+            const parsed = JSON.parse(value)
+            
+            // Check if this looks like a Supabase session
+            if (parsed.access_token && parsed.user) {
+              console.log('🔍 Found session in localStorage:', key)
+              
+              // Validate token is not expired
+              const expiresAt = parsed.expires_at
+              if (expiresAt) {
+                const expirationTime = typeof expiresAt === 'number' 
+                  ? expiresAt * 1000  // Convert seconds to milliseconds
+                  : parseInt(expiresAt) * 1000
+                
+                if (expirationTime > Date.now()) {
+                  console.log('✅ Session valid, expires in', Math.round((expirationTime - Date.now()) / 1000), 'seconds')
+                  
+                  // Reconstruct session object compatible with Supabase
+                  const session = {
+                    access_token: parsed.access_token,
+                    refresh_token: parsed.refresh_token,
+                    expires_in: parsed.expires_in || 3600,
+                    expires_at: expiresAt,
+                    token_type: parsed.token_type || 'bearer',
+                    user: parsed.user
+                  }
+                  
+                  // Try to set session in Supabase client
+                  try {
+                    await supabase.auth.setSession({
+                      access_token: parsed.access_token,
+                      refresh_token: parsed.refresh_token
+                    })
+                    console.log('✅ Session restored to Supabase client')
+                  } catch (setError) {
+                    console.warn('⚠️ Could not set session in Supabase client:', setError)
+                    // Continue anyway with manual session
+                  }
+                  
+                  return session
+                } else {
+                  console.log('⚠️ Stored session expired', Math.round((Date.now() - expirationTime) / 1000 / 60), 'minutes ago')
+                  // Don't remove, might still be useful for refresh
+                }
+              } else {
+                // No expiration time, assume valid
+                console.log('⚠️ Session has no expiration time, assuming valid')
+                const session = {
+                  access_token: parsed.access_token,
+                  refresh_token: parsed.refresh_token,
+                  expires_in: parsed.expires_in || 3600,
+                  expires_at: parsed.expires_at,
+                  token_type: parsed.token_type || 'bearer',
+                  user: parsed.user
+                }
+                
+                // Try to set session in Supabase client
+                try {
+                  await supabase.auth.setSession({
+                    access_token: parsed.access_token,
+                    refresh_token: parsed.refresh_token
+                  })
+                } catch (setError) {
+                  console.warn('⚠️ Could not set session in Supabase client:', setError)
+                }
+                
+                return session
+              }
+            }
+          } catch (e) {
+            // Not valid JSON, skip
+            continue
+          }
+        }
+      }
+      
+      console.log('❌ No valid session found in localStorage')
+      return null
+    } catch (error) {
+      console.error('❌ Error restoring session from storage:', error)
+      return null
+    }
+  }
+
   useEffect(() => {
     let isMounted = true
     let sessionLoaded = false
     
     // Get initial session with timeout and better error handling
-    supabase.auth.getSession()
-      .then(async ({ data: { session }, error }) => {
+    const sessionPromise = Promise.race([
+      supabase.auth.getSession(),
+      new Promise<{ data: { session: any }, error: any }>((resolve) => {
+        setTimeout(() => {
+          resolve({ data: { session: null }, error: { message: 'Timeout' } })
+        }, 5000)
+      })
+    ])
+    
+    sessionPromise
+      .then(async (result) => {
         if (!isMounted) return
+        
+        const { data: { session }, error } = result
+        
+        // If timeout or error, try to restore from localStorage
+        if ((error && error.message === 'Timeout') || !session) {
+          console.log('🔍 getSession() timed out, checking localStorage...')
+          const restoredSession = await restoreSessionFromStorage()
+          
+          if (restoredSession) {
+            console.log('✅ Restored session from localStorage:', restoredSession.user?.email)
+            sessionLoaded = true
+            setSession(restoredSession as any)
+            if (restoredSession.user) {
+              const role = await fetchUserRole(restoredSession.user.id)
+              setUser({ ...restoredSession.user, role: role || 'user' })
+              console.log('✅ User loaded from storage:', { email: restoredSession.user.email, role })
+            }
+            setLoading(false)
+            return
+          }
+        }
+        
         sessionLoaded = true
         
-        if (error) {
+        if (error && error.message !== 'Timeout') {
           console.error('❌ Session error:', error)
           setSession(null)
           setUser(null)
@@ -86,43 +222,56 @@ export function useAuth() {
         }
         setLoading(false)
       })
-      .catch((error) => {
+      .catch(async (error) => {
         console.error('❌ Auth session error:', error)
         if (!isMounted) return
+        
+        // Try to restore from localStorage on error
+        console.log('🔍 Error occurred, trying to restore from localStorage...')
+        const restoredSession = await restoreSessionFromStorage()
+        
+        if (restoredSession) {
+          console.log('✅ Restored session from localStorage after error:', restoredSession.user?.email)
+          sessionLoaded = true
+          setSession(restoredSession as any)
+          if (restoredSession.user) {
+            const role = await fetchUserRole(restoredSession.user.id)
+            setUser({ ...restoredSession.user, role: role || 'user' })
+          }
+          setLoading(false)
+          return
+        }
+        
         sessionLoaded = true
         setSession(null)
         setUser(null)
         setLoading(false)
       })
     
-    // Set a timeout to prevent infinite loading (increased for domain scenarios)
+    // Set a timeout as backup (increased for domain scenarios)
     const timeout = setTimeout(async () => {
       // Only warn if session hasn't loaded after timeout
       if (isMounted && !sessionLoaded) {
-        console.warn('⚠️ Auth loading timeout - continuing without session')
-        console.warn('This may occur if Supabase redirect URLs are not configured for your domain')
+        console.warn('⚠️ Auth loading timeout - trying localStorage fallback...')
         
-        // Try to get session one more time
-        try {
-          const { data: { session }, error } = await supabase.auth.getSession()
-          if (!error && session) {
-            console.log('✅ Session found on retry')
-            sessionLoaded = true
-            setSession(session)
-            if (session.user) {
-              const role = await fetchUserRole(session.user.id)
-              setUser({ ...session.user, role: role || 'user' })
-            }
-            setLoading(false)
-            return
+        // Final attempt: restore from localStorage
+        const restoredSession = await restoreSessionFromStorage()
+        if (restoredSession) {
+          console.log('✅ Restored session on timeout:', restoredSession.user?.email)
+          sessionLoaded = true
+          setSession(restoredSession as any)
+          if (restoredSession.user) {
+            const role = await fetchUserRole(restoredSession.user.id)
+            setUser({ ...restoredSession.user, role: role || 'user' })
           }
-        } catch (retryError) {
-          console.error('❌ Retry session error:', retryError)
+          setLoading(false)
+          return
         }
         
+        console.warn('⚠️ No session found in localStorage either')
         setLoading(false)
       }
-    }, 10000) // Increased to 10 seconds for domain scenarios
+    }, 8000) // Reduced since we have Promise.race now
     
     // Listen for auth changes
     let subscription: any = null

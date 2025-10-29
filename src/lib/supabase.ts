@@ -4,6 +4,10 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co'
 const supabaseAnonKey = import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || 'placeholder_key'
 
+// Extract project ref for storage key (Supabase format: sb-{project-ref}-auth-token)
+const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || 'default'
+const storageKey = `sb-${projectRef}-auth-token`
+
 // Create Supabase client with better error handling
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
@@ -11,7 +15,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     autoRefreshToken: true,
     detectSessionInUrl: true,
     storage: typeof window !== 'undefined' ? window.localStorage : undefined,
-    storageKey: 'sb-auth-token',
+    storageKey: storageKey,
     // Use PKCE flow for better security with custom domains
     flowType: 'pkce'
   },
