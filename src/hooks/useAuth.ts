@@ -59,11 +59,13 @@ export function useAuth() {
 
   useEffect(() => {
     let isMounted = true
+    let sessionLoaded = false
     
     // Get initial session with timeout
     supabase.auth.getSession()
       .then(async ({ data: { session } }) => {
         if (!isMounted) return
+        sessionLoaded = true
         setSession(session)
         if (session?.user) {
           const role = await fetchUserRole(session.user.id)
@@ -76,14 +78,15 @@ export function useAuth() {
       .catch((error) => {
         console.error('Auth session error:', error)
         if (!isMounted) return
+        sessionLoaded = true
         setUser(null)
         setLoading(false)
       })
     
     // Set a timeout to prevent infinite loading
     const timeout = setTimeout(() => {
-      // Only warn if loading is still true after timeout
-      if (isMounted && loading) {
+      // Only warn if session hasn't loaded after timeout
+      if (isMounted && !sessionLoaded) {
         console.warn('Auth loading timeout - continuing without session')
         setLoading(false)
       }
