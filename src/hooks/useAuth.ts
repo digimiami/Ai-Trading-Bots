@@ -105,18 +105,19 @@ export function useAuth() {
                     user: parsed.user
                   }
                   
-                  // Try to set session in Supabase client
-                  try {
-                    await supabase.auth.setSession({
-                      access_token: parsed.access_token,
-                      refresh_token: parsed.refresh_token
-                    })
+                  // Try to set session in Supabase client (with timeout)
+                  // Note: This is non-blocking - we continue even if it fails
+                  supabase.auth.setSession({
+                    access_token: parsed.access_token,
+                    refresh_token: parsed.refresh_token
+                  }).then(() => {
                     console.log('✅ Session restored to Supabase client')
-                  } catch (setError) {
-                    console.warn('⚠️ Could not set session in Supabase client:', setError)
-                    // Continue anyway with manual session
-                  }
+                  }).catch((setError: any) => {
+                    console.warn('⚠️ Could not set session in Supabase client:', setError?.message || setError)
+                    // Continue anyway - we have the session data and will use it manually
+                  })
                   
+                  // Return session immediately - don't wait for setSession
                   return session
                 } else {
                   console.log('⚠️ Stored session expired', Math.round((Date.now() - expirationTime) / 1000 / 60), 'minutes ago')
@@ -134,16 +135,18 @@ export function useAuth() {
                   user: parsed.user
                 }
                 
-                // Try to set session in Supabase client
-                try {
-                  await supabase.auth.setSession({
-                    access_token: parsed.access_token,
-                    refresh_token: parsed.refresh_token
-                  })
-                } catch (setError) {
-                  console.warn('⚠️ Could not set session in Supabase client:', setError)
-                }
+                // Try to set session in Supabase client (non-blocking)
+                supabase.auth.setSession({
+                  access_token: parsed.access_token,
+                  refresh_token: parsed.refresh_token
+                }).then(() => {
+                  console.log('✅ Session restored to Supabase client (no expiration)')
+                }).catch((setError: any) => {
+                  console.warn('⚠️ Could not set session in Supabase client:', setError?.message || setError)
+                  // Continue anyway - we have the session data
+                })
                 
+                // Return session immediately
                 return session
               }
             }
@@ -165,6 +168,7 @@ export function useAuth() {
   useEffect(() => {
     let isMounted = true
     let sessionLoaded = false
+    let manuallyRestoredSession = false // Track if we restored from localStorage
     
     // Get initial session with timeout and better error handling
     const sessionPromise = Promise.race([
@@ -184,20 +188,53 @@ export function useAuth() {
         
         // If timeout or error, try to restore from localStorage
         if ((error && error.message === 'Timeout') || !session) {
-          console.log('🔍 getSession() timed out, checking localStorage...')
+          console.log('🔍 getSession() timed out or failed, checking localStorage...')
           const restoredSession = await restoreSessionFromStorage()
           
           if (restoredSession) {
             console.log('✅ Restored session from localStorage:', restoredSession.user?.email)
             sessionLoaded = true
+            manuallyRestoredSession = true // Mark as manually restored
+            
+            // Set session first
             setSession(restoredSession as any)
+            
+            // Set user immediately with metadata role, then fetch real role async
             if (restoredSession.user) {
-              const role = await fetchUserRole(restoredSession.user.id)
-              setUser({ ...restoredSession.user, role: role || 'user' })
-              console.log('✅ User loaded from storage:', { email: restoredSession.user.email, role })
+              // Set user immediately with metadata role to prevent delay
+              const metadataRole = restoredSession.user.user_metadata?.role || 'user'
+              setUser({ ...restoredSession.user, role: metadataRole })
+              console.log('✅ User set from storage (immediate):', { 
+                email: restoredSession.user.email, 
+                role: metadataRole 
+              })
+              
+              // Fetch real role in background and update
+              fetchUserRole(restoredSession.user.id)
+                .then((role) => {
+                  if (isMounted && role) {
+                    setUser({ ...restoredSession.user!, role })
+                    console.log('✅ User role updated:', { email: restoredSession.user!.email, role })
+                  }
+                })
+                .catch((roleError) => {
+                  console.warn('⚠️ Could not fetch role, using metadata role:', roleError)
+                })
+            } else {
+              setUser(null)
             }
+            
             setLoading(false)
+            console.log('✅ Session restoration complete, loading set to false')
+            
+            // Clear the flag after a short delay to allow auth state listener to sync
+            setTimeout(() => {
+              manuallyRestoredSession = false
+            }, 3000)
+            
             return
+          } else {
+            console.warn('⚠️ No session found in localStorage')
           }
         }
         
@@ -207,10 +244,10 @@ export function useAuth() {
           console.error('❌ Session error:', error)
           setSession(null)
           setUser(null)
-          setLoading(false)
-          return
-        }
-        
+      setLoading(false)
+      return
+    }
+
         console.log('🔐 Initial session:', session ? 'Found' : 'None', session?.user?.email)
         setSession(session)
         if (session?.user) {
@@ -233,15 +270,47 @@ export function useAuth() {
         if (restoredSession) {
           console.log('✅ Restored session from localStorage after error:', restoredSession.user?.email)
           sessionLoaded = true
+          manuallyRestoredSession = true // Mark as manually restored
+          
+          // Set session
           setSession(restoredSession as any)
+          
+          // Set user immediately with metadata role
           if (restoredSession.user) {
-            const role = await fetchUserRole(restoredSession.user.id)
-            setUser({ ...restoredSession.user, role: role || 'user' })
+            const metadataRole = restoredSession.user.user_metadata?.role || 'user'
+            setUser({ ...restoredSession.user, role: metadataRole })
+            console.log('✅ User restored after error (immediate):', { 
+              email: restoredSession.user.email, 
+              role: metadataRole 
+            })
+            
+            // Fetch real role in background
+            fetchUserRole(restoredSession.user.id)
+              .then((role) => {
+                if (isMounted && role) {
+                  setUser({ ...restoredSession.user!, role })
+                  console.log('✅ User role updated after error:', { email: restoredSession.user!.email, role })
+                }
+              })
+              .catch((roleError) => {
+                console.warn('⚠️ Could not fetch role after error:', roleError)
+              })
+          } else {
+            setUser(null)
           }
+          
           setLoading(false)
+          console.log('✅ Error recovery complete, loading set to false')
+          
+          // Clear the flag after a short delay
+          setTimeout(() => {
+            manuallyRestoredSession = false
+          }, 3000)
+          
           return
         }
         
+        console.warn('⚠️ No session in localStorage after error')
         sessionLoaded = true
         setSession(null)
         setUser(null)
@@ -259,12 +328,43 @@ export function useAuth() {
         if (restoredSession) {
           console.log('✅ Restored session on timeout:', restoredSession.user?.email)
           sessionLoaded = true
+          manuallyRestoredSession = true // Mark as manually restored
+          
+          // Set session
           setSession(restoredSession as any)
+          
+          // Set user immediately with metadata role
           if (restoredSession.user) {
-            const role = await fetchUserRole(restoredSession.user.id)
-            setUser({ ...restoredSession.user, role: role || 'user' })
+            const metadataRole = restoredSession.user.user_metadata?.role || 'user'
+            setUser({ ...restoredSession.user, role: metadataRole })
+            console.log('✅ User restored on timeout (immediate):', { 
+              email: restoredSession.user.email, 
+              role: metadataRole 
+            })
+            
+            // Fetch real role in background
+            fetchUserRole(restoredSession.user.id)
+              .then((role) => {
+                if (isMounted && role) {
+                  setUser({ ...restoredSession.user!, role })
+                  console.log('✅ User role updated on timeout:', { email: restoredSession.user!.email, role })
+                }
+              })
+              .catch((roleError) => {
+                console.warn('⚠️ Could not fetch role on timeout:', roleError)
+              })
+          } else {
+            setUser(null)
           }
+          
           setLoading(false)
+          console.log('✅ Final timeout restore complete')
+          
+          // Clear the flag after a short delay
+          setTimeout(() => {
+            manuallyRestoredSession = false
+          }, 3000)
+          
           return
         }
         
@@ -281,15 +381,27 @@ export function useAuth() {
           console.log('🔐 Auth state changed:', event, session?.user?.email)
           if (!isMounted) return
           
-          setSession(session)
+          // If we just manually restored a session, ignore auth state changes that would clear it
+          // unless it's a SIGNED_IN event (which confirms our restoration worked)
+          if (manuallyRestoredSession && !session && event !== 'SIGNED_IN') {
+            console.log('⚠️ Ignoring auth state change - session was manually restored')
+            return
+          }
+          
+          // Only clear user if we're not in the middle of a manual restoration
           if (session?.user) {
             const role = await fetchUserRole(session.user.id)
             setUser({ ...session.user, role: role || 'user' })
-            console.log('✅ User set:', { email: session.user.email, role })
-          } else {
+            setSession(session)
+            console.log('✅ User set from auth state:', { email: session.user.email, role })
+            manuallyRestoredSession = false // Clear flag when we get a real auth state
+          } else if (!manuallyRestoredSession) {
+            // Only clear if we haven't manually restored
+            setSession(null)
             setUser(null)
-            console.log('❌ User cleared')
+            console.log('❌ User cleared from auth state')
           }
+          
           setLoading(false)
         }
       )
@@ -314,22 +426,22 @@ export function useAuth() {
   const signIn = async (email: string, password: string) => {
     try {
       setLoading(true)
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-      
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+    
       // If sign in successful, update session and user immediately
       if (data?.session && data?.user && !error) {
         setSession(data.session)
-        const role = await fetchUserRole(data.user.id)
-        setUser({ ...data.user, role: role || 'user' })
+      const role = await fetchUserRole(data.user.id)
+      setUser({ ...data.user, role: role || 'user' })
         setLoading(false)
         return { data, error: null }
-      }
-      
+    }
+    
       setLoading(false)
-      return { data, error }
+    return { data, error }
     } catch (error) {
       console.error('Sign in error:', error)
       setLoading(false)
@@ -339,11 +451,11 @@ export function useAuth() {
 
   const signUp = async (email: string, password: string) => {
     try {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-      })
-      return { data, error }
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+    })
+    return { data, error }
     } catch (error) {
       console.error('Sign up error:', error)
       return { data: null, error: error as any }
