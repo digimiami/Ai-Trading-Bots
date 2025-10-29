@@ -82,8 +82,9 @@ export function useAuth() {
     
     // Set a timeout to prevent infinite loading
     const timeout = setTimeout(() => {
-      console.warn('Auth loading timeout - setting loading to false')
-      if (isMounted) {
+      // Only warn if loading is still true after timeout
+      if (isMounted && loading) {
+        console.warn('Auth loading timeout - continuing without session')
         setLoading(false)
       }
     }, 5000) // 5 second timeout
