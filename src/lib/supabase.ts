@@ -10,7 +10,15 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    storage: typeof window !== 'undefined' ? window.localStorage : undefined
+    storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+    storageKey: 'sb-auth-token',
+    // Use PKCE flow for better security with custom domains
+    flowType: 'pkce'
+  },
+  global: {
+    headers: {
+      'X-Client-Info': 'pablo-trading-app'
+    }
   }
 })
 

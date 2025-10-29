@@ -61,7 +61,7 @@ export function useAuth() {
     let isMounted = true
     let sessionLoaded = false
     
-    // Get initial session with timeout
+    // Get initial session with timeout and better error handling
     supabase.auth.getSession()
       .then(async ({ data: { session }, error }) => {
         if (!isMounted) return
@@ -95,14 +95,34 @@ export function useAuth() {
         setLoading(false)
       })
     
-    // Set a timeout to prevent infinite loading
-    const timeout = setTimeout(() => {
+    // Set a timeout to prevent infinite loading (increased for domain scenarios)
+    const timeout = setTimeout(async () => {
       // Only warn if session hasn't loaded after timeout
       if (isMounted && !sessionLoaded) {
-        console.warn('Auth loading timeout - continuing without session')
+        console.warn('⚠️ Auth loading timeout - continuing without session')
+        console.warn('This may occur if Supabase redirect URLs are not configured for your domain')
+        
+        // Try to get session one more time
+        try {
+          const { data: { session }, error } = await supabase.auth.getSession()
+          if (!error && session) {
+            console.log('✅ Session found on retry')
+            sessionLoaded = true
+            setSession(session)
+            if (session.user) {
+              const role = await fetchUserRole(session.user.id)
+              setUser({ ...session.user, role: role || 'user' })
+            }
+            setLoading(false)
+            return
+          }
+        } catch (retryError) {
+          console.error('❌ Retry session error:', retryError)
+        }
+        
         setLoading(false)
       }
-    }, 5000) // 5 second timeout
+    }, 10000) // Increased to 10 seconds for domain scenarios
     
     // Listen for auth changes
     let subscription: any = null
