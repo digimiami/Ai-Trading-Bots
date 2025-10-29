@@ -53,7 +53,8 @@ export default function AuthPage() {
   const validateInviteCode = async (code: string) => {
     try {
       const { data: { session } } = await supabase.auth.getSession()
-      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/invitation-management?action=validate`, {
+      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL
+      const response = await fetch(`${supabaseUrl}/functions/v1/invitation-management?action=validate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -78,7 +79,8 @@ export default function AuthPage() {
     setError(null)
 
     try {
-      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/fix-auth-final`, {
+      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL
+      const response = await fetch(`${supabaseUrl}/functions/v1/fix-auth-final`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -117,6 +119,19 @@ export default function AuthPage() {
       
       if (isLogin) {
         result = await signIn(email, password)
+        
+        // If sign in successful, wait a moment for state to update then navigate
+        if (!result.error && result.data?.user) {
+          // Wait for auth state to propagate
+          await new Promise(resolve => setTimeout(resolve, 500))
+          
+          // Double-check session was set
+          const { data: { session } } = await supabase.auth.getSession()
+          if (session?.user) {
+            // Session is set, redirect will happen via useEffect
+            return
+          }
+        }
       } else {
         result = await signUp(email, password)
         
@@ -124,7 +139,8 @@ export default function AuthPage() {
         if (!result.error && inviteCode) {
           try {
             const { data: { session } } = await supabase.auth.getSession()
-            await fetch(`${supabase.supabaseUrl}/functions/v1/invitation-management?action=use`, {
+            const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL
+            await fetch(`${supabaseUrl}/functions/v1/invitation-management?action=use`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -142,11 +158,17 @@ export default function AuthPage() {
       }
 
       if (result.error) {
-        setError(result.error.message)
+        setError(result.error.message || 'Authentication failed')
+        setLoading(false)
+      } else if (isLogin && result.data?.user) {
+        // Sign in successful - loading will be managed by redirect
+        // Don't set loading to false here to keep "Processing..." until redirect
+      } else {
+        setLoading(false)
       }
     } catch (err) {
-      setError('An unexpected error occurred')
-    } finally {
+      console.error('Auth error:', err)
+      setError(err instanceof Error ? err.message : 'An unexpected error occurred')
       setLoading(false)
     }
   }
@@ -256,7 +278,7 @@ export default function AuthPage() {
           <Button
             type="submit"
             className="w-full"
-            disabled={loading || (!isLogin && inviteCode && inviteValid !== true)}
+            disabled={!!(loading || (!isLogin && inviteCode && inviteValid === false))}
           >
             {loading ? 'Processing...' : (isLogin ? 'Sign In' : 'Create Account')}
           </Button>

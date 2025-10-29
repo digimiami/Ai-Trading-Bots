@@ -7,6 +7,7 @@ import { useState } from 'react';
 import { useAutoOptimizer } from '../../hooks/useAutoOptimizer';
 import { Card } from '../base/Card';
 import Button from '../base/Button';
+import AiOptimizationLogs from './AiOptimizationLogs';
 import type { TradingBot } from '../../types/trading';
 
 interface AutoOptimizerProps {
@@ -140,6 +141,9 @@ export default function AutoOptimizer({ bot }: AutoOptimizerProps) {
           </div>
         )}
       </div>
+
+      {/* AI Optimization History */}
+      <AiOptimizationLogs botId={bot.id} />
     </Card>
   );
 }

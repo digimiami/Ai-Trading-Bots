@@ -63,22 +63,34 @@ export function useAuth() {
     
     // Get initial session with timeout
     supabase.auth.getSession()
-      .then(async ({ data: { session } }) => {
+      .then(async ({ data: { session }, error }) => {
         if (!isMounted) return
         sessionLoaded = true
+        
+        if (error) {
+          console.error('❌ Session error:', error)
+          setSession(null)
+          setUser(null)
+          setLoading(false)
+          return
+        }
+        
+        console.log('🔐 Initial session:', session ? 'Found' : 'None', session?.user?.email)
         setSession(session)
         if (session?.user) {
           const role = await fetchUserRole(session.user.id)
           setUser({ ...session.user, role: role || 'user' })
+          console.log('✅ User loaded:', { email: session.user.email, role })
         } else {
           setUser(null)
         }
         setLoading(false)
       })
       .catch((error) => {
-        console.error('Auth session error:', error)
+        console.error('❌ Auth session error:', error)
         if (!isMounted) return
         sessionLoaded = true
+        setSession(null)
         setUser(null)
         setLoading(false)
       })
@@ -96,13 +108,18 @@ export function useAuth() {
     let subscription: any = null
     try {
       const { data } = supabase.auth.onAuthStateChange(
-        async (_event, session) => {
+        async (event, session) => {
+          console.log('🔐 Auth state changed:', event, session?.user?.email)
+          if (!isMounted) return
+          
           setSession(session)
           if (session?.user) {
             const role = await fetchUserRole(session.user.id)
             setUser({ ...session.user, role: role || 'user' })
+            console.log('✅ User set:', { email: session.user.email, role })
           } else {
             setUser(null)
+            console.log('❌ User cleared')
           }
           setLoading(false)
         }
@@ -110,6 +127,9 @@ export function useAuth() {
       subscription = data?.subscription
     } catch (error) {
       console.error('Auth state change listener error:', error)
+      if (isMounted) {
+        setLoading(false)
+      }
     }
 
     // Combined cleanup function
@@ -124,20 +144,26 @@ export function useAuth() {
 
   const signIn = async (email: string, password: string) => {
     try {
+      setLoading(true)
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
       
-      // If sign in successful, fetch user role
-      if (data?.user && !error) {
+      // If sign in successful, update session and user immediately
+      if (data?.session && data?.user && !error) {
+        setSession(data.session)
         const role = await fetchUserRole(data.user.id)
         setUser({ ...data.user, role: role || 'user' })
+        setLoading(false)
+        return { data, error: null }
       }
       
+      setLoading(false)
       return { data, error }
     } catch (error) {
       console.error('Sign in error:', error)
+      setLoading(false)
       return { data: null, error: error as any }
     }
   }

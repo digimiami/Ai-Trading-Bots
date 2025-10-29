@@ -34,10 +34,13 @@ function AppRoutes() {
       const isOnboardingCompleted = localStorage.getItem('onboarding_completed');
       const currentPath = window.location.pathname;
       
-      if (!user && currentPath !== '/auth' && currentPath !== '/onboarding') {
-        navigate('/auth');
+      // Only redirect if we're certain about auth state
+      if (user === null && currentPath !== '/auth' && currentPath !== '/onboarding') {
+        console.log('🔄 No user, redirecting to auth')
+        navigate('/auth', { replace: true });
       } else if (user && !isOnboardingCompleted && currentPath !== '/onboarding') {
-        navigate('/onboarding');
+        console.log('🔄 User logged in but onboarding not completed, redirecting to onboarding')
+        navigate('/onboarding', { replace: true });
       }
     }
   }, [user, loading, navigate]);

@@ -245,12 +245,71 @@ Provide optimized parameters as JSON with confidence score:
           continue
         }
 
+        // Calculate changes
+        const changes: any[] = []
+        const oldStrategy = bot.strategy || {}
+        const newStrategy = optimization.strategy || {}
+        const oldConfig = bot.strategy_config || {}
+        const newConfig = optimization.advancedConfig || {}
+
+        // Compare strategy changes
+        Object.keys(newStrategy).forEach(key => {
+          if (JSON.stringify(oldStrategy[key]) !== JSON.stringify(newStrategy[key])) {
+            changes.push({
+              parameter: `strategy.${key}`,
+              oldValue: oldStrategy[key],
+              newValue: newStrategy[key],
+              reason: optimization.reasoning
+            })
+          }
+        })
+
+        // Compare advanced config changes
+        Object.keys(newConfig).forEach(key => {
+          if (JSON.stringify(oldConfig[key]) !== JSON.stringify(newConfig[key])) {
+            changes.push({
+              parameter: `advancedConfig.${key}`,
+              oldValue: oldConfig[key],
+              newValue: newConfig[key],
+              reason: optimization.reasoning
+            })
+          }
+        })
+
+        // Log optimization to bot activity logs
+        const changeSummary = changes.map(c => 
+          `${c.parameter}: ${JSON.stringify(c.oldValue)} → ${JSON.stringify(c.newValue)}`
+        ).join(', ')
+
+        await supabaseClient
+          .from('bot_activity_logs')
+          .insert({
+            bot_id: bot.id,
+            level: 'success',
+            category: 'strategy',
+            message: `AI/ML Optimization Applied (Confidence: ${(optimization.confidence * 100).toFixed(1)}%)`,
+            details: {
+              type: 'ai_ml_optimization',
+              confidence: optimization.confidence,
+              reasoning: optimization.reasoning,
+              expectedImprovement: optimization.expectedImprovement,
+              changes: changes,
+              changeSummary,
+              optimizedStrategy: optimization.strategy,
+              optimizedAdvancedConfig: optimization.advancedConfig,
+              originalStrategy: bot.strategy,
+              originalAdvancedConfig: bot.strategy_config,
+              performanceBefore: { winRate, totalPnL, profitFactor }
+            },
+            timestamp: new Date().toISOString()
+          })
+
         results.push({
           botId: bot.id,
           botName: bot.name,
           status: 'optimized',
           confidence: optimization.confidence,
-          changes: Object.keys(optimization.strategy || {}).length
+          changes: changes.length
         })
 
         // Small delay to avoid rate limiting

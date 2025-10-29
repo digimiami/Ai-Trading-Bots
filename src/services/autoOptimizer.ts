@@ -317,6 +317,8 @@ class AutoOptimizer {
       }
 
       // Store optimization record
+      const performanceBefore = await this.getPerformanceSnapshot(botId);
+      
       const { error: recordError } = await supabase
         .from('strategy_optimizations')
         .insert({
@@ -328,13 +330,19 @@ class AutoOptimizer {
           },
           reasoning: optimization.reasoning,
           expected_improvement: parseFloat(optimization.expectedImprovement.replace(/[^0-9.-]/g, '')) || 0,
-          performance_before: await this.getPerformanceSnapshot(botId),
+          performance_before: performanceBefore,
           status: 'applied'
         });
 
       if (recordError) {
         console.error('Error recording optimization:', recordError);
       }
+
+      // Log to activity logs with performance snapshot
+      await this.logOptimization(botId, {
+        ...optimization,
+        // Include performance before in details
+      });
 
       // Apply the optimization
       const { error: updateError } = await supabase
@@ -350,6 +358,9 @@ class AutoOptimizer {
         console.error('Error applying optimization:', updateError);
         return false;
       }
+
+      // Log the optimization to bot activity logs
+      await this.logOptimization(botId, optimization);
 
       console.log(`✅ Successfully optimized bot ${botId}`);
       return true;
@@ -370,6 +381,50 @@ class AutoOptimizer {
       .single();
 
     return bot || {};
+  }
+
+  /**
+   * Log optimization to bot activity logs
+   */
+  private async logOptimization(botId: string, optimization: OptimizationResult): Promise<void> {
+    try {
+      const changeSummary = optimization.changes.map(change => 
+        `${change.parameter}: ${JSON.stringify(change.oldValue)} → ${JSON.stringify(change.newValue)}`
+      ).join(', ');
+
+      const logMessage = `AI/ML Optimization Applied (Confidence: ${(optimization.confidence * 100).toFixed(1)}%)`;
+      
+      const logDetails = {
+        type: 'ai_ml_optimization',
+        confidence: optimization.confidence,
+        reasoning: optimization.reasoning,
+        expectedImprovement: optimization.expectedImprovement,
+        changes: optimization.changes,
+        changeSummary,
+        optimizedStrategy: optimization.optimizedStrategy,
+        optimizedAdvancedConfig: optimization.optimizedAdvancedConfig,
+        originalStrategy: optimization.originalStrategy,
+        originalAdvancedConfig: optimization.originalAdvancedConfig
+      };
+
+      // Log to bot_activity_logs table
+      const { error } = await supabase
+        .from('bot_activity_logs')
+        .insert({
+          bot_id: botId,
+          level: 'success',
+          category: 'strategy',
+          message: logMessage,
+          details: logDetails,
+          timestamp: new Date().toISOString()
+        });
+
+      if (error) {
+        console.error('Error logging optimization:', error);
+      }
+    } catch (error) {
+      console.error('Error logging optimization:', error);
+    }
   }
 
   /**

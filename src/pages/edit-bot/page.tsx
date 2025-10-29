@@ -143,7 +143,7 @@ export default function EditBotPage() {
       <Header title="Edit Bot" />
       
       <div className="pt-16 pb-6 px-4">
-        <div className="max-w-2xl mx-auto">
+        <div className="max-w-4xl mx-auto">
           <div className="flex items-center mb-6">
             <Button 
               variant="secondary" 
@@ -510,8 +510,26 @@ export default function EditBotPage() {
           </form>
 
           {/* AI Auto-Optimization Component */}
-          {botId && bots.find(b => b.id === botId) && (
-            <AutoOptimizer bot={bots.find(b => b.id === botId) as TradingBot} />
+          {botId && (
+            <div className="mt-6">
+              {(() => {
+                const currentBot = bots.find(b => b.id === botId);
+                if (currentBot) {
+                  return <AutoOptimizer bot={currentBot as TradingBot} />;
+                }
+                // Show loading state while bots are being fetched
+                return (
+                  <Card title="AI Auto-Optimization" className="mt-4">
+                    <div className="text-center py-4">
+                      <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mb-2"></div>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        Loading bot information...
+                      </p>
+                    </div>
+                  </Card>
+                );
+              })()}
+            </div>
           )}
         </div>
       </div>
