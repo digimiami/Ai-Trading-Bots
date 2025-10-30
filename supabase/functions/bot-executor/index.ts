@@ -446,13 +446,29 @@ class BotExecutor {
       });
       
     } catch (error) {
-      console.error('❌ Trade execution error:', error);
-      await this.addBotLog(bot.id, {
-        level: 'error',
-        category: 'trade',
-        message: `Trade execution failed: ${error.message}`,
-        details: { error: error.message }
-      });
+      // Check if it's an insufficient balance error (less critical)
+      const isInsufficientBalance = error.message?.includes('Insufficient balance') || error.message?.includes('not enough');
+      
+      if (isInsufficientBalance) {
+        console.warn('⚠️ Trade execution skipped due to insufficient balance:', error.message);
+        await this.addBotLog(bot.id, {
+          level: 'warning',
+          category: 'trade',
+          message: `Trade execution skipped: ${error.message}`,
+          details: { 
+            error: error.message,
+            note: 'This is often temporary and will retry on the next execution cycle.'
+          }
+        });
+      } else {
+        console.error('❌ Trade execution error:', error);
+        await this.addBotLog(bot.id, {
+          level: 'error',
+          category: 'trade',
+          message: `Trade execution failed: ${error.message}`,
+          details: { error: error.message }
+        });
+      }
     }
   }
   
@@ -598,9 +614,11 @@ class BotExecutor {
           console.error(`💰 Price: $${currentMarketPrice}`);
           throw new Error(`Invalid quantity for ${symbol}: ${formattedQty}. Min: ${constraints.min}, Max: ${constraints.max}. Please adjust trade amount or check symbol requirements.`);
         } else if (data.retCode === 110007) {
-          console.error(`❌ Insufficient balance for ${symbol} order`);
-          console.error(`💰 Order value: $${(parseFloat(formattedQty) * currentMarketPrice).toFixed(2)}`);
-          throw new Error(`Insufficient balance for ${symbol} order. Order value: $${(parseFloat(formattedQty) * currentMarketPrice).toFixed(2)}. Please check your account balance.`);
+          const orderValue = parseFloat(formattedQty) * currentMarketPrice;
+          console.warn(`⚠️ Insufficient balance for ${symbol} ${capitalizedSide} order`);
+          console.warn(`💰 Order value: $${orderValue.toFixed(2)}`);
+          console.warn(`💡 This may happen temporarily. The bot will retry on the next execution.`);
+          throw new Error(`Insufficient balance for ${symbol} order. Order value: $${orderValue.toFixed(2)}. Please check your account balance or wait for funds to become available. This is often temporary and will retry automatically.`);
         }
         
         throw new Error(`Bybit order error: ${data.retMsg} (Code: ${data.retCode})`);
