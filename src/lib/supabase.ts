@@ -26,6 +26,67 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   }
 })
 
+// Helper: Read access token from localStorage if Supabase client session isn't ready yet
+export function getAccessTokenFromLocalStorage(): string | null {
+  if (typeof window === 'undefined') return null
+  try {
+    // Supabase stores under key: sb-{project-ref}-auth-token
+    const expectedKey = `sb-${projectRef}-auth-token`
+    const stored = window.localStorage.getItem(expectedKey)
+    if (!stored) return null
+    const parsed = JSON.parse(stored)
+    if (parsed?.access_token && parsed?.expires_at) {
+      const expirationMs = (typeof parsed.expires_at === 'number' ? parsed.expires_at : parseInt(parsed.expires_at)) * 1000
+      if (Number.isFinite(expirationMs) && expirationMs > Date.now()) {
+        return parsed.access_token as string
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return null
+}
+
+// Fast auth helpers: default to localStorage, fallback to racing getSession with 1s timeout
+export async function getSessionFast(): Promise<import('@supabase/supabase-js').Session | null> {
+  // Prefer localStorage-first
+  const localToken = getAccessTokenFromLocalStorage();
+  if (localToken) {
+    // Attempt to read current session; if not yet ready, construct a minimal session shape
+    const current = await supabase.auth.getSession().catch(() => null);
+    if (current?.data?.session) return current.data.session;
+    // Minimal session compatible with our apiCall token usage
+    return {
+      access_token: localToken,
+      token_type: 'bearer',
+      refresh_token: '',
+      expires_in: 3600,
+      expires_at: Math.floor(Date.now() / 1000) + 300, // short placeholder
+      user: undefined as any
+    } as any;
+  }
+
+  // Fallback: race Supabase getSession with 1s timeout
+  try {
+    const result = await Promise.race([
+      supabase.auth.getSession(),
+      new Promise<{ data: { session: any } }>((resolve) =>
+        setTimeout(() => resolve({ data: { session: null } }), 1000)
+      ),
+    ]);
+    return (result as any)?.data?.session || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getAuthTokenFast(): Promise<string | null> {
+  const fromLocal = getAccessTokenFromLocalStorage();
+  if (fromLocal) return fromLocal;
+  const session = await getSessionFast();
+  return session?.access_token || null;
+}
+
 // Log Supabase status on client side
 if (typeof window !== 'undefined' && (supabaseUrl.includes('placeholder') || supabaseAnonKey.includes('placeholder'))) {
   console.warn('⚠️ Supabase not properly configured. Using placeholder credentials.')
@@ -46,10 +107,13 @@ export const API_ENDPOINTS = {
 export async function apiCall(endpoint: string, options: RequestInit = {}) {
   try {
     const { data: { session } } = await supabase.auth.getSession()
+    // Fallback: if Supabase client hasn't been hydrated with session yet (after refresh),
+    // use the token from localStorage so authenticated calls don't fail.
+    const fallbackToken = !session?.access_token ? getAccessTokenFromLocalStorage() : null
     
     const headers = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${session?.access_token}`,
+      'Authorization': `Bearer ${session?.access_token || fallbackToken || ''}`,
       ...options.headers,
     }
 

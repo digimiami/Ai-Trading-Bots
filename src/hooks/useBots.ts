@@ -1,28 +1,38 @@
 
 import { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, getAuthTokenFast } from '../lib/supabase';
+import { useAuth } from './useAuth';
 import type { TradingBot } from '../types/trading';
 
 export const useBots = () => {
   const [bots, setBots] = useState<TradingBot[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { user, loading: authLoading } = useAuth();
 
   const fetchBots = async () => {
     try {
+      console.log('useBots: Fetching bots');
       setLoading(true);
       setError(null);
       
-      const { data: { session } } = await supabase.auth.getSession();
+      // Default to localStorage, fallback to 1s getSession race
+      let accessToken = await getAuthTokenFast();
       
-      if (!session) {
+      if (!accessToken) {
+        // Retry once shortly after to allow auth to finish restoring
+        await new Promise(resolve => setTimeout(resolve, 300));
+        accessToken = await getAuthTokenFast();
+      }
+      
+      if (!accessToken) {
         throw new Error('No active session');
       }
 
       const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management`, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
+          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
       });
@@ -224,9 +234,24 @@ export const useBots = () => {
     }
   };
 
+  // Fetch when auth state is ready; avoid firing before session exists
   useEffect(() => {
+    console.log('useBots: authLoading:', authLoading);
+    console.log('useBots: user:', user);
+    if (authLoading) {
+      // Still determining auth; keep loading true for bots
+      setLoading(true);
+      return;
+    }
+    if (!user) {
+      // Not authenticated; clear data and stop loading
+      setBots([]);
+      setLoading(false);
+      return;
+    }
     fetchBots();
-  }, []);
+    // Re-fetch when the signed-in user changes
+  }, [authLoading, user?.id]);
 
   return {
     bots,
