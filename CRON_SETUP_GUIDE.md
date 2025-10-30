@@ -17,6 +17,7 @@ The bot scheduler calls your Supabase Edge Function `bot-scheduler` every 5 minu
 
 2. Edit `.env.cron` and update:
    - `SUPABASE_URL`: Your Supabase project URL (e.g., `https://dkawxgwdqiirgmmjbvhc.supabase.co`)
+   - `SUPABASE_ANON_KEY`: Your Supabase anon/public key (get from Dashboard → Settings → API)
    - `CRON_SECRET`: Your CRON_SECRET value (same as in Supabase Secrets)
 
 ### Step 2: Deploy to Server

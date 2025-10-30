@@ -24,6 +24,7 @@ fi
 
 # Default values (override with .env.cron)
 SUPABASE_URL="${SUPABASE_URL:-https://dkawxgwdqiirgmmjbvhc.supabase.co}"
+SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY:-}"
 CRON_SECRET="${CRON_SECRET:-c3f0b1a2d4e59687a9b0c1d2e3f405162738495a6b7c8d9e0f1a2b3c4d5e6f78a}"
 LOG_DIR="${LOG_DIR:-/var/log/bot-scheduler}"
 LOG_FILE="${LOG_DIR}/bot-scheduler.log"
@@ -38,10 +39,17 @@ TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 # Call the bot-scheduler function
 FULL_URL="${SUPABASE_URL}/functions/v1/bot-scheduler"
 
+# Build headers
+HEADERS=(-H "x-cron-secret: ${CRON_SECRET}" -H "Content-Type: application/json")
+
+# Add Authorization header if ANON_KEY is provided
+if [ -n "$SUPABASE_ANON_KEY" ]; then
+    HEADERS+=(-H "Authorization: Bearer ${SUPABASE_ANON_KEY}")
+fi
+
 # Make the request and capture response
 RESPONSE=$(curl -X POST "$FULL_URL" \
-    -H "x-cron-secret: ${CRON_SECRET}" \
-    -H "Content-Type: application/json" \
+    "${HEADERS[@]}" \
     -w "\nHTTP_CODE:%{http_code}\nTIME:%{time_total}" \
     -s 2>&1)
 
