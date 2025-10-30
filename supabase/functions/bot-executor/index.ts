@@ -216,7 +216,9 @@ async function getExchangeServerTime(exchange: string): Promise<number | null> {
 type Constraints = { minQty?: number; maxQty?: number; qtyStep?: number; tickSize?: number };
 function roundToStep(value: number, step?: number) {
   if (!step || step <= 0) return value;
-  return Math.floor(value / step) * step;
+  // Use more precise rounding to avoid floating point errors
+  const factor = 1 / step;
+  return Math.floor(value * factor) / factor;
 }
 
 function normalizeOrderParams(qty: number, price: number, c: Constraints) {
@@ -391,10 +393,11 @@ class BotExecutor {
       const tradeAmountRaw = this.calculateTradeAmount(bot, currentPrice);
       // Normalize qty/price to reduce exchange rejections
       const basicConstraints = this.getQuantityConstraints(bot.symbol);
+      const { stepSize, tickSize } = this.getSymbolSteps(bot.symbol);
       const normalized = normalizeOrderParams(
         tradeAmountRaw,
         currentPrice,
-        { minQty: basicConstraints.min, maxQty: basicConstraints.max, qtyStep: 0.001, tickSize: 0.01 }
+        { minQty: basicConstraints.min, maxQty: basicConstraints.max, qtyStep: stepSize, tickSize: tickSize }
       );
       const tradeAmount = normalized.qty;
       const normalizedPrice = normalized.price;
@@ -514,10 +517,13 @@ class BotExecutor {
       const constraints = this.getQuantityConstraints(symbol);
       let qty = Math.max(constraints.min, Math.min(constraints.max, amount));
       if (stepSize > 0) {
-        qty = Math.floor(qty / stepSize) * stepSize;
+        // Use more precise rounding to avoid floating point errors
+        const factor = 1 / stepSize;
+        qty = Math.floor(qty * factor) / factor;
       }
+      // Calculate decimals for formatting - ensure we have enough precision
       const decimals = stepSize.toString().includes('.') ? stepSize.toString().split('.')[1].length : 0;
-      const formattedQty = qty.toFixed(decimals);
+      const formattedQty = parseFloat(qty.toFixed(decimals)).toString(); // Remove trailing zeros
       
       // Bybit V5 API requires capitalized side: "Buy" or "Sell"
       const capitalizedSide = side.charAt(0).toUpperCase() + side.slice(1).toLowerCase();
