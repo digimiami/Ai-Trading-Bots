@@ -23,6 +23,7 @@ jobs:
         env:
             SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
             SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+            SUPABASE_DOTENV: "0"
         run: |
             cat -A .env | head
             echo "Linking project without loading .env"
@@ -32,6 +33,7 @@ jobs:
       - name: 🚀 Deploy Edge Functions
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DOTENV: "0"
         run: |
           echo "🚀 Deploying all Edge Functions..."
           

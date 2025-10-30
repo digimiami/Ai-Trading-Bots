@@ -194,6 +194,41 @@ class TimeSync {
   }
 }
 
+// Simple exchange time helper (optional use)
+async function getExchangeServerTime(exchange: string): Promise<number | null> {
+  try {
+    if (exchange?.toLowerCase() === 'bybit') {
+      const res = await fetch('https://api.bybit.com/v5/market/time');
+      const j = await res.json();
+      const t = Number(j?.time || j?.result?.time || j?.result?.timeSecond * 1000);
+      return Number.isFinite(t) ? t : null;
+    }
+    if (exchange?.toLowerCase() === 'okx') {
+      const res = await fetch('https://www.okx.com/api/v5/public/time');
+      const j = await res.json();
+      const t = Number(j?.data?.[0]?.ts);
+      return Number.isFinite(t) ? t : null;
+    }
+  } catch (_) {}
+  return null;
+}
+
+type Constraints = { minQty?: number; maxQty?: number; qtyStep?: number; tickSize?: number };
+function roundToStep(value: number, step?: number) {
+  if (!step || step <= 0) return value;
+  return Math.floor(value / step) * step;
+}
+
+function normalizeOrderParams(qty: number, price: number, c: Constraints) {
+  let q = qty;
+  if (c.qtyStep) q = roundToStep(q, c.qtyStep);
+  if (typeof c.minQty === 'number' && q < c.minQty) q = c.minQty;
+  if (typeof c.maxQty === 'number' && q > c.maxQty) q = c.maxQty;
+  let p = price;
+  if (c.tickSize) p = Math.round(p / c.tickSize) * c.tickSize;
+  return { qty: q, price: p };
+}
+
 // Market data fetcher
 class MarketDataFetcher {
   static async fetchPrice(symbol: string, exchange: string, tradingType: string = 'spot'): Promise<number> {
@@ -353,10 +388,19 @@ class BotExecutor {
   private async executeTrade(bot: any, tradeSignal: any): Promise<void> {
     try {
       const currentPrice = await MarketDataFetcher.fetchPrice(bot.symbol, bot.exchange);
-      const tradeAmount = this.calculateTradeAmount(bot, currentPrice);
+      const tradeAmountRaw = this.calculateTradeAmount(bot, currentPrice);
+      // Normalize qty/price to reduce exchange rejections
+      const basicConstraints = this.getQuantityConstraints(bot.symbol);
+      const normalized = normalizeOrderParams(
+        tradeAmountRaw,
+        currentPrice,
+        { minQty: basicConstraints.min, maxQty: basicConstraints.max, qtyStep: 0.001, tickSize: 0.01 }
+      );
+      const tradeAmount = normalized.qty;
+      const normalizedPrice = normalized.price;
       
       // Place actual order on exchange
-      const orderResult = await this.placeOrder(bot, tradeSignal, tradeAmount, currentPrice);
+      const orderResult = await this.placeOrder(bot, tradeSignal, tradeAmount, normalizedPrice);
       
       console.log('📝 Recording trade in database...');
       console.log('Order result:', JSON.stringify(orderResult, null, 2));
@@ -371,7 +415,7 @@ class BotExecutor {
           symbol: bot.symbol,
           side: tradeSignal.side,
           amount: tradeAmount,
-          price: currentPrice,
+          price: normalizedPrice,
           status: orderResult.status || 'filled',
           exchange_order_id: orderResult.orderId || orderResult.exchangeResponse?.result?.orderId || null,
           executed_at: TimeSync.getCurrentTimeISO(),
@@ -465,22 +509,15 @@ class BotExecutor {
       };
       const bybitCategory = categoryMap[tradingType] || 'spot';
       
-      // Different symbols have different precision requirements
-      const getQuantityPrecision = (symbol: string): number => {
-        const precisionMap: { [key: string]: number } = {
-          'BTCUSDT': 3,    // Bitcoin: 3 decimals (0.001 minimum)
-          'ETHUSDT': 2,    // Ethereum: 2 decimals (0.01 minimum)
-          'DOTUSDT': 0,    // Polkadot: whole numbers (1 minimum)
-          'UNIUSDT': 1,    // Uniswap: 1 decimal (0.1 minimum)
-          'ADAUSDT': 0,    // Cardano: whole numbers
-          'AVAXUSDT': 1,   // Avalanche: 1 decimal (0.1 minimum)
-          'SOLUSDT': 1,    // Solana: 1 decimal
-        };
-        return precisionMap[symbol] || 2; // Default to 2 decimals
-      };
-      
-      const precision = getQuantityPrecision(symbol);
-      const formattedQty = parseFloat(amount.toString()).toFixed(precision);
+      // Round quantity to Bybit lot step and clamp to min/max
+      const { stepSize } = this.getSymbolSteps(symbol);
+      const constraints = this.getQuantityConstraints(symbol);
+      let qty = Math.max(constraints.min, Math.min(constraints.max, amount));
+      if (stepSize > 0) {
+        qty = Math.floor(qty / stepSize) * stepSize;
+      }
+      const decimals = stepSize.toString().includes('.') ? stepSize.toString().split('.')[1].length : 0;
+      const formattedQty = qty.toFixed(decimals);
       
       // Bybit V5 API requires capitalized side: "Buy" or "Sell"
       const capitalizedSide = side.charAt(0).toUpperCase() + side.slice(1).toLowerCase();
@@ -597,14 +634,18 @@ class BotExecutor {
       let stopLossPrice: string;
       let takeProfitPrice: string;
       
+      const { tickSize } = this.getSymbolSteps(symbol);
+      const tickDecimals = tickSize.toString().includes('.') ? tickSize.toString().split('.')[1].length : 0;
+      const roundToTick = (v: number) => (Math.round(v / tickSize) * tickSize);
+
       if (side === 'Buy') {
         // Long position: SL below entry, TP above entry
-        stopLossPrice = (entryPrice * 0.98).toFixed(2);   // 2% below
-        takeProfitPrice = (entryPrice * 1.03).toFixed(2); // 3% above
+        stopLossPrice = roundToTick(entryPrice * 0.98).toFixed(tickDecimals);
+        takeProfitPrice = roundToTick(entryPrice * 1.03).toFixed(tickDecimals);
       } else {
         // Short position: SL above entry, TP below entry
-        stopLossPrice = (entryPrice * 1.02).toFixed(2);   // 2% above
-        takeProfitPrice = (entryPrice * 0.97).toFixed(2); // 3% below
+        stopLossPrice = roundToTick(entryPrice * 1.02).toFixed(tickDecimals);
+        takeProfitPrice = roundToTick(entryPrice * 0.97).toFixed(tickDecimals);
       }
       
       // Validate TP is in correct direction
@@ -692,6 +733,9 @@ class BotExecutor {
       });
       
       if (!response.ok) {
+        if (response.status === 401) {
+          console.error('OKX 401 Unauthorized - check API key, secret, passphrase, and testnet flag');
+        }
         throw new Error(`OKX API error: ${response.status}`);
       }
       
@@ -775,13 +819,24 @@ class BotExecutor {
     
     const calculatedQuantity = totalAmount / price;
     
-    // Apply minimum and maximum quantity constraints based on symbol
+    // Apply min/max constraints first
     const constraints = this.getQuantityConstraints(bot.symbol);
-    const finalQuantity = Math.max(constraints.min, Math.min(constraints.max, calculatedQuantity));
+    let clampedQuantity = Math.max(constraints.min, Math.min(constraints.max, calculatedQuantity));
     
-    console.log(`📏 Quantity constraints for ${bot.symbol}: min=${constraints.min}, max=${constraints.max}, calculated=${calculatedQuantity.toFixed(6)}, final=${finalQuantity.toFixed(6)}`);
+    // Apply exchange step size rounding (floor to nearest step)
+    const { stepSize } = this.getSymbolSteps(bot.symbol);
+    if (stepSize > 0) {
+      clampedQuantity = Math.floor(clampedQuantity / stepSize) * stepSize;
+    }
     
-    return finalQuantity;
+    console.log(`📏 Quantity constraints for ${bot.symbol}: min=${constraints.min}, max=${constraints.max}, calculated=${calculatedQuantity.toFixed(6)}, final=${clampedQuantity.toFixed(6)}`);
+    
+    // Ensure still above min after rounding; if not, signal to caller
+    if (clampedQuantity < constraints.min) {
+      throw new Error(`Calculated quantity ${clampedQuantity} is below minimum ${constraints.min} after step rounding for ${bot.symbol}`);
+    }
+    
+    return clampedQuantity;
   }
 
   private getQuantityConstraints(symbol: string): { min: number, max: number } {
@@ -801,6 +856,24 @@ class BotExecutor {
     };
     
     return constraints[symbol] || { min: 0.001, max: 100 };
+  }
+
+  private getSymbolSteps(symbol: string): { stepSize: number, tickSize: number } {
+    // Basic step/tick size defaults per common symbols (align with Bybit filters)
+    const steps: { [key: string]: { stepSize: number, tickSize: number } } = {
+      'BTCUSDT': { stepSize: 0.001, tickSize: 0.5 },
+      'ETHUSDT': { stepSize: 0.01,  tickSize: 0.05 },
+      'SOLUSDT': { stepSize: 0.01,  tickSize: 0.01 },
+      'ADAUSDT': { stepSize: 1,     tickSize: 0.0001 },
+      'UNIUSDT': { stepSize: 0.1,   tickSize: 0.001 },
+      'LINKUSDT':{ stepSize: 0.01,  tickSize: 0.01 },
+      'AVAXUSDT':{ stepSize: 0.1,   tickSize: 0.01 },
+      'XRPUSDT': { stepSize: 1,     tickSize: 0.0001 },
+      'DOTUSDT': { stepSize: 0.1,   tickSize: 0.01 },
+      'BNBUSDT': { stepSize: 0.01,  tickSize: 0.01 },
+      'MATICUSDT':{stepSize: 1,     tickSize: 0.0001 }
+    };
+    return steps[symbol] || { stepSize: 0.001, tickSize: 0.01 };
   }
   
   private async updateBotPerformance(botId: string, trade: any): Promise<void> {
@@ -1067,6 +1140,33 @@ serve(async (req) => {
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
+
+      // Near-real-time tick loop for ~55s to emulate persistent worker
+      case 'run_loop':
+        {
+          const loopStart = Date.now();
+          const executorLoop = new BotExecutor(supabaseClient, user);
+          let cycles = 0;
+          while (Date.now() - loopStart < 55000) {
+            const { data: bots } = await supabaseClient
+              .from('trading_bots')
+              .select('*')
+              .eq('user_id', user.id)
+              .eq('status', 'running');
+            if (bots?.length) {
+              const results = await Promise.allSettled(bots.map((b: any) => executorLoop.executeBot(b)));
+              const ok = results.filter(r => r.status === 'fulfilled').length;
+              const bad = results.length - ok;
+              console.log(`🌀 Tick ${++cycles}: ${ok} ok, ${bad} failed`);
+            } else {
+              console.log('🌀 Tick: no running bots');
+            }
+            await new Promise(r => setTimeout(r, 4000));
+          }
+          return new Response(JSON.stringify({ success: true, message: 'run_loop finished', cycles }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
 
       default:
         return new Response(JSON.stringify({ error: 'Invalid action' }), {
