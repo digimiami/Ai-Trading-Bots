@@ -9,9 +9,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CONFIG_FILE="${PROJECT_ROOT}/.env.cron"
 
-# Load configuration if .env.cron exists
+# Load configuration if .env.cron exists (skip comments and empty lines, fix line endings)
 if [ -f "$CONFIG_FILE" ]; then
-    source "$CONFIG_FILE"
+    # Create a temporary file with cleaned content
+    TEMP_CONFIG=$(mktemp)
+    # Remove Windows line endings, comments, and empty lines
+    sed 's/\r$//' "$CONFIG_FILE" | grep -v '^#' | grep -v '^$' > "$TEMP_CONFIG"
+    # Source the cleaned config
+    set -a
+    source "$TEMP_CONFIG"
+    set +a
+    rm -f "$TEMP_CONFIG"
 fi
 
 # Default values (override with .env.cron)
