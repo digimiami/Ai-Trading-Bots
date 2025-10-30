@@ -538,8 +538,9 @@ class BotExecutor {
         qty = Math.floor(qty * factor) / factor;
       }
       // Calculate decimals for formatting - ensure we have enough precision
-      const decimals = stepSize.toString().includes('.') ? stepSize.toString().split('.')[1].length : 0;
-      const formattedQty = parseFloat(qty.toFixed(decimals)).toString(); // Remove trailing zeros
+      // For stepSize 0.1, we need 1 decimal place; for 0.01, we need 2, etc.
+      const stepDecimals = stepSize < 1 ? stepSize.toString().split('.')[1]?.length || 0 : 0;
+      const formattedQty = parseFloat(qty.toFixed(stepDecimals)).toString(); // Remove trailing zeros but keep step precision
       
       // Bybit V5 API requires capitalized side: "Buy" or "Sell"
       const capitalizedSide = side.charAt(0).toUpperCase() + side.slice(1).toLowerCase();
@@ -633,7 +634,13 @@ class BotExecutor {
       // Set SL/TP on the position after order is filled (for futures only)
       if (bybitCategory === 'linear' && currentMarketPrice > 0) {
         try {
-          await this.setBybitSLTP(apiKey, apiSecret, isTestnet, symbol, capitalizedSide, currentMarketPrice);
+          // Get actual position entry price from Bybit
+          const entryPrice = await this.getBybitPositionEntryPrice(apiKey, apiSecret, isTestnet, symbol);
+          if (entryPrice) {
+            await this.setBybitSLTP(apiKey, apiSecret, isTestnet, symbol, capitalizedSide, entryPrice);
+          } else {
+            console.warn('⚠️ Could not fetch position entry price, skipping SL/TP');
+          }
         } catch (slTpError) {
           console.warn('⚠️ Failed to set SL/TP (non-critical):', slTpError);
           // Don't fail the whole trade if SL/TP fails - order was already placed
@@ -644,6 +651,46 @@ class BotExecutor {
     } catch (error) {
       console.error('Bybit order placement error:', error);
       throw error;
+    }
+  }
+  
+  private async getBybitPositionEntryPrice(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string): Promise<number | null> {
+    const baseUrl = isTestnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com';
+    
+    try {
+      const timestamp = Date.now().toString();
+      const recvWindow = '5000';
+      
+      // For GET requests, signature includes query params
+      const queryParams = `category=linear&symbol=${symbol}`;
+      const signaturePayload = timestamp + apiKey + recvWindow + queryParams;
+      const signature = await this.createBybitSignature(signaturePayload, apiSecret);
+      
+      const response = await fetch(`${baseUrl}/v5/position/list?${queryParams}`, {
+        method: 'GET',
+        headers: {
+          'X-BAPI-API-KEY': apiKey,
+          'X-BAPI-TIMESTAMP': timestamp,
+          'X-BAPI-RECV-WINDOW': recvWindow,
+          'X-BAPI-SIGN': signature,
+        },
+      });
+      
+      const data = await response.json();
+      
+      if (data.retCode === 0 && data.result?.list && data.result.list.length > 0) {
+        const position = data.result.list.find((p: any) => parseFloat(p.size || '0') !== 0);
+        if (position && position.avgPrice) {
+          const entryPrice = parseFloat(position.avgPrice);
+          console.log(`📊 Fetched position entry price for ${symbol}: ${entryPrice}`);
+          return entryPrice;
+        }
+      }
+      
+      return null;
+    } catch (error) {
+      console.warn('⚠️ Failed to fetch position entry price:', error);
+      return null;
     }
   }
   
@@ -884,7 +931,7 @@ class BotExecutor {
     const steps: { [key: string]: { stepSize: number, tickSize: number } } = {
       'BTCUSDT': { stepSize: 0.001, tickSize: 0.5 },
       'ETHUSDT': { stepSize: 0.01,  tickSize: 0.05 },
-      'SOLUSDT': { stepSize: 0.01,  tickSize: 0.01 },
+      'SOLUSDT': { stepSize: 0.1,   tickSize: 0.01 }, // Updated to match Bybit linear futures qtyStep
       'ADAUSDT': { stepSize: 1,     tickSize: 0.0001 },
       'UNIUSDT': { stepSize: 0.1,   tickSize: 0.001 },
       'LINKUSDT':{ stepSize: 0.01,  tickSize: 0.01 },
