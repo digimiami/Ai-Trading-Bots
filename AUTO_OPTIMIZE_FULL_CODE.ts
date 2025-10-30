@@ -4,6 +4,18 @@
  * 
  * Function Name: auto-optimize
  * Runtime: Deno 1.x
+ * 
+ * IMPORTANT: Before using, set OPENAI_API_KEY in Supabase Edge Function Secrets!
+ * 
+ * How to Set the Secret:
+ * 1. Go to Supabase Dashboard → Project Settings → Edge Functions → Secrets
+ * 2. Click "Add new secret"
+ * 3. Name: OPENAI_API_KEY
+ * 4. Value: sk-your-actual-openai-api-key-here
+ * 5. Click "Save"
+ * 
+ * The function automatically reads it via Deno.env.get('OPENAI_API_KEY')
+ * No code changes needed - just set the secret!
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
