@@ -3,7 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
 }
 
@@ -937,14 +937,20 @@ serve(async (req) => {
   }
 
   try {
+    const cronSecretHeader = req.headers.get('x-cron-secret') ?? ''
+    const isCron = !!cronSecretHeader && cronSecretHeader === (Deno.env.get('CRON_SECRET') ?? '')
+
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+      isCron ? (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '') : (Deno.env.get('SUPABASE_ANON_KEY') ?? ''),
+      isCron ? undefined : { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
     )
 
-    const { data: { user } } = await supabaseClient.auth.getUser()
-    if (!user) {
+    const { data: { user } } = isCron
+      ? { data: { user: null } as any }
+      : await supabaseClient.auth.getUser()
+
+    if (!isCron && !user) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -1076,14 +1082,18 @@ serve(async (req) => {
           .from('trading_bots')
           .select('*')
           .eq('id', botId)
-          .eq('user_id', user.id)
+          .eq('user_id', isCron ? (await (async () => {
+            // Fetch bot to get user_id when running via cron
+            const { data: b } = await supabaseClient.from('trading_bots').select('user_id').eq('id', botId).single()
+            return b?.user_id || 'unknown'
+          })()) : user.id)
           .single()
         
         if (!bot) {
           throw new Error('Bot not found')
         }
         
-        const executor = new BotExecutor(supabaseClient, user)
+        const executor = new BotExecutor(supabaseClient, isCron ? { id: bot.user_id } : user)
         await executor.executeBot(bot)
         
         return new Response(JSON.stringify({ success: true, message: 'Bot executed' }), {
@@ -1091,17 +1101,25 @@ serve(async (req) => {
         })
 
       case 'execute_all_bots':
-        console.log(`🔍 Looking for running bots for user: ${user.id}`);
+        if (isCron) {
+          console.log('🔍 Cron: Looking for all running bots (service role)')
+        } else {
+          console.log(`🔍 Looking for running bots for user: ${user.id}`)
+        }
         
-        const { data: bots } = await supabaseClient
+        let query = supabaseClient
           .from('trading_bots')
           .select('*')
-          .eq('user_id', user.id)
           .eq('status', 'running')
+        if (!isCron) {
+          query = query.eq('user_id', user.id)
+        }
+        const { data: bots } = await query
         
-        console.log(`📊 Found ${bots?.length || 0} running bots:`, bots?.map(b => ({ id: b.id, name: b.name, exchange: b.exchange, symbol: b.symbol })));
+        const botList = Array.isArray(bots) ? bots : (bots ? [bots] : [])
+        console.log(`📊 Found ${botList.length} running bots${isCron ? '' : ` for user ${user.id}`}:`, botList.map(b => ({ id: b.id, user_id: b.user_id, name: b.name, exchange: b.exchange, symbol: b.symbol })))
         
-        if (!bots || bots.length === 0) {
+        if (!botList || botList.length === 0) {
           console.log('⚠️ No running bots found for user');
           return new Response(JSON.stringify({ 
             success: true, 
@@ -1112,13 +1130,13 @@ serve(async (req) => {
           })
         }
         
-        console.log(`🚀 Executing ${bots.length} running bots for user ${user.id}`)
+        console.log(`🚀 Executing ${botList.length} running bots${isCron ? '' : ` for user ${user.id}`}`)
         
-        const executor2 = new BotExecutor(supabaseClient, user)
         const results = await Promise.allSettled(
-          bots.map(async (bot) => {
-            console.log(`🤖 Executing bot: ${bot.name} (${bot.exchange}/${bot.symbol})`);
-            return executor2.executeBot(bot);
+          botList.map(async (bot) => {
+            console.log(`🤖 Executing bot: ${bot.name} (${bot.exchange}/${bot.symbol})`)
+            const exec = new BotExecutor(supabaseClient, { id: isCron ? bot.user_id : user.id })
+            return exec.executeBot(bot)
           })
         )
         
@@ -1130,7 +1148,7 @@ serve(async (req) => {
         return new Response(JSON.stringify({ 
           success: true, 
           message: `Executed ${successful} bots successfully, ${failed} failed`,
-          botsExecuted: bots.length,
+          botsExecuted: botList.length,
           successful,
           failed,
           results: { successful, failed }
