@@ -93,23 +93,13 @@ export function useAiLearning(botId: string) {
         ...analysis.suggested_parameters
       };
 
-      // Update bot with optimized strategy
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('No session');
+      // Update bot with optimized strategy directly via Supabase
+      const { error: updateError } = await supabase
+        .from('trading_bots')
+        .update({ strategy: updatedStrategy })
+        .eq('id', botId);
 
-      const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management?action=update`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          id: botId,
-          strategy: updatedStrategy
-        })
-      });
-
-      if (!response.ok) throw new Error('Failed to update bot');
+      if (updateError) throw updateError;
 
       // Mark analysis as applied
       await supabase

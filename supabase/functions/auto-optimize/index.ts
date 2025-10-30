@@ -9,7 +9,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
 }
 
 interface OptimizationRequest {
@@ -24,6 +25,10 @@ serve(async (req) => {
   }
 
   try {
+    // Support cron authentication (optional)
+    const cronSecretHeader = req.headers.get('x-cron-secret') ?? ''
+    const isCron = !!cronSecretHeader && cronSecretHeader === (Deno.env.get('CRON_SECRET') ?? '')
+    
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
@@ -94,8 +99,8 @@ serve(async (req) => {
           .from('trades')
           .select('*')
           .eq('bot_id', bot.id)
-          .gte('timestamp', thirtyDaysAgo.toISOString())
-          .order('timestamp', { ascending: false })
+          .gte('created_at', thirtyDaysAgo.toISOString())
+          .order('created_at', { ascending: false })
           .limit(50)
 
         if (tradesError || !trades || trades.length < 10) {

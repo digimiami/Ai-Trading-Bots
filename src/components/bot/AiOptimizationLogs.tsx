@@ -43,6 +43,13 @@ export default function AiOptimizationLogs({ botId }: AiOptimizationLogsProps) {
   const fetchOptimizationLogs = async () => {
     try {
       setLoading(true);
+      // Ensure authenticated session before querying (prevents RLS/implicit failures)
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        console.warn('AiOptimizationLogs: No active session, skipping fetch');
+        setLogs([]);
+        return;
+      }
       
       const { data, error } = await supabase
         .from('bot_activity_logs')
@@ -119,8 +126,8 @@ export default function AiOptimizationLogs({ botId }: AiOptimizationLogsProps) {
                   <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200">
                     AI/ML Optimized
                   </span>
-                  <span className={`text-sm font-semibold ${getConfidenceColor(log.details.confidence)}`}>
-                    {(log.details.confidence * 100).toFixed(1)}% Confidence
+                  <span className={`text-sm font-semibold ${getConfidenceColor(log.details?.confidence || 0)}`}>
+                    {(((log.details?.confidence ?? 0) * 100).toFixed(1))}% Confidence
                   </span>
                   <span className="text-xs text-gray-500 dark:text-gray-400">
                     {formatTimestamp(log.timestamp)}
@@ -131,14 +138,14 @@ export default function AiOptimizationLogs({ botId }: AiOptimizationLogsProps) {
                   {log.message}
                 </p>
 
-                {log.details.expectedImprovement && (
+                {log.details?.expectedImprovement && (
                   <p className="text-xs text-blue-600 dark:text-blue-400 mb-2">
-                    Expected: {log.details.expectedImprovement}
+                    Expected: {log.details?.expectedImprovement}
                   </p>
                 )}
 
                 <div className="text-xs text-gray-600 dark:text-gray-400">
-                  <strong>Changes:</strong> {log.details.changes.length} parameter(s) modified
+                  <strong>Changes:</strong> {(log.details?.changes?.length || 0)} parameter(s) modified
                 </div>
               </div>
 
@@ -152,24 +159,24 @@ export default function AiOptimizationLogs({ botId }: AiOptimizationLogsProps) {
 
             {expandedLog === log.id && (
               <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
-                {log.details.reasoning && (
+                {log.details?.reasoning && (
                   <div>
                     <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">
                       AI Reasoning:
                     </h4>
                     <p className="text-sm text-gray-700 dark:text-gray-300">
-                      {log.details.reasoning}
+                      {log.details?.reasoning}
                     </p>
                   </div>
                 )}
 
-                {log.details.changes && log.details.changes.length > 0 && (
+                {log.details?.changes && log.details.changes.length > 0 && (
                   <div>
                     <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2">
                       Parameter Changes:
                     </h4>
                     <div className="space-y-2">
-                      {log.details.changes.map((change, idx) => (
+                      {log.details?.changes.map((change, idx) => (
                         <div
                           key={idx}
                           className="bg-gray-50 dark:bg-gray-900 rounded p-2 text-xs"
@@ -192,15 +199,15 @@ export default function AiOptimizationLogs({ botId }: AiOptimizationLogsProps) {
                   </div>
                 )}
 
-                {log.details.performanceBefore && (
+                {log.details?.performanceBefore && (
                   <div>
                     <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">
                       Performance Before Optimization:
                     </h4>
                     <div className="text-xs text-gray-600 dark:text-gray-400 space-y-1">
-                      <div>Win Rate: {log.details.performanceBefore.winRate?.toFixed(2) || 'N/A'}%</div>
-                      <div>Total PnL: ${log.details.performanceBefore.totalPnL?.toFixed(2) || '0.00'}</div>
-                      <div>Profit Factor: {log.details.performanceBefore.profitFactor?.toFixed(2) || 'N/A'}</div>
+                      <div>Win Rate: {log.details?.performanceBefore?.winRate?.toFixed(2) || 'N/A'}%</div>
+                      <div>Total PnL: ${log.details?.performanceBefore?.totalPnL?.toFixed(2) || '0.00'}</div>
+                      <div>Profit Factor: {log.details?.performanceBefore?.profitFactor?.toFixed(2) || 'N/A'}</div>
                     </div>
                   </div>
                 )}

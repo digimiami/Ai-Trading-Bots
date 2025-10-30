@@ -91,8 +91,8 @@ class AutoOptimizer {
         .from('trades')
         .select('*')
         .eq('bot_id', botId)
-        .gte('timestamp', thirtyDaysAgo.toISOString())
-        .order('timestamp', { ascending: false });
+        .gte('created_at', thirtyDaysAgo.toISOString())
+        .order('created_at', { ascending: false });
 
       if (tradesError) {
         console.error('Error fetching trades:', tradesError);
@@ -131,7 +131,7 @@ class AutoOptimizer {
       let peak = 0;
       let cumulativePnL = 0;
       for (const trade of closedTrades.sort((a, b) => 
-        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        new Date(a.created_at || a.timestamp).getTime() - new Date(b.created_at || b.timestamp).getTime()
       )) {
         cumulativePnL += trade.pnl || 0;
         if (cumulativePnL > peak) peak = cumulativePnL;
@@ -193,7 +193,7 @@ class AutoOptimizer {
           exitPrice: t.exit_price,
           pnl: t.pnl,
           status: t.status,
-          timestamp: t.timestamp
+          timestamp: t.created_at || t.timestamp
         })),
         timeRange: '30 days',
         currentStrategy: strategy,
