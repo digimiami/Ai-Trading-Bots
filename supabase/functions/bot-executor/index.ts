@@ -648,20 +648,17 @@ class BotExecutor {
         takeProfitPrice = roundToTick(entryPrice * 0.97).toFixed(tickDecimals);
       }
       
-      // Validate TP is in correct direction
+      // Validate TP/SL direction. If invalid, skip setting to avoid API errors
       const tpValue = parseFloat(takeProfitPrice);
       const slValue = parseFloat(stopLossPrice);
-      
       console.log(`🔍 SL/TP Validation: Side=${side}, Entry=${entryPrice}, TP=${tpValue}, SL=${slValue}`);
-      
-      if (side === 'Buy' && tpValue <= entryPrice) {
-        console.warn(`⚠️ Invalid TP for Buy: ${tpValue} <= ${entryPrice}. Adjusting...`);
-        takeProfitPrice = (entryPrice * 1.01).toFixed(2); // At least 1% above
-      } else if (side === 'Sell' && tpValue >= entryPrice) {
-        console.warn(`⚠️ Invalid TP for Sell: ${tpValue} >= ${entryPrice}. Adjusting...`);
-        takeProfitPrice = (entryPrice * 0.99).toFixed(2); // At least 1% below
+
+      if ((side === 'Buy'  && (tpValue <= entryPrice || slValue >= entryPrice)) ||
+          (side === 'Sell' && (tpValue >= entryPrice || slValue <= entryPrice))) {
+        console.warn(`⚠️ Skipping SL/TP: direction invalid for ${side}. Entry=${entryPrice}, TP=${tpValue}, SL=${slValue}`);
+        return; // Non-critical; order already placed
       }
-      
+
       console.log(`✅ Final SL/TP: SL=${stopLossPrice}, TP=${takeProfitPrice}`);
       
       const requestBody = {
