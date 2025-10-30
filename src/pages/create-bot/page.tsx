@@ -24,6 +24,9 @@ export default function CreateBotPage() {
     takeProfit: 4.0
   });
 
+  const [customSymbol, setCustomSymbol] = useState<string>('');
+  const [customSymbolError, setCustomSymbolError] = useState<string>('');
+
   const [strategy, setStrategy] = useState<TradingStrategy>({
     rsiThreshold: 70,
     adxThreshold: 25,
@@ -105,12 +108,25 @@ export default function CreateBotPage() {
     setError(null);
     
     try {
+      // If custom symbol provided, validate and apply
+      let finalSymbol = formData.symbol;
+      if (customSymbol.trim()) {
+        const raw = customSymbol.trim().toUpperCase();
+        const isValid = /^[A-Z0-9]{2,20}USDT$/.test(raw);
+        if (!isValid) {
+          setCustomSymbolError('Symbol must be uppercase and end with USDT (e.g., DOGEUSDT)');
+          setIsCreating(false);
+          return;
+        }
+        setCustomSymbolError('');
+        finalSymbol = raw;
+      }
       // Debug: Log the form data being sent
       const botData = {
         name: formData.name,
         exchange: formData.exchange,
         tradingType: formData.tradingType,
-        symbol: formData.symbol,
+        symbol: finalSymbol,
         timeframe: formData.timeframe,
         leverage: formData.leverage,
         riskLevel: formData.riskLevel,
@@ -237,6 +253,22 @@ export default function CreateBotPage() {
                       <option key={symbol} value={symbol}>{symbol}</option>
                     ))}
                   </select>
+                  <div className="mt-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Or enter a custom pair (e.g., DOGEUSDT)
+                    </label>
+                    <input
+                      type="text"
+                      value={customSymbol}
+                      onChange={(e) => setCustomSymbol(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
+                      placeholder="e.g., PEPEUSDT"
+                    />
+                    {customSymbolError && (
+                      <p className="text-xs text-red-600 mt-1">{customSymbolError}</p>
+                    )}
+                    <p className="text-xs text-gray-500 mt-1">Uppercase; must end with USDT. If provided, overrides dropdown.</p>
+                  </div>
                 </div>
 
                 <div>
