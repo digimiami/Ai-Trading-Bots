@@ -44,13 +44,24 @@ serve(async (req) => {
       // No body, that's okay for scheduled runs
     }
 
-    // Import auto-optimizer logic (simplified version for Edge Function)
+    // Get OpenAI API Key from Edge Function Secrets
+    // IMPORTANT: This must be set in Supabase Dashboard → Project Settings → Edge Functions → Secrets
+    // Secret Name: OPENAI_API_KEY
+    // Secret Value: sk-your-actual-openai-api-key-here
     const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY')
     
     if (!OPENAI_API_KEY) {
       return new Response(JSON.stringify({ 
         error: 'OpenAI API key not configured',
-        message: 'Set OPENAI_API_KEY environment variable'
+        message: 'Please set OPENAI_API_KEY in Supabase Edge Function Secrets',
+        instructions: [
+          '1. Go to Supabase Dashboard → Project Settings → Edge Functions → Secrets',
+          '2. Click "Add new secret"',
+          '3. Name: OPENAI_API_KEY',
+          '4. Value: sk-your-actual-openai-api-key-here',
+          '5. Click "Save"',
+          '6. The function will automatically use the secret after deployment'
+        ]
       }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }

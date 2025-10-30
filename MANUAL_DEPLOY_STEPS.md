@@ -38,21 +38,34 @@
 
 ---
 
-### Step 3: Set OpenAI API Key Secret
+### Step 3: Set OpenAI API Key Secret (CRITICAL!)
+
+**This is how the function gets the OpenAI key - it reads from Edge Function Secrets.**
 
 1. **Go to Project Settings**
    - Click "Project Settings" (gear icon) in the left sidebar
    - Click "Edge Functions" in the settings menu
 
-2. **Add Secret**
+2. **Navigate to Secrets Section**
    - Scroll down to "Secrets" section
-   - Click "Add new secret"
-   - Name: `OPENAI_API_KEY`
-   - Value: `sk-your-actual-api-key-here` (paste your OpenAI key from Step 1)
-   - Click "Save"
+   - This is where you store sensitive keys that your Edge Functions can access
 
-3. **Verify**
+3. **Add Secret**
+   - Click "Add new secret" or "+ Add secret"
+   - **Secret Name**: `OPENAI_API_KEY` (must be exactly this name)
+   - **Secret Value**: `sk-your-actual-api-key-here` (paste your OpenAI key from Step 1)
+   - Click "Save" or "Add secret"
+
+4. **Verify**
    - You should see `OPENAI_API_KEY` in the secrets list
+   - The function will automatically read this secret via `Deno.env.get('OPENAI_API_KEY')`
+   - **No code changes needed** - secrets are automatically available to Edge Functions
+
+5. **Important Notes**
+   - Secrets are encrypted and secure
+   - Only accessible by Edge Functions (not exposed to frontend)
+   - Secrets are automatically injected as environment variables
+   - After adding a secret, the function will have immediate access (no redeploy needed)
 
 ---
 
