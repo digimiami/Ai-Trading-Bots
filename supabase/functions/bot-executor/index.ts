@@ -238,15 +238,44 @@ class MarketDataFetcher {
       if (exchange === 'bybit') {
         const response = await fetch(`https://api.bybit.com/v5/market/tickers?category=${tradingType}&symbol=${symbol}`);
         const data = await response.json();
-        return parseFloat(data.result.list[0]?.lastPrice || '0');
+        
+        // Better error handling for API response
+        if (!data.result) {
+          console.warn(`⚠️ Bybit API error for ${symbol}: No result field`, data);
+          return 0;
+        }
+        
+        if (!data.result.list || !Array.isArray(data.result.list) || data.result.list.length === 0) {
+          console.warn(`⚠️ Bybit API error for ${symbol}: Empty or invalid list`, data.result);
+          // Try without symbol filter to get all tickers
+          const allTickersResponse = await fetch(`https://api.bybit.com/v5/market/tickers?category=${tradingType}`);
+          const allTickersData = await allTickersResponse.json();
+          const ticker = allTickersData.result?.list?.find((t: any) => t.symbol === symbol);
+          if (ticker) {
+            return parseFloat(ticker.lastPrice || '0');
+          }
+          return 0;
+        }
+        
+        const price = parseFloat(data.result.list[0]?.lastPrice || '0');
+        if (price === 0) {
+          console.warn(`⚠️ Price is 0 for ${symbol}, check if symbol exists on ${tradingType}`);
+        }
+        return price;
       } else if (exchange === 'okx') {
         const response = await fetch(`https://www.okx.com/api/v5/market/ticker?instId=${symbol}`);
         const data = await response.json();
+        
+        if (!data.data || !Array.isArray(data.data) || data.data.length === 0) {
+          console.warn(`⚠️ OKX API error for ${symbol}: Empty or invalid data`, data);
+          return 0;
+        }
+        
         return parseFloat(data.data[0]?.last || '0');
       }
       return 0;
     } catch (error) {
-      console.error(`Error fetching price for ${symbol}:`, error);
+      console.error(`❌ Error fetching price for ${symbol}:`, error);
       return 0;
     }
   }
