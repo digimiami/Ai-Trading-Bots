@@ -192,11 +192,35 @@ class TimeSync {
   }
   
   static getCurrentTime(): number {
+    // Safety check: If offset is suspiciously large (> 5 minutes), ignore it
+    // Time sync offsets should typically be within a few seconds
+    const MAX_REASONABLE_OFFSET = 5 * 60 * 1000; // 5 minutes in milliseconds
+    
+    if (Math.abs(this.serverTimeOffset) > MAX_REASONABLE_OFFSET) {
+      console.warn(`⚠️ Suspicious time offset detected: ${this.serverTimeOffset}ms (max: ${MAX_REASONABLE_OFFSET}ms). Using local time instead.`);
+      // Reset offset and use local time
+      this.serverTimeOffset = 0;
+      this.lastSync = 0; // Force resync on next check
+      return Date.now();
+    }
+    
     return Date.now() + this.serverTimeOffset;
   }
   
   static getCurrentTimeISO(): string {
-    return new Date(this.getCurrentTime()).toISOString();
+    const currentTime = this.getCurrentTime();
+    
+    // Additional validation: Ensure the time is reasonable (not in the distant past or future)
+    const now = Date.now();
+    const MIN_VALID_TIME = now - (365 * 24 * 60 * 60 * 1000); // 1 year ago
+    const MAX_VALID_TIME = now + (365 * 24 * 60 * 60 * 1000); // 1 year in future
+    
+    if (currentTime < MIN_VALID_TIME || currentTime > MAX_VALID_TIME) {
+      console.error(`❌ Invalid timestamp calculated: ${new Date(currentTime).toISOString()}. Using local time instead.`);
+      return new Date().toISOString(); // Fallback to local time
+    }
+    
+    return new Date(currentTime).toISOString();
   }
   
   static needsSync(): boolean {
