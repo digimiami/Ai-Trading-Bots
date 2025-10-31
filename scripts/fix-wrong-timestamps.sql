@@ -2,6 +2,27 @@
 -- Run this in Supabase SQL Editor to fix timestamps set in the future
 
 -- ============================================
+-- 0. Fix trigger function to handle missing updated_at column
+-- ============================================
+-- Update the trigger function to check if updated_at column exists before setting it
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Check if the column exists in the table before trying to update it
+    IF EXISTS (
+        SELECT 1 
+        FROM information_schema.columns 
+        WHERE table_schema = TG_TABLE_SCHEMA 
+        AND table_name = TG_TABLE_NAME 
+        AND column_name = 'updated_at'
+    ) THEN
+        NEW.updated_at = NOW();
+    END IF;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- ============================================
 -- 1. Find and list all problematic timestamps
 -- ============================================
 -- Check trades with future dates (more than 1 year in future)
