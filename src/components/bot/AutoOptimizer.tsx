@@ -35,11 +35,29 @@ export default function AutoOptimizer({ bot }: AutoOptimizerProps) {
   };
 
   const handleAutoApply = async () => {
-    const applied = await autoApplyOptimization(0.75);
-    if (applied) {
-      alert('✅ Optimization applied successfully! The bot will now use the optimized parameters.');
-    } else {
-      alert('Optimization not applied - confidence too low or optimization failed.');
+    try {
+      // Use a lower threshold for manual apply (0.65 instead of 0.75)
+      const applied = await autoApplyOptimization(0.65);
+      if (applied) {
+        alert('✅ Optimization applied successfully! The bot will now use the optimized parameters.');
+        // Refresh the optimization result
+        await optimizeBot();
+      } else {
+        // Get more specific error message
+        if (optimizationResult) {
+          const confidencePercent = (optimizationResult.confidence * 100).toFixed(1);
+          if (optimizationResult.confidence < 0.65) {
+            alert(`⚠️ Optimization not applied - confidence too low (${confidencePercent}%). Minimum required: 65%. Please review the optimization details before applying.`);
+          } else {
+            alert('⚠️ Optimization not applied - failed to update bot. Please check console for details.');
+          }
+        } else {
+          alert('⚠️ Optimization not applied - no optimization result available. Please run "Analyze & Optimize" first.');
+        }
+      }
+    } catch (error) {
+      console.error('Error applying optimization:', error);
+      alert(`❌ Error applying optimization: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -125,9 +143,12 @@ export default function AutoOptimizer({ bot }: AutoOptimizerProps) {
               <Button
                 onClick={handleAutoApply}
                 variant="primary"
-                disabled={optimizationResult.confidence < 0.7}
+                disabled={optimizationResult.confidence < 0.5}
+                title={optimizationResult.confidence < 0.65 
+                  ? `Confidence too low (${(optimizationResult.confidence * 100).toFixed(1)}%). Minimum: 65%` 
+                  : 'Apply optimization'}
               >
-                Apply Optimization
+                Apply Optimization {(optimizationResult.confidence * 100).toFixed(0)}%
               </Button>
             </div>
           </div>

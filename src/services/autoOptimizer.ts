@@ -307,12 +307,13 @@ class AutoOptimizer {
       const optimization = await this.optimizeStrategy(botId);
       
       if (!optimization || !optimization.success) {
+        console.warn('⚠️ Optimization failed or returned null:', optimization);
         return false;
       }
 
       // Only apply if confidence is high enough
       if (optimization.confidence < minConfidence) {
-        console.log(`Optimization confidence ${optimization.confidence} below threshold ${minConfidence}`);
+        console.warn(`⚠️ Optimization confidence ${(optimization.confidence * 100).toFixed(1)}% below threshold ${(minConfidence * 100).toFixed(1)}%`);
         return false;
       }
 
