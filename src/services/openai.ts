@@ -288,6 +288,32 @@ Return JSON:
   }
 
   /**
+   * Build ultra-minimal prompt for very large inputs
+   */
+  private buildMinimalPrompt(
+    strategies: { strategy: TradingStrategy; advancedConfig?: AdvancedStrategyConfig },
+    metrics: any,
+    recentTrades: TradeAnalysis[]
+  ): string {
+    // Extract only key numbers - no JSON overhead
+    const rsi = strategies.strategy?.rsiThreshold || 0;
+    const adx = strategies.strategy?.adxThreshold || 0;
+    const wr = Math.round(metrics?.winRate || 0);
+    const pnl = Math.round(metrics?.totalPnL || 0);
+    const pf = parseFloat((metrics?.profitFactor || 0).toFixed(1));
+    
+    // Last 2 trades only, minimal format
+    const trades = recentTrades.slice(-2).map(t => {
+      const sym = (t.symbol || 'X').substring(0, 2);
+      const out = (t.outcome || 'u')[0];
+      const p = Math.round(t.pnl || 0);
+      return `${sym}${out}$${p}`;
+    }).join(',');
+    
+    return `Opt: rsi:${rsi},adx:${adx} WR:${wr}% PnL:$${pnl} PF:${pf} Trades:${trades}. Return JSON: strategy params, reasoning, confidence.`;
+  }
+
+  /**
    * Call OpenAI API with JSON mode support
    */
   private async callOpenAI(prompt: string, useJsonMode: boolean = true): Promise<any> {
