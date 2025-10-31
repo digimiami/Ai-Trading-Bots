@@ -24,9 +24,9 @@ cd "$PROJECT_ROOT" || exit 1
 # Make the Node.js cron script executable
 chmod +x "$SCRIPT_DIR/bot-scheduler-cron.cjs"
 
-# Check if ecosystem.config.js exists
-if [ ! -f "$PROJECT_ROOT/ecosystem.config.js" ]; then
-    echo "⚠️  Warning: ecosystem.config.js not found. Creating..."
+# Check if ecosystem.config.cjs exists
+if [ ! -f "$PROJECT_ROOT/ecosystem.config.cjs" ]; then
+    echo "⚠️  Warning: ecosystem.config.cjs not found. Creating..."
 fi
 
 # Remove old system cron job if it exists
@@ -44,7 +44,7 @@ pm2 delete bot-scheduler-cron 2>/dev/null || true
 # Start the PM2 cron job
 echo ""
 echo "🚀 Starting PM2 cron job..."
-pm2 start ecosystem.config.js --only bot-scheduler-cron
+pm2 start ecosystem.config.cjs --only bot-scheduler-cron
 
 # Save PM2 configuration
 echo ""
