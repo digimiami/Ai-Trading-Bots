@@ -501,9 +501,18 @@ class BotExecutor {
         throw new Error('Cannot sell on spot market without owning the asset. Only buy orders are supported for spot trading.');
       }
       
+      // Check balance before placing order
+      const orderValue = amount * price;
+      
       if (bot.exchange === 'bybit') {
+        // Check balance for Bybit before placing order
+        const hasBalance = await this.checkBybitBalance(apiKey, apiSecret, apiKeys.is_testnet, bot.symbol, tradeSignal.side, orderValue, tradingType);
+        if (!hasBalance) {
+          throw new Error(`Insufficient balance for ${bot.symbol} ${tradeSignal.side} order. Order value: $${orderValue.toFixed(2)}. Please check your account balance or wait for funds to become available.`);
+        }
         return await this.placeBybitOrder(apiKey, apiSecret, apiKeys.is_testnet, bot.symbol, tradeSignal.side, amount, price, tradingType);
       } else if (bot.exchange === 'okx') {
+        // TODO: Add balance check for OKX
         return await this.placeOKXOrder(apiKey, apiSecret, passphrase, apiKeys.is_testnet, bot.symbol, tradeSignal.side, amount, price);
       }
       
@@ -654,6 +663,124 @@ class BotExecutor {
     }
   }
   
+  /**
+   * Check if account has sufficient balance for order
+   * Returns true if balance is sufficient, false otherwise
+   */
+  private async checkBybitBalance(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string, side: string, orderValue: number, tradingType: string): Promise<boolean> {
+    const baseUrl = isTestnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com';
+    
+    try {
+      const timestamp = Date.now().toString();
+      const recvWindow = '5000';
+      
+      // Map tradingType to Bybit category
+      const categoryMap: { [key: string]: string } = {
+        'spot': 'spot',
+        'futures': 'linear'
+      };
+      const bybitCategory = categoryMap[tradingType] || 'spot';
+      
+      // For futures/linear, check wallet balance
+      if (bybitCategory === 'linear') {
+        // Get wallet balance for USDT (required for margin)
+        const queryParams = `accountType=UNIFIED&coin=USDT`;
+        const signaturePayload = timestamp + apiKey + recvWindow + queryParams;
+        const signature = await this.createBybitSignature(signaturePayload, apiSecret);
+        
+        const response = await fetch(`${baseUrl}/v5/account/wallet-balance?${queryParams}`, {
+          method: 'GET',
+          headers: {
+            'X-BAPI-API-KEY': apiKey,
+            'X-BAPI-TIMESTAMP': timestamp,
+            'X-BAPI-RECV-WINDOW': recvWindow,
+            'X-BAPI-SIGN': signature,
+          },
+        });
+        
+        const data = await response.json();
+        
+        if (data.retCode !== 0) {
+          console.warn(`⚠️ Failed to check balance (retCode: ${data.retCode}), proceeding with order attempt:`, data.retMsg);
+          return true; // If we can't check, let the order attempt happen (will fail gracefully)
+        }
+        
+        // Extract available balance
+        const wallet = data.result?.list?.[0]?.coin?.[0];
+        if (!wallet) {
+          console.warn('⚠️ Could not parse balance response, proceeding with order attempt');
+          return true;
+        }
+        
+        const availableBalance = parseFloat(wallet.availableToWithdraw || wallet.availableBalance || '0');
+        const requiredValue = orderValue;
+        
+        console.log(`💰 Balance check for ${symbol} ${side}: Available=$${availableBalance.toFixed(2)}, Required=$${requiredValue.toFixed(2)}`);
+        
+        // Add 5% buffer to account for fees and price fluctuations
+        const buffer = requiredValue * 0.05;
+        const totalRequired = requiredValue + buffer;
+        
+        if (availableBalance >= totalRequired) {
+          console.log(`✅ Sufficient balance: $${availableBalance.toFixed(2)} >= $${totalRequired.toFixed(2)} (required + 5% buffer)`);
+          return true;
+        } else {
+          console.warn(`⚠️ Insufficient balance: $${availableBalance.toFixed(2)} < $${totalRequired.toFixed(2)} (required + 5% buffer)`);
+          return false;
+        }
+      } else {
+        // For spot, check spot wallet balance
+        const queryParams = `accountType=SPOT&coin=USDT`;
+        const signaturePayload = timestamp + apiKey + recvWindow + queryParams;
+        const signature = await this.createBybitSignature(signaturePayload, apiSecret);
+        
+        const response = await fetch(`${baseUrl}/v5/account/wallet-balance?${queryParams}`, {
+          method: 'GET',
+          headers: {
+            'X-BAPI-API-KEY': apiKey,
+            'X-BAPI-TIMESTAMP': timestamp,
+            'X-BAPI-RECV-WINDOW': recvWindow,
+            'X-BAPI-SIGN': signature,
+          },
+        });
+        
+        const data = await response.json();
+        
+        if (data.retCode !== 0) {
+          console.warn(`⚠️ Failed to check balance (retCode: ${data.retCode}), proceeding with order attempt:`, data.retMsg);
+          return true; // If we can't check, let the order attempt happen
+        }
+        
+        // Extract available balance
+        const wallet = data.result?.list?.[0]?.coin?.[0];
+        if (!wallet) {
+          console.warn('⚠️ Could not parse balance response, proceeding with order attempt');
+          return true;
+        }
+        
+        const availableBalance = parseFloat(wallet.availableToWithdraw || wallet.availableBalance || '0');
+        const requiredValue = orderValue;
+        
+        console.log(`💰 Balance check for ${symbol} ${side}: Available=$${availableBalance.toFixed(2)}, Required=$${requiredValue.toFixed(2)}`);
+        
+        // Add 5% buffer for fees
+        const buffer = requiredValue * 0.05;
+        const totalRequired = requiredValue + buffer;
+        
+        if (availableBalance >= totalRequired) {
+          console.log(`✅ Sufficient balance: $${availableBalance.toFixed(2)} >= $${totalRequired.toFixed(2)} (required + 5% buffer)`);
+          return true;
+        } else {
+          console.warn(`⚠️ Insufficient balance: $${availableBalance.toFixed(2)} < $${totalRequired.toFixed(2)} (required + 5% buffer)`);
+          return false;
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ Error checking balance, proceeding with order attempt:', error);
+      return true; // If check fails, let the order attempt happen (will fail gracefully if insufficient)
+    }
+  }
+
   private async getBybitPositionEntryPrice(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string): Promise<number | null> {
     const baseUrl = isTestnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com';
     
