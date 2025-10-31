@@ -16,7 +16,7 @@ SELECT
     risk_level,
     created_at,
     updated_at,
-    COALESCE(last_execution_at, last_trade_at) as last_execution
+    last_trade_at
 FROM trading_bots
 WHERE status = 'running'
 ORDER BY created_at DESC;
@@ -175,7 +175,7 @@ SELECT
     b.strategy_config::text as advanced_config_json,
     b.created_at,
     b.updated_at,
-    COALESCE(b.last_execution_at, b.last_trade_at) as last_execution,
+    b.last_trade_at,
     -- Count stats
     (SELECT COUNT(*) FROM trades WHERE bot_id = b.id) as total_trades,
     (SELECT COUNT(*) FROM trades WHERE bot_id = b.id AND status IN ('open', 'pending')) as open_positions,
