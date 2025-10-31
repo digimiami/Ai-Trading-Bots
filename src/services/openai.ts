@@ -220,66 +220,54 @@ Provide a JSON response with:
     recentTrades: TradeAnalysis[],
     metrics: any
   ): string {
-    // Extract only essential fields from advancedConfig to reduce size
-    const essentialAdvancedConfig = strategies.advancedConfig ? {
-      bias_mode: strategies.advancedConfig.bias_mode,
-      risk_per_trade_pct: strategies.advancedConfig.risk_per_trade_pct,
-      adx_min_htf: strategies.advancedConfig.adx_min_htf,
-      regime_mode: strategies.advancedConfig.regime_mode,
-      sl_atr_mult: strategies.advancedConfig.sl_atr_mult,
-      tp1_r: strategies.advancedConfig.tp1_r,
-      tp2_r: strategies.advancedConfig.tp2_r
+    // Extract only essential numeric values to minimize size
+    const strategySummary = {
+      rsi: strategies.strategy.rsiThreshold,
+      adx: strategies.strategy.adxThreshold,
+      bbw: strategies.strategy.bbWidthThreshold,
+      ema: strategies.strategy.emaSlope,
+      atr: strategies.strategy.atrPercentage,
+      vwap: strategies.strategy.vwapDistance,
+      mom: strategies.strategy.momentumThreshold,
+      ml: strategies.strategy.useMLPrediction
+    };
+    
+    const advancedSummary = strategies.advancedConfig ? {
+      bias: strategies.advancedConfig.bias_mode,
+      risk: strategies.advancedConfig.risk_per_trade_pct,
+      adxHtf: strategies.advancedConfig.adx_min_htf,
+      regime: strategies.advancedConfig.regime_mode,
+      sl: strategies.advancedConfig.sl_atr_mult,
+      tp1: strategies.advancedConfig.tp1_r,
+      tp2: strategies.advancedConfig.tp2_r
     } : null;
 
     return `
-Optimize trading strategy. Analyze performance and suggest improvements.
+Optimize trading strategy.
 
-CURRENT STRATEGY:
-${JSON.stringify(strategies.strategy)}
+CURRENT:
+S:${JSON.stringify(strategySummary).replace(/"/g,'').replace(/:/g,':').replace(/,/g,',')}
+${advancedSummary ? `A:${JSON.stringify(advancedSummary).replace(/"/g,'').replace(/:/g,':').replace(/,/g,',')}` : ''}
 
-${essentialAdvancedConfig ? `ADVANCED (key params only):
-${JSON.stringify(essentialAdvancedConfig)}` : ''}
+PERF:
+WR:${Math.round(metrics.winRate)}% PnL:$${Math.round(metrics.totalPnL)} PF:${metrics.profitFactor.toFixed(2)} SR:${metrics.sharpeRatio.toFixed(2)} DD:${Math.round(metrics.maxDrawdown)}%
 
-PERFORMANCE:
-WR:${metrics.winRate}% PnL:$${metrics.totalPnL} PF:${metrics.profitFactor} SR:${metrics.sharpeRatio} DD:${metrics.maxDrawdown}%
-
-RECENT TRADES (last 5):
-${recentTrades.slice(-5).map(t => {
-  const side = t.side ? t.side[0].toUpperCase() : '?';
-  const symbol = (t.symbol || 'N/A').substring(0, 8);
-  const outcome = (t.outcome || 'u')[0];
-  const pnl = parseFloat((t.pnl || 0).toFixed(0));
-  return `${symbol}${side}:${outcome} $${pnl}`;
+TRADES (last 3):
+${recentTrades.slice(-3).map(t => {
+  const s = (t.symbol || 'X').substring(0, 3);
+  const sd = t.side ? t.side[0] : '?';
+  const o = (t.outcome || 'u')[0];
+  const p = Math.round(t.pnl || 0);
+  return `${s}${sd}:${o}$${p}`;
 }).join(' ')}
 
-Provide optimized parameters as JSON. Keep values realistic and within trading best practices:
+Return JSON:
 {
-  "strategy": {
-    "rsiThreshold": number (0-100),
-    "adxThreshold": number (0-100),
-    "bbWidthThreshold": number,
-    "emaSlope": number,
-    "atrPercentage": number,
-    "vwapDistance": number,
-    "momentumThreshold": number,
-    "useMLPrediction": boolean,
-    "minSamplesForML": number
-  },
-  ${strategies.advancedConfig ? `"advancedConfig": {
-    "bias_mode": "long-only|short-only|both|auto",
-    "htf_timeframe": "4h|1d|1h|15m",
-    "risk_per_trade_pct": number (0.5-5.0),
-    "sl_atr_mult": number (1.0-3.0),
-    "tp1_r": number (1.5-4.0),
-    "tp2_r": number (2.0-6.0),
-    "adx_min_htf": number (15-35),
-    "regime_mode": "trend|mean-reversion|auto",
-    "adx_trend_min": number (25-40),
-    "adx_meanrev_max": number (15-25)
-  },` : ''}
-  "reasoning": "Detailed explanation of why these changes will improve performance",
-  "expectedImprovement": "Expected win rate improvement (e.g., +5% win rate, +10% profit factor)",
-  "confidence": number (0-1) representing confidence in these optimizations
+  "strategy": {"rsiThreshold":num,"adxThreshold":num,"bbWidthThreshold":num,"emaSlope":num,"atrPercentage":num,"vwapDistance":num,"momentumThreshold":num,"useMLPrediction":bool,"minSamplesForML":num},
+  ${advancedSummary ? `"advancedConfig": {"bias_mode":"str","risk_per_trade_pct":num,"adx_min_htf":num,"regime_mode":"str","sl_atr_mult":num,"tp1_r":num,"tp2_r":num},` : ''}
+  "reasoning": "brief",
+  "expectedImprovement": "brief",
+  "confidence": num
 }
 `.trim();
   }
