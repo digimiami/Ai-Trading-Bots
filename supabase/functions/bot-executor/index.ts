@@ -37,67 +37,90 @@ class TimeSync {
          throw new Error(`Bybit time sync failed: ${data.retMsg || 'Invalid response'}`);
       }
 
+      // Log the raw response for debugging
+      console.log(`📊 Bybit time response:`, JSON.stringify({
+        timeSecond: data.result.timeSecond,
+        timeNano: data.result.timeNano,
+        timeSecondStr: String(data.result.timeSecond),
+        timeNanoStr: String(data.result.timeNano || '0')
+      }));
+
       // V5 returns time in seconds and nanoseconds separately
-      // NOTE: Some Bybit endpoints may return timeSecond already in milliseconds
-      // timeSecond: Unix timestamp in seconds (e.g., 1730458320) OR milliseconds (e.g., 1730458320000)
-      // timeNano: nanoseconds since that second (e.g., 123456789)
+      // CRITICAL: Bybit V5 /v5/market/time returns:
+      // - timeSecond: Unix timestamp in SECONDS (e.g., 1730458320)
+      // - timeNano: nanoseconds since that second (e.g., 123456789)
       const timeSecondStr = String(data.result.timeSecond || '').trim();
       const timeNanoStr = String(data.result.timeNano || '0').trim();
       
       // Validate and parse - ensure we get numbers, not NaN
       let timeSecond = Number(timeSecondStr);
-      const timeNano = Number(timeNanoStr);
+      let timeNano = Number(timeNanoStr);
       
       if (!Number.isFinite(timeSecond) || timeSecond <= 0) {
         throw new Error(`Invalid timeSecond value: ${timeSecondStr}`);
       }
       
-      // CRITICAL FIX: Detect if timeSecond is already in milliseconds
-      // Unix timestamp in seconds: 1577836800 (2020) to 2524608000 (2050)
-      // Unix timestamp in milliseconds: 1577836800000 (2020) to 2524608000000 (2050)
-      // If timeSecond > 10000000000, it's likely already in milliseconds
+      // Current Unix timestamp should be around 1730000000 (Dec 2024)
+      // Validate timeSecond is reasonable (between 2020 and 2050)
       const MIN_SECONDS = 1577836800; // 2020-01-01 in seconds
       const MAX_SECONDS = 2524608000; // 2050-01-01 in seconds
-      const MIN_MILLIS = 1577836800000; // 2020-01-01 in milliseconds
-      const MAX_MILLIS = 2524608000000; // 2050-01-01 in milliseconds
+      const currentSeconds = Math.floor(Date.now() / 1000);
       
       let serverTime: number;
       
+      // Check if timeSecond looks like Unix seconds (reasonable range)
       if (timeSecond >= MIN_SECONDS && timeSecond <= MAX_SECONDS) {
         // timeSecond is in seconds - convert to milliseconds
-        console.log(`✅ Detected timeSecond in seconds: ${timeSecond}`);
-        serverTime = timeSecond * 1000 + (Number.isFinite(timeNano) ? timeNano / 1000000 : 0);
-      } else if (timeSecond >= MIN_MILLIS && timeSecond <= MAX_MILLIS) {
-        // timeSecond is already in milliseconds
-        console.log(`✅ Detected timeSecond already in milliseconds: ${timeSecond}`);
-        serverTime = timeSecond + (Number.isFinite(timeNano) ? timeNano / 1000000 : 0);
-      } else {
-        // Invalid or suspicious value - log and use as-is but warn
-        console.error(`⚠️ Suspicious timeSecond value: ${timeSecond} (not in expected range)`);
-        // Try to detect format: if > 10 billion, assume milliseconds
-        if (timeSecond > 10000000000) {
-          console.log(`⚠️ Assuming timeSecond is in milliseconds due to large value`);
-          serverTime = timeSecond + (Number.isFinite(timeNano) ? timeNano / 1000000 : 0);
-        } else {
-          // Assume seconds and convert
-          console.log(`⚠️ Assuming timeSecond is in seconds`);
-          serverTime = timeSecond * 1000 + (Number.isFinite(timeNano) ? timeNano / 1000000 : 0);
+        // timeNano is nanoseconds, so divide by 1,000,000 to get milliseconds
+        const nanoMs = Number.isFinite(timeNano) ? timeNano / 1000000 : 0;
+        serverTime = timeSecond * 1000 + nanoMs;
+        console.log(`✅ Detected timeSecond in seconds: ${timeSecond}, timeNano: ${timeNano}, serverTime: ${serverTime}, currentSeconds: ${currentSeconds}`);
+        
+        // Validate serverTime is reasonable (within 1 hour of current time)
+        const currentTime = Date.now();
+        const timeDiff = Math.abs(serverTime - currentTime);
+        if (timeDiff > 3600000) { // More than 1 hour difference
+          console.error(`❌ Server time ${serverTime} is ${(timeDiff / 1000 / 3600).toFixed(2)} hours away from local time ${currentTime}`);
+          // Use local time instead
+          serverTime = currentTime;
+          this.serverTimeOffset = 0;
+          this.lastSync = Date.now();
+          console.warn(`⚠️ Using local time instead of Bybit time due to large difference`);
+          return;
         }
+      } else if (timeSecond >= 1577836800000 && timeSecond <= 2524608000000) {
+        // timeSecond is already in milliseconds (unlikely but possible)
+        console.log(`✅ Detected timeSecond already in milliseconds: ${timeSecond}`);
+        const nanoMs = Number.isFinite(timeNano) ? timeNano / 1000000 : 0;
+        serverTime = timeSecond + nanoMs;
+      } else {
+        // Invalid value - use local time
+        console.error(`❌ Invalid timeSecond value: ${timeSecond} (not in expected range). Using local time.`);
+        this.serverTimeOffset = 0;
+        this.lastSync = Date.now();
+        return;
       }
+      
       const endTime = Date.now();
       
       // Account for network latency (half round trip time)
       const latency = (endTime - startTime) / 2;
       const localTimeAtSync = startTime + latency;
-      this.serverTimeOffset = serverTime - localTimeAtSync;
-      this.lastSync = Date.now();
+      const calculatedOffset = serverTime - localTimeAtSync;
       
-      // Debug logging to catch calculation errors
-      if (Math.abs(this.serverTimeOffset) > 60000) { // More than 1 minute offset is suspicious
-        console.warn(`⚠️ Large time offset detected: ${this.serverTimeOffset.toFixed(2)}ms. Server time: ${serverTime}, Local: ${localTimeAtSync}`);
+      // CRITICAL: If offset is more than 1 minute, ignore it and use local time
+      if (Math.abs(calculatedOffset) > 60000) {
+        console.warn(`⚠️ Calculated offset ${calculatedOffset.toFixed(2)}ms is too large (>1 minute). Ignoring and using local time.`);
+        console.warn(`   Server time: ${serverTime}, Local time: ${localTimeAtSync}, Difference: ${(serverTime - localTimeAtSync) / 1000 / 60} minutes`);
+        this.serverTimeOffset = 0;
+        this.lastSync = Date.now();
+        return;
       }
       
-      console.log(`Time synced with Bybit. Offset: ${this.serverTimeOffset.toFixed(2)}ms`);
+      this.serverTimeOffset = calculatedOffset;
+      this.lastSync = Date.now();
+      
+      console.log(`✅ Time synced with Bybit. Offset: ${this.serverTimeOffset.toFixed(2)}ms`);
     } catch (error) {
       console.error('Time sync failed:', error);
       // It is critical to use a fallback or simply proceed with the old offset if Bybit fails,
