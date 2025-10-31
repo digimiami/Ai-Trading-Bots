@@ -67,6 +67,7 @@ export interface AdvancedStrategyConfig {
   weekly_loss_limit_pct: number;
   max_trades_per_day: number;
   max_concurrent: number;
+  max_consecutive_losses?: number; // Safety feature: max consecutive losses before auto-pause
   sl_atr_mult: number;
   tp1_r: number;
   tp2_r: number;

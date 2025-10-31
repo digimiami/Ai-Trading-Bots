@@ -72,6 +72,7 @@ export default function CreateBotPage() {
     weekly_loss_limit_pct: 6.0,
     max_trades_per_day: 8,
     max_concurrent: 2,
+    max_consecutive_losses: 5, // Safety: auto-pause after 5 consecutive losses
     sl_atr_mult: 1.3,
     tp1_r: 1.0,
     tp2_r: 2.0,
@@ -711,6 +712,65 @@ export default function CreateBotPage() {
                           max="20"
                           step="1"
                         />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Weekly Loss Limit: {advancedConfig.weekly_loss_limit_pct}%
+                        </label>
+                        <input
+                          type="range"
+                          value={advancedConfig.weekly_loss_limit_pct}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, weekly_loss_limit_pct: parseFloat(e.target.value) }))}
+                          className="w-full"
+                          min="2"
+                          max="15"
+                          step="0.5"
+                        />
+                        <p className="text-xs text-gray-500">Auto-pause if weekly loss exceeds</p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Max Concurrent Positions: {advancedConfig.max_concurrent}
+                        </label>
+                        <input
+                          type="range"
+                          value={advancedConfig.max_concurrent}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, max_concurrent: parseInt(e.target.value) }))}
+                          className="w-full"
+                          min="1"
+                          max="5"
+                          step="1"
+                        />
+                        <p className="text-xs text-gray-500">Max open positions simultaneously</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Safety Features */}
+                  <div className="border-l-4 border-orange-500 pl-4 mt-6">
+                    <h3 className="text-md font-semibold text-gray-800 mb-3">🛡️ Safety Features</h3>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Configure automatic safety limits to protect your bot from excessive losses.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Max Consecutive Losses: {advancedConfig.max_consecutive_losses || 5}
+                        </label>
+                        <input
+                          type="range"
+                          value={advancedConfig.max_consecutive_losses || 5}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, max_consecutive_losses: parseInt(e.target.value) }))}
+                          className="w-full"
+                          min="2"
+                          max="10"
+                          step="1"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Auto-pause bot after this many consecutive losses
+                        </p>
                       </div>
                     </div>
                   </div>
