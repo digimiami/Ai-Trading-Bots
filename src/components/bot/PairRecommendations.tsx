@@ -229,7 +229,7 @@ export default function PairRecommendations({
           </div>
         </div>
 
-        {/* Strategy Changes */}
+        {/* Strategy & Advanced Config Changes */}
         {recommendation.changes.length > 0 && (
           <div className="mt-4">
             <button
@@ -237,22 +237,63 @@ export default function PairRecommendations({
               className="text-sm text-purple-600 hover:text-purple-800 font-medium flex items-center"
             >
               <i className={`ri-arrow-${showDetails ? 'up' : 'down'}-s-line mr-1`}></i>
-              {recommendation.changes.length} Strategy Parameter{recommendation.changes.length !== 1 ? 's' : ''} Recommended
+              {recommendation.changes.length} Optimization{recommendation.changes.length !== 1 ? 's' : ''} Recommended
+              <span className="ml-2 text-xs text-gray-500">
+                ({recommendation.changes.filter(c => c.parameter.startsWith('Strategy.')).length} Strategy, {recommendation.changes.filter(c => c.parameter.startsWith('Advanced.')).length} Advanced)
+              </span>
             </button>
 
             {showDetails && (
               <div className="mt-2 bg-white rounded-lg p-3 border border-gray-200">
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {recommendation.changes.map((change, idx) => (
-                    <div key={idx} className="flex items-center justify-between text-xs py-1 border-b border-gray-100 last:border-0">
-                      <div className="flex-1">
-                        <span className="font-medium text-gray-700">{change.parameter}:</span>
-                        <span className="ml-2 text-gray-500 line-through">{String(change.defaultValue)}</span>
-                        <span className="mx-2 text-gray-400">→</span>
-                        <span className="text-green-600 font-semibold">{String(change.recommendedValue)}</span>
+                <div className="space-y-3">
+                  {/* Strategy Parameters */}
+                  {recommendation.changes.filter(c => c.parameter.startsWith('Strategy.')).length > 0 && (
+                    <div>
+                      <h4 className="text-xs font-semibold text-gray-700 mb-2 flex items-center">
+                        <i className="ri-settings-3-line mr-1"></i>
+                        Strategy Parameters
+                      </h4>
+                      <div className="space-y-1">
+                        {recommendation.changes
+                          .filter(c => c.parameter.startsWith('Strategy.'))
+                          .map((change, idx) => (
+                            <div key={idx} className="flex items-center justify-between text-xs py-1 px-2 bg-blue-50 rounded border-b border-blue-100 last:border-0">
+                              <div className="flex-1">
+                                <span className="font-medium text-gray-700">{change.parameter.replace('Strategy.', '')}:</span>
+                                <span className="ml-2 text-gray-500 line-through">{String(change.defaultValue)}</span>
+                                <span className="mx-2 text-gray-400">→</span>
+                                <span className="text-green-600 font-semibold">{String(change.recommendedValue)}</span>
+                              </div>
+                            </div>
+                          ))}
                       </div>
                     </div>
-                  ))}
+                  )}
+
+                  {/* Advanced Config Parameters */}
+                  {recommendation.changes.filter(c => c.parameter.startsWith('Advanced.')).length > 0 && (
+                    <div>
+                      <h4 className="text-xs font-semibold text-gray-700 mb-2 flex items-center">
+                        <i className="ri-settings-4-line mr-1"></i>
+                        ⚙️ Advanced Strategy Configuration
+                      </h4>
+                      <div className="space-y-1 max-h-64 overflow-y-auto">
+                        {recommendation.changes
+                          .filter(c => c.parameter.startsWith('Advanced.'))
+                          .map((change, idx) => (
+                            <div key={idx} className="flex items-center justify-between text-xs py-1 px-2 bg-purple-50 rounded border-b border-purple-100 last:border-0">
+                              <div className="flex-1">
+                                <span className="font-medium text-gray-700">{change.parameter.replace('Advanced.', '')}:</span>
+                                <span className="ml-2 text-gray-500 line-through">{String(change.defaultValue)}</span>
+                                <span className="mx-2 text-gray-400">→</span>
+                                <span className="text-green-600 font-semibold">{String(change.recommendedValue)}</span>
+                                <span className="ml-2 text-xs text-gray-400">({change.reason})</span>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

@@ -171,14 +171,25 @@ export default function CreateBotPage() {
   };
 
   const handleApplyRecommendation = (recommendation: PairRecommendation) => {
-    // Apply recommended strategy
+    // Apply recommended strategy parameters
     if (recommendation.strategy) {
       setStrategy(recommendation.strategy);
+      console.log('✅ Applied Strategy Parameters:', recommendation.strategy);
     }
 
-    // Apply recommended advanced config
+    // Apply recommended advanced config - ensure ALL parameters are applied
     if (recommendation.advancedConfig) {
-      setAdvancedConfig(prev => ({ ...prev, ...recommendation.advancedConfig }));
+      setAdvancedConfig(prev => {
+        // Deep merge to ensure all advanced config parameters are included
+        const merged: AdvancedStrategyConfig = {
+          ...prev,
+          ...recommendation.advancedConfig,
+          // Ensure nested arrays are properly merged
+          allowed_hours_utc: recommendation.advancedConfig!.allowed_hours_utc || prev.allowed_hours_utc
+        };
+        console.log('✅ Applied Advanced Strategy Config:', merged);
+        return merged;
+      });
     }
 
     // Apply recommended basic settings
@@ -191,8 +202,25 @@ export default function CreateBotPage() {
       riskLevel: recommendation.riskAssessment as 'low' | 'medium' | 'high'
     }));
 
-    // Show success message
-    alert(`✅ AI Recommendations Applied!\n\nApplied ${recommendation.changes.length} parameter optimizations for ${recommendation.symbol}`);
+    // Count strategy and advanced config changes separately
+    const strategyChanges = recommendation.changes.filter(c => c.parameter.startsWith('Strategy.')).length;
+    const advancedChanges = recommendation.changes.filter(c => c.parameter.startsWith('Advanced.')).length;
+    const totalChanges = recommendation.changes.length;
+
+    // Show detailed success message
+    const message = `✅ AI Recommendations Applied!
+
+📊 Summary:
+• Strategy Parameters: ${strategyChanges} optimized
+• Advanced Config: ${advancedChanges} optimized
+• Basic Settings: Updated
+• Total Changes: ${totalChanges} parameters
+
+All settings have been applied to your bot configuration.`;
+    
+    alert(message);
+    
+    console.log('📋 All Applied Changes:', recommendation.changes);
   };
 
   // Get the effective symbol (dropdown or custom)

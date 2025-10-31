@@ -168,12 +168,15 @@ class PairRecommendationsService {
     try {
       // Get pair-specific recommended strategy
       const pairStrategy = this.getPairSpecificStrategy(symbol);
+      
+      // Get default advanced config if not provided
+      const defaultAdvancedConfig: AdvancedStrategyConfig = currentSettings?.advancedConfig || this.getDefaultAdvancedConfig(symbol, tradingType);
 
       // Use optimizeStrategy method with pair-specific baseline
       const result = await openAIService.optimizeStrategy(
         {
           strategy: currentSettings?.strategy || pairStrategy,
-          advancedConfig: currentSettings?.advancedConfig
+          advancedConfig: defaultAdvancedConfig
         },
         [], // No recent trades for new bot
         {
@@ -187,6 +190,18 @@ class PairRecommendationsService {
       // Get pair-specific basic settings
       const pairBasicSettings = this.getPairBasicSettings(symbol, tradingType);
 
+      // Ensure advancedConfig is complete - merge AI result with defaults
+      const completeAdvancedConfig: AdvancedStrategyConfig = {
+        ...defaultAdvancedConfig,
+        ...(result.advancedConfig || {}),
+        // Ensure all critical parameters are set
+        risk_per_trade_pct: result.advancedConfig?.risk_per_trade_pct ?? defaultAdvancedConfig.risk_per_trade_pct,
+        adx_min_htf: result.advancedConfig?.adx_min_htf ?? defaultAdvancedConfig.adx_min_htf,
+        sl_atr_mult: result.advancedConfig?.sl_atr_mult ?? defaultAdvancedConfig.sl_atr_mult,
+        tp1_r: result.advancedConfig?.tp1_r ?? defaultAdvancedConfig.tp1_r,
+        tp2_r: result.advancedConfig?.tp2_r ?? defaultAdvancedConfig.tp2_r,
+      };
+
       // Build recommendation from optimization result
       return {
         symbol,
@@ -194,20 +209,81 @@ class PairRecommendationsService {
         confidence: result.confidence,
         reasoning: result.reasoning || `Optimized settings for ${symbol} based on pair characteristics and historical performance`,
         strategy: result.strategy,
-        advancedConfig: result.advancedConfig,
+        advancedConfig: completeAdvancedConfig, // Always include full advanced config
         expectedPerformance: result.expectedImprovement || `Expected improved performance with optimized parameters for ${symbol}`,
         riskAssessment: this.getPairRiskAssessment(symbol),
         suggestedTradeAmount: pairBasicSettings.tradeAmount,
         suggestedLeverage: pairBasicSettings.leverage,
         suggestedStopLoss: pairBasicSettings.stopLoss,
         suggestedTakeProfit: pairBasicSettings.takeProfit,
-        changes: this.buildChangesList(currentSettings, result)
+        changes: this.buildChangesList(currentSettings, {
+          ...result,
+          advancedConfig: completeAdvancedConfig
+        })
       };
     } catch (error) {
       console.error('Error getting AI recommendation:', error);
       // Return default recommendations if AI fails
       return this.getDefaultRecommendations(symbol, tradingType, metrics);
     }
+  }
+
+  /**
+   * Get default advanced config for a pair
+   */
+  private getDefaultAdvancedConfig(symbol: string, tradingType: 'spot' | 'futures'): AdvancedStrategyConfig {
+    return {
+      // Directional Bias
+      bias_mode: 'auto',
+      htf_timeframe: '4h',
+      htf_trend_indicator: 'EMA200',
+      ema_fast_period: 50,
+      require_price_vs_trend: 'any',
+      adx_min_htf: 23,
+      require_adx_rising: true,
+      
+      // Regime Filter
+      regime_mode: 'auto',
+      adx_trend_min: 25,
+      adx_meanrev_max: 19,
+      
+      // Session/Timing
+      session_filter_enabled: false,
+      allowed_hours_utc: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23],
+      cooldown_bars: 8,
+      
+      // Volatility/Liquidity Gates
+      atr_percentile_min: 20,
+      bb_width_min: 0.012,
+      bb_width_max: 0.03,
+      min_24h_volume_usd: 500000000,
+      max_spread_bps: 3,
+      
+      // Risk & Exits
+      risk_per_trade_pct: 0.75,
+      daily_loss_limit_pct: 3.0,
+      weekly_loss_limit_pct: 6.0,
+      max_trades_per_day: 8,
+      max_concurrent: 2,
+      max_consecutive_losses: 5,
+      sl_atr_mult: 1.3,
+      tp1_r: 1.0,
+      tp2_r: 2.0,
+      tp1_size: 0.5,
+      breakeven_at_r: 0.8,
+      trail_after_tp1_atr: 1.0,
+      time_stop_hours: 48,
+      
+      // Technical Indicators
+      rsi_period: 14,
+      rsi_oversold: 30,
+      rsi_overbought: 70,
+      
+      // ML/AI Settings
+      use_ml_prediction: true,
+      ml_confidence_threshold: 0.6,
+      ml_min_samples: 100
+    };
   }
 
   /**
@@ -333,18 +409,19 @@ class PairRecommendationsService {
   ): PairRecommendation['changes'] {
     const changes: PairRecommendation['changes'] = [];
 
-    if (!currentSettings || !optimizationResult) {
+    if (!optimizationResult) {
       return changes;
     }
 
     // Compare strategy parameters
-    if (currentSettings.strategy && optimizationResult.strategy) {
+    if (optimizationResult.strategy) {
+      const currentStrategy = currentSettings?.strategy || {};
       Object.keys(optimizationResult.strategy).forEach(key => {
         const recommendedValue = (optimizationResult.strategy as any)[key];
-        const currentValue = (currentSettings.strategy as any)[key];
+        const currentValue = (currentStrategy as any)[key];
         if (recommendedValue !== undefined && recommendedValue !== currentValue) {
           changes.push({
-            parameter: key,
+            parameter: `Strategy.${key}`,
             recommendedValue,
             defaultValue: currentValue,
             reason: `Optimized for better performance`
@@ -353,31 +430,88 @@ class PairRecommendationsService {
       });
     }
 
-    // Compare advanced config parameters
-    if (currentSettings.advancedConfig && optimizationResult.advancedConfig) {
+    // Compare advanced config parameters - check ALL important parameters
+    if (optimizationResult.advancedConfig) {
+      const currentAdvancedConfig = currentSettings?.advancedConfig || {};
       const importantParams = [
+        // Risk Management
         'risk_per_trade_pct',
-        'adx_min_htf',
+        'daily_loss_limit_pct',
+        'weekly_loss_limit_pct',
+        'max_trades_per_day',
+        'max_concurrent',
+        'max_consecutive_losses',
+        // Stop Loss / Take Profit
         'sl_atr_mult',
         'tp1_r',
-        'tp2_r'
+        'tp2_r',
+        'tp1_size',
+        'breakeven_at_r',
+        'trail_after_tp1_atr',
+        'time_stop_hours',
+        // Directional Bias
+        'bias_mode',
+        'adx_min_htf',
+        'htf_timeframe',
+        'htf_trend_indicator',
+        'require_adx_rising',
+        // Regime Filter
+        'regime_mode',
+        'adx_trend_min',
+        'adx_meanrev_max',
+        // Volatility/Liquidity
+        'atr_percentile_min',
+        'bb_width_min',
+        'bb_width_max',
+        'max_spread_bps',
+        // Technical Indicators
+        'rsi_oversold',
+        'rsi_overbought',
+        'rsi_period',
+        // ML/AI
+        'use_ml_prediction',
+        'ml_confidence_threshold',
+        'ml_min_samples'
       ];
 
       importantParams.forEach(key => {
         const recommendedValue = (optimizationResult.advancedConfig as any)?.[key];
-        const currentValue = (currentSettings.advancedConfig as any)?.[key];
+        const currentValue = (currentAdvancedConfig as any)?.[key];
+        // Only add if value is different and recommended value is not undefined
         if (recommendedValue !== undefined && recommendedValue !== currentValue) {
           changes.push({
-            parameter: key,
+            parameter: `Advanced.${key}`,
             recommendedValue,
-            defaultValue: currentValue,
-            reason: `Optimized for better risk/reward`
+            defaultValue: currentValue !== undefined ? currentValue : 'default',
+            reason: this.getParameterReason(key)
           });
         }
       });
     }
 
     return changes;
+  }
+
+  /**
+   * Get reason for parameter change
+   */
+  private getParameterReason(parameter: string): string {
+    const reasonMap: { [key: string]: string } = {
+      'risk_per_trade_pct': 'Optimized risk per trade',
+      'adx_min_htf': 'Optimized trend strength requirement',
+      'sl_atr_mult': 'Optimized stop loss multiplier',
+      'tp1_r': 'Optimized take profit ratio',
+      'tp2_r': 'Optimized second take profit ratio',
+      'bias_mode': 'Optimized directional bias',
+      'regime_mode': 'Optimized market regime filter',
+      'max_trades_per_day': 'Optimized daily trade limit',
+      'max_concurrent': 'Optimized concurrent positions',
+      'rsi_oversold': 'Optimized RSI oversold level',
+      'rsi_overbought': 'Optimized RSI overbought level',
+      'use_ml_prediction': 'Optimized ML prediction usage',
+      'ml_confidence_threshold': 'Optimized ML confidence threshold'
+    };
+    return reasonMap[parameter] || 'Optimized for better performance';
   }
 
   /**
