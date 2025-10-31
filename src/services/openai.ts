@@ -130,7 +130,20 @@ class OpenAIService {
     }
 
     try {
+      // Debug: Check input sizes BEFORE building prompt
+      const strategySize = JSON.stringify(strategies.strategy || {}).length;
+      const advancedSize = strategies.advancedConfig ? JSON.stringify(strategies.advancedConfig).length : 0;
+      const tradesSize = JSON.stringify(recentTrades || []).length;
+      
+      console.log(`📊 [OpenAI] Input sizes: strategy=${Math.round(strategySize/1024)}KB, advanced=${Math.round(advancedSize/1024)}KB, trades=${Math.round(tradesSize/1024)}KB, total=${Math.round((strategySize + advancedSize + tradesSize)/1024)}KB`);
+      
+      if (strategySize > 50000 || advancedSize > 50000 || tradesSize > 50000) {
+        console.warn(`⚠️ [OpenAI] Large input detected! Strategy: ${Math.round(strategySize/1024)}KB, Advanced: ${Math.round(advancedSize/1024)}KB, Trades: ${Math.round(tradesSize/1024)}KB`);
+      }
+      
       const prompt = this.buildOptimizationPrompt(strategies, recentTrades, performanceMetrics);
+      console.log(`📊 [OpenAI] Final prompt size: ${Math.round(prompt.length/1024)}KB (${Math.round(prompt.length * 0.75 / 1000)}K tokens estimated)`);
+      
       const response = await this.callOpenAI(prompt);
       
       return this.parseOptimizationResponse(response, strategies);
