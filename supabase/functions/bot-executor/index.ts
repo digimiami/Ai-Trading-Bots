@@ -70,11 +70,29 @@ class TimeSync {
       
       // Check if timeSecond looks like Unix seconds (reasonable range)
       if (timeSecond >= MIN_SECONDS && timeSecond <= MAX_SECONDS) {
-        // timeSecond is in seconds - convert to milliseconds
-        // timeNano is nanoseconds, so divide by 1,000,000 to get milliseconds
-        const nanoMs = Number.isFinite(timeNano) ? timeNano / 1000000 : 0;
-        serverTime = timeSecond * 1000 + nanoMs;
-        console.log(`✅ Detected timeSecond in seconds: ${timeSecond}, timeNano: ${timeNano}, serverTime: ${serverTime}, currentSeconds: ${currentSeconds}`);
+        // timeSecond is in seconds
+        // CRITICAL: Check if timeNano is the full timestamp (>= 1 billion nanoseconds = 1 second)
+        // If timeNano is huge (like 1761929368266785474), it's the full timestamp in nanoseconds
+        // If timeNano is small (< 1 billion), it's fractional nanoseconds since that second
+        const ONE_BILLION_NANOS = 1000000000; // 1 second in nanoseconds
+        
+        let serverTime: number;
+        
+        if (Number.isFinite(timeNano) && timeNano >= ONE_BILLION_NANOS) {
+          // timeNano is the full timestamp in nanoseconds (e.g., 1761929368266785474)
+          // Convert directly: nanoseconds / 1,000,000 = milliseconds
+          serverTime = timeNano / 1000000;
+          console.log(`✅ Detected timeNano as full timestamp: ${timeNano} nanoseconds = ${serverTime} milliseconds`);
+          console.log(`   (timeSecond ${timeSecond} is ignored when timeNano contains full timestamp)`);
+        } else {
+          // timeNano is fractional nanoseconds since that second (should be < 1 billion)
+          // Use timeSecond * 1000 + (timeNano / 1,000,000)
+          const nanoMs = Number.isFinite(timeNano) ? timeNano / 1000000 : 0;
+          serverTime = timeSecond * 1000 + nanoMs;
+          console.log(`✅ Using timeSecond + fractional timeNano: ${timeSecond} * 1000 + ${nanoMs} = ${serverTime}`);
+        }
+        
+        console.log(`📊 Calculation: timeSecond=${timeSecond}, timeNano=${timeNano}, serverTime=${serverTime}, currentSeconds=${currentSeconds}`);
         
         // Validate serverTime is reasonable (within 1 hour of current time)
         const currentTime = Date.now();
@@ -91,8 +109,17 @@ class TimeSync {
       } else if (timeSecond >= 1577836800000 && timeSecond <= 2524608000000) {
         // timeSecond is already in milliseconds (unlikely but possible)
         console.log(`✅ Detected timeSecond already in milliseconds: ${timeSecond}`);
-        const nanoMs = Number.isFinite(timeNano) ? timeNano / 1000000 : 0;
-        serverTime = timeSecond + nanoMs;
+        const ONE_BILLION_NANOS = 1000000000;
+        // Check if timeNano is full timestamp or fractional
+        if (Number.isFinite(timeNano) && timeNano >= ONE_BILLION_NANOS) {
+          // timeNano is full timestamp in nanoseconds
+          serverTime = timeNano / 1000000;
+          console.log(`   Using timeNano as full timestamp: ${serverTime}ms`);
+        } else {
+          // timeNano is fractional nanoseconds
+          const nanoMs = Number.isFinite(timeNano) ? timeNano / 1000000 : 0;
+          serverTime = timeSecond + nanoMs;
+        }
       } else {
         // Invalid value - use local time
         console.error(`❌ Invalid timeSecond value: ${timeSecond} (not in expected range). Using local time.`);
