@@ -1324,20 +1324,26 @@ class BotExecutor {
   }
 
   /**
-   * Get weekly loss for bot (last 7 days)
+   * Get weekly loss for bot (last 7 days, UTC timezone)
    */
   private async getWeeklyLoss(botId: string): Promise<number> {
     try {
-      const weekAgo = new Date();
-      weekAgo.setDate(weekAgo.getDate() - 7);
-      weekAgo.setHours(0, 0, 0, 0);
-      const weekAgoISO = weekAgo.toISOString();
+      // Get date 7 days ago in UTC (start of day at 00:00:00 UTC)
+      const now = new Date();
+      const weekAgoUTC = new Date(Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate() - 7,
+        0, 0, 0, 0
+      ));
+      const weekAgoISO = weekAgoUTC.toISOString();
 
       const { data: trades } = await this.supabaseClient
         .from('trades')
         .select('pnl')
         .eq('bot_id', botId)
-        .gte('executed_at', weekAgoISO);
+        .gte('executed_at', weekAgoISO)
+        .in('status', ['filled', 'completed', 'closed']); // Only count executed trades
 
       if (!trades || trades.length === 0) {
         return 0;
@@ -1356,21 +1362,37 @@ class BotExecutor {
   }
 
   /**
-   * Get number of trades today
+   * Get number of trades today (UTC timezone)
    */
   private async getTradesToday(botId: string): Promise<number> {
     try {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const todayISO = today.toISOString();
+      // Get today's date in UTC (start of day at 00:00:00 UTC)
+      const now = new Date();
+      const todayUTC = new Date(Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate(),
+        0, 0, 0, 0
+      ));
+      const todayISO = todayUTC.toISOString();
 
-      const { count } = await this.supabaseClient
+      // Only count trades that were actually executed (filled/completed status)
+      const { count, error } = await this.supabaseClient
         .from('trades')
         .select('*', { count: 'exact', head: true })
         .eq('bot_id', botId)
-        .gte('executed_at', todayISO);
+        .gte('executed_at', todayISO)
+        .in('status', ['filled', 'completed', 'closed']); // Only count executed trades
 
-      return count || 0;
+      if (error) {
+        console.warn('Error getting trades today:', error);
+        return 0;
+      }
+
+      const tradeCount = count || 0;
+      console.log(`📊 Trades today for bot ${botId}: ${tradeCount} (since ${todayISO})`);
+      
+      return tradeCount;
     } catch (error) {
       console.warn('Error getting trades today:', error);
       return 0;
