@@ -335,8 +335,32 @@ class BotExecutor {
       
       console.log(`📊 Bot ${bot.name} market data: Price=${currentPrice}, RSI=${rsi.toFixed(2)}, ADX=${adx.toFixed(2)}`);
       
-      // Execute trading strategy
-      const strategy = typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy;
+      // Execute trading strategy - handle potential double-encoding
+      let strategy = bot.strategy;
+      if (typeof strategy === 'string') {
+        try {
+          strategy = JSON.parse(strategy);
+          // Check if result is still a string (double-encoded)
+          if (typeof strategy === 'string') {
+            strategy = JSON.parse(strategy);
+          }
+        } catch (error) {
+          console.error('Error parsing strategy:', error);
+          console.error('Strategy value:', strategy);
+          // Try to use default strategy if parsing fails
+          strategy = {
+            rsiThreshold: 70,
+            adxThreshold: 25,
+            bbWidthThreshold: 0.02,
+            emaSlope: 0.5,
+            atrPercentage: 2.5,
+            vwapDistance: 1.2,
+            momentumThreshold: 0.8,
+            useMLPrediction: false,
+            minSamplesForML: 100
+          };
+        }
+      }
       console.log('Bot strategy:', JSON.stringify(strategy, null, 2));
       const shouldTrade = this.evaluateStrategy(strategy, { price: currentPrice, rsi, adx });
       
@@ -730,10 +754,18 @@ class BotExecutor {
           return true;
         }
         
-        const availableBalance = parseFloat(wallet.availableToWithdraw || wallet.availableBalance || '0');
+        // Extract available balance - try multiple fields for compatibility
+        const availableBalance = parseFloat(
+          wallet.walletBalance || 
+          wallet.availableToWithdraw || 
+          wallet.availableBalance || 
+          wallet.equity || 
+          '0'
+        );
         const requiredValue = orderValue;
         
         console.log(`💰 Balance check for ${symbol} ${side}: Available=$${availableBalance.toFixed(2)}, Required=$${requiredValue.toFixed(2)}`);
+        console.log(`📊 Balance details: walletBalance=${wallet.walletBalance}, availableToWithdraw=${wallet.availableToWithdraw}, availableBalance=${wallet.availableBalance}, equity=${wallet.equity}`);
         
         // Add 5% buffer to account for fees and price fluctuations
         const buffer = requiredValue * 0.05;
@@ -744,6 +776,7 @@ class BotExecutor {
           return true;
         } else {
           console.warn(`⚠️ Insufficient balance: $${availableBalance.toFixed(2)} < $${totalRequired.toFixed(2)} (required + 5% buffer)`);
+          console.warn(`💡 Tip: Add at least $${Math.ceil(totalRequired)} to your Bybit UNIFIED/Futures wallet to enable trading`);
           return false;
         }
       } else {
