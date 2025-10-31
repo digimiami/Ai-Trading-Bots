@@ -9,7 +9,23 @@ export function useAutoOptimizer(botId: string | null) {
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [optimizationResult, setOptimizationResult] = useState<OptimizationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [autoOptimizeEnabled, setAutoOptimizeEnabled] = useState(false);
+  
+  // Persist auto-pilot mode in localStorage
+  const storageKey = botId ? `auto-pilot-enabled-${botId}` : null;
+  const [autoOptimizeEnabled, setAutoOptimizeEnabledState] = useState(() => {
+    if (storageKey && typeof window !== 'undefined') {
+      const saved = localStorage.getItem(storageKey);
+      return saved === 'true';
+    }
+    return false;
+  });
+
+  const setAutoOptimizeEnabled = (value: boolean) => {
+    setAutoOptimizeEnabledState(value);
+    if (storageKey && typeof window !== 'undefined') {
+      localStorage.setItem(storageKey, value.toString());
+    }
+  };
 
   /**
    * Trigger optimization for a specific bot

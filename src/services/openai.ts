@@ -221,33 +221,25 @@ Provide a JSON response with:
     metrics: any
   ): string {
     return `
-You are an expert trading strategy optimizer. Analyze the trading bot's performance and optimize both basic strategy parameters and advanced configuration.
+You are an expert trading strategy optimizer. Analyze performance and optimize strategy parameters.
 
-CURRENT BASIC STRATEGY:
-${JSON.stringify(strategies.strategy, null, 2)}
+CURRENT STRATEGY:
+${JSON.stringify(strategies.strategy)}
 
-${strategies.advancedConfig ? `CURRENT ADVANCED CONFIGURATION:
-${JSON.stringify(strategies.advancedConfig, null, 2)}` : ''}
+${strategies.advancedConfig ? `ADVANCED CONFIG:
+${JSON.stringify(strategies.advancedConfig)}` : ''}
 
-PERFORMANCE METRICS:
-- Win Rate: ${metrics.winRate}%
-- Total PnL: $${metrics.totalPnL}
-- Avg Win: $${metrics.avgWin}
-- Avg Loss: $${metrics.avgLoss}
-- Profit Factor: ${metrics.profitFactor}
-- Sharpe Ratio: ${metrics.sharpeRatio}
-- Max Drawdown: ${metrics.maxDrawdown}%
+PERFORMANCE:
+Win Rate: ${metrics.winRate}%, PnL: $${metrics.totalPnL}, PF: ${metrics.profitFactor}, Sharpe: ${metrics.sharpeRatio}, DD: ${metrics.maxDrawdown}%
 
-RECENT TRADES (last 20):
-${recentTrades.slice(0, 20).map(t => {
-  const side = t.side ? t.side.toUpperCase() : 'UNKNOWN';
+RECENT TRADES (last 8 - most relevant, simplified):
+${recentTrades.slice(-8).map(t => {
+  const side = t.side ? t.side.toUpperCase() : 'UNK';
   const symbol = t.symbol || 'N/A';
   const outcome = t.outcome || 'unknown';
-  const pnl = t.pnl?.toFixed(2) || '0.00';
-  const entryPrice = t.entryPrice || 'N/A';
-  const exitPrice = t.exitPrice || 'N/A';
-  return `- ${symbol} ${side}: ${outcome}, PnL: $${pnl}, Entry: $${entryPrice}, Exit: $${exitPrice}`;
-}).join('\n')}
+  const pnl = t.pnl?.toFixed(1) || '0.0';
+  return `${symbol} ${side}: ${outcome}, PnL:$${pnl}`;
+}).join(', ')}
 
 Provide optimized parameters as JSON. Keep values realistic and within trading best practices:
 {
@@ -285,17 +277,23 @@ Provide optimized parameters as JSON. Keep values realistic and within trading b
    * Call OpenAI API with JSON mode support
    */
   private async callOpenAI(prompt: string, useJsonMode: boolean = true): Promise<any> {
-    const body: any = {
+      // Check prompt size and warn if too large
+      const promptTokens = Math.ceil(prompt.length / 4); // Rough estimate: 1 token ≈ 4 characters
+      if (promptTokens > 100000) {
+        console.warn(`⚠️ Large prompt detected (~${Math.round(promptTokens/1000)}K tokens). Consider reducing trade history.`);
+      }
+
+      const body: any = {
       model: 'gpt-4o', // Use latest GPT-4 model
       messages: [
         { 
           role: 'system', 
-          content: 'You are a professional trading analyst and quantitative strategist. Provide detailed, data-driven recommendations. Always respond with valid JSON only.' 
+          content: 'You are a professional trading analyst. Provide data-driven recommendations. Always respond with valid JSON only.' 
         },
         { role: 'user', content: prompt }
       ],
       temperature: 0.3, // Lower temperature for more consistent, logical responses
-      max_tokens: 2000 // Increased for detailed optimization responses
+      max_tokens: 1200 // Further reduced to prevent token limit issues
     };
 
     // Use JSON mode if available (for better JSON parsing)
