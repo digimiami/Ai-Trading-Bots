@@ -249,12 +249,42 @@ Provide optimized parameters as JSON with confidence score:
           console.error('Error recording optimization:', recordError)
         }
 
+        // Validate and clamp advanced config values before applying
+        let validatedAdvancedConfig = optimization.advancedConfig || bot.strategy_config;
+        if (validatedAdvancedConfig && typeof validatedAdvancedConfig === 'object') {
+          // Clamp critical values to valid ranges
+          const config: any = { ...validatedAdvancedConfig };
+          
+          // Clamp adx_min_htf to 15-35
+          if (config.adx_min_htf !== undefined) {
+            config.adx_min_htf = Math.max(15, Math.min(35, config.adx_min_htf));
+          }
+          
+          // Clamp risk_per_trade_pct to 0.1-5.0
+          if (config.risk_per_trade_pct !== undefined) {
+            config.risk_per_trade_pct = Math.max(0.1, Math.min(5.0, config.risk_per_trade_pct));
+          }
+          
+          // Validate enum values
+          if (config.bias_mode && !['long-only', 'short-only', 'both', 'auto'].includes(config.bias_mode)) {
+            config.bias_mode = 'auto';
+          }
+          if (config.htf_timeframe && !['4h', '1d', '1h', '15m'].includes(config.htf_timeframe)) {
+            config.htf_timeframe = '4h';
+          }
+          if (config.regime_mode && !['trend', 'mean-reversion', 'auto'].includes(config.regime_mode)) {
+            config.regime_mode = 'auto';
+          }
+          
+          validatedAdvancedConfig = config;
+        }
+
         // Apply optimization
         const { error: updateError } = await supabaseClient
           .from('trading_bots')
           .update({
             strategy: optimization.strategy,
-            strategy_config: optimization.advancedConfig || bot.strategy_config,
+            strategy_config: validatedAdvancedConfig,
             updated_at: new Date().toISOString()
           })
           .eq('id', bot.id)

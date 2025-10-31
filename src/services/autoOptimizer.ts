@@ -5,6 +5,7 @@
 
 import { supabase } from '../lib/supabase';
 import { openAIService } from './openai';
+import { validateAndClampStrategyConfig } from './strategyValidator';
 import type { TradingStrategy, AdvancedStrategyConfig } from '../types/trading';
 
 interface TradeAnalysis {
@@ -345,12 +346,19 @@ class AutoOptimizer {
         // Include performance before in details
       });
 
+      // Validate and clamp advanced config values before applying
+      let validatedAdvancedConfig = optimization.optimizedAdvancedConfig;
+      if (validatedAdvancedConfig) {
+        validatedAdvancedConfig = validateAndClampStrategyConfig(validatedAdvancedConfig) as AdvancedStrategyConfig;
+        console.log('✅ Validated and clamped advanced strategy config');
+      }
+
       // Apply the optimization
       const { error: updateError } = await supabase
         .from('trading_bots')
         .update({
           strategy: optimization.optimizedStrategy,
-          strategy_config: optimization.optimizedAdvancedConfig,
+          strategy_config: validatedAdvancedConfig || optimization.optimizedAdvancedConfig,
           updated_at: new Date().toISOString()
         })
         .eq('id', botId);

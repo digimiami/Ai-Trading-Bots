@@ -269,7 +269,7 @@ Provide optimized parameters as JSON. Keep values realistic and within trading b
     "sl_atr_mult": number (1.0-3.0),
     "tp1_r": number (1.5-4.0),
     "tp2_r": number (2.0-6.0),
-    "adx_min_htf": number (20-50),
+    "adx_min_htf": number (15-35),
     "regime_mode": "trend|mean-reversion|auto",
     "adx_trend_min": number (25-40),
     "adx_meanrev_max": number (15-25)
