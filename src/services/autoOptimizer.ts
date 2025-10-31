@@ -170,8 +170,72 @@ class AutoOptimizer {
       const variance = returns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / returns.length;
       const sharpeRatio = variance !== 0 ? avgReturn / Math.sqrt(variance) : 0;
 
-      const strategy = bot.strategy as TradingStrategy;
-      const strategyConfig = bot.strategy_config as AdvancedStrategyConfig | undefined;
+      // Parse strategy - handle potential double-encoding or huge nested data
+      let strategy: TradingStrategy = {} as TradingStrategy;
+      try {
+        if (typeof bot.strategy === 'string') {
+          strategy = JSON.parse(bot.strategy);
+          // Check if still string (double-encoded)
+          if (typeof strategy === 'string') {
+            strategy = JSON.parse(strategy);
+          }
+        } else if (bot.strategy && typeof bot.strategy === 'object') {
+          strategy = bot.strategy as TradingStrategy;
+        }
+        
+        // Extract only essential fields to prevent huge objects
+        strategy = {
+          rsiThreshold: strategy.rsiThreshold || 70,
+          adxThreshold: strategy.adxThreshold || 25,
+          bbWidthThreshold: strategy.bbWidthThreshold || 0.02,
+          emaSlope: strategy.emaSlope || 0.5,
+          atrPercentage: strategy.atrPercentage || 2.5,
+          vwapDistance: strategy.vwapDistance || 1.2,
+          momentumThreshold: strategy.momentumThreshold || 0.8,
+          useMLPrediction: strategy.useMLPrediction || false,
+          minSamplesForML: strategy.minSamplesForML || 100
+        };
+      } catch (error) {
+        console.error('Error parsing strategy:', error);
+        // Use default strategy
+        strategy = {
+          rsiThreshold: 70,
+          adxThreshold: 25,
+          bbWidthThreshold: 0.02,
+          emaSlope: 0.5,
+          atrPercentage: 2.5,
+          vwapDistance: 1.2,
+          momentumThreshold: 0.8,
+          useMLPrediction: false,
+          minSamplesForML: 100
+        };
+      }
+      
+      // Parse advanced config - extract only essential fields
+      let strategyConfig: AdvancedStrategyConfig | undefined = undefined;
+      try {
+        if (bot.strategy_config) {
+          let config = typeof bot.strategy_config === 'string' 
+            ? JSON.parse(bot.strategy_config) 
+            : bot.strategy_config;
+          
+          // Extract only essential fields (prevent huge objects)
+          if (config && typeof config === 'object') {
+            strategyConfig = {
+              bias_mode: config.bias_mode,
+              risk_per_trade_pct: config.risk_per_trade_pct,
+              adx_min_htf: config.adx_min_htf,
+              regime_mode: config.regime_mode,
+              sl_atr_mult: config.sl_atr_mult,
+              tp1_r: config.tp1_r,
+              tp2_r: config.tp2_r
+            } as AdvancedStrategyConfig;
+          }
+        }
+      } catch (error) {
+        console.error('Error parsing strategy_config:', error);
+        strategyConfig = undefined;
+      }
 
       return {
         botId,

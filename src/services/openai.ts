@@ -317,9 +317,32 @@ Return JSON:
     metrics: any,
     recentTrades: TradeAnalysis[]
   ): string {
-    // Extract only key numbers - no JSON overhead
-    const rsi = strategies.strategy?.rsiThreshold || 0;
-    const adx = strategies.strategy?.adxThreshold || 0;
+    // Extract only key numbers - handle both object and potentially string formats
+    let rsi = 0;
+    let adx = 0;
+    
+    try {
+      // Handle if strategy is a string (double-encoded) or object
+      let strategyObj = strategies.strategy;
+      if (typeof strategyObj === 'string') {
+        try {
+          strategyObj = JSON.parse(strategyObj);
+          // Check if still string (double-encoded)
+          if (typeof strategyObj === 'string') {
+            strategyObj = JSON.parse(strategyObj);
+          }
+        } catch (e) {
+          console.warn('Could not parse strategy string:', e);
+        }
+      }
+      
+      // Extract values safely
+      rsi = (strategyObj as any)?.rsiThreshold || (strategyObj as any)?.rsi || 0;
+      adx = (strategyObj as any)?.adxThreshold || (strategyObj as any)?.adx || 0;
+    } catch (e) {
+      console.warn('Error extracting strategy values:', e);
+    }
+    
     const wr = Math.round(metrics?.winRate || 0);
     const pnl = Math.round(metrics?.totalPnL || 0);
     const pf = parseFloat((metrics?.profitFactor || 0).toFixed(1));
@@ -332,7 +355,11 @@ Return JSON:
       return `${sym}${out}$${p}`;
     }).join(',');
     
-    return `Opt: rsi:${rsi},adx:${adx} WR:${wr}% PnL:$${pnl} PF:${pf} Trades:${trades}. Return JSON: strategy params, reasoning, confidence.`;
+    const prompt = `Opt: rsi:${rsi},adx:${adx} WR:${wr}% PnL:$${pnl} PF:${pf} Trades:${trades}. Return JSON: strategy params, reasoning, confidence.`;
+    
+    console.log(`📊 [Minimal Prompt] Size: ${Math.round(prompt.length/1024)}KB, Content: ${prompt.substring(0, 200)}...`);
+    
+    return prompt;
   }
 
   /**
