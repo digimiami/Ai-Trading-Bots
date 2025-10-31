@@ -236,7 +236,7 @@ Provide optimized parameters as JSON with confidence score:
               advancedConfig: optimization.advancedConfig
             },
             reasoning: optimization.reasoning,
-            expected_improvement: parseFloat((optimization.expectedImprovement || '0').replace(/[^0-9.-]/g, '')) || 0,
+            expected_improvement: Math.min(999.99, Math.max(-999.99, parseFloat((optimization.expectedImprovement || '0').replace(/[^0-9.-]/g, '')) || 0)),
             performance_before: {
               winRate,
               totalPnL,
