@@ -73,8 +73,15 @@ fi
 
 # Exit with error if HTTP code is not 200
 if [ "$HTTP_CODE" != "200" ]; then
+    echo "❌ Error: HTTP $HTTP_CODE - $BODY" >&2
     exit 1
 fi
+
+# Show success message when run manually
+echo "✅ Bot scheduler called successfully"
+echo "📊 Response: $BODY"
+echo "⏱️  Time: ${TIME_TOTAL}s"
+echo "📝 Full logs: $LOG_FILE"
 
 exit 0
 
