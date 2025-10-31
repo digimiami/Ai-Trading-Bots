@@ -192,31 +192,47 @@ class TimeSync {
   }
   
   static getCurrentTime(): number {
-    // Safety check: If offset is suspiciously large (> 5 minutes), ignore it
+    const now = Date.now();
+    
+    // CRITICAL: Safety check - If offset is suspiciously large (> 1 minute), reset it
     // Time sync offsets should typically be within a few seconds
-    const MAX_REASONABLE_OFFSET = 5 * 60 * 1000; // 5 minutes in milliseconds
+    const MAX_REASONABLE_OFFSET = 60 * 1000; // 1 minute in milliseconds (reduced from 5 minutes)
     
     if (Math.abs(this.serverTimeOffset) > MAX_REASONABLE_OFFSET) {
-      console.warn(`⚠️ Suspicious time offset detected: ${this.serverTimeOffset}ms (max: ${MAX_REASONABLE_OFFSET}ms). Using local time instead.`);
+      console.warn(`⚠️ Suspicious time offset detected: ${this.serverTimeOffset}ms (max: ${MAX_REASONABLE_OFFSET}ms). Resetting offset and using local time.`);
       // Reset offset and use local time
       this.serverTimeOffset = 0;
       this.lastSync = 0; // Force resync on next check
-      return Date.now();
+      return now;
     }
     
-    return Date.now() + this.serverTimeOffset;
+    const calculatedTime = now + this.serverTimeOffset;
+    
+    // CRITICAL: Validate the final calculated time is reasonable (within 1 year of now)
+    const MIN_VALID_TIME = now - (365 * 24 * 60 * 60 * 1000); // 1 year ago
+    const MAX_VALID_TIME = now + (365 * 24 * 60 * 60 * 1000); // 1 year in future
+    
+    if (calculatedTime < MIN_VALID_TIME || calculatedTime > MAX_VALID_TIME) {
+      console.error(`❌ Invalid timestamp calculated: ${new Date(calculatedTime).toISOString()} (offset: ${this.serverTimeOffset}ms). Using local time instead.`);
+      // Reset offset if it produces invalid time
+      this.serverTimeOffset = 0;
+      this.lastSync = 0;
+      return now;
+    }
+    
+    return calculatedTime;
   }
   
   static getCurrentTimeISO(): string {
     const currentTime = this.getCurrentTime();
-    
-    // Additional validation: Ensure the time is reasonable (not in the distant past or future)
     const now = Date.now();
+    
+    // Final validation: Double-check the time is still reasonable
     const MIN_VALID_TIME = now - (365 * 24 * 60 * 60 * 1000); // 1 year ago
     const MAX_VALID_TIME = now + (365 * 24 * 60 * 60 * 1000); // 1 year in future
     
     if (currentTime < MIN_VALID_TIME || currentTime > MAX_VALID_TIME) {
-      console.error(`❌ Invalid timestamp calculated: ${new Date(currentTime).toISOString()}. Using local time instead.`);
+      console.error(`❌ Invalid timestamp in getCurrentTimeISO: ${new Date(currentTime).toISOString()}. Using local time instead.`);
       return new Date().toISOString(); // Fallback to local time
     }
     
