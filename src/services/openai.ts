@@ -7,8 +7,9 @@ import type { TradingStrategy, AdvancedStrategyConfig } from '../types/trading';
 
 interface TradeAnalysis {
   symbol: string;
+  side?: string; // Optional: 'buy' or 'sell'
   entryPrice: number;
-  exitPrice: number;
+  exitPrice?: number; // Optional: may not be set for open positions
   pnl: number;
   indicators: {
     rsi: number;
@@ -238,9 +239,15 @@ PERFORMANCE METRICS:
 - Max Drawdown: ${metrics.maxDrawdown}%
 
 RECENT TRADES (last 20):
-${recentTrades.slice(0, 20).map(t => 
-  `- ${t.symbol} ${t.side.toUpperCase()}: ${t.outcome}, PnL: $${t.pnl?.toFixed(2) || 0}, Entry: $${t.entryPrice}, Exit: $${t.exitPrice || 'N/A'}`
-).join('\n')}
+${recentTrades.slice(0, 20).map(t => {
+  const side = t.side ? t.side.toUpperCase() : 'UNKNOWN';
+  const symbol = t.symbol || 'N/A';
+  const outcome = t.outcome || 'unknown';
+  const pnl = t.pnl?.toFixed(2) || '0.00';
+  const entryPrice = t.entryPrice || 'N/A';
+  const exitPrice = t.exitPrice || 'N/A';
+  return `- ${symbol} ${side}: ${outcome}, PnL: $${pnl}, Entry: $${entryPrice}, Exit: $${exitPrice}`;
+}).join('\n')}
 
 Provide optimized parameters as JSON. Keep values realistic and within trading best practices:
 {
