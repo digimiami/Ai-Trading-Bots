@@ -220,14 +220,25 @@ Provide a JSON response with:
     recentTrades: TradeAnalysis[],
     metrics: any
   ): string {
+    // Extract only essential fields from advancedConfig to reduce size
+    const essentialAdvancedConfig = strategies.advancedConfig ? {
+      bias_mode: strategies.advancedConfig.bias_mode,
+      risk_per_trade_pct: strategies.advancedConfig.risk_per_trade_pct,
+      adx_min_htf: strategies.advancedConfig.adx_min_htf,
+      regime_mode: strategies.advancedConfig.regime_mode,
+      sl_atr_mult: strategies.advancedConfig.sl_atr_mult,
+      tp1_r: strategies.advancedConfig.tp1_r,
+      tp2_r: strategies.advancedConfig.tp2_r
+    } : null;
+
     return `
-You are an expert trading strategy optimizer. Analyze performance and optimize strategy parameters.
+Optimize trading strategy. Analyze performance and suggest improvements.
 
 CURRENT STRATEGY:
-${JSON.stringify(strategies.strategy, null, 0)}
+${JSON.stringify(strategies.strategy)}
 
-${strategies.advancedConfig ? `ADVANCED CONFIG:
-${JSON.stringify(strategies.advancedConfig, null, 0)}` : ''}
+${essentialAdvancedConfig ? `ADVANCED (key params only):
+${JSON.stringify(essentialAdvancedConfig)}` : ''}
 
 PERFORMANCE:
 WR:${metrics.winRate}% PnL:$${metrics.totalPnL} PF:${metrics.profitFactor} SR:${metrics.sharpeRatio} DD:${metrics.maxDrawdown}%
@@ -282,14 +293,16 @@ Provide optimized parameters as JSON. Keep values realistic and within trading b
       const promptTokens = Math.ceil(prompt.length * 0.75);
       if (promptTokens > 50000) {
         console.warn(`⚠️ Large prompt detected (~${Math.round(promptTokens/1000)}K tokens). Prompt size: ${Math.round(prompt.length/1024)}KB`);
-        // If still too large, truncate prompt
+        // If still too large, truncate prompt more aggressively
         if (promptTokens > 100000) {
           console.error(`❌ Prompt too large (${Math.round(promptTokens/1000)}K tokens). Truncating...`);
-          // Keep only essential parts - cut strategy config details if present
-          const essentialParts = prompt.split('ADVANCED CONFIG:');
-          if (essentialParts.length > 1) {
-            // Remove detailed advanced config to save tokens
-            prompt = essentialParts[0] + 'ADVANCED CONFIG: [summary only]' + essentialParts[1].split('PERFORMANCE:')[0];
+          // Keep only essential parts - remove advanced config entirely if too large
+          const parts = prompt.split('ADVANCED');
+          if (parts.length > 1) {
+            prompt = parts[0] + 'PERFORMANCE: [metrics summary only]';
+          } else {
+            // If no ADVANCED section, just keep first 50000 chars
+            prompt = prompt.substring(0, 50000);
           }
         }
       }
