@@ -25,8 +25,13 @@ jobs:
             SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
             SUPABASE_DOTENV: "0"
         run: |
-            cat -A .env | head
             echo "Linking project without loading .env"
+            if [ -f .env ]; then
+              echo "⚠️ .env file found (this should not be committed)"
+              head -5 .env || echo "Could not read .env"
+            else
+              echo "✅ No .env file (as expected - environment variables via secrets)"
+            fi
             supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_ID }} --debug
         
       
