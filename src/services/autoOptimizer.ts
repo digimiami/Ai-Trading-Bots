@@ -233,7 +233,8 @@ class AutoOptimizer {
           entryPrice: t.entryPrice,
           exitPrice: t.exitPrice || t.entryPrice,
           pnl: t.pnl || 0,
-          indicators: t.indicators || {},
+          // Don't send indicators - they can be huge nested objects
+          // indicators: t.indicators || {},
           outcome: (t.pnl || 0) > 0 ? 'win' as const : 'loss' as const,
           timestamp: t.timestamp
         })),

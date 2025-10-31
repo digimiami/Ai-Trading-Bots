@@ -221,11 +221,20 @@ Provide a JSON response with:
     metrics: any
   ): string {
     // Check input size first - if strategies are huge, use minimal format immediately
-    const strategyStrSize = JSON.stringify(strategies.strategy).length;
-    const advancedStrSize = strategies.advancedConfig ? JSON.stringify(strategies.advancedConfig).length : 0;
+    // Use try-catch in case strategy has circular references or huge nested objects
+    let strategyStrSize = 0;
+    let advancedStrSize = 0;
+    try {
+      strategyStrSize = JSON.stringify(strategies.strategy || {}).length;
+      advancedStrSize = strategies.advancedConfig ? JSON.stringify(strategies.advancedConfig).length : 0;
+    } catch (e) {
+      console.error('Error stringifying strategies:', e);
+      // If stringify fails (circular refs, etc), use minimal format
+      return this.buildMinimalPrompt(strategies, metrics, recentTrades);
+    }
     
-    // If input is already too large (over 100KB), use minimal format
-    if (strategyStrSize + advancedStrSize > 100000) {
+    // If input is already too large (over 50KB), use minimal format
+    if (strategyStrSize + advancedStrSize > 50000) {
       console.warn(`⚠️ Input strategies too large (${Math.round((strategyStrSize + advancedStrSize)/1024)}KB). Using minimal format.`);
       return this.buildMinimalPrompt(strategies, metrics, recentTrades);
     }
