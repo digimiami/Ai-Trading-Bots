@@ -37,14 +37,42 @@ class TimeSync {
          throw new Error(`Bybit time sync failed: ${data.retMsg || 'Invalid response'}`);
       }
 
-      // V5 returns time in seconds and milliseconds separately
-      const serverTime = parseInt(data.result.timeSecond) * 1000 + parseInt(data.result.timeNano) / 1000000;
+      // V5 returns time in seconds and nanoseconds separately
+      // timeSecond: Unix timestamp in seconds (e.g., 1730458320)
+      // timeNano: nanoseconds since that second (e.g., 123456789)
+      const timeSecondStr = String(data.result.timeSecond || '').trim();
+      const timeNanoStr = String(data.result.timeNano || '0').trim();
+      
+      // Validate and parse - ensure we get numbers, not NaN
+      const timeSecond = Number(timeSecondStr);
+      const timeNano = Number(timeNanoStr);
+      
+      if (!Number.isFinite(timeSecond) || timeSecond <= 0) {
+        throw new Error(`Invalid timeSecond value: ${timeSecondStr}`);
+      }
+      
+      // Validate timeSecond is reasonable (between 2020 and 2050)
+      const minTimestamp = 1577836800; // 2020-01-01
+      const maxTimestamp = 2524608000; // 2050-01-01
+      if (timeSecond < minTimestamp || timeSecond > maxTimestamp) {
+        console.error(`⚠️ Suspicious timeSecond value: ${timeSecond} (expected between ${minTimestamp} and ${maxTimestamp})`);
+        // Try to continue anyway, but log the issue
+      }
+      
+      // Convert to milliseconds: seconds * 1000 + nanoseconds / 1000000
+      const serverTime = timeSecond * 1000 + (Number.isFinite(timeNano) ? timeNano / 1000000 : 0);
       const endTime = Date.now();
       
-      // Account for network latency
+      // Account for network latency (half round trip time)
       const latency = (endTime - startTime) / 2;
-      this.serverTimeOffset = serverTime - (startTime + latency);
+      const localTimeAtSync = startTime + latency;
+      this.serverTimeOffset = serverTime - localTimeAtSync;
       this.lastSync = Date.now();
+      
+      // Debug logging to catch calculation errors
+      if (Math.abs(this.serverTimeOffset) > 60000) { // More than 1 minute offset is suspicious
+        console.warn(`⚠️ Large time offset detected: ${this.serverTimeOffset.toFixed(2)}ms. Server time: ${serverTime}, Local: ${localTimeAtSync}`);
+      }
       
       console.log(`Time synced with Bybit. Offset: ${this.serverTimeOffset.toFixed(2)}ms`);
     } catch (error) {
@@ -1806,10 +1834,14 @@ serve(async (req) => {
         })
 
       case 'execute_all_bots':
+        console.log('🚀 === BOT EXECUTION STARTED ===');
+        console.log(`📅 Timestamp: ${new Date().toISOString()}`);
+        console.log(`🔐 Auth mode: ${isCron ? 'CRON (service role)' : 'User (' + user?.id + ')'}`);
+        
         if (isCron) {
           console.log('🔍 Cron: Looking for all running bots (service role)')
         } else {
-          console.log(`🔍 Looking for running bots for user: ${user.id}`)
+          console.log(`🔍 Looking for running bots for user: ${user?.id}`)
         }
         
         let query = supabaseClient
@@ -1819,36 +1851,93 @@ serve(async (req) => {
         if (!isCron) {
           query = query.eq('user_id', user.id)
         }
-        const { data: bots } = await query
         
-        const botList = Array.isArray(bots) ? bots : (bots ? [bots] : [])
-        console.log(`📊 Found ${botList.length} running bots${isCron ? '' : ` for user ${user.id}`}:`, botList.map(b => ({ id: b.id, user_id: b.user_id, name: b.name, exchange: b.exchange, symbol: b.symbol })))
+        console.log('📊 Querying database for running bots...');
+        const { data: bots, error: queryError } = await query;
+        
+        if (queryError) {
+          console.error('❌ Database query error:', queryError);
+          return new Response(JSON.stringify({ 
+            success: false, 
+            error: 'Database query failed',
+            details: queryError.message 
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+        
+        const botList = Array.isArray(bots) ? bots : (bots ? [bots] : []);
+        
+        console.log(`📊 Database query result: Found ${botList.length} running bots${isCron ? ' (all users)' : ` for user ${user?.id}`}`);
+        
+        if (botList.length > 0) {
+          console.log('📋 Bot details:', botList.map(b => ({ 
+            id: b.id, 
+            user_id: b.user_id, 
+            name: b.name, 
+            exchange: b.exchange, 
+            symbol: b.symbol,
+            status: b.status,
+            strategy: b.strategy ? 'configured' : 'missing'
+          })));
+        }
         
         if (!botList || botList.length === 0) {
-          console.log('⚠️ No running bots found for user');
+          console.log('⚠️ No running bots found');
+          console.log('💡 Tip: Check if bots are set to "running" status in the database');
+          console.log('💡 Tip: Verify bot-scheduler cron job is configured correctly');
           return new Response(JSON.stringify({ 
             success: true, 
             message: 'No running bots found',
-            botsExecuted: 0 
+            botsExecuted: 0,
+            suggestion: 'Check if bots are set to "running" status and verify cron job is configured'
           }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          })
+          });
         }
         
-        console.log(`🚀 Executing ${botList.length} running bots${isCron ? '' : ` for user ${user.id}`}`)
+        console.log(`🚀 Executing ${botList.length} running bots${isCron ? ' (all users)' : ` for user ${user?.id}`}`);
         
         const results = await Promise.allSettled(
           botList.map(async (bot) => {
-            console.log(`🤖 Executing bot: ${bot.name} (${bot.exchange}/${bot.symbol})`)
-            const exec = new BotExecutor(supabaseClient, { id: isCron ? bot.user_id : user.id })
-            return exec.executeBot(bot)
+            const botStartTime = Date.now();
+            console.log(`\n🤖 [${bot.name}] Starting execution...`);
+            console.log(`   - ID: ${bot.id}`);
+            console.log(`   - Exchange: ${bot.exchange}`);
+            console.log(`   - Symbol: ${bot.symbol}`);
+            console.log(`   - User: ${bot.user_id}`);
+            
+            try {
+              const exec = new BotExecutor(supabaseClient, { id: isCron ? bot.user_id : user.id });
+              const result = await exec.executeBot(bot);
+              const duration = Date.now() - botStartTime;
+              console.log(`✅ [${bot.name}] Execution completed in ${duration}ms`);
+              return result;
+            } catch (error) {
+              const duration = Date.now() - botStartTime;
+              console.error(`❌ [${bot.name}] Execution failed after ${duration}ms:`, error);
+              throw error;
+            }
           })
-        )
+        );
         
-        const successful = results.filter(r => r.status === 'fulfilled').length
-        const failed = results.filter(r => r.status === 'rejected').length
+        const successful = results.filter(r => r.status === 'fulfilled').length;
+        const failed = results.filter(r => r.status === 'rejected').length;
         
-        console.log(`📈 Execution complete: ${successful} successful, ${failed} failed`);
+        console.log(`\n📈 === EXECUTION SUMMARY ===`);
+        console.log(`✅ Successful: ${successful}`);
+        console.log(`❌ Failed: ${failed}`);
+        console.log(`📊 Total: ${botList.length}`);
+        
+        if (failed > 0) {
+          console.log('\n❌ Failed bot executions:');
+          results.forEach((result, index) => {
+            if (result.status === 'rejected') {
+              console.error(`   - ${botList[index].name}: ${result.reason}`);
+            }
+          });
+        }
         
         return new Response(JSON.stringify({ 
           success: true, 
