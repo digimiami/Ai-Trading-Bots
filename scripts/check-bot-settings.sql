@@ -92,22 +92,30 @@ WITH bot_stats AS (
         COALESCE((b.strategy_config->>'weekly_loss_limit_pct')::numeric, 20.0) as weekly_loss_limit_pct,
         COALESCE((b.strategy_config->>'max_trades_per_day')::int, 10) as max_trades_per_day,
         COALESCE((b.strategy_config->>'max_concurrent')::int, 3) as max_concurrent_positions,
-        -- Calculate current stats
+        -- Calculate current stats (matching function logic exactly)
         (SELECT COUNT(*) FROM trades 
          WHERE bot_id = b.id 
-         AND executed_at >= DATE_TRUNC('day', NOW() AT TIME ZONE 'UTC'))::int as trades_today,
+         AND executed_at IS NOT NULL
+         AND executed_at >= DATE_TRUNC('day', NOW() AT TIME ZONE 'UTC')
+         AND executed_at < DATE_TRUNC('day', NOW() AT TIME ZONE 'UTC') + INTERVAL '1 day'
+         AND status IN ('filled', 'completed', 'closed'))::int as trades_today,
         (SELECT COUNT(*) FROM trades 
          WHERE bot_id = b.id 
          AND status IN ('open', 'pending')
          AND executed_at IS NOT NULL)::int as open_positions,
-        (SELECT SUM(CASE WHEN pnl < 0 THEN ABS(pnl) ELSE 0 END) 
+        (SELECT COALESCE(SUM(ABS(CASE WHEN pnl < 0 THEN pnl ELSE 0 END)), 0) 
          FROM trades 
          WHERE bot_id = b.id 
-         AND executed_at >= DATE_TRUNC('day', NOW() AT TIME ZONE 'UTC'))::numeric as daily_loss,
-        (SELECT SUM(CASE WHEN pnl < 0 THEN ABS(pnl) ELSE 0 END) 
+         AND executed_at IS NOT NULL
+         AND executed_at >= DATE_TRUNC('day', NOW() AT TIME ZONE 'UTC')
+         AND executed_at < DATE_TRUNC('day', NOW() AT TIME ZONE 'UTC') + INTERVAL '1 day'
+         AND status IN ('filled', 'completed', 'closed'))::numeric as daily_loss,
+        (SELECT COALESCE(SUM(ABS(CASE WHEN pnl < 0 THEN pnl ELSE 0 END)), 0) 
          FROM trades 
          WHERE bot_id = b.id 
-         AND executed_at >= DATE_TRUNC('week', NOW() AT TIME ZONE 'UTC'))::numeric as weekly_loss
+         AND executed_at IS NOT NULL
+         AND executed_at >= DATE_TRUNC('week', NOW() AT TIME ZONE 'UTC')
+         AND status IN ('filled', 'completed', 'closed'))::numeric as weekly_loss
     FROM trading_bots b
     WHERE b.status = 'running'
 )
