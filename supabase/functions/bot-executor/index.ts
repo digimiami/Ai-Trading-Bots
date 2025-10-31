@@ -38,29 +38,52 @@ class TimeSync {
       }
 
       // V5 returns time in seconds and nanoseconds separately
-      // timeSecond: Unix timestamp in seconds (e.g., 1730458320)
+      // NOTE: Some Bybit endpoints may return timeSecond already in milliseconds
+      // timeSecond: Unix timestamp in seconds (e.g., 1730458320) OR milliseconds (e.g., 1730458320000)
       // timeNano: nanoseconds since that second (e.g., 123456789)
       const timeSecondStr = String(data.result.timeSecond || '').trim();
       const timeNanoStr = String(data.result.timeNano || '0').trim();
       
       // Validate and parse - ensure we get numbers, not NaN
-      const timeSecond = Number(timeSecondStr);
+      let timeSecond = Number(timeSecondStr);
       const timeNano = Number(timeNanoStr);
       
       if (!Number.isFinite(timeSecond) || timeSecond <= 0) {
         throw new Error(`Invalid timeSecond value: ${timeSecondStr}`);
       }
       
-      // Validate timeSecond is reasonable (between 2020 and 2050)
-      const minTimestamp = 1577836800; // 2020-01-01
-      const maxTimestamp = 2524608000; // 2050-01-01
-      if (timeSecond < minTimestamp || timeSecond > maxTimestamp) {
-        console.error(`⚠️ Suspicious timeSecond value: ${timeSecond} (expected between ${minTimestamp} and ${maxTimestamp})`);
-        // Try to continue anyway, but log the issue
-      }
+      // CRITICAL FIX: Detect if timeSecond is already in milliseconds
+      // Unix timestamp in seconds: 1577836800 (2020) to 2524608000 (2050)
+      // Unix timestamp in milliseconds: 1577836800000 (2020) to 2524608000000 (2050)
+      // If timeSecond > 10000000000, it's likely already in milliseconds
+      const MIN_SECONDS = 1577836800; // 2020-01-01 in seconds
+      const MAX_SECONDS = 2524608000; // 2050-01-01 in seconds
+      const MIN_MILLIS = 1577836800000; // 2020-01-01 in milliseconds
+      const MAX_MILLIS = 2524608000000; // 2050-01-01 in milliseconds
       
-      // Convert to milliseconds: seconds * 1000 + nanoseconds / 1000000
-      const serverTime = timeSecond * 1000 + (Number.isFinite(timeNano) ? timeNano / 1000000 : 0);
+      let serverTime: number;
+      
+      if (timeSecond >= MIN_SECONDS && timeSecond <= MAX_SECONDS) {
+        // timeSecond is in seconds - convert to milliseconds
+        console.log(`✅ Detected timeSecond in seconds: ${timeSecond}`);
+        serverTime = timeSecond * 1000 + (Number.isFinite(timeNano) ? timeNano / 1000000 : 0);
+      } else if (timeSecond >= MIN_MILLIS && timeSecond <= MAX_MILLIS) {
+        // timeSecond is already in milliseconds
+        console.log(`✅ Detected timeSecond already in milliseconds: ${timeSecond}`);
+        serverTime = timeSecond + (Number.isFinite(timeNano) ? timeNano / 1000000 : 0);
+      } else {
+        // Invalid or suspicious value - log and use as-is but warn
+        console.error(`⚠️ Suspicious timeSecond value: ${timeSecond} (not in expected range)`);
+        // Try to detect format: if > 10 billion, assume milliseconds
+        if (timeSecond > 10000000000) {
+          console.log(`⚠️ Assuming timeSecond is in milliseconds due to large value`);
+          serverTime = timeSecond + (Number.isFinite(timeNano) ? timeNano / 1000000 : 0);
+        } else {
+          // Assume seconds and convert
+          console.log(`⚠️ Assuming timeSecond is in seconds`);
+          serverTime = timeSecond * 1000 + (Number.isFinite(timeNano) ? timeNano / 1000000 : 0);
+        }
+      }
       const endTime = Date.now();
       
       // Account for network latency (half round trip time)
