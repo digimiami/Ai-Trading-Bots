@@ -782,9 +782,10 @@ class BotExecutor {
       
       if (bot.exchange === 'bybit') {
         // Check balance for Bybit before placing order
-        const hasBalance = await this.checkBybitBalance(apiKey, apiSecret, apiKeys.is_testnet, bot.symbol, tradeSignal.side, orderValue, tradingType);
-        if (!hasBalance) {
-          throw new Error(`Insufficient balance for ${bot.symbol} ${tradeSignal.side} order. Order value: $${orderValue.toFixed(2)}. Please check your account balance or wait for funds to become available.`);
+        const balanceCheck = await this.checkBybitBalance(apiKey, apiSecret, apiKeys.is_testnet, bot.symbol, tradeSignal.side, orderValue, tradingType);
+        if (!balanceCheck.hasBalance) {
+          const shortfall = balanceCheck.totalRequired - balanceCheck.availableBalance;
+          throw new Error(`Insufficient balance for ${bot.symbol} ${tradeSignal.side} order. Available: $${balanceCheck.availableBalance.toFixed(2)}, Required: $${balanceCheck.totalRequired.toFixed(2)} (order: $${orderValue.toFixed(2)} + 5% buffer). Shortfall: $${shortfall.toFixed(2)}. Please add funds to your Bybit ${tradingType === 'futures' ? 'UNIFIED/Futures' : 'Spot'} wallet.`);
         }
         return await this.placeBybitOrder(apiKey, apiSecret, apiKeys.is_testnet, bot.symbol, tradeSignal.side, amount, price, tradingType);
       } else if (bot.exchange === 'okx') {
@@ -948,9 +949,14 @@ class BotExecutor {
   
   /**
    * Check if account has sufficient balance for order
-   * Returns true if balance is sufficient, false otherwise
+   * Returns balance check result with details
    */
-  private async checkBybitBalance(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string, side: string, orderValue: number, tradingType: string): Promise<boolean> {
+  private async checkBybitBalance(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string, side: string, orderValue: number, tradingType: string): Promise<{
+    hasBalance: boolean;
+    availableBalance: number;
+    totalRequired: number;
+    orderValue: number;
+  }> {
     const baseUrl = isTestnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com';
     
     try {
@@ -985,14 +991,25 @@ class BotExecutor {
         
         if (data.retCode !== 0) {
           console.warn(`⚠️ Failed to check balance (retCode: ${data.retCode}), proceeding with order attempt:`, data.retMsg);
-          return true; // If we can't check, let the order attempt happen (will fail gracefully)
+          // Return unknown balance status - let order attempt happen
+          return {
+            hasBalance: true, // Assume sufficient if we can't check
+            availableBalance: 0,
+            totalRequired: orderValue * 1.05,
+            orderValue: orderValue
+          };
         }
         
         // Extract available balance
         const wallet = data.result?.list?.[0]?.coin?.[0];
         if (!wallet) {
           console.warn('⚠️ Could not parse balance response, proceeding with order attempt');
-          return true;
+          return {
+            hasBalance: true, // Assume sufficient if we can't parse
+            availableBalance: 0,
+            totalRequired: orderValue * 1.05,
+            orderValue: orderValue
+          };
         }
         
         // Extract available balance - try multiple fields for compatibility
@@ -1014,11 +1031,22 @@ class BotExecutor {
         
         if (availableBalance >= totalRequired) {
           console.log(`✅ Sufficient balance: $${availableBalance.toFixed(2)} >= $${totalRequired.toFixed(2)} (required + 5% buffer)`);
-          return true;
+          return {
+            hasBalance: true,
+            availableBalance: availableBalance,
+            totalRequired: totalRequired,
+            orderValue: orderValue
+          };
         } else {
+          const shortfall = totalRequired - availableBalance;
           console.warn(`⚠️ Insufficient balance: $${availableBalance.toFixed(2)} < $${totalRequired.toFixed(2)} (required + 5% buffer)`);
-          console.warn(`💡 Tip: Add at least $${Math.ceil(totalRequired)} to your Bybit UNIFIED/Futures wallet to enable trading`);
-          return false;
+          console.warn(`💡 Tip: Add at least $${Math.ceil(shortfall)} to your Bybit UNIFIED/Futures wallet to enable trading`);
+          return {
+            hasBalance: false,
+            availableBalance: availableBalance,
+            totalRequired: totalRequired,
+            orderValue: orderValue
+          };
         }
       } else {
         // For spot, check spot wallet balance
@@ -1040,14 +1068,24 @@ class BotExecutor {
         
         if (data.retCode !== 0) {
           console.warn(`⚠️ Failed to check balance (retCode: ${data.retCode}), proceeding with order attempt:`, data.retMsg);
-          return true; // If we can't check, let the order attempt happen
+          return {
+            hasBalance: true, // Assume sufficient if we can't check
+            availableBalance: 0,
+            totalRequired: orderValue * 1.05,
+            orderValue: orderValue
+          };
         }
         
         // Extract available balance
         const wallet = data.result?.list?.[0]?.coin?.[0];
         if (!wallet) {
           console.warn('⚠️ Could not parse balance response, proceeding with order attempt');
-          return true;
+          return {
+            hasBalance: true, // Assume sufficient if we can't parse
+            availableBalance: 0,
+            totalRequired: orderValue * 1.05,
+            orderValue: orderValue
+          };
         }
         
         const availableBalance = parseFloat(wallet.availableToWithdraw || wallet.availableBalance || '0');
@@ -1061,15 +1099,33 @@ class BotExecutor {
         
         if (availableBalance >= totalRequired) {
           console.log(`✅ Sufficient balance: $${availableBalance.toFixed(2)} >= $${totalRequired.toFixed(2)} (required + 5% buffer)`);
-          return true;
+          return {
+            hasBalance: true,
+            availableBalance: availableBalance,
+            totalRequired: totalRequired,
+            orderValue: orderValue
+          };
         } else {
+          const shortfall = totalRequired - availableBalance;
           console.warn(`⚠️ Insufficient balance: $${availableBalance.toFixed(2)} < $${totalRequired.toFixed(2)} (required + 5% buffer)`);
-          return false;
+          console.warn(`💡 Tip: Add at least $${Math.ceil(shortfall)} to your Bybit Spot wallet to enable trading`);
+          return {
+            hasBalance: false,
+            availableBalance: availableBalance,
+            totalRequired: totalRequired,
+            orderValue: orderValue
+          };
         }
       }
     } catch (error) {
       console.warn('⚠️ Error checking balance, proceeding with order attempt:', error);
-      return true; // If check fails, let the order attempt happen (will fail gracefully if insufficient)
+      // Return unknown balance status - let order attempt happen
+      return {
+        hasBalance: true, // Assume sufficient if check fails
+        availableBalance: 0,
+        totalRequired: orderValue * 1.05,
+        orderValue: orderValue
+      };
     }
   }
 
