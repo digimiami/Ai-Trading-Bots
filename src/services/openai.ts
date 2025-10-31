@@ -220,6 +220,16 @@ Provide a JSON response with:
     recentTrades: TradeAnalysis[],
     metrics: any
   ): string {
+    // Check input size first - if strategies are huge, use minimal format immediately
+    const strategyStrSize = JSON.stringify(strategies.strategy).length;
+    const advancedStrSize = strategies.advancedConfig ? JSON.stringify(strategies.advancedConfig).length : 0;
+    
+    // If input is already too large (over 100KB), use minimal format
+    if (strategyStrSize + advancedStrSize > 100000) {
+      console.warn(`⚠️ Input strategies too large (${Math.round((strategyStrSize + advancedStrSize)/1024)}KB). Using minimal format.`);
+      return this.buildMinimalPrompt(strategies, metrics, recentTrades);
+    }
+
     // Extract only essential numeric values to minimize size
     const strategySummary = {
       rsi: strategies.strategy.rsiThreshold,
