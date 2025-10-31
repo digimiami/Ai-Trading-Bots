@@ -224,22 +224,22 @@ Provide a JSON response with:
 You are an expert trading strategy optimizer. Analyze performance and optimize strategy parameters.
 
 CURRENT STRATEGY:
-${JSON.stringify(strategies.strategy)}
+${JSON.stringify(strategies.strategy, null, 0)}
 
 ${strategies.advancedConfig ? `ADVANCED CONFIG:
-${JSON.stringify(strategies.advancedConfig)}` : ''}
+${JSON.stringify(strategies.advancedConfig, null, 0)}` : ''}
 
 PERFORMANCE:
-Win Rate: ${metrics.winRate}%, PnL: $${metrics.totalPnL}, PF: ${metrics.profitFactor}, Sharpe: ${metrics.sharpeRatio}, DD: ${metrics.maxDrawdown}%
+WR:${metrics.winRate}% PnL:$${metrics.totalPnL} PF:${metrics.profitFactor} SR:${metrics.sharpeRatio} DD:${metrics.maxDrawdown}%
 
-RECENT TRADES (last 8 - most relevant, simplified):
-${recentTrades.slice(-8).map(t => {
-  const side = t.side ? t.side.toUpperCase() : 'UNK';
-  const symbol = t.symbol || 'N/A';
-  const outcome = t.outcome || 'unknown';
-  const pnl = t.pnl?.toFixed(1) || '0.0';
-  return `${symbol} ${side}: ${outcome}, PnL:$${pnl}`;
-}).join(', ')}
+RECENT TRADES (last 5):
+${recentTrades.slice(-5).map(t => {
+  const side = t.side ? t.side[0].toUpperCase() : '?';
+  const symbol = (t.symbol || 'N/A').substring(0, 8);
+  const outcome = (t.outcome || 'u')[0];
+  const pnl = parseFloat((t.pnl || 0).toFixed(0));
+  return `${symbol}${side}:${outcome} $${pnl}`;
+}).join(' ')}
 
 Provide optimized parameters as JSON. Keep values realistic and within trading best practices:
 {
@@ -278,9 +278,20 @@ Provide optimized parameters as JSON. Keep values realistic and within trading b
    */
   private async callOpenAI(prompt: string, useJsonMode: boolean = true): Promise<any> {
       // Check prompt size and warn if too large
-      const promptTokens = Math.ceil(prompt.length / 4); // Rough estimate: 1 token ≈ 4 characters
-      if (promptTokens > 100000) {
-        console.warn(`⚠️ Large prompt detected (~${Math.round(promptTokens/1000)}K tokens). Consider reducing trade history.`);
+      // More accurate token estimate: ~0.75 tokens per character for English text
+      const promptTokens = Math.ceil(prompt.length * 0.75);
+      if (promptTokens > 50000) {
+        console.warn(`⚠️ Large prompt detected (~${Math.round(promptTokens/1000)}K tokens). Prompt size: ${Math.round(prompt.length/1024)}KB`);
+        // If still too large, truncate prompt
+        if (promptTokens > 100000) {
+          console.error(`❌ Prompt too large (${Math.round(promptTokens/1000)}K tokens). Truncating...`);
+          // Keep only essential parts - cut strategy config details if present
+          const essentialParts = prompt.split('ADVANCED CONFIG:');
+          if (essentialParts.length > 1) {
+            // Remove detailed advanced config to save tokens
+            prompt = essentialParts[0] + 'ADVANCED CONFIG: [summary only]' + essentialParts[1].split('PERFORMANCE:')[0];
+          }
+        }
       }
 
       const body: any = {

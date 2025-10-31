@@ -217,10 +217,10 @@ class AutoOptimizer {
         return null;
       }
 
-      // Limit trades to reduce token usage (last 8 trades max)
+      // Limit trades to reduce token usage (last 5 trades max)
       // This prevents OpenAI rate limit errors (800K tokens/min limit)
       // Using only most recent trades which are most relevant
-      const limitedTrades = performance.recentTrades.slice(-8);
+      const limitedTrades = performance.recentTrades.slice(-5);
 
       // Use OpenAI to optimize the strategy
       const optimization = await openAIService.optimizeStrategy(
