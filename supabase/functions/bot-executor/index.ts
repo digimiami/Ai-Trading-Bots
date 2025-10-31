@@ -1293,19 +1293,26 @@ class BotExecutor {
   }
 
   /**
-   * Get daily loss for bot (last 24 hours)
+   * Get daily loss for bot (last 24 hours, UTC timezone)
    */
   private async getDailyLoss(botId: string): Promise<number> {
     try {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const todayISO = today.toISOString();
+      // Get today's date in UTC (start of day at 00:00:00 UTC)
+      const now = new Date();
+      const todayUTC = new Date(Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate(),
+        0, 0, 0, 0
+      ));
+      const todayISO = todayUTC.toISOString();
 
       const { data: trades } = await this.supabaseClient
         .from('trades')
         .select('pnl')
         .eq('bot_id', botId)
-        .gte('executed_at', todayISO);
+        .gte('executed_at', todayISO)
+        .in('status', ['filled', 'completed', 'closed']); // Only count executed trades
 
       if (!trades || trades.length === 0) {
         return 0;
