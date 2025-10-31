@@ -229,83 +229,162 @@ export default function PairRecommendations({
           </div>
         </div>
 
-        {/* Strategy & Advanced Config Changes */}
-        {recommendation.changes.length > 0 && (
-          <div className="mt-4">
-            <button
-              onClick={() => setShowDetails(!showDetails)}
-              className="text-sm text-purple-600 hover:text-purple-800 font-medium flex items-center"
-            >
-              <i className={`ri-arrow-${showDetails ? 'up' : 'down'}-s-line mr-1`}></i>
-              {recommendation.changes.length} Optimization{recommendation.changes.length !== 1 ? 's' : ''} Recommended
-              <span className="ml-2 text-xs text-gray-500">
-                ({recommendation.changes.filter(c => c.parameter.startsWith('Strategy.')).length} Strategy, {recommendation.changes.filter(c => c.parameter.startsWith('Advanced.')).length} Advanced)
-              </span>
-            </button>
-
-            {showDetails && (
-              <div className="mt-2 bg-white rounded-lg p-3 border border-gray-200">
-                <div className="space-y-3">
-                  {/* Strategy Parameters */}
-                  {recommendation.changes.filter(c => c.parameter.startsWith('Strategy.')).length > 0 && (
-                    <div>
-                      <h4 className="text-xs font-semibold text-gray-700 mb-2 flex items-center">
-                        <i className="ri-settings-3-line mr-1"></i>
-                        Strategy Parameters
-                      </h4>
-                      <div className="space-y-1">
-                        {recommendation.changes
-                          .filter(c => c.parameter.startsWith('Strategy.'))
-                          .map((change, idx) => (
-                            <div key={idx} className="flex items-center justify-between text-xs py-1 px-2 bg-blue-50 rounded border-b border-blue-100 last:border-0">
-                              <div className="flex-1">
-                                <span className="font-medium text-gray-700">{change.parameter.replace('Strategy.', '')}:</span>
-                                <span className="ml-2 text-gray-500 line-through">{String(change.defaultValue)}</span>
-                                <span className="mx-2 text-gray-400">→</span>
-                                <span className="text-green-600 font-semibold">{String(change.recommendedValue)}</span>
-                              </div>
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Advanced Config Parameters */}
-                  {recommendation.changes.filter(c => c.parameter.startsWith('Advanced.')).length > 0 && (
-                    <div>
-                      <h4 className="text-xs font-semibold text-gray-700 mb-2 flex items-center">
-                        <i className="ri-settings-4-line mr-1"></i>
-                        ⚙️ Advanced Strategy Configuration
-                      </h4>
-                      <div className="space-y-1 max-h-64 overflow-y-auto">
-                        {recommendation.changes
-                          .filter(c => c.parameter.startsWith('Advanced.'))
-                          .map((change, idx) => (
-                            <div key={idx} className="flex items-center justify-between text-xs py-1 px-2 bg-purple-50 rounded border-b border-purple-100 last:border-0">
-                              <div className="flex-1">
-                                <span className="font-medium text-gray-700">{change.parameter.replace('Advanced.', '')}:</span>
-                                <span className="ml-2 text-gray-500 line-through">{String(change.defaultValue)}</span>
-                                <span className="mx-2 text-gray-400">→</span>
-                                <span className="text-green-600 font-semibold">{String(change.recommendedValue)}</span>
-                                <span className="ml-2 text-xs text-gray-400">({change.reason})</span>
-                              </div>
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
+        {/* Strategy & Advanced Config Changes - Always show */}
+        <div className="mt-4">
+          <button
+            onClick={() => setShowDetails(!showDetails)}
+            className="text-sm text-purple-600 hover:text-purple-800 font-medium flex items-center"
+          >
+            <i className={`ri-arrow-${showDetails ? 'up' : 'down'}-s-line mr-1`}></i>
+            {recommendation.changes.length > 0 ? (
+              <>
+                {recommendation.changes.length} Optimization{recommendation.changes.length !== 1 ? 's' : ''} Recommended
+                <span className="ml-2 text-xs text-gray-500">
+                  ({recommendation.changes.filter(c => c.parameter.startsWith('Strategy.')).length} Strategy, {recommendation.changes.filter(c => c.parameter.startsWith('Advanced.')).length} Advanced)
+                </span>
+              </>
+            ) : (
+              <>
+                View All Recommended Parameters
+                <span className="ml-2 text-xs text-gray-500">
+                  (Strategy + Advanced Config)
+                </span>
+              </>
             )}
-          </div>
-        )}
+          </button>
+
+          {showDetails && (
+            <div className="mt-2 bg-white rounded-lg p-3 border border-gray-200">
+              <div className="space-y-3">
+                {/* Strategy Parameters - Always show */}
+                <div>
+                  <h4 className="text-xs font-semibold text-gray-700 mb-2 flex items-center">
+                    <i className="ri-settings-3-line mr-1"></i>
+                    Strategy Parameters
+                  </h4>
+                  <div className="space-y-1 max-h-48 overflow-y-auto">
+                    {recommendation.strategy && (
+                      <>
+                        <div className="flex items-center justify-between text-xs py-1 px-2 bg-blue-50 rounded">
+                          <span className="font-medium text-gray-700">RSI Threshold:</span>
+                          <span className="text-green-600 font-semibold">{recommendation.strategy.rsiThreshold}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs py-1 px-2 bg-blue-50 rounded">
+                          <span className="font-medium text-gray-700">ADX Threshold:</span>
+                          <span className="text-green-600 font-semibold">{recommendation.strategy.adxThreshold}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs py-1 px-2 bg-blue-50 rounded">
+                          <span className="font-medium text-gray-700">BB Width Threshold:</span>
+                          <span className="text-green-600 font-semibold">{recommendation.strategy.bbWidthThreshold}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs py-1 px-2 bg-blue-50 rounded">
+                          <span className="font-medium text-gray-700">EMA Slope:</span>
+                          <span className="text-green-600 font-semibold">{recommendation.strategy.emaSlope}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs py-1 px-2 bg-blue-50 rounded">
+                          <span className="font-medium text-gray-700">ATR Percentage:</span>
+                          <span className="text-green-600 font-semibold">{recommendation.strategy.atrPercentage}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs py-1 px-2 bg-blue-50 rounded">
+                          <span className="font-medium text-gray-700">Momentum Threshold:</span>
+                          <span className="text-green-600 font-semibold">{recommendation.strategy.momentumThreshold}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs py-1 px-2 bg-blue-50 rounded">
+                          <span className="font-medium text-gray-700">Use ML Prediction:</span>
+                          <span className="text-green-600 font-semibold">{recommendation.strategy.useMLPrediction ? 'Yes' : 'No'}</span>
+                        </div>
+                      </>
+                    )}
+                    {/* Show changes if any */}
+                    {recommendation.changes
+                      .filter(c => c.parameter.startsWith('Strategy.'))
+                      .map((change, idx) => (
+                        <div key={`change-${idx}`} className="flex items-center justify-between text-xs py-1 px-2 bg-yellow-50 rounded border border-yellow-200">
+                          <div className="flex-1">
+                            <span className="font-medium text-gray-700">{change.parameter.replace('Strategy.', '')}:</span>
+                            <span className="ml-2 text-gray-500 line-through">{String(change.defaultValue)}</span>
+                            <span className="mx-2 text-gray-400">→</span>
+                            <span className="text-green-600 font-semibold">{String(change.recommendedValue)}</span>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+
+                {/* Advanced Config Parameters - Always show */}
+                {recommendation.advancedConfig && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-gray-700 mb-2 flex items-center">
+                      <i className="ri-settings-4-line mr-1"></i>
+                      ⚙️ Advanced Strategy Configuration
+                    </h4>
+                    <div className="space-y-1 max-h-64 overflow-y-auto">
+                      {/* Show key advanced config parameters */}
+                      <div className="grid grid-cols-2 gap-1 text-xs">
+                        <div className="py-1 px-2 bg-purple-50 rounded">
+                          <span className="font-medium text-gray-700">Risk/Trade:</span>
+                          <span className="ml-1 text-green-600 font-semibold">{recommendation.advancedConfig.risk_per_trade_pct}%</span>
+                        </div>
+                        <div className="py-1 px-2 bg-purple-50 rounded">
+                          <span className="font-medium text-gray-700">Max Trades/Day:</span>
+                          <span className="ml-1 text-green-600 font-semibold">{recommendation.advancedConfig.max_trades_per_day}</span>
+                        </div>
+                        <div className="py-1 px-2 bg-purple-50 rounded">
+                          <span className="font-medium text-gray-700">SL ATR Mult:</span>
+                          <span className="ml-1 text-green-600 font-semibold">{recommendation.advancedConfig.sl_atr_mult}</span>
+                        </div>
+                        <div className="py-1 px-2 bg-purple-50 rounded">
+                          <span className="font-medium text-gray-700">TP1 Ratio:</span>
+                          <span className="ml-1 text-green-600 font-semibold">{recommendation.advancedConfig.tp1_r}</span>
+                        </div>
+                        <div className="py-1 px-2 bg-purple-50 rounded">
+                          <span className="font-medium text-gray-700">TP2 Ratio:</span>
+                          <span className="ml-1 text-green-600 font-semibold">{recommendation.advancedConfig.tp2_r}</span>
+                        </div>
+                        <div className="py-1 px-2 bg-purple-50 rounded">
+                          <span className="font-medium text-gray-700">ADX Min HTF:</span>
+                          <span className="ml-1 text-green-600 font-semibold">{recommendation.advancedConfig.adx_min_htf}</span>
+                        </div>
+                        <div className="py-1 px-2 bg-purple-50 rounded">
+                          <span className="font-medium text-gray-700">Bias Mode:</span>
+                          <span className="ml-1 text-green-600 font-semibold">{recommendation.advancedConfig.bias_mode}</span>
+                        </div>
+                        <div className="py-1 px-2 bg-purple-50 rounded">
+                          <span className="font-medium text-gray-700">Regime Mode:</span>
+                          <span className="ml-1 text-green-600 font-semibold">{recommendation.advancedConfig.regime_mode}</span>
+                        </div>
+                      </div>
+                      {/* Show changes if any */}
+                      {recommendation.changes
+                        .filter(c => c.parameter.startsWith('Advanced.'))
+                        .map((change, idx) => (
+                          <div key={`adv-change-${idx}`} className="flex items-center justify-between text-xs py-1 px-2 bg-yellow-50 rounded border border-yellow-200">
+                            <div className="flex-1">
+                              <span className="font-medium text-gray-700">{change.parameter.replace('Advanced.', '')}:</span>
+                              <span className="ml-2 text-gray-500 line-through">{String(change.defaultValue)}</span>
+                              <span className="mx-2 text-gray-400">→</span>
+                              <span className="text-green-600 font-semibold">{String(change.recommendedValue)}</span>
+                              <span className="ml-2 text-xs text-gray-400">({change.reason})</span>
+                            </div>
+                          </div>
+                        ))}
+                      <p className="text-xs text-gray-500 mt-2 italic">
+                        All 30+ Advanced Config parameters are configured and will be applied.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 mt-4 pt-4 border-t border-purple-200">
           <Button
             onClick={handleApply}
             className="flex-1 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-semibold"
-            disabled={!recommendation.recommended}
           >
             <i className="ri-check-line mr-2"></i>
             Apply AI Recommendations

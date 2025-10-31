@@ -202,13 +202,30 @@ class PairRecommendationsService {
         tp2_r: result.advancedConfig?.tp2_r ?? defaultAdvancedConfig.tp2_r,
       };
 
+      // Ensure strategy is complete - merge AI result with defaults
+      const completeStrategy: TradingStrategy = {
+        ...pairStrategy,
+        ...(result.strategy || {}),
+        // Ensure all required strategy parameters are set
+        rsiThreshold: result.strategy?.rsiThreshold ?? pairStrategy.rsiThreshold,
+        adxThreshold: result.strategy?.adxThreshold ?? pairStrategy.adxThreshold,
+        bbWidthThreshold: result.strategy?.bbWidthThreshold ?? pairStrategy.bbWidthThreshold,
+        emaSlope: result.strategy?.emaSlope ?? pairStrategy.emaSlope,
+        atrPercentage: result.strategy?.atrPercentage ?? pairStrategy.atrPercentage,
+        vwapDistance: result.strategy?.vwapDistance ?? pairStrategy.vwapDistance,
+        momentumThreshold: result.strategy?.momentumThreshold ?? pairStrategy.momentumThreshold,
+        useMLPrediction: result.strategy?.useMLPrediction ?? pairStrategy.useMLPrediction,
+        minSamplesForML: result.strategy?.minSamplesForML ?? pairStrategy.minSamplesForML
+      };
+
       // Build recommendation from optimization result
+      // Always return recommended=true and show all parameters, even if AI confidence is low
       return {
         symbol,
-        recommended: result.confidence > 0.5,
-        confidence: result.confidence,
+        recommended: true, // Always show as recommended (even with low confidence)
+        confidence: result.confidence || 0.6, // Use AI confidence or default to 0.6
         reasoning: result.reasoning || `Optimized settings for ${symbol} based on pair characteristics and historical performance`,
-        strategy: result.strategy,
+        strategy: completeStrategy, // Always include full strategy
         advancedConfig: completeAdvancedConfig, // Always include full advanced config
         expectedPerformance: result.expectedImprovement || `Expected improved performance with optimized parameters for ${symbol}`,
         riskAssessment: this.getPairRiskAssessment(symbol),
@@ -217,7 +234,7 @@ class PairRecommendationsService {
         suggestedStopLoss: pairBasicSettings.stopLoss,
         suggestedTakeProfit: pairBasicSettings.takeProfit,
         changes: this.buildChangesList(currentSettings, {
-          ...result,
+          strategy: completeStrategy,
           advancedConfig: completeAdvancedConfig
         })
       };
@@ -526,6 +543,29 @@ class PairRecommendationsService {
     const pairStrategy = this.getPairSpecificStrategy(symbol);
     const pairBasicSettings = this.getPairBasicSettings(symbol, tradingType);
     const pairRisk = this.getPairRiskAssessment(symbol);
+    const defaultAdvancedConfig = this.getDefaultAdvancedConfig(symbol, tradingType);
+
+    // Build changes list to show all parameters that differ from defaults
+    const changes = this.buildChangesList(
+      {
+        strategy: {
+          rsiThreshold: 70,
+          adxThreshold: 25,
+          bbWidthThreshold: 0.02,
+          emaSlope: 0.5,
+          atrPercentage: 2.5,
+          vwapDistance: 1.2,
+          momentumThreshold: 0.8,
+          useMLPrediction: true,
+          minSamplesForML: 100
+        },
+        advancedConfig: this.getDefaultAdvancedConfig(symbol, tradingType)
+      },
+      {
+        strategy: pairStrategy,
+        advancedConfig: defaultAdvancedConfig
+      }
+    );
 
     return {
       symbol,
@@ -533,13 +573,14 @@ class PairRecommendationsService {
       confidence: 0.7,
       reasoning: `Pair-specific recommended settings for ${symbol} based on historical characteristics`,
       strategy: pairStrategy,
+      advancedConfig: defaultAdvancedConfig, // Always include full advanced config
       expectedPerformance: `Optimized settings for ${symbol} - expected improved performance`,
       riskAssessment: pairRisk,
       suggestedTradeAmount: pairBasicSettings.tradeAmount,
       suggestedLeverage: pairBasicSettings.leverage,
       suggestedStopLoss: pairBasicSettings.stopLoss,
       suggestedTakeProfit: pairBasicSettings.takeProfit,
-      changes: []
+      changes: changes // Show all parameter differences
     };
   }
 }
