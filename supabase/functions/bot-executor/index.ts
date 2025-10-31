@@ -408,8 +408,20 @@ class MarketDataFetcher {
         
         const price = parseFloat(data.result.list[0]?.lastPrice || '0');
         if (price === 0) {
-          console.warn(`⚠️ Price is 0 for ${symbol}, check if symbol exists on ${bybitCategory}`);
+          // Try to get more info about why price is 0
+          if (data.result.list && data.result.list.length === 0) {
+            console.warn(`⚠️ Symbol ${symbol} not found in ${bybitCategory} category on Bybit. The symbol may not exist or may not be available for this trading type.`);
+          } else {
+            console.warn(`⚠️ Price is 0 for ${symbol} in ${bybitCategory} category. Symbol may be suspended or invalid.`);
+          }
+          return 0;
         }
+        
+        if (!isFinite(price) || price < 0) {
+          console.warn(`⚠️ Invalid price format for ${symbol}: ${price}`);
+          return 0;
+        }
+        
         return price;
       } else if (exchange === 'okx') {
         const response = await fetch(`https://www.okx.com/api/v5/market/ticker?instId=${symbol}`);
@@ -632,8 +644,22 @@ class BotExecutor {
   
   private async executeTrade(bot: any, tradeSignal: any): Promise<void> {
     try {
-      const currentPrice = await MarketDataFetcher.fetchPrice(bot.symbol, bot.exchange);
+      const currentPrice = await MarketDataFetcher.fetchPrice(bot.symbol, bot.exchange, bot.tradingType);
+      
+      // Validate price before proceeding
+      if (!currentPrice || currentPrice === 0 || !isFinite(currentPrice)) {
+        throw new Error(`Invalid or unavailable price for ${bot.symbol} (${bot.tradingType}). The symbol may not exist on ${bot.exchange} or may not be available for ${bot.tradingType} trading. Please verify the symbol name and trading type.`);
+      }
+      
+      console.log(`💰 Current price for ${bot.symbol}: $${currentPrice}`);
+      
       const tradeAmountRaw = this.calculateTradeAmount(bot, currentPrice);
+      
+      // Validate calculated quantity
+      if (!tradeAmountRaw || !isFinite(tradeAmountRaw) || tradeAmountRaw <= 0) {
+        throw new Error(`Invalid quantity calculated for ${bot.symbol}: ${tradeAmountRaw}. Price: $${currentPrice}`);
+      }
+      
       // Normalize qty/price to reduce exchange rejections
       const basicConstraints = this.getQuantityConstraints(bot.symbol);
       const { stepSize, tickSize } = this.getSymbolSteps(bot.symbol);
@@ -644,6 +670,13 @@ class BotExecutor {
       );
       const tradeAmount = normalized.qty;
       const normalizedPrice = normalized.price;
+      
+      // Final validation before placing order
+      if (!tradeAmount || !isFinite(tradeAmount) || tradeAmount <= 0) {
+        throw new Error(`Normalized quantity invalid for ${bot.symbol}: ${tradeAmount}. Constraints: min=${basicConstraints.min}, max=${basicConstraints.max}`);
+      }
+      
+      console.log(`✅ Validated order params for ${bot.symbol}: qty=${tradeAmount}, price=$${normalizedPrice}`);
       
       // Place actual order on exchange
       const orderResult = await this.placeOrder(bot, tradeSignal, tradeAmount, normalizedPrice);
@@ -862,6 +895,13 @@ class BotExecutor {
         // Handle specific error codes with better messages
         if (data.retCode === 10001) {
           const constraints = this.getQuantityConstraints(symbol);
+          console.error(`❌ Bybit API error for ${symbol}:`, data.retMsg);
+          
+          // Check if it's a symbol validation error
+          if (data.retMsg?.toLowerCase().includes('symbol invalid') || data.retMsg?.toLowerCase().includes('params error: symbol')) {
+            throw new Error(`Invalid symbol "${symbol}" for ${bybitCategory} trading on Bybit. The symbol may not exist, may not be available for ${bybitCategory} trading, or may use a different format (e.g., 1000PEPEUSDT instead of PEPEUSDT). Please verify the symbol name on Bybit exchange.`);
+          }
+          
           console.error(`❌ Quantity validation failed for ${symbol}: ${formattedQty}`);
           console.error(`📏 Constraints: min=${constraints.min}, max=${constraints.max}`);
           console.error(`💰 Price: $${currentMarketPrice}`);
@@ -1299,8 +1339,19 @@ class BotExecutor {
       'BNBUSDT': { min: 0.01, max: 100 },
       'MATICUSDT': { min: 10, max: 10000 }, // Increased min from 1 to 10
       'LINKUSDT': { min: 0.1, max: 1000 },
-      'LTCUSDT': { min: 0.01, max: 100 }
+      'LTCUSDT': { min: 0.01, max: 100 },
+      // Meme coins and low-value tokens - typically need larger quantities
+      'PEPEUSDT': { min: 1000, max: 1000000 }, // PEPE tokens are very low value
+      'DOGEUSDT': { min: 1, max: 10000 },
+      'SHIBUSDT': { min: 1000, max: 1000000 }
     };
+    
+    // Default constraints for unknown symbols
+    // For low-value tokens, use larger min/max
+    const isLowValueToken = symbol.includes('PEPE') || symbol.includes('SHIB') || symbol.includes('FLOKI') || symbol.includes('BONK');
+    if (isLowValueToken) {
+      return { min: 1000, max: 1000000 };
+    }
     
     return constraints[symbol] || { min: 0.001, max: 100 };
   }
@@ -1318,8 +1369,20 @@ class BotExecutor {
       'XRPUSDT': { stepSize: 1,     tickSize: 0.0001 },
       'DOTUSDT': { stepSize: 0.1,   tickSize: 0.01 },
       'BNBUSDT': { stepSize: 0.01,  tickSize: 0.01 },
-      'MATICUSDT':{stepSize: 1,     tickSize: 0.0001 }
+      'MATICUSDT':{stepSize: 1,     tickSize: 0.0001 },
+      // Meme coins and low-value tokens
+      'PEPEUSDT': { stepSize: 1000, tickSize: 0.00000001 }, // Very low-value token
+      'DOGEUSDT': { stepSize: 1,    tickSize: 0.0001 },
+      'SHIBUSDT': { stepSize: 1000, tickSize: 0.00000001 }
     };
+    
+    // Default for unknown symbols
+    // For low-value tokens, use larger stepSize
+    const isLowValueToken = symbol.includes('PEPE') || symbol.includes('SHIB') || symbol.includes('FLOKI') || symbol.includes('BONK');
+    if (isLowValueToken) {
+      return { stepSize: 1000, tickSize: 0.00000001 };
+    }
+    
     return steps[symbol] || { stepSize: 0.001, tickSize: 0.01 };
   }
   
