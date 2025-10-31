@@ -300,6 +300,24 @@ class BotExecutor {
         details: { timestamp: TimeSync.getCurrentTimeISO() }
       });
       
+      // 🛡️ SAFETY CHECKS - Check before any trading
+      const safetyCheck = await this.checkSafetyLimits(bot);
+      if (!safetyCheck.canTrade) {
+        console.warn(`⚠️ Trading blocked for ${bot.name}: ${safetyCheck.reason}`);
+        await this.addBotLog(bot.id, {
+          level: 'warning',
+          category: 'safety',
+          message: `Trading blocked: ${safetyCheck.reason}`,
+          details: safetyCheck
+        });
+        
+        // Auto-pause bot if critical safety limit is breached
+        if (safetyCheck.shouldPause) {
+          await this.pauseBotForSafety(bot.id, safetyCheck.reason);
+        }
+        return; // Stop execution
+      }
+      
       // Fetch market data
       const tradingType = bot.tradingType || bot.trading_type || 'spot';
       console.log(`🤖 Bot ${bot.name} trading type: ${tradingType}`);
@@ -1109,6 +1127,384 @@ class BotExecutor {
       .eq('id', botId);
   }
   
+  /**
+   * 🛡️ Comprehensive Safety Checks
+   * Checks all safety limits before allowing any trade
+   */
+  private async checkSafetyLimits(bot: any): Promise<{ canTrade: boolean; reason: string; shouldPause: boolean }> {
+    try {
+      // 1. Emergency Stop Check (Global Kill Switch)
+      const emergencyStop = await this.checkEmergencyStop(bot.user_id);
+      if (emergencyStop) {
+        return {
+          canTrade: false,
+          reason: '🚨 EMERGENCY STOP ACTIVATED - All trading halted',
+          shouldPause: true
+        };
+      }
+
+      // 2. Check bot is running
+      if (bot.status !== 'running') {
+        return {
+          canTrade: false,
+          reason: `Bot status is ${bot.status}, not running`,
+          shouldPause: false
+        };
+      }
+
+      // 3. Max Consecutive Losses Check
+      const consecutiveLosses = await this.getConsecutiveLosses(bot.id);
+      const maxConsecutiveLosses = this.getMaxConsecutiveLosses(bot);
+      if (consecutiveLosses >= maxConsecutiveLosses) {
+        return {
+          canTrade: false,
+          reason: `Max consecutive losses reached: ${consecutiveLosses}/${maxConsecutiveLosses}. Trading paused for safety.`,
+          shouldPause: true
+        };
+      }
+
+      // 4. Daily Loss Limit Check
+      const dailyLoss = await this.getDailyLoss(bot.id);
+      const dailyLossLimit = this.getDailyLossLimit(bot);
+      if (dailyLoss >= dailyLossLimit) {
+        return {
+          canTrade: false,
+          reason: `Daily loss limit exceeded: $${dailyLoss.toFixed(2)} >= $${dailyLossLimit.toFixed(2)}. Trading paused for today.`,
+          shouldPause: true
+        };
+      }
+
+      // 5. Weekly Loss Limit Check
+      const weeklyLoss = await this.getWeeklyLoss(bot.id);
+      const weeklyLossLimit = this.getWeeklyLossLimit(bot);
+      if (weeklyLoss >= weeklyLossLimit) {
+        return {
+          canTrade: false,
+          reason: `Weekly loss limit exceeded: $${weeklyLoss.toFixed(2)} >= $${weeklyLossLimit.toFixed(2)}. Trading paused for the week.`,
+          shouldPause: true
+        };
+      }
+
+      // 6. Max Trades Per Day Check
+      const tradesToday = await this.getTradesToday(bot.id);
+      const maxTradesPerDay = this.getMaxTradesPerDay(bot);
+      if (tradesToday >= maxTradesPerDay) {
+        return {
+          canTrade: false,
+          reason: `Max trades per day reached: ${tradesToday}/${maxTradesPerDay}. Trading paused until tomorrow.`,
+          shouldPause: false // Don't pause permanently, just for today
+        };
+      }
+
+      // 7. Max Concurrent Positions Check
+      const openPositions = await this.getOpenPositions(bot.id);
+      const maxConcurrent = this.getMaxConcurrent(bot);
+      if (openPositions >= maxConcurrent) {
+        return {
+          canTrade: false,
+          reason: `Max concurrent positions reached: ${openPositions}/${maxConcurrent}. Wait for positions to close.`,
+          shouldPause: false
+        };
+      }
+
+      // All checks passed
+      return {
+        canTrade: true,
+        reason: 'All safety checks passed',
+        shouldPause: false
+      };
+    } catch (error) {
+      console.error('Error checking safety limits:', error);
+      // If safety check fails, err on the side of caution
+      return {
+        canTrade: false,
+        reason: `Safety check error: ${error.message}`,
+        shouldPause: false
+      };
+    }
+  }
+
+  /**
+   * Check if emergency stop is activated (global kill switch)
+   */
+  private async checkEmergencyStop(userId: string): Promise<boolean> {
+    try {
+      // Check if user has emergency_stop flag in their profile/settings
+      const { data: userSettings } = await this.supabaseClient
+        .from('users')
+        .select('raw_user_meta_data')
+        .eq('id', userId)
+        .single();
+
+      if (userSettings?.raw_user_meta_data?.emergency_stop === true) {
+        return true;
+      }
+
+      // Also check for a global emergency_stop setting
+      // This allows admins to stop all trading if needed
+      const { data: globalSettings } = await this.supabaseClient
+        .from('system_settings')
+        .select('value')
+        .eq('key', 'emergency_stop')
+        .single();
+
+      if (globalSettings?.value === true) {
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      console.warn('Error checking emergency stop:', error);
+      return false; // If we can't check, allow trading
+    }
+  }
+
+  /**
+   * Get consecutive losses for bot
+   */
+  private async getConsecutiveLosses(botId: string): Promise<number> {
+    try {
+      const { data: recentTrades } = await this.supabaseClient
+        .from('trades')
+        .select('pnl, outcome')
+        .eq('bot_id', botId)
+        .order('executed_at', { ascending: false })
+        .limit(100); // Check last 100 trades
+
+      if (!recentTrades || recentTrades.length === 0) {
+        return 0;
+      }
+
+      let consecutiveLosses = 0;
+      for (const trade of recentTrades) {
+        const isLoss = trade.pnl < 0 || trade.outcome === 'loss';
+        if (isLoss) {
+          consecutiveLosses++;
+        } else {
+          break; // Stop counting on first win
+        }
+      }
+
+      return consecutiveLosses;
+    } catch (error) {
+      console.warn('Error getting consecutive losses:', error);
+      return 0; // If we can't check, assume no consecutive losses
+    }
+  }
+
+  /**
+   * Get daily loss for bot (last 24 hours)
+   */
+  private async getDailyLoss(botId: string): Promise<number> {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayISO = today.toISOString();
+
+      const { data: trades } = await this.supabaseClient
+        .from('trades')
+        .select('pnl')
+        .eq('bot_id', botId)
+        .gte('executed_at', todayISO);
+
+      if (!trades || trades.length === 0) {
+        return 0;
+      }
+
+      const totalLoss = trades.reduce((sum, trade) => {
+        const pnl = parseFloat(trade.pnl) || 0;
+        return sum + (pnl < 0 ? Math.abs(pnl) : 0); // Only count losses
+      }, 0);
+
+      return totalLoss;
+    } catch (error) {
+      console.warn('Error getting daily loss:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Get weekly loss for bot (last 7 days)
+   */
+  private async getWeeklyLoss(botId: string): Promise<number> {
+    try {
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      weekAgo.setHours(0, 0, 0, 0);
+      const weekAgoISO = weekAgo.toISOString();
+
+      const { data: trades } = await this.supabaseClient
+        .from('trades')
+        .select('pnl')
+        .eq('bot_id', botId)
+        .gte('executed_at', weekAgoISO);
+
+      if (!trades || trades.length === 0) {
+        return 0;
+      }
+
+      const totalLoss = trades.reduce((sum, trade) => {
+        const pnl = parseFloat(trade.pnl) || 0;
+        return sum + (pnl < 0 ? Math.abs(pnl) : 0); // Only count losses
+      }, 0);
+
+      return totalLoss;
+    } catch (error) {
+      console.warn('Error getting weekly loss:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Get number of trades today
+   */
+  private async getTradesToday(botId: string): Promise<number> {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayISO = today.toISOString();
+
+      const { count } = await this.supabaseClient
+        .from('trades')
+        .select('*', { count: 'exact', head: true })
+        .eq('bot_id', botId)
+        .gte('executed_at', todayISO);
+
+      return count || 0;
+    } catch (error) {
+      console.warn('Error getting trades today:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Get number of open positions for bot
+   */
+  private async getOpenPositions(botId: string): Promise<number> {
+    try {
+      const { count } = await this.supabaseClient
+        .from('trades')
+        .select('*', { count: 'exact', head: true })
+        .eq('bot_id', botId)
+        .in('status', ['open', 'pending']);
+
+      return count || 0;
+    } catch (error) {
+      console.warn('Error getting open positions:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Get max consecutive losses from bot config
+   */
+  private getMaxConsecutiveLosses(bot: any): number {
+    try {
+      const strategyConfig = typeof bot.strategy_config === 'string' 
+        ? JSON.parse(bot.strategy_config) 
+        : bot.strategy_config || {};
+      
+      return strategyConfig.max_consecutive_losses || 5; // Default: 5 consecutive losses
+    } catch (error) {
+      return 5; // Default
+    }
+  }
+
+  /**
+   * Get daily loss limit from bot config
+   */
+  private getDailyLossLimit(bot: any): number {
+    try {
+      const strategyConfig = typeof bot.strategy_config === 'string' 
+        ? JSON.parse(bot.strategy_config) 
+        : bot.strategy_config || {};
+      
+      // Can be percentage or absolute value
+      const dailyLossLimitPct = strategyConfig.daily_loss_limit_pct || 3.0; // Default: 3%
+      
+      // For now, return percentage (will need account value for absolute)
+      // TODO: Calculate absolute value based on account size
+      return dailyLossLimitPct;
+    } catch (error) {
+      return 3.0; // Default 3%
+    }
+  }
+
+  /**
+   * Get weekly loss limit from bot config
+   */
+  private getWeeklyLossLimit(bot: any): number {
+    try {
+      const strategyConfig = typeof bot.strategy_config === 'string' 
+        ? JSON.parse(bot.strategy_config) 
+        : bot.strategy_config || {};
+      
+      return strategyConfig.weekly_loss_limit_pct || 6.0; // Default: 6%
+    } catch (error) {
+      return 6.0; // Default 6%
+    }
+  }
+
+  /**
+   * Get max trades per day from bot config
+   */
+  private getMaxTradesPerDay(bot: any): number {
+    try {
+      const strategyConfig = typeof bot.strategy_config === 'string' 
+        ? JSON.parse(bot.strategy_config) 
+        : bot.strategy_config || {};
+      
+      return strategyConfig.max_trades_per_day || 8; // Default: 8 trades
+    } catch (error) {
+      return 8; // Default
+    }
+  }
+
+  /**
+   * Get max concurrent positions from bot config
+   */
+  private getMaxConcurrent(bot: any): number {
+    try {
+      const strategyConfig = typeof bot.strategy_config === 'string' 
+        ? JSON.parse(bot.strategy_config) 
+        : bot.strategy_config || {};
+      
+      return strategyConfig.max_concurrent || 2; // Default: 2 positions
+    } catch (error) {
+      return 2; // Default
+    }
+  }
+
+  /**
+   * Pause bot when safety limit is breached
+   */
+  private async pauseBotForSafety(botId: string, reason: string): Promise<void> {
+    try {
+      const { error } = await this.supabaseClient
+        .from('trading_bots')
+        .update({
+          status: 'paused',
+          updated_at: TimeSync.getCurrentTimeISO()
+        })
+        .eq('id', botId);
+
+      if (error) {
+        console.error('Failed to pause bot for safety:', error);
+      } else {
+        console.log(`🛡️ Bot ${botId} paused for safety: ${reason}`);
+        
+        await this.addBotLog(botId, {
+          level: 'warning',
+          category: 'safety',
+          message: `Bot paused automatically: ${reason}`,
+          details: { reason, pausedAt: TimeSync.getCurrentTimeISO() }
+        });
+      }
+    } catch (error) {
+      console.error('Error pausing bot for safety:', error);
+    }
+  }
+
   private async addBotLog(botId: string, log: any): Promise<void> {
     // Store log in database instead of localStorage
     try {
