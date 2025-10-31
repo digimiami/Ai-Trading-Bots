@@ -375,7 +375,17 @@ class MarketDataFetcher {
   static async fetchPrice(symbol: string, exchange: string, tradingType: string = 'spot'): Promise<number> {
     try {
       if (exchange === 'bybit') {
-        const response = await fetch(`https://api.bybit.com/v5/market/tickers?category=${tradingType}&symbol=${symbol}`);
+        // Map tradingType to Bybit category: futures -> linear, spot -> spot
+        const categoryMap: { [key: string]: string } = {
+          'spot': 'spot',
+          'futures': 'linear',  // Bybit uses 'linear' for perpetual futures
+          'linear': 'linear',
+          'inverse': 'inverse',
+          'option': 'option'
+        };
+        const bybitCategory = categoryMap[tradingType?.toLowerCase()] || 'spot';
+        
+        const response = await fetch(`https://api.bybit.com/v5/market/tickers?category=${bybitCategory}&symbol=${symbol}`);
         const data = await response.json();
         
         // Better error handling for API response
@@ -385,9 +395,9 @@ class MarketDataFetcher {
         }
         
         if (!data.result.list || !Array.isArray(data.result.list) || data.result.list.length === 0) {
-          console.warn(`⚠️ Bybit API error for ${symbol}: Empty or invalid list`, data.result);
+          console.warn(`⚠️ Bybit API error for ${symbol} (category=${bybitCategory}): Empty or invalid list`, data.result);
           // Try without symbol filter to get all tickers
-          const allTickersResponse = await fetch(`https://api.bybit.com/v5/market/tickers?category=${tradingType}`);
+          const allTickersResponse = await fetch(`https://api.bybit.com/v5/market/tickers?category=${bybitCategory}`);
           const allTickersData = await allTickersResponse.json();
           const ticker = allTickersData.result?.list?.find((t: any) => t.symbol === symbol);
           if (ticker) {
@@ -398,7 +408,7 @@ class MarketDataFetcher {
         
         const price = parseFloat(data.result.list[0]?.lastPrice || '0');
         if (price === 0) {
-          console.warn(`⚠️ Price is 0 for ${symbol}, check if symbol exists on ${tradingType}`);
+          console.warn(`⚠️ Price is 0 for ${symbol}, check if symbol exists on ${bybitCategory}`);
         }
         return price;
       } else if (exchange === 'okx') {
@@ -503,7 +513,7 @@ class BotExecutor {
       
       console.log(`📊 Bot ${bot.name} market data: Price=${currentPrice}, RSI=${rsi.toFixed(2)}, ADX=${adx.toFixed(2)}`);
       
-      // Execute trading strategy - handle potential double-encoding
+      // Execute trading strategy - handle potential double-encoding and malformed data
       let strategy = bot.strategy;
       if (typeof strategy === 'string') {
         try {
@@ -512,9 +522,32 @@ class BotExecutor {
           if (typeof strategy === 'string') {
             strategy = JSON.parse(strategy);
           }
+          // Check if strategy is an object with numeric keys (character array issue)
+          if (strategy && typeof strategy === 'object' && !Array.isArray(strategy)) {
+            const keys = Object.keys(strategy);
+            // If all keys are numeric, it's likely a character array - try to reconstruct
+            if (keys.length > 0 && keys.every(k => !isNaN(parseInt(k)))) {
+              console.warn('⚠️ Strategy appears to be a character array, attempting to reconstruct...');
+              // Try to get the original string and parse it properly
+              const strategyStr = bot.strategy;
+              // Remove any JSON.stringify wrapper and parse again
+              try {
+                const reconstructed = JSON.parse(strategyStr);
+                if (reconstructed && typeof reconstructed === 'object' && !reconstructed['0']) {
+                  strategy = reconstructed;
+                } else {
+                  // Still malformed, use default
+                  throw new Error('Cannot reconstruct strategy');
+                }
+              } catch {
+                // Use default strategy
+                throw new Error('Strategy parsing failed');
+              }
+            }
+          }
         } catch (error) {
           console.error('Error parsing strategy:', error);
-          console.error('Strategy value:', strategy);
+          console.error('Strategy value:', typeof bot.strategy === 'string' ? bot.strategy.substring(0, 100) : bot.strategy);
           // Try to use default strategy if parsing fails
           strategy = {
             rsiThreshold: 70,

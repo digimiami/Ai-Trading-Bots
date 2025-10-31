@@ -7,6 +7,8 @@ import Card from '../../components/base/Card';
 import Header from '../../components/feature/Header';
 import type { TradingStrategy, AdvancedStrategyConfig } from '../../types/trading';
 import { useBots } from '../../hooks/useBots';
+import PairRecommendations from '../../components/bot/PairRecommendations';
+import type { PairRecommendation } from '../../services/pairRecommendations';
 
 export default function CreateBotPage() {
   const navigate = useNavigate();
@@ -168,6 +170,34 @@ export default function CreateBotPage() {
     setStrategy(prev => ({ ...prev, [field]: value }));
   };
 
+  const handleApplyRecommendation = (recommendation: PairRecommendation) => {
+    // Apply recommended strategy
+    if (recommendation.strategy) {
+      setStrategy(recommendation.strategy);
+    }
+
+    // Apply recommended advanced config
+    if (recommendation.advancedConfig) {
+      setAdvancedConfig(prev => ({ ...prev, ...recommendation.advancedConfig }));
+    }
+
+    // Apply recommended basic settings
+    setFormData(prev => ({
+      ...prev,
+      tradeAmount: recommendation.suggestedTradeAmount,
+      leverage: recommendation.suggestedLeverage,
+      stopLoss: recommendation.suggestedStopLoss,
+      takeProfit: recommendation.suggestedTakeProfit,
+      riskLevel: recommendation.riskAssessment as 'low' | 'medium' | 'high'
+    }));
+
+    // Show success message
+    alert(`✅ AI Recommendations Applied!\n\nApplied ${recommendation.changes.length} parameter optimizations for ${recommendation.symbol}`);
+  };
+
+  // Get the effective symbol (dropdown or custom)
+  const effectiveSymbol = customSymbol.trim() ? customSymbol.trim().toUpperCase() : formData.symbol;
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header title="Create New Bot" />
@@ -270,6 +300,23 @@ export default function CreateBotPage() {
                     )}
                     <p className="text-xs text-gray-500 mt-1">Uppercase; must end with USDT. If provided, overrides dropdown.</p>
                   </div>
+
+                  {/* AI Recommendations */}
+                  {effectiveSymbol && (
+                    <div className="mt-4">
+                      <PairRecommendations
+                        symbol={effectiveSymbol}
+                        tradingType={formData.tradingType}
+                        currentStrategy={strategy}
+                        currentAdvancedConfig={advancedConfig}
+                        currentTradeAmount={formData.tradeAmount}
+                        currentLeverage={formData.leverage}
+                        currentStopLoss={formData.stopLoss}
+                        currentTakeProfit={formData.takeProfit}
+                        onApplyRecommendation={handleApplyRecommendation}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div>
