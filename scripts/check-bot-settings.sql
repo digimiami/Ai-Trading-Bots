@@ -11,12 +11,12 @@ SELECT
     exchange,
     symbol,
     trading_type,
-    base_amount,
+    trade_amount,
     leverage,
     risk_level,
     created_at,
     updated_at,
-    last_execution_at
+    COALESCE(last_execution_at, last_trade_at) as last_execution
 FROM trading_bots
 WHERE status = 'running'
 ORDER BY created_at DESC;
@@ -31,7 +31,7 @@ SELECT
     b.exchange,
     b.symbol,
     b.trading_type,
-    b.base_amount,
+    b.trade_amount,
     b.leverage,
     b.risk_level,
     b.strategy::text as strategy_config,
@@ -168,14 +168,14 @@ SELECT
     b.exchange,
     b.symbol,
     b.trading_type,
-    b.base_amount,
+    b.trade_amount,
     b.leverage,
     b.risk_level,
     b.strategy::text as strategy_json,
     b.strategy_config::text as advanced_config_json,
     b.created_at,
     b.updated_at,
-    b.last_execution_at,
+    COALESCE(b.last_execution_at, b.last_trade_at) as last_execution,
     -- Count stats
     (SELECT COUNT(*) FROM trades WHERE bot_id = b.id) as total_trades,
     (SELECT COUNT(*) FROM trades WHERE bot_id = b.id AND status IN ('open', 'pending')) as open_positions,

@@ -91,7 +91,7 @@ try:
         
         # Trading Settings
         print(f"\n  💰 Trading Settings:")
-        print(f"    Base Amount: ${bot.get('base_amount', bot.get('baseAmount', 'N/A'))}")
+        print(f"    Trade Amount: ${bot.get('trade_amount', bot.get('tradeAmount', 'N/A'))}")
         print(f"    Leverage:    {bot.get('leverage', 'N/A')}x")
         print(f"    Risk Level:  {bot.get('risk_level', bot.get('riskLevel', 'N/A'))}")
         
@@ -137,7 +137,7 @@ try:
         # Timestamps
         created = bot.get('created_at')
         updated = bot.get('updated_at')
-        last_exec = bot.get('last_execution_at')
+        last_exec = bot.get('last_execution_at') or bot.get('last_trade_at')
         
         if created:
             print(f"\n  📅 Created: {created}")
