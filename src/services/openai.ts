@@ -242,12 +242,17 @@ Provide a JSON response with:
       tp2: strategies.advancedConfig.tp2_r
     } : null;
 
+    // Build compact summary strings (no JSON overhead)
+    const strategyStr = `rsi:${strategySummary.rsi},adx:${strategySummary.adx},bbw:${strategySummary.bbw},ema:${strategySummary.ema},atr:${strategySummary.atr},vwap:${strategySummary.vwap},mom:${strategySummary.mom},ml:${strategySummary.ml}`;
+    const advancedStr = advancedSummary ? 
+      `bias:${advancedSummary.bias},risk:${advancedSummary.risk},adxHtf:${advancedSummary.adxHtf},regime:${advancedSummary.regime},sl:${advancedSummary.sl},tp1:${advancedSummary.tp1},tp2:${advancedSummary.tp2}` : '';
+
     return `
 Optimize trading strategy.
 
 CURRENT:
-S:${JSON.stringify(strategySummary).replace(/"/g,'').replace(/:/g,':').replace(/,/g,',')}
-${advancedSummary ? `A:${JSON.stringify(advancedSummary).replace(/"/g,'').replace(/:/g,':').replace(/,/g,',')}` : ''}
+S:${strategyStr}
+${advancedStr ? `A:${advancedStr}` : ''}
 
 PERF:
 WR:${Math.round(metrics.winRate)}% PnL:$${Math.round(metrics.totalPnL)} PF:${metrics.profitFactor.toFixed(2)} SR:${metrics.sharpeRatio.toFixed(2)} DD:${Math.round(metrics.maxDrawdown)}%
@@ -305,7 +310,7 @@ Return JSON:
         { role: 'user', content: prompt }
       ],
       temperature: 0.3, // Lower temperature for more consistent, logical responses
-      max_tokens: 1200 // Further reduced to prevent token limit issues
+      max_tokens: 1000 // Reduced to prevent token limit issues
     };
 
     // Use JSON mode if available (for better JSON parsing)
