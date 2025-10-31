@@ -1382,22 +1382,42 @@ class BotExecutor {
         0, 0, 0, 0
       ));
       const todayISO = todayUTC.toISOString();
+      
+      // Also get tomorrow's date to ensure we only get today's trades
+      const tomorrowUTC = new Date(todayUTC);
+      tomorrowUTC.setUTCDate(tomorrowUTC.getUTCDate() + 1);
+      const tomorrowISO = tomorrowUTC.toISOString();
 
-      // Only count trades that were actually executed (filled/completed status)
+      // Only count trades that were actually executed
+      // Check both executed_at (if exists) and created_at as fallback
+      // Also ensure executed_at is NOT NULL to avoid counting old trades
       const { count, error } = await this.supabaseClient
         .from('trades')
         .select('*', { count: 'exact', head: true })
         .eq('bot_id', botId)
+        .not('executed_at', 'is', null) // Must have executed_at set
         .gte('executed_at', todayISO)
+        .lt('executed_at', tomorrowISO) // Must be before tomorrow (strict today check)
         .in('status', ['filled', 'completed', 'closed']); // Only count executed trades
 
       if (error) {
         console.warn('Error getting trades today:', error);
-        return 0;
+        // Fallback: try with created_at if executed_at doesn't work
+        const { count: fallbackCount } = await this.supabaseClient
+          .from('trades')
+          .select('*', { count: 'exact', head: true })
+          .eq('bot_id', botId)
+          .gte('created_at', todayISO)
+          .lt('created_at', tomorrowISO)
+          .in('status', ['filled', 'completed', 'closed']);
+        
+        const tradeCount = fallbackCount || 0;
+        console.log(`📊 Trades today for bot ${botId}: ${tradeCount} (fallback using created_at, since ${todayISO})`);
+        return tradeCount;
       }
 
       const tradeCount = count || 0;
-      console.log(`📊 Trades today for bot ${botId}: ${tradeCount} (since ${todayISO})`);
+      console.log(`📊 Trades today for bot ${botId}: ${tradeCount} (since ${todayISO}, before ${tomorrowISO})`);
       
       return tradeCount;
     } catch (error) {
