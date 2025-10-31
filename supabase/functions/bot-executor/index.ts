@@ -76,8 +76,6 @@ class TimeSync {
         // If timeNano is small (< 1 billion), it's fractional nanoseconds since that second
         const ONE_BILLION_NANOS = 1000000000; // 1 second in nanoseconds
         
-        let serverTime: number;
-        
         if (Number.isFinite(timeNano) && timeNano >= ONE_BILLION_NANOS) {
           // timeNano is the full timestamp in nanoseconds (e.g., 1761929368266785474)
           // Convert directly: nanoseconds / 1,000,000 = milliseconds
