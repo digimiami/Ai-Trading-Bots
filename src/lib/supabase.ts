@@ -17,11 +17,27 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     storage: typeof window !== 'undefined' ? window.localStorage : undefined,
     storageKey: storageKey,
     // Use PKCE flow for better security with custom domains
-    flowType: 'pkce'
+    flowType: 'pkce',
+    // Handle CORS errors more gracefully
+    debug: false
   },
   global: {
     headers: {
       'X-Client-Info': 'pablo-trading-app'
+    },
+    // Add fetch timeout to prevent hanging
+    fetch: (url, options = {}) => {
+      return fetch(url, {
+        ...options,
+        // Add timeout for fetch requests (30 seconds)
+        signal: AbortSignal.timeout?.(30000) || undefined
+      }).catch((error) => {
+        // Handle CORS and network errors gracefully
+        if (error.name === 'AbortError' || error.message?.includes('Failed to fetch')) {
+          console.warn('⚠️ Network request failed. This might be due to CORS or network connectivity issues.')
+        }
+        throw error
+      })
     }
   }
 })

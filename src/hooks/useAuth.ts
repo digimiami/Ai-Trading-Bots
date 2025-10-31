@@ -121,7 +121,13 @@ export function useAuth() {
                   return session
                 } else {
                   console.log('⚠️ Stored session expired', Math.round((Date.now() - expirationTime) / 1000 / 60), 'minutes ago')
-                  // Don't remove, might still be useful for refresh
+                  // Clear expired session to prevent refresh attempts
+                  try {
+                    localStorage.removeItem(key)
+                    console.log('🧹 Cleared expired session from localStorage')
+                  } catch (e) {
+                    console.warn('⚠️ Could not clear expired session:', e)
+                  }
                 }
               } else {
                 // No expiration time, assume valid
