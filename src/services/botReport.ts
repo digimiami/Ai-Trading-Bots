@@ -23,6 +23,8 @@ export interface BotReport {
     trading_type: string;
     status: string;
     pnl: number;
+    total_fees: number;
+    net_profit_loss: number;
     total_trades: number;
     win_rate: number;
     last_trade_at: string | null;

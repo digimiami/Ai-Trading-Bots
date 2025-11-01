@@ -158,18 +158,42 @@ serve(async (req) => {
         net_profit_loss: totalPnL - totalFees,
         total_trades: tradesData?.length || 0
       },
-      active_bots: activeBotsData?.map(bot => ({
-        id: bot.id,
-        name: bot.name,
-        symbol: bot.symbol,
-        exchange: bot.exchange,
-        trading_type: bot.trading_type,
-        status: bot.status,
-        pnl: bot.pnl || 0,
-        total_trades: bot.total_trades || 0,
-        win_rate: bot.win_rate || 0,
-        last_trade_at: bot.last_trade_at
-      })) || [],
+      active_bots: activeBotsData?.map(bot => {
+        // Calculate fees for this bot from trades
+        const botTrades = tradesData?.filter(t => t.bot_id === bot.id) || []
+        const botFees = botTrades.reduce((sum, t) => {
+          let fee = t.fee || 0
+          // Calculate fee if not stored
+          if (fee === 0 && t.amount && t.price) {
+            if (bot.exchange === 'bybit') {
+              fee = bot.trading_type === 'futures' ? t.amount * t.price * 0.00055 : t.amount * t.price * 0.001
+            } else if (bot.exchange === 'okx') {
+              fee = bot.trading_type === 'futures' ? t.amount * t.price * 0.0005 : t.amount * t.price * 0.0008
+            } else {
+              fee = t.amount * t.price * 0.001
+            }
+          }
+          return sum + fee
+        }, 0)
+        
+        const botPnL = bot.pnl || 0
+        const netProfitLoss = botPnL - botFees
+        
+        return {
+          id: bot.id,
+          name: bot.name,
+          symbol: bot.symbol,
+          exchange: bot.exchange,
+          trading_type: bot.trading_type,
+          status: bot.status,
+          pnl: botPnL,
+          total_fees: Math.round(botFees * 100) / 100,
+          net_profit_loss: Math.round(netProfitLoss * 100) / 100,
+          total_trades: bot.total_trades || 0,
+          win_rate: bot.win_rate || 0,
+          last_trade_at: bot.last_trade_at
+        }
+      }) || [],
       contract_summary: Object.values(contractSummary).map((cs: any) => ({
         contract: cs.contract,
         exchange: cs.exchange,
