@@ -48,6 +48,13 @@ serve(async (req) => {
     // Calculate total PnL from trades
     const totalPnLFromTrades = tradesData?.reduce((sum, t) => sum + (t.pnl || 0), 0) || 0
     
+    // Calculate total PnL from bots (more reliable, includes all bot performance)
+    const totalPnLFromBots = botPerformanceData?.reduce((sum, b) => sum + (b.pnl || 0), 0) || 0
+    
+    // Use bot P&L as primary source (more accurate, includes all bot performance)
+    // Fall back to trades P&L only if bot P&L is unavailable
+    const totalPnL = totalPnLFromBots !== 0 ? totalPnLFromBots : totalPnLFromTrades
+    
     // Calculate total fees
     const totalFees = tradesData?.reduce((sum, t) => {
       const fee = t.fee || 0
@@ -68,11 +75,18 @@ serve(async (req) => {
     // First get user's bots, then get their trades
     const { data: userBots } = await supabaseClient
       .from('trading_bots')
-      .select('id, trading_type')
+      .select('id, trading_type, symbol, exchange, pnl')
       .eq('user_id', user.id)
     
     const botIds = userBots?.map(b => b.id) || []
     const botMap = new Map(userBots?.map(b => [b.id, b.trading_type]) || [])
+    
+    // Create bot P&L by contract map for fallback
+    const botPnLByContract = new Map<string, number>()
+    userBots?.forEach(bot => {
+      const contractKey = `${bot.symbol}_${bot.exchange}`
+      botPnLByContract.set(contractKey, (botPnLByContract.get(contractKey) || 0) + (bot.pnl || 0))
+    })
     
     const { data: contractData } = await supabaseClient
       .from('trades')
@@ -111,9 +125,24 @@ serve(async (req) => {
         }
         
         contractSummary[contract].total_trades++
-        contractSummary[contract].total_net_pnl += (trade.pnl || 0)
+        // Use trade P&L if available, otherwise use bot P&L
+        const tradePnL = trade.pnl || 0
+        contractSummary[contract].total_net_pnl += tradePnL
         contractSummary[contract].total_fees_paid += fee
         contractSummary[contract].net_profit_loss = contractSummary[contract].total_net_pnl - contractSummary[contract].total_fees_paid
+      }
+    }
+    
+    // Update contract summary with bot P&L if trades don't have P&L
+    for (const contractKey in contractSummary) {
+      const contract = contractSummary[contractKey]
+      // If contract has no P&L from trades, use bot P&L
+      if (contract.total_net_pnl === 0) {
+        const botPnL = botPnLByContract.get(contractKey) || 0
+        if (botPnL !== 0) {
+          contract.total_net_pnl = botPnL
+          contract.net_profit_loss = botPnL - contract.total_fees_paid
+        }
       }
     }
 
@@ -122,9 +151,11 @@ serve(async (req) => {
       overview: {
         total_bots: botPerformanceData?.length || 0,
         active_bots: botPerformanceData?.filter(b => ['running', 'active'].includes(b.status)).length || 0,
-        total_pnl: totalPnLFromTrades,
+        total_pnl: totalPnL,
+        total_pnl_from_trades: totalPnLFromTrades,
+        total_pnl_from_bots: totalPnLFromBots,
         total_fees: totalFees,
-        net_profit_loss: totalPnLFromTrades - totalFees,
+        net_profit_loss: totalPnL - totalFees,
         total_trades: tradesData?.length || 0
       },
       active_bots: activeBotsData?.map(bot => ({

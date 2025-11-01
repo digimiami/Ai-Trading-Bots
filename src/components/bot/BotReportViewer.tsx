@@ -30,6 +30,66 @@ export default function BotReportViewer() {
     }).format(value);
   };
 
+  const handleDownloadReport = (reportData: BotReport, format: 'csv' | 'json') => {
+    if (!reportData) return;
+
+    if (format === 'json') {
+      // Download as JSON
+      const jsonStr = JSON.stringify(reportData, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `bot-performance-report-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } else {
+      // Download as CSV
+      let csv = 'Bot Performance Report\n';
+      csv += `Generated: ${new Date(reportData.generated_at).toLocaleString()}\n\n`;
+      
+      // Overview Section
+      csv += 'OVERVIEW SUMMARY\n';
+      csv += `Total Bots,${reportData.overview.total_bots}\n`;
+      csv += `Active Bots,${reportData.overview.active_bots}\n`;
+      csv += `Total P&L,${reportData.overview.total_pnl.toFixed(2)}\n`;
+      csv += `Total Fees Paid,${reportData.overview.total_fees.toFixed(2)}\n`;
+      csv += `Net Profit/Loss,${reportData.overview.net_profit_loss.toFixed(2)}\n`;
+      csv += `Total Trades,${reportData.overview.total_trades}\n\n`;
+      
+      // Contract Performance Section
+      if (reportData.contract_summary && reportData.contract_summary.length > 0) {
+        csv += 'CONTRACT PERFORMANCE\n';
+        csv += 'Contract,Exchange,Trades,Total P&L,Total Fees Paid,Net Profit/Loss\n';
+        reportData.contract_summary.forEach((contract) => {
+          csv += `${contract.contract},${contract.exchange},${contract.total_trades},${contract.total_net_pnl.toFixed(2)},${contract.total_fees_paid.toFixed(2)},${contract.net_profit_loss.toFixed(2)}\n`;
+        });
+        csv += '\n';
+      }
+      
+      // Active Bots Section
+      if (reportData.active_bots && reportData.active_bots.length > 0) {
+        csv += 'ACTIVE BOTS\n';
+        csv += 'Bot Name,Symbol,Exchange,P&L,Total Trades,Win Rate\n';
+        reportData.active_bots.forEach((bot) => {
+          csv += `${bot.name},${bot.symbol},${bot.exchange},${bot.pnl.toFixed(2)},${bot.total_trades},${bot.win_rate.toFixed(2)}%\n`;
+        });
+      }
+      
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `bot-performance-report-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
+  };
+
   return (
     <Card className="p-6">
       <div className="flex items-center justify-between mb-4">
@@ -37,23 +97,43 @@ export default function BotReportViewer() {
           <h3 className="text-lg font-semibold text-gray-900">Bot Performance Report</h3>
           <p className="text-sm text-gray-500">Generate comprehensive report with P&L and fees</p>
         </div>
-        <Button
-          variant="primary"
-          onClick={handleGenerateReport}
-          disabled={loading}
-        >
-          {loading ? (
-            <>
-              <i className="ri-loader-4-line animate-spin mr-2"></i>
-              Generating...
-            </>
-          ) : (
-            <>
-              <i className="ri-file-chart-line mr-2"></i>
-              Generate Report
-            </>
+        <div className="flex space-x-2">
+          {report && (
+            <Button
+              variant="secondary"
+              onClick={() => handleDownloadReport(report, 'csv')}
+            >
+              <i className="ri-download-line mr-2"></i>
+              Download CSV
+            </Button>
           )}
-        </Button>
+          {report && (
+            <Button
+              variant="secondary"
+              onClick={() => handleDownloadReport(report, 'json')}
+            >
+              <i className="ri-download-line mr-2"></i>
+              Download JSON
+            </Button>
+          )}
+          <Button
+            variant="primary"
+            onClick={handleGenerateReport}
+            disabled={loading}
+          >
+            {loading ? (
+              <>
+                <i className="ri-loader-4-line animate-spin mr-2"></i>
+                Generating...
+              </>
+            ) : (
+              <>
+                <i className="ri-file-chart-line mr-2"></i>
+                Generate Report
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
       {error && (

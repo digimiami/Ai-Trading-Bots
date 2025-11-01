@@ -9,6 +9,8 @@ export interface BotReport {
     total_bots: number;
     active_bots: number;
     total_pnl: number;
+    total_pnl_from_trades?: number;
+    total_pnl_from_bots?: number;
     total_fees: number;
     net_profit_loss: number;
     total_trades: number;
