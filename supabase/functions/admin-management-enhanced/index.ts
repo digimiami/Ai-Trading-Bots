@@ -10,8 +10,8 @@ const corsHeaders = {
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response(null, { 
-      status: 204,
+    return new Response('ok', { 
+      status: 200,
       headers: corsHeaders 
     })
   }
@@ -22,7 +22,14 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    const authHeader = req.headers.get('Authorization')!
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Missing Authorization header' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
     const token = authHeader.replace('Bearer ', '')
     
     const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token)
@@ -47,7 +54,19 @@ serve(async (req) => {
       })
     }
 
-    const { action, ...params } = await req.json()
+    // Parse request body safely
+    let body: any = {}
+    try {
+      const bodyText = await req.text()
+      if (bodyText) {
+        body = JSON.parse(bodyText)
+      }
+    } catch (e) {
+      // If body is empty or invalid, use empty object
+      body = {}
+    }
+
+    const { action, ...params } = body
 
     switch (action) {
       // Existing user management functions
