@@ -81,15 +81,28 @@ export function useAdmin() {
       setLoading(true);
       setError(null);
 
-      const { data, error } = await supabase.functions.invoke('admin-management-enhanced', {
+      const { data, error: invokeError } = await supabase.functions.invoke('admin-management-enhanced', {
         body: { action, ...params }
       });
 
-      if (error) throw error;
+      if (invokeError) {
+        const errorMessage = invokeError.message || 'Unknown error occurred';
+        setError(errorMessage);
+        throw new Error(errorMessage);
+      }
+      
+      // Check if response contains an error
+      if (data?.error) {
+        const errorMessage = data.error || 'Unknown error occurred';
+        setError(errorMessage);
+        throw new Error(errorMessage);
+      }
+      
       return data;
     } catch (err: any) {
-      setError(err.message);
-      throw err;
+      const errorMessage = err.message || err.error || 'Unknown error occurred';
+      setError(errorMessage);
+      throw new Error(errorMessage);
     } finally {
       setLoading(false);
     }

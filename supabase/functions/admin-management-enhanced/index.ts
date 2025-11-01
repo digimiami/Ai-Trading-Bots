@@ -65,23 +65,68 @@ serve(async (req) => {
       case 'createUser':
         const { email, password, role } = params
         
+        if (!email || !password) {
+          return new Response(JSON.stringify({ 
+            error: 'Email and password are required' 
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+        
+        // Check if user already exists
+        const { data: existingUser } = await supabaseClient
+          .from('users')
+          .select('id')
+          .eq('email', email)
+          .single()
+
+        if (existingUser) {
+          return new Response(JSON.stringify({ 
+            error: 'User with this email already exists' 
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+        
         const { data: newUser, error: createError } = await supabaseClient.auth.admin.createUser({
           email,
           password,
           email_confirm: true
         })
 
-        if (createError) throw createError
+        if (createError) {
+          console.error('Error creating auth user:', createError)
+          return new Response(JSON.stringify({ 
+            error: createError.message || 'Failed to create user in authentication system' 
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
 
+        // Insert into users table
         const { error: dbError } = await supabaseClient
           .from('users')
           .insert({
             id: newUser.user.id,
             email,
+            name: email.split('@')[0], // Default name from email
             role: role || 'user'
           })
 
-        if (dbError) throw dbError
+        if (dbError) {
+          console.error('Error inserting user into database:', dbError)
+          // Try to cleanup auth user if DB insert fails
+          await supabaseClient.auth.admin.deleteUser(newUser.user.id)
+          return new Response(JSON.stringify({ 
+            error: dbError.message || 'Failed to create user in database' 
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
 
         return new Response(JSON.stringify({ 
           success: true, 
@@ -98,7 +143,14 @@ serve(async (req) => {
           .order('created_at', { ascending: false })
 
         if (codesError) throw codesError
-        return new Response(JSON.stringify({ codes }), {
+        
+        // Transform to match frontend expectations (used field)
+        const codesWithUsed = (codes || []).map(code => ({
+          ...code,
+          used: code.used_by !== null
+        }))
+        
+        return new Response(JSON.stringify({ codes: codesWithUsed }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
 
@@ -114,18 +166,24 @@ serve(async (req) => {
           .insert({
             code,
             email: inviteEmail,
-            expires_at: expiresAt.toISOString(),
-            used: false
+            expires_at: expiresAt.toISOString()
+            // Note: used_by and used_at are NULL by default, which means not used
           })
           .select()
           .single()
 
         if (inviteError) throw inviteError
 
+        // Transform to match frontend expectations (used field)
+        const invitationWithUsed = {
+          ...invitation,
+          used: invitation.used_by !== null
+        }
+
         return new Response(JSON.stringify({ 
           success: true, 
           message: 'Invitation code generated successfully',
-          invitation 
+          invitation: invitationWithUsed
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
@@ -156,12 +214,19 @@ serve(async (req) => {
           .from('trading_bots')
           .select(`
             *,
-            users!inner(email)
+            users(email)
           `)
           .order('created_at', { ascending: false })
 
         if (allBotsError) throw allBotsError
-        return new Response(JSON.stringify({ bots: allBots }), {
+        
+        // Transform to match frontend expectations
+        const transformedBots = (allBots || []).map(bot => ({
+          ...bot,
+          users: bot.users || { email: 'Unknown' }
+        }))
+        
+        return new Response(JSON.stringify({ bots: transformedBots }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
 
@@ -192,31 +257,38 @@ serve(async (req) => {
             total_trades,
             win_rate,
             pnl,
-            users!inner(email)
+            users(email)
           `)
 
         if (botStatsError) throw botStatsError
-        return new Response(JSON.stringify({ analytics: botStats }), {
+        
+        // Transform to match frontend expectations
+        const transformedStats = (botStats || []).map(bot => ({
+          ...bot,
+          users: bot.users || { email: 'Unknown' }
+        }))
+        
+        return new Response(JSON.stringify({ analytics: transformedStats }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
 
       // NEW: System Monitoring
       case 'getSystemStats':
-        const { data: userCount } = await supabaseClient
+        const { count: userCount } = await supabaseClient
           .from('users')
-          .select('id', { count: 'exact' })
+          .select('id', { count: 'exact', head: true })
 
-        const { data: botCount } = await supabaseClient
+        const { count: botCount } = await supabaseClient
           .from('trading_bots')
-          .select('id', { count: 'exact' })
+          .select('id', { count: 'exact', head: true })
 
-        const { data: tradeCount } = await supabaseClient
+        const { count: tradeCount } = await supabaseClient
           .from('trades')
-          .select('id', { count: 'exact' })
+          .select('id', { count: 'exact', head: true })
 
-        const { data: alertCount } = await supabaseClient
+        const { count: alertCount } = await supabaseClient
           .from('alerts')
-          .select('id', { count: 'exact' })
+          .select('id', { count: 'exact', head: true })
 
         // Get recent trading activity
         const { data: recentTrades } = await supabaseClient
@@ -235,10 +307,10 @@ serve(async (req) => {
 
         return new Response(JSON.stringify({
           stats: {
-            totalUsers: userCount?.length || 0,
-            totalBots: botCount?.length || 0,
-            totalTrades: tradeCount?.length || 0,
-            totalAlerts: alertCount?.length || 0,
+            totalUsers: userCount || 0,
+            totalBots: botCount || 0,
+            totalTrades: tradeCount || 0,
+            totalAlerts: alertCount || 0,
             platformPnL: totalPnL,
             recentTrades: recentTrades?.length || 0
           }
@@ -382,29 +454,44 @@ serve(async (req) => {
       case 'exportData':
         const { type, userId } = params
         
-        let data
+        let result
         switch (type) {
           case 'user_trades':
-            data = await supabaseClient
+            if (!userId) {
+              return new Response(JSON.stringify({ error: 'User ID is required for user_trades export' }), {
+                status: 400,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              })
+            }
+            const { data: userTrades, error: userTradesError } = await supabaseClient
               .from('trades')
               .select('*')
               .eq('user_id', userId)
+            if (userTradesError) throw userTradesError
+            result = userTrades
             break
           case 'all_trades':
-            data = await supabaseClient
+            const { data: allTradesData, error: allTradesError } = await supabaseClient
               .from('trades')
               .select('*')
+            if (allTradesError) throw allTradesError
+            result = allTradesData
             break
           case 'users':
-            data = await supabaseClient
+            const { data: usersData, error: usersError } = await supabaseClient
               .from('users')
               .select('*')
+            if (usersError) throw usersError
+            result = usersData
             break
           default:
-            throw new Error('Invalid export type')
+            return new Response(JSON.stringify({ error: 'Invalid export type' }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
         }
 
-        return new Response(JSON.stringify({ data }), {
+        return new Response(JSON.stringify({ data: result || [] }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
 

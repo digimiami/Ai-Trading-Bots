@@ -22,6 +22,8 @@ export default function BotsPage() {
   const [togglingAiMl, setTogglingAiMl] = useState<string | null>(null);
   const [editingLimitBotId, setEditingLimitBotId] = useState<string | null>(null);
   const [editingLimitValue, setEditingLimitValue] = useState<number | null>(null);
+  const [editingTradeAmountBotId, setEditingTradeAmountBotId] = useState<string | null>(null);
+  const [editingTradeAmountValue, setEditingTradeAmountValue] = useState<number | null>(null);
   
   // Get trade limits for all bots
   const botIds = bots.map(b => b.id);
@@ -555,6 +557,116 @@ export default function BotsPage() {
                   }
                   return null;
                 })()}
+
+                {/* Trade Amount */}
+                <div className="pt-3 border-t border-gray-100">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-gray-700">Trade Amount:</span>
+                      <span className="text-sm font-semibold text-gray-900">
+                        ${(bot.tradeAmount || 100).toFixed(2)} USD
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (editingTradeAmountBotId === bot.id) {
+                          setEditingTradeAmountBotId(null);
+                          setEditingTradeAmountValue(null);
+                        } else {
+                          setEditingTradeAmountBotId(bot.id);
+                          setEditingTradeAmountValue(bot.tradeAmount || 100);
+                        }
+                      }}
+                      className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                      title="Edit trade amount"
+                    >
+                      <i className="ri-edit-line"></i>
+                      Edit Amount
+                    </button>
+                  </div>
+                  
+                  {/* Estimated Order Value */}
+                  <p className="text-xs text-gray-500 mb-2">
+                    Est. Order Value: ${((bot.tradeAmount || 100) * bot.leverage * 1.5).toFixed(2)} USD
+                    <span className="ml-2 text-gray-400">
+                      (Amount × Leverage {bot.leverage}x × 1.5 buffer)
+                    </span>
+                  </p>
+
+                  {/* Inline Editor */}
+                  {editingTradeAmountBotId === bot.id && (
+                    <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                      <div className="flex items-center gap-2 mb-2">
+                        <label className="text-xs font-medium text-gray-700">
+                          Trade Amount (USD):
+                        </label>
+                        <input
+                          type="number"
+                          min="10"
+                          max="10000"
+                          step="10"
+                          value={editingTradeAmountValue || bot.tradeAmount || 100}
+                          onChange={(e) => setEditingTradeAmountValue(parseFloat(e.target.value) || 10)}
+                          className="w-24 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+                      <div className="mb-2">
+                        <p className="text-xs text-gray-600">
+                          New Est. Order Value: ${((editingTradeAmountValue || bot.tradeAmount || 100) * bot.leverage * 1.5).toFixed(2)} USD
+                        </p>
+                        {(editingTradeAmountValue || bot.tradeAmount || 100) > 100 && (
+                          <p className="text-xs text-yellow-600 mt-1">
+                            ⚠️ Higher amounts may require more balance
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          onClick={async () => {
+                            if (editingTradeAmountValue && editingTradeAmountValue >= 10 && editingTradeAmountValue <= 10000) {
+                              try {
+                                await updateBot(bot.id, {
+                                  tradeAmount: editingTradeAmountValue
+                                } as any);
+                                
+                                setEditingTradeAmountBotId(null);
+                                setEditingTradeAmountValue(null);
+                                
+                                // Refresh bot list after a short delay
+                                setTimeout(() => {
+                                  window.location.reload();
+                                }, 500);
+                                
+                                alert(`✅ Trade amount updated to $${editingTradeAmountValue.toFixed(2)}`);
+                              } catch (error: any) {
+                                console.error('Error updating trade amount:', error);
+                                const errorMsg = error?.message || 'Failed to update trade amount. Please try again.';
+                                alert(`Failed to update trade amount: ${errorMsg}`);
+                              }
+                            } else {
+                              alert('Please enter a valid trade amount between $10 and $10,000');
+                            }
+                          }}
+                          className="text-xs"
+                        >
+                          Save
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => {
+                            setEditingTradeAmountBotId(null);
+                            setEditingTradeAmountValue(null);
+                          }}
+                          className="text-xs"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 {/* Bot Stats */}
                 <div className="grid grid-cols-3 gap-4 pt-4 border-t border-gray-100">
