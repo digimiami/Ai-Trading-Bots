@@ -460,6 +460,92 @@ All settings have been applied to your bot configuration.`;
                     Target profit percentage before closing position
                   </p>
                 </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Cooldown (Bars)
+                  </label>
+                  <input
+                    type="number"
+                    value={advancedConfig.cooldown_bars}
+                    onChange={(e) => setAdvancedConfig(prev => ({ ...prev, cooldown_bars: parseInt(e.target.value) || 8 }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    min="1"
+                    max="100"
+                    step="1"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Number of bars to wait between trades (prevents overtrading)
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Allowed Trading Hours (EST)
+                  </label>
+                  <div className="border border-gray-300 rounded-lg p-3 bg-gray-50 max-h-48 overflow-y-auto">
+                    <div className="flex items-center mb-2">
+                      <input
+                        type="checkbox"
+                        checked={advancedConfig.allowed_hours_utc.length === 24}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setAdvancedConfig(prev => ({ 
+                              ...prev, 
+                              allowed_hours_utc: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23],
+                              session_filter_enabled: false
+                            }));
+                          } else {
+                            setAdvancedConfig(prev => ({ 
+                              ...prev, 
+                              allowed_hours_utc: [],
+                              session_filter_enabled: true
+                            }));
+                          }
+                        }}
+                        className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <span className="text-sm font-medium text-gray-700">Select All (24/7)</span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-2">
+                      {Array.from({ length: 24 }, (_, i) => {
+                        // Convert UTC hour to EST for display (EST = UTC - 5)
+                        const estHour = (i - 5 + 24) % 24;
+                        const isSelected = advancedConfig.allowed_hours_utc.includes(i);
+                        return (
+                          <label key={i} className="flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setAdvancedConfig(prev => ({
+                                    ...prev,
+                                    allowed_hours_utc: [...prev.allowed_hours_utc, i].sort((a, b) => a - b),
+                                    session_filter_enabled: true
+                                  }));
+                                } else {
+                                  setAdvancedConfig(prev => ({
+                                    ...prev,
+                                    allowed_hours_utc: prev.allowed_hours_utc.filter(h => h !== i),
+                                    session_filter_enabled: prev.allowed_hours_utc.filter(h => h !== i).length > 0
+                                  }));
+                                }
+                              }}
+                              className="mr-1 h-3 w-3 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            />
+                            <span className="text-xs text-gray-700">
+                              {estHour.toString().padStart(2, '0')}:00 EST
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Select hours when bot is allowed to trade (stored in UTC, displayed in EST)
+                  </p>
+                </div>
               </div>
             </Card>
 
