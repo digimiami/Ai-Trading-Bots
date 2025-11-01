@@ -309,24 +309,36 @@ export default function AdminPage() {
         {activeTab === 'overview' && (
           <div className="space-y-6">
             {/* Quick Stats */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <Card className="text-center p-4">
-                <div className="text-2xl font-bold text-blue-600">{systemStats?.totalUsers || 0}</div>
-                <div className="text-sm text-gray-500">Total Users</div>
-              </Card>
-              <Card className="text-center p-4">
-                <div className="text-2xl font-bold text-green-600">{systemStats?.totalBots || 0}</div>
-                <div className="text-sm text-gray-500">Active Bots</div>
-              </Card>
-              <Card className="text-center p-4">
-                <div className="text-2xl font-bold text-purple-600">{systemStats?.totalTrades || 0}</div>
-                <div className="text-sm text-gray-500">Total Trades</div>
-              </Card>
-              <Card className="text-center p-4">
-                <div className="text-2xl font-bold text-orange-600">${systemStats?.platformPnL?.toFixed(2) || '0.00'}</div>
-                <div className="text-sm text-gray-500">Platform PnL</div>
-              </Card>
-            </div>
+            {loading ? (
+              <div className="text-center py-12">
+                <i className="ri-loader-4-line animate-spin text-4xl text-gray-400"></i>
+                <p className="mt-4 text-gray-500">Loading overview data...</p>
+              </div>
+            ) : !systemStats ? (
+              <div className="text-center py-12 text-gray-500">
+                <i className="ri-dashboard-line text-4xl mb-2"></i>
+                <p>No system statistics available</p>
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Card className="text-center p-4">
+                    <div className="text-2xl font-bold text-blue-600">{systemStats?.totalUsers || 0}</div>
+                    <div className="text-sm text-gray-500">Total Users</div>
+                  </Card>
+                  <Card className="text-center p-4">
+                    <div className="text-2xl font-bold text-green-600">{systemStats?.totalBots || 0}</div>
+                    <div className="text-sm text-gray-500">Active Bots</div>
+                  </Card>
+                  <Card className="text-center p-4">
+                    <div className="text-2xl font-bold text-purple-600">{systemStats?.totalTrades || 0}</div>
+                    <div className="text-sm text-gray-500">Total Trades</div>
+                  </Card>
+                  <Card className="text-center p-4">
+                    <div className="text-2xl font-bold text-orange-600">${systemStats?.platformPnL?.toFixed(2) || '0.00'}</div>
+                    <div className="text-sm text-gray-500">Platform PnL</div>
+                  </Card>
+                </div>
 
             {/* Quick Actions */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -371,9 +383,14 @@ export default function AdminPage() {
                 <div className="text-center py-8">
                   <i className="ri-loader-4-line animate-spin text-2xl text-gray-400"></i>
                 </div>
+              ) : !tradingAnalytics || !tradingAnalytics.trades || tradingAnalytics.trades.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <i className="ri-exchange-line text-4xl mb-2"></i>
+                  <p>No recent trading activity</p>
+                </div>
               ) : (
                 <div className="space-y-3">
-                  {tradingAnalytics?.trades?.slice(0, 10).map((trade, index) => (
+                  {tradingAnalytics.trades.slice(0, 10).map((trade, index) => (
                     <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                       <div>
                         <div className="font-medium">{trade.symbol} - {trade.side}</div>
@@ -398,6 +415,8 @@ export default function AdminPage() {
                 </div>
               )}
             </Card>
+              </>
+            )}
           </div>
         )}
 
@@ -450,23 +469,38 @@ export default function AdminPage() {
                   Create Invitation
                 </Button>
               </div>
-              <div className="space-y-3">
-                {invitationCodes.map((code) => (
-                  <div key={code.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <div className="font-mono text-sm">{code.code}</div>
-                      <div className="text-sm text-gray-500">
-                        For: {code.email} • Expires: {new Date(code.expires_at).toLocaleDateString()}
+              {loading ? (
+                <div className="text-center py-8">
+                  <i className="ri-loader-4-line animate-spin text-2xl text-gray-400"></i>
+                </div>
+              ) : invitationCodes.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <i className="ri-mail-line text-4xl mb-2"></i>
+                  <p>No invitation codes yet</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {invitationCodes.map((code) => (
+                    <div key={code.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div className="flex-1">
+                        <div className="font-mono text-sm mb-1">{code.code}</div>
+                        <div className="text-sm text-gray-500">
+                          <span className="font-medium">Email:</span> {code.email || 'No email specified'}
+                        </div>
+                        <div className="text-xs text-gray-400 mt-1">
+                          Created: {new Date(code.created_at).toLocaleDateString()} • 
+                          Expires: {new Date(code.expires_at).toLocaleDateString()}
+                        </div>
                       </div>
+                      <span className={`px-2 py-1 rounded-full text-xs ml-4 ${
+                        code.used ? 'bg-gray-100 text-gray-800' : 'bg-green-100 text-green-800'
+                      }`}>
+                        {code.used ? 'Used' : 'Active'}
+                      </span>
                     </div>
-                    <span className={`px-2 py-1 rounded-full text-xs ${
-                      code.used ? 'bg-gray-100 text-gray-800' : 'bg-green-100 text-green-800'
-                    }`}>
-                      {code.used ? 'Used' : 'Active'}
-                    </span>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </Card>
           </div>
         )}
@@ -479,6 +513,11 @@ export default function AdminPage() {
               {loading ? (
                 <div className="text-center py-8">
                   <i className="ri-loader-4-line animate-spin text-2xl text-gray-400"></i>
+                </div>
+              ) : allBots.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <i className="ri-robot-line text-4xl mb-2"></i>
+                  <p>No trading bots found</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -536,65 +575,115 @@ export default function AdminPage() {
         {/* Analytics Tab */}
         {activeTab === 'analytics' && (
           <div className="space-y-6">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <Card className="text-center p-4">
-                <div className="text-2xl font-bold text-blue-600">{tradingAnalytics?.totalTrades || 0}</div>
-                <div className="text-sm text-gray-500">Total Trades</div>
-              </Card>
-              <Card className="text-center p-4">
-                <div className="text-2xl font-bold text-green-600">{tradingAnalytics?.filledTrades || 0}</div>
-                <div className="text-sm text-gray-500">Successful</div>
-              </Card>
-              <Card className="text-center p-4">
-                <div className="text-2xl font-bold text-red-600">{tradingAnalytics?.failedTrades || 0}</div>
-                <div className="text-sm text-gray-500">Failed</div>
-              </Card>
-              <Card className="text-center p-4">
-                <div className="text-2xl font-bold text-purple-600">{tradingAnalytics?.successRate?.toFixed(1) || '0.0'}%</div>
-                <div className="text-sm text-gray-500">Success Rate</div>
-              </Card>
-            </div>
+            {loading ? (
+              <div className="text-center py-12">
+                <i className="ri-loader-4-line animate-spin text-4xl text-gray-400"></i>
+                <p className="mt-4 text-gray-500">Loading analytics data...</p>
+              </div>
+            ) : !tradingAnalytics ? (
+              <div className="text-center py-12 text-gray-500">
+                <i className="ri-bar-chart-line text-4xl mb-2"></i>
+                <p>No trading analytics available</p>
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Card className="text-center p-4">
+                    <div className="text-2xl font-bold text-blue-600">{tradingAnalytics?.totalTrades || 0}</div>
+                    <div className="text-sm text-gray-500">Total Trades</div>
+                  </Card>
+                  <Card className="text-center p-4">
+                    <div className="text-2xl font-bold text-green-600">{tradingAnalytics?.filledTrades || 0}</div>
+                    <div className="text-sm text-gray-500">Successful</div>
+                  </Card>
+                  <Card className="text-center p-4">
+                    <div className="text-2xl font-bold text-red-600">{tradingAnalytics?.failedTrades || 0}</div>
+                    <div className="text-sm text-gray-500">Failed</div>
+                  </Card>
+                  <Card className="text-center p-4">
+                    <div className="text-2xl font-bold text-purple-600">{tradingAnalytics?.successRate?.toFixed(1) || '0.0'}%</div>
+                    <div className="text-sm text-gray-500">Success Rate</div>
+                  </Card>
+                </div>
 
             <Card className="p-4">
               <h3 className="text-lg font-semibold mb-4">Exchange Statistics</h3>
-              <div className="space-y-3">
-                {Object.entries(tradingAnalytics?.exchangeStats || {}).map(([exchange, stats]) => (
-                  <div key={exchange} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <div className="font-medium">{exchange}</div>
-                      <div className="text-sm text-gray-500">{stats.count} trades</div>
+              {!tradingAnalytics || Object.keys(tradingAnalytics?.exchangeStats || {}).length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <i className="ri-bar-chart-line text-4xl mb-2"></i>
+                  <p>No exchange statistics available</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {Object.entries(tradingAnalytics?.exchangeStats || {}).map(([exchange, stats]) => (
+                    <div key={exchange} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div>
+                        <div className="font-medium">{exchange}</div>
+                        <div className="text-sm text-gray-500">{stats.count} trades</div>
+                      </div>
+                      <div className={`font-medium ${stats.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        ${stats.pnl.toFixed(2)}
+                      </div>
                     </div>
-                    <div className={`font-medium ${stats.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      ${stats.pnl.toFixed(2)}
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </Card>
+              </>
+            )}
           </div>
         )}
 
         {/* Financial Tab */}
         {activeTab === 'financial' && (
           <div className="space-y-6">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <Card className="text-center p-4">
-                <div className="text-2xl font-bold text-blue-600">${financialOverview?.totalVolume?.toFixed(2) || '0.00'}</div>
-                <div className="text-sm text-gray-500">Total Volume</div>
-              </Card>
-              <Card className="text-center p-4">
-                <div className="text-2xl font-bold text-green-600">${financialOverview?.totalPnL?.toFixed(2) || '0.00'}</div>
-                <div className="text-sm text-gray-500">Total PnL</div>
-              </Card>
-              <Card className="text-center p-4">
-                <div className="text-2xl font-bold text-red-600">${financialOverview?.totalFees?.toFixed(2) || '0.00'}</div>
-                <div className="text-sm text-gray-500">Total Fees</div>
-              </Card>
-              <Card className="text-center p-4">
-                <div className="text-2xl font-bold text-purple-600">${financialOverview?.netProfit?.toFixed(2) || '0.00'}</div>
-                <div className="text-sm text-gray-500">Net Profit</div>
-              </Card>
-            </div>
+            {loading ? (
+              <div className="text-center py-12">
+                <i className="ri-loader-4-line animate-spin text-4xl text-gray-400"></i>
+                <p className="mt-4 text-gray-500">Loading financial data...</p>
+              </div>
+            ) : !financialOverview ? (
+              <div className="text-center py-12 text-gray-500">
+                <i className="ri-money-dollar-circle-line text-4xl mb-2"></i>
+                <p>No financial data available</p>
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Card className="text-center p-4">
+                    <div className="text-2xl font-bold text-blue-600">${financialOverview?.totalVolume?.toFixed(2) || '0.00'}</div>
+                    <div className="text-sm text-gray-500">Total Volume</div>
+                  </Card>
+                  <Card className="text-center p-4">
+                    <div className="text-2xl font-bold text-green-600">${financialOverview?.totalPnL?.toFixed(2) || '0.00'}</div>
+                    <div className="text-sm text-gray-500">Total PnL</div>
+                  </Card>
+                  <Card className="text-center p-4">
+                    <div className="text-2xl font-bold text-red-600">${financialOverview?.totalFees?.toFixed(2) || '0.00'}</div>
+                    <div className="text-sm text-gray-500">Total Fees</div>
+                  </Card>
+                  <Card className="text-center p-4">
+                    <div className="text-2xl font-bold text-purple-600">${financialOverview?.netProfit?.toFixed(2) || '0.00'}</div>
+                    <div className="text-sm text-gray-500">Net Profit</div>
+                  </Card>
+                </div>
+                {financialOverview.dailyPnL && Object.keys(financialOverview.dailyPnL).length > 0 && (
+                  <Card className="p-4">
+                    <h3 className="text-lg font-semibold mb-4">Daily PnL (Last 30 Days)</h3>
+                    <div className="space-y-2 max-h-96 overflow-y-auto">
+                      {Object.entries(financialOverview.dailyPnL).slice(-30).reverse().map(([date, pnl]) => (
+                        <div key={date} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                          <span className="text-sm text-gray-600">{new Date(date).toLocaleDateString()}</span>
+                          <span className={`font-medium ${pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            ${pnl.toFixed(2)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                )}
+              </>
+            )}
           </div>
         )}
 
@@ -603,24 +692,66 @@ export default function AdminPage() {
           <div className="space-y-6">
             <Card className="p-4">
               <h3 className="text-lg font-semibold mb-4">System Logs</h3>
-              <div className="space-y-3 max-h-96 overflow-y-auto">
-                {systemLogs.map((log, index) => (
-                  <div key={index} className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
-                    <div className={`w-2 h-2 rounded-full mt-2 ${
-                      log.level === 'error' ? 'bg-red-500' :
-                      log.level === 'warning' ? 'bg-yellow-500' :
-                      log.level === 'success' ? 'bg-green-500' :
-                      'bg-blue-500'
-                    }`}></div>
-                    <div className="flex-1">
-                      <div className="font-medium">{log.message}</div>
-                      <div className="text-sm text-gray-500">
-                        {log.category} • {new Date(log.created_at).toLocaleString()}
+              {loading ? (
+                <div className="text-center py-8">
+                  <i className="ri-loader-4-line animate-spin text-2xl text-gray-400"></i>
+                </div>
+              ) : !systemLogs || systemLogs.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <i className="ri-file-list-line text-4xl mb-2"></i>
+                  <p>No system logs available</p>
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {systemLogs.map((log, index) => (
+                    <div key={index} className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
+                      <div className={`w-2 h-2 rounded-full mt-2 ${
+                        log.level === 'error' ? 'bg-red-500' :
+                        log.level === 'warning' ? 'bg-yellow-500' :
+                        log.level === 'success' ? 'bg-green-500' :
+                        'bg-blue-500'
+                      }`}></div>
+                      <div className="flex-1">
+                        <div className="font-medium">{log.message || log.event_message || 'No message'}</div>
+                        <div className="text-sm text-gray-500">
+                          {log.category || log.event_type || 'System'} • {log.created_at ? new Date(log.created_at).toLocaleString() : 'Unknown date'}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+            <Card className="p-4">
+              <h3 className="text-lg font-semibold mb-4">User Activity</h3>
+              {loading ? (
+                <div className="text-center py-8">
+                  <i className="ri-loader-4-line animate-spin text-2xl text-gray-400"></i>
+                </div>
+              ) : !userActivity || userActivity.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <i className="ri-user-line text-4xl mb-2"></i>
+                  <p>No user activity data available</p>
+                </div>
+              ) : (
+                <div className="space-y-3 max-h-96 overflow-y-auto">
+                  {userActivity.slice(0, 20).map((activity) => (
+                    <div key={activity.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div>
+                        <div className="font-medium">{activity.email}</div>
+                        <div className="text-sm text-gray-500">
+                          Bots: {activity.trading_bots?.length || 0} • 
+                          Trades: {activity.trades?.length || 0} • 
+                          Last Active: {activity.last_sign_in_at ? new Date(activity.last_sign_in_at).toLocaleDateString() : 'Never'}
+                        </div>
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        {new Date(activity.created_at).toLocaleDateString()}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </Card>
           </div>
         )}
@@ -630,33 +761,75 @@ export default function AdminPage() {
           <div className="space-y-6">
             <Card className="p-4">
               <h3 className="text-lg font-semibold mb-4">Risk Monitoring</h3>
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div className="text-center p-4 bg-gray-50 rounded-lg">
-                  <div className="text-2xl font-bold text-red-600">{riskMetrics?.riskScore || 0}</div>
-                  <div className="text-sm text-gray-500">Risk Score</div>
+              {loading ? (
+                <div className="text-center py-8">
+                  <i className="ri-loader-4-line animate-spin text-2xl text-gray-400"></i>
                 </div>
-                <div className="text-center p-4 bg-gray-50 rounded-lg">
-                  <div className="text-2xl font-bold text-orange-600">{riskMetrics?.largeTrades?.length || 0}</div>
-                  <div className="text-sm text-gray-500">Large Trades</div>
+              ) : !riskMetrics ? (
+                <div className="text-center py-8 text-gray-500">
+                  <i className="ri-shield-check-line text-4xl mb-2"></i>
+                  <p>No risk metrics available</p>
                 </div>
-              </div>
-              
-              <div className="space-y-3">
-                <h4 className="font-medium">Recent Failed Trades</h4>
-                {riskMetrics?.failedTrades?.slice(0, 10).map((trade, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
-                    <div>
-                      <div className="font-medium">{trade.symbol} - {trade.side}</div>
-                      <div className="text-sm text-gray-500">
-                        {trade.exchange} • {new Date(trade.created_at).toLocaleString()}
-                      </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div className="text-center p-4 bg-gray-50 rounded-lg">
+                      <div className="text-2xl font-bold text-red-600">{riskMetrics?.riskScore || 0}</div>
+                      <div className="text-sm text-gray-500">Risk Score</div>
                     </div>
-                    <span className="px-2 py-1 rounded-full text-xs bg-red-100 text-red-800">
-                      Failed
-                    </span>
+                    <div className="text-center p-4 bg-gray-50 rounded-lg">
+                      <div className="text-2xl font-bold text-orange-600">{riskMetrics?.largeTrades?.length || 0}</div>
+                      <div className="text-sm text-gray-500">Large Trades</div>
+                    </div>
                   </div>
-                ))}
-              </div>
+                  
+                  <div className="space-y-3">
+                    <h4 className="font-medium">Large Trades (≥ $1000)</h4>
+                    {!riskMetrics.largeTrades || riskMetrics.largeTrades.length === 0 ? (
+                      <div className="text-center py-4 text-gray-400 text-sm">No large trades found</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {riskMetrics.largeTrades.slice(0, 10).map((trade, index) => (
+                          <div key={index} className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
+                            <div>
+                              <div className="font-medium">{trade.symbol} - {trade.side}</div>
+                              <div className="text-sm text-gray-500">
+                                {trade.exchange} • Amount: ${trade.amount?.toFixed(2) || '0.00'} • {trade.created_at ? new Date(trade.created_at).toLocaleString() : 'Unknown date'}
+                              </div>
+                            </div>
+                            <span className="px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-800">
+                              Large
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="space-y-3 mt-4">
+                    <h4 className="font-medium">Recent Failed Trades</h4>
+                    {!riskMetrics.failedTrades || riskMetrics.failedTrades.length === 0 ? (
+                      <div className="text-center py-4 text-gray-400 text-sm">No failed trades in the last 24 hours</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {riskMetrics.failedTrades.slice(0, 10).map((trade, index) => (
+                          <div key={index} className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
+                            <div>
+                              <div className="font-medium">{trade.symbol} - {trade.side}</div>
+                              <div className="text-sm text-gray-500">
+                                {trade.exchange} • {trade.created_at ? new Date(trade.created_at).toLocaleString() : 'Unknown date'}
+                              </div>
+                            </div>
+                            <span className="px-2 py-1 rounded-full text-xs bg-red-100 text-red-800">
+                              Failed
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </Card>
           </div>
         )}
