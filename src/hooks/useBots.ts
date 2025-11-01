@@ -96,10 +96,46 @@ export const useBots = () => {
 
   const startBot = async (botId: string) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      // Get session with better error handling
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
-      if (!session) {
-        throw new Error('No active session');
+      if (sessionError) {
+        console.error('Session error:', sessionError);
+        throw new Error(`Session error: ${sessionError.message}`);
+      }
+
+      if (!session || !session.access_token) {
+        console.error('No active session or token. Attempting to refresh...');
+        // Try to refresh the session
+        const { data: { session: newSession }, error: refreshError } = await supabase.auth.refreshSession();
+        
+        if (refreshError || !newSession) {
+          console.error('Session refresh failed:', refreshError);
+          throw new Error('No active session. Please log in again.');
+        }
+        
+        // Use the refreshed session
+        const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management?action=start`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${newSession.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ id: botId }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Bot start error:', response.status, errorText);
+          throw new Error(`Failed to start bot: ${response.status} - ${errorText}`);
+        }
+
+        const data = await response.json();
+        if (data.bot) {
+          setBots(prev => prev.map(bot => bot.id === botId ? data.bot : bot));
+          return data.bot;
+        }
+        throw new Error('No bot data returned');
       }
 
       const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management?action=start`, {
@@ -114,7 +150,7 @@ export const useBots = () => {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Bot start error:', response.status, errorText);
-        throw new Error(`Failed to start bot: ${response.status}`);
+        throw new Error(`Failed to start bot: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
@@ -123,18 +159,58 @@ export const useBots = () => {
         return data.bot;
       }
       throw new Error('No bot data returned');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error starting bot:', err);
+      // Check if it's a network/CORS error
+      if (err.message?.includes('Failed to fetch') || err.message?.includes('CORS')) {
+        throw new Error('Network error: Please check your connection and try again. If using a custom domain, ensure CORS is configured correctly.');
+      }
       throw err;
     }
   };
 
   const stopBot = async (botId: string) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      // Get session with better error handling
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
-      if (!session) {
-        throw new Error('No active session');
+      if (sessionError) {
+        console.error('Session error:', sessionError);
+        throw new Error(`Session error: ${sessionError.message}`);
+      }
+
+      if (!session || !session.access_token) {
+        console.error('No active session or token. Attempting to refresh...');
+        // Try to refresh the session
+        const { data: { session: newSession }, error: refreshError } = await supabase.auth.refreshSession();
+        
+        if (refreshError || !newSession) {
+          console.error('Session refresh failed:', refreshError);
+          throw new Error('No active session. Please log in again.');
+        }
+        
+        // Use the refreshed session
+        const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management?action=stop`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${newSession.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ id: botId }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Bot stop error:', response.status, errorText);
+          throw new Error(`Failed to stop bot: ${response.status} - ${errorText}`);
+        }
+
+        const data = await response.json();
+        if (data.bot) {
+          setBots(prev => prev.map(bot => bot.id === botId ? data.bot : bot));
+          return data.bot;
+        }
+        throw new Error('No bot data returned');
       }
 
       const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management?action=stop`, {
@@ -149,7 +225,7 @@ export const useBots = () => {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Bot stop error:', response.status, errorText);
-        throw new Error(`Failed to stop bot: ${response.status}`);
+        throw new Error(`Failed to stop bot: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
@@ -158,18 +234,61 @@ export const useBots = () => {
         return data.bot;
       }
       throw new Error('No bot data returned');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error stopping bot:', err);
+      // Check if it's a network/CORS error
+      if (err.message?.includes('Failed to fetch') || err.message?.includes('CORS')) {
+        throw new Error('Network error: Please check your connection and try again. If using a custom domain, ensure CORS is configured correctly.');
+      }
       throw err;
     }
   };
 
   const updateBot = async (botId: string, updates: Partial<TradingBot>) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      // Get session with better error handling
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       
-      if (!session) {
-        throw new Error('No active session');
+      if (sessionError) {
+        console.error('Session error:', sessionError);
+        throw new Error(`Session error: ${sessionError.message}`);
+      }
+
+      if (!session || !session.access_token) {
+        console.error('No active session or token. Attempting to refresh...');
+        // Try to refresh the session
+        const { data: { session: newSession }, error: refreshError } = await supabase.auth.refreshSession();
+        
+        if (refreshError || !newSession) {
+          console.error('Session refresh failed:', refreshError);
+          throw new Error('No active session. Please log in again.');
+        }
+        
+        // Use the refreshed session
+        const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management?action=update`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${newSession.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            id: botId,
+            ...updates
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Bot update error:', response.status, errorText);
+          throw new Error(`Failed to update bot: ${response.status} - ${errorText}`);
+        }
+
+        const data = await response.json();
+        if (data.bot) {
+          setBots(prev => prev.map(bot => bot.id === botId ? data.bot : bot));
+          return data.bot;
+        }
+        throw new Error('No bot data returned');
       }
 
       const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management?action=update`, {
@@ -187,7 +306,7 @@ export const useBots = () => {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Bot update error:', response.status, errorText);
-        throw new Error(`Failed to update bot: ${response.status}`);
+        throw new Error(`Failed to update bot: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
@@ -196,8 +315,12 @@ export const useBots = () => {
         return data.bot;
       }
       throw new Error('No bot data returned');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error updating bot:', err);
+      // Check if it's a network/CORS error
+      if (err.message?.includes('Failed to fetch') || err.message?.includes('CORS')) {
+        throw new Error('Network error: Please check your connection and try again. If using a custom domain, ensure CORS is configured correctly.');
+      }
       throw err;
     }
   };

@@ -82,6 +82,8 @@ export default function BotsPage() {
 
   const handleBotAction = async (botId: string, action: 'start' | 'pause' | 'stop') => {
     try {
+      console.log(`🔄 Attempting to ${action} bot ${botId}...`);
+      
       if (action === 'start') {
         await startBot(botId);
         await addLog(botId, {
@@ -90,6 +92,7 @@ export default function BotsPage() {
           message: 'Bot started successfully',
           details: { action: 'start', timestamp: new Date().toISOString() }
         });
+        console.log(`✅ Bot ${botId} started successfully`);
       } else if (action === 'stop') {
         await stopBot(botId);
         await addLog(botId, {
@@ -98,6 +101,7 @@ export default function BotsPage() {
           message: 'Bot stopped by user',
           details: { action: 'stop', timestamp: new Date().toISOString() }
         });
+        console.log(`✅ Bot ${botId} stopped successfully`);
       } else if (action === 'pause') {
         await updateBot(botId, { status: 'paused' });
         await addLog(botId, {
@@ -106,14 +110,26 @@ export default function BotsPage() {
           message: 'Bot paused by user',
           details: { action: 'pause', timestamp: new Date().toISOString() }
         });
+        console.log(`✅ Bot ${botId} paused successfully`);
       }
-    } catch (error) {
-      console.error('Failed to update bot:', error);
+    } catch (error: any) {
+      console.error(`❌ Failed to ${action} bot:`, error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      
+      // Show user-friendly error message
+      if (errorMessage.includes('No active session')) {
+        alert('⚠️ Session expired. Please refresh the page and log in again.');
+      } else if (errorMessage.includes('Network error') || errorMessage.includes('CORS')) {
+        alert(`⚠️ Connection error: ${errorMessage}\n\nIf using a custom domain, ensure:\n1. Supabase redirect URLs include your domain\n2. CORS is properly configured`);
+      } else {
+        alert(`⚠️ Failed to ${action} bot: ${errorMessage}`);
+      }
+      
       await addLog(botId, {
         level: 'error',
         category: 'error',
-        message: `Failed to ${action} bot: ${error}`,
-        details: { action, error: error instanceof Error ? error.message : String(error) }
+        message: `Failed to ${action} bot: ${errorMessage}`,
+        details: { action, error: errorMessage, timestamp: new Date().toISOString() }
       });
     }
   };
