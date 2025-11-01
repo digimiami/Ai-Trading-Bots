@@ -6,6 +6,7 @@ import Card from '../../components/base/Card';
 import { useBotActivity } from '../../hooks/useBotActivity';
 import { useBots } from '../../hooks/useBots';
 import BotActivityLogs from '../../components/bot/BotActivityLogs';
+import BotReportViewer from '../../components/bot/BotReportViewer';
 
 export default function BotActivityPage() {
   const { bots } = useBots();
@@ -121,6 +122,9 @@ export default function BotActivityPage() {
             ))
           )}
         </div>
+
+        {/* Bot Performance Report */}
+        <BotReportViewer />
 
         {/* Debug Tools */}
         <Card className="p-6">
