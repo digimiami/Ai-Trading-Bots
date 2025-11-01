@@ -289,7 +289,7 @@ serve(async (req) => {
         })
 
       // NEW: System Monitoring
-      case 'getSystemStats':
+      case 'getSystemStats': {
         const { count: userCount } = await supabaseClient
           .from('users')
           .select('id', { count: 'exact', head: true })
@@ -333,8 +333,9 @@ serve(async (req) => {
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
+      }
 
-      case 'getTradingAnalytics':
+      case 'getTradingAnalytics': {
         const { period = '7' } = params
         const daysAgo = new Date(Date.now() - parseInt(period) * 24 * 60 * 60 * 1000)
 
@@ -376,9 +377,10 @@ serve(async (req) => {
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
+      }
 
       // NEW: Financial Oversight
-      case 'getFinancialOverview':
+      case 'getFinancialOverview': {
         const { data: allTrades } = await supabaseClient
           .from('trades')
           .select('pnl, fee, amount, price, created_at, status')
@@ -407,6 +409,7 @@ serve(async (req) => {
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
+      }
 
       // NEW: User Activity Monitoring
       case 'getUserActivity':
@@ -441,7 +444,7 @@ serve(async (req) => {
         })
 
       // NEW: Risk Monitoring
-      case 'getRiskMetrics':
+      case 'getRiskMetrics': {
         const { data: largeTrades } = await supabaseClient
           .from('trades')
           .select('*')
@@ -465,14 +468,15 @@ serve(async (req) => {
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
+      }
 
       // NEW: Data Export
-      case 'exportData':
+      case 'exportData': {
         const { type, userId } = params
         
         let result
         switch (type) {
-          case 'user_trades':
+          case 'user_trades': {
             if (!userId) {
               return new Response(JSON.stringify({ error: 'User ID is required for user_trades export' }), {
                 status: 400,
@@ -486,20 +490,23 @@ serve(async (req) => {
             if (userTradesError) throw userTradesError
             result = userTrades
             break
-          case 'all_trades':
+          }
+          case 'all_trades': {
             const { data: allTradesData, error: allTradesError } = await supabaseClient
               .from('trades')
               .select('*')
             if (allTradesError) throw allTradesError
             result = allTradesData
             break
-          case 'users':
+          }
+          case 'users': {
             const { data: usersData, error: usersError } = await supabaseClient
               .from('users')
               .select('*')
             if (usersError) throw usersError
             result = usersData
             break
+          }
           default:
             return new Response(JSON.stringify({ error: 'Invalid export type' }), {
               status: 400,
@@ -510,6 +517,7 @@ serve(async (req) => {
         return new Response(JSON.stringify({ data: result || [] }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
+      }
 
       default:
         return new Response(JSON.stringify({ error: 'Invalid action' }), {
