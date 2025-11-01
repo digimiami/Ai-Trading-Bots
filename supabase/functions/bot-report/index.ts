@@ -30,6 +30,12 @@ serve(async (req) => {
       )
     }
 
+    // Get bot performance summary FIRST (needed for Total P&L calculation)
+    const { data: botPerformanceData } = await supabaseClient
+      .from('trading_bots')
+      .select('id, name, symbol, exchange, trading_type, status, pnl')
+      .eq('user_id', user.id)
+
     // Active Bots Details
     const { data: activeBotsData } = await supabaseClient
       .from('trading_bots')
@@ -64,12 +70,6 @@ serve(async (req) => {
       }
       return sum + fee
     }, 0) || 0
-
-    // Get bot performance summary
-    const { data: botPerformanceData } = await supabaseClient
-      .from('trading_bots')
-      .select('id, name, symbol, exchange, trading_type, status, pnl')
-      .eq('user_id', user.id)
 
     // Contract summary - get trades with bot info
     // First get user's bots, then get their trades
