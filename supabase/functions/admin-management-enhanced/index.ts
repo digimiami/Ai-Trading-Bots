@@ -8,12 +8,9 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  // Handle CORS preflight requests
+  // Handle CORS preflight requests - MUST be first to avoid any errors
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { 
-      status: 200,
-      headers: corsHeaders 
-    })
+    return new Response('ok', { headers: corsHeaders })
   }
 
   try {
