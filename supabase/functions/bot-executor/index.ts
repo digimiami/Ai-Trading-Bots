@@ -593,12 +593,30 @@ class BotExecutor {
       }
       
     } catch (error) {
-      console.error(`Bot execution error for ${bot.name}:`, error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`❌ Trade execution error for ${bot.name}:`, error);
+      
+      // Check if it's a regulatory restriction - handle gracefully
+      if (errorMessage.includes('Regulatory restriction') || errorMessage.includes('10024')) {
+        await this.addBotLog(bot.id, {
+          level: 'warning',
+          category: 'restriction',
+          message: `⚠️ Trading blocked due to regulatory restrictions. Please complete KYC verification on Bybit.`,
+          details: { 
+            error: errorMessage,
+            action: 'Complete KYC or contact Bybit Customer Support',
+            skipTrade: true
+          }
+        });
+        console.warn(`⚠️ Trading skipped for ${bot.name} due to regulatory restrictions. Bot will continue monitoring but won't execute trades until restriction is resolved.`);
+        return; // Skip this trade but don't mark as failed
+      }
+      
       await this.addBotLog(bot.id, {
         level: 'error',
         category: 'error',
-        message: `Execution error: ${error.message}`,
-        details: { error: error.message }
+        message: `Execution error: ${errorMessage}`,
+        details: { error: errorMessage }
       });
     }
   }
@@ -913,6 +931,12 @@ class BotExecutor {
           console.warn(`💰 Order value: $${orderValue.toFixed(2)}`);
           console.warn(`💡 This may happen temporarily. The bot will retry on the next execution.`);
           throw new Error(`Insufficient balance for ${symbol} order. Order value: $${orderValue.toFixed(2)}. Please check your account balance or wait for funds to become available. This is often temporary and will retry automatically.`);
+        } else if (data.retCode === 10024) {
+          // Regulatory restrictions - account needs KYC or has access restrictions
+          console.warn(`⚠️ Regulatory restriction detected for ${symbol} trading`);
+          console.warn(`📋 Error message: ${data.retMsg}`);
+          console.warn(`💡 Action required: Complete KYC verification or contact Bybit Customer Support`);
+          throw new Error(`Regulatory restriction: ${data.retMsg}. Please complete KYC verification on Bybit or contact Customer Support. Trading for this symbol will be skipped until the restriction is resolved.`);
         }
         
         throw new Error(`Bybit order error: ${data.retMsg} (Code: ${data.retCode})`);
