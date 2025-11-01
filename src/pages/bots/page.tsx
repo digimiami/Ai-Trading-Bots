@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { useBots } from '../../hooks/useBots';
 import { useBotActivity } from '../../hooks/useBotActivity';
 import { useBotExecutor } from '../../hooks/useBotExecutor';
+import { useBotTradeLimits } from '../../hooks/useBotTradeLimits';
 
 export default function BotsPage() {
   const navigate = useNavigate();
@@ -19,6 +20,12 @@ export default function BotsPage() {
   const [bulkLoading, setBulkLoading] = useState(false);
   const [expandedBot, setExpandedBot] = useState<string | null>(null);
   const [togglingAiMl, setTogglingAiMl] = useState<string | null>(null);
+  const [editingLimitBotId, setEditingLimitBotId] = useState<string | null>(null);
+  const [editingLimitValue, setEditingLimitValue] = useState<number | null>(null);
+  
+  // Get trade limits for all bots
+  const botIds = bots.map(b => b.id);
+  const { limits, getLimit, refresh: refreshLimits } = useBotTradeLimits(botIds);
 
   const filteredBots = bots.filter(bot => 
     filter === 'all' || bot.status === filter
@@ -370,13 +377,25 @@ export default function BotsPage() {
                     <div>
                       <h3 className="font-semibold text-gray-900">{bot.name}</h3>
                       <p className="text-sm text-gray-500">{bot.symbol} • {bot.exchange.toUpperCase()}</p>
-                      <div className="flex items-center space-x-2 mt-1">
+                      <div className="flex items-center space-x-2 mt-1 flex-wrap gap-1">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(bot.status)}`}>
                           {bot.status}
                         </span>
                         <span className={`text-xs font-medium ${getRiskColor(bot.riskLevel)}`}>
                           {bot.riskLevel} risk
                         </span>
+                        {(() => {
+                          const limit = getLimit(bot.id);
+                          if (limit && limit.isLimitReached) {
+                            return (
+                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 flex items-center gap-1">
+                                <i className="ri-alert-line"></i>
+                                Limit Reached
+                              </span>
+                            );
+                          }
+                          return null;
+                        })()}
                       </div>
                     </div>
                   </div>
@@ -390,6 +409,125 @@ export default function BotsPage() {
                     </p>
                   </div>
                 </div>
+
+                {/* Trade Limit Status */}
+                {(() => {
+                  const limit = getLimit(bot.id);
+                  if (limit) {
+                    return (
+                      <div className="pt-3 border-t border-gray-100">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-gray-700">Daily Trades:</span>
+                            <span className={`text-sm font-semibold ${
+                              limit.isLimitReached ? 'text-red-600' : 
+                              limit.tradesToday / limit.maxTradesPerDay > 0.8 ? 'text-yellow-600' : 
+                              'text-green-600'
+                            }`}>
+                              {limit.tradesToday} / {limit.maxTradesPerDay}
+                            </span>
+                            {limit.isLimitReached && (
+                              <span className="text-xs text-red-600">(Limit Reached)</span>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => {
+                              if (editingLimitBotId === bot.id) {
+                                setEditingLimitBotId(null);
+                                setEditingLimitValue(null);
+                              } else {
+                                setEditingLimitBotId(bot.id);
+                                setEditingLimitValue(limit.maxTradesPerDay);
+                              }
+                            }}
+                            className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                            title="Edit max trades per day"
+                          >
+                            <i className="ri-edit-line"></i>
+                            Edit Limit
+                          </button>
+                        </div>
+                        
+                        {/* Progress Bar */}
+                        <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
+                          <div 
+                            className={`h-2 rounded-full transition-all ${
+                              limit.isLimitReached ? 'bg-red-500' : 
+                              limit.tradesToday / limit.maxTradesPerDay > 0.8 ? 'bg-yellow-500' : 
+                              'bg-green-500'
+                            }`}
+                            style={{ 
+                              width: `${Math.min(100, (limit.tradesToday / limit.maxTradesPerDay) * 100)}%` 
+                            }}
+                          ></div>
+                        </div>
+
+                        {/* Inline Editor */}
+                        {editingLimitBotId === bot.id && (
+                          <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                            <div className="flex items-center gap-2 mb-2">
+                              <label className="text-xs font-medium text-gray-700">
+                                Max Trades Per Day:
+                              </label>
+                              <input
+                                type="number"
+                                min="1"
+                                max="100"
+                                value={editingLimitValue || limit.maxTradesPerDay}
+                                onChange={(e) => setEditingLimitValue(parseInt(e.target.value) || 1)}
+                                className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              />
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                onClick={async () => {
+                                  if (editingLimitValue && editingLimitValue > 0) {
+                                    try {
+                                      // Update bot's strategyConfig
+                                      const currentConfig = bot.strategyConfig || {};
+                                      const updatedConfig = {
+                                        ...currentConfig,
+                                        max_trades_per_day: editingLimitValue
+                                      };
+                                      
+                                      await updateBot(bot.id, {
+                                        strategyConfig: updatedConfig
+                                      } as any);
+                                      
+                                      setEditingLimitBotId(null);
+                                      setEditingLimitValue(null);
+                                      await refreshLimits();
+                                      alert(`✅ Max trades per day updated to ${editingLimitValue}`);
+                                    } catch (error) {
+                                      console.error('Error updating limit:', error);
+                                      alert('Failed to update limit. Please try again.');
+                                    }
+                                  }
+                                }}
+                                className="text-xs"
+                              >
+                                Save
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => {
+                                  setEditingLimitBotId(null);
+                                  setEditingLimitValue(null);
+                                }}
+                                className="text-xs"
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
 
                 {/* Bot Stats */}
                 <div className="grid grid-cols-3 gap-4 pt-4 border-t border-gray-100">
