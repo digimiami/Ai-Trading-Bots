@@ -484,24 +484,51 @@ export default function BotsPage() {
                                 onClick={async () => {
                                   if (editingLimitValue && editingLimitValue > 0) {
                                     try {
-                                      // Update bot's strategyConfig
-                                      const currentConfig = bot.strategyConfig || {};
+                                      // Get current strategyConfig from bot or use default
+                                      let currentConfig: any = {};
+                                      
+                                      // Try to parse strategyConfig if it exists
+                                      if (bot.strategyConfig) {
+                                        if (typeof bot.strategyConfig === 'string') {
+                                          try {
+                                            currentConfig = JSON.parse(bot.strategyConfig);
+                                          } catch (e) {
+                                            console.warn('Failed to parse strategyConfig:', e);
+                                            currentConfig = {};
+                                          }
+                                        } else {
+                                          currentConfig = { ...bot.strategyConfig };
+                                        }
+                                      }
+                                      
+                                      // Update max_trades_per_day
                                       const updatedConfig = {
                                         ...currentConfig,
                                         max_trades_per_day: editingLimitValue
                                       };
                                       
+                                      console.log('Updating strategyConfig:', updatedConfig);
+                                      
+                                      // Update bot with merged strategyConfig
                                       await updateBot(bot.id, {
                                         strategyConfig: updatedConfig
                                       } as any);
                                       
                                       setEditingLimitBotId(null);
                                       setEditingLimitValue(null);
-                                      await refreshLimits();
+                                      
+                                      // Refresh limits after a short delay to allow DB to update
+                                      setTimeout(async () => {
+                                        await refreshLimits();
+                                        // Also refresh bot list
+                                        window.location.reload(); // Simple way to refresh bot data
+                                      }, 500);
+                                      
                                       alert(`✅ Max trades per day updated to ${editingLimitValue}`);
-                                    } catch (error) {
+                                    } catch (error: any) {
                                       console.error('Error updating limit:', error);
-                                      alert('Failed to update limit. Please try again.');
+                                      const errorMsg = error?.message || 'Failed to update limit. Please try again.';
+                                      alert(`Failed to update limit: ${errorMsg}`);
                                     }
                                   }
                                 }}

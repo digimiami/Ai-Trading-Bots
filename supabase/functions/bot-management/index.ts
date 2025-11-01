@@ -174,6 +174,35 @@ serve(async (req) => {
         if (updates.riskLevel) dbUpdates.risk_level = updates.riskLevel
         if (updates.strategy) dbUpdates.strategy = JSON.stringify(updates.strategy)
         
+        // Handle strategyConfig (Advanced Strategy Configuration)
+        if (updates.strategyConfig !== undefined) {
+          // Get existing strategy_config to merge with new values
+          const { data: botData } = await supabaseClient
+            .from('trading_bots')
+            .select('strategy_config')
+            .eq('id', id)
+            .single()
+          
+          let existingConfig = {}
+          if (botData?.strategy_config) {
+            // Parse if it's a string, otherwise use as-is
+            existingConfig = typeof botData.strategy_config === 'string'
+              ? JSON.parse(botData.strategy_config)
+              : botData.strategy_config
+          }
+          
+          // Merge existing config with new updates
+          const mergedConfig = {
+            ...existingConfig,
+            ...(typeof updates.strategyConfig === 'string' 
+              ? JSON.parse(updates.strategyConfig)
+              : updates.strategyConfig)
+          }
+          
+          // Store as JSONB (Supabase will handle it automatically)
+          dbUpdates.strategy_config = mergedConfig
+        }
+        
         // Handle AI/ML field
         if (updates.aiMlEnabled !== undefined) {
           dbUpdates.ai_ml_enabled = updates.aiMlEnabled
