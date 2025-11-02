@@ -12,6 +12,7 @@ const BotActivity = lazy(() => import('../pages/bot-activity/page'));
 const Backtest = lazy(() => import('../pages/backtest/page'));
 const Trades = lazy(() => import('../pages/trades/page'));
 const Reports = lazy(() => import('../pages/reports/page'));
+const Performance = lazy(() => import('../pages/performance/page'));
 const Settings = lazy(() => import('../pages/settings/page'));
 const Admin = lazy(() => import('../pages/admin/page'));
 const Onboarding = lazy(() => import('../pages/onboarding/page'));
@@ -61,6 +62,10 @@ const routes: RouteObject[] = [
   {
     path: '/reports',
     element: <Reports />
+  },
+  {
+    path: '/performance',
+    element: <Performance />
   },
   {
     path: '/settings',

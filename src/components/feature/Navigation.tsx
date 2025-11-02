@@ -18,6 +18,7 @@ export default function Navigation() {
     { path: '/backtest', icon: 'ri-test-tube-line', label: 'Backtest' },
     { path: '/bot-activity', icon: 'ri-file-list-line', label: 'Activity' },
     { path: '/trades', icon: 'ri-exchange-line', label: 'Trades' },
+    { path: '/performance', icon: 'ri-line-chart-line', label: 'Performance' },
     { path: '/settings', icon: 'ri-settings-line', label: 'Settings' }
   ];
 
