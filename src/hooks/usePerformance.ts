@@ -111,19 +111,12 @@ export function usePerformance(
 
       // Debug: Log sample trade data to see what we're getting
       if (filteredTrades.length > 0) {
-        console.log('📊 Sample trade data:', {
-          first: filteredTrades[0],
-          count: filteredTrades.length,
-          sampleStatuses: [...new Set(filteredTrades.map((t: any) => t.status))],
-          samplePnL: filteredTrades.slice(0, 5).map((t: any) => ({ 
-            id: t.id, 
-            pnl: t.pnl, 
-            status: t.status,
-            amount: t.amount,
-            price: t.price,
-            side: t.side
-          }))
-        });
+        const firstTrade = filteredTrades[0];
+        const statuses = [...new Set(filteredTrades.map((t: any) => t.status))];
+        const sides = [...new Set(filteredTrades.map((t: any) => t.side))];
+        const hasExitPrices = filteredTrades.filter((t: any) => t.exit_price).length;
+        console.log(`📊 Sample trade data: Count=${filteredTrades.length}, Statuses=[${statuses.join(', ')}], Sides=[${sides.join(', ')}], HasExitPrice=${hasExitPrices}/${filteredTrades.length}`);
+        console.log(`📊 First trade: ID=${firstTrade.id?.substring(0, 8)}, Status=${firstTrade.status}, Side=${firstTrade.side}, Entry=${firstTrade.entry_price || firstTrade.price}, Exit=${firstTrade.exit_price || 'none'}, Size=${firstTrade.size || firstTrade.amount}, PnL=${firstTrade.pnl || 0}`);
       }
 
       // Calculate overview metrics
@@ -235,19 +228,11 @@ export function usePerformance(
         const fee = parseFloat(t.fee || 0);
         
         // Debug: Log trade details to understand why PnL can't be calculated
-        if (closedTrades.length > 0 && !t.pnl) {
-          console.log('📊 Trade PnL calculation:', {
-            id: t.id?.substring(0, 8) || 'unknown',
-            status: t.status,
-            hasExitPrice: !!exitPrice,
-            entryPrice,
-            exitPrice,
-            size,
-            side,
-            currentPnL: t.pnl,
-            canCalculate: entryPrice > 0 && exitPrice > 0 && size > 0,
-            reason: !exitPrice ? 'Missing exit_price' : entryPrice === 0 ? 'Missing entry_price' : size === 0 ? 'Missing size' : 'Unknown'
-          });
+        // Only log first few trades to avoid console spam
+        const shouldLog = closedTrades.length > 0 && !t.pnl && closedTrades.indexOf(t) < 3;
+        if (shouldLog) {
+          const reason = !exitPrice ? 'Missing exit_price' : entryPrice === 0 ? 'Missing entry_price' : size === 0 ? 'Missing size' : 'Unknown';
+          console.log(`📊 Trade PnL calculation (first 3): ID=${t.id?.substring(0, 8) || 'unknown'}, Status=${t.status}, Side=${side}, Entry=${entryPrice}, Exit=${exitPrice}, Size=${size}, Reason="${reason}", CanCalculate=${entryPrice > 0 && exitPrice > 0 && size > 0}`);
         }
         
         // If we have exit price, calculate realized PnL
