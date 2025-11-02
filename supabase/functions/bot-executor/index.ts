@@ -577,23 +577,6 @@ class BotExecutor {
       console.log('Bot strategy:', JSON.stringify(strategy, null, 2));
       const shouldTrade = this.evaluateStrategy(strategy, { price: currentPrice, rsi, adx });
       
-      // For spot trading, filter out sell signals if we don't own the asset
-      const tradingType = bot.tradingType || bot.trading_type || 'spot';
-      if (tradingType === 'spot' && shouldTrade.shouldTrade && shouldTrade.side === 'sell') {
-        // Check if we own the asset before allowing sell
-        const ownsAsset = await this.checkAssetOwnership(bot, bot.symbol);
-        if (!ownsAsset) {
-          console.log(`⚠️ Spot trading: Cannot sell ${bot.symbol} without owning it. Skipping sell signal.`);
-          await this.addBotLog(bot.id, {
-            level: 'info',
-            category: 'strategy',
-            message: `Sell signal generated but skipped: No ${bot.symbol} assets owned for spot trading`,
-            details: { signal: shouldTrade, reason: 'Spot trading requires asset ownership to sell' }
-          });
-          return; // Skip execution, don't throw error
-        }
-      }
-      
       console.log('Strategy evaluation result:', JSON.stringify(shouldTrade, null, 2));
       
       if (shouldTrade.shouldTrade) {
@@ -610,30 +593,12 @@ class BotExecutor {
       }
       
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`❌ Trade execution error for ${bot.name}:`, error);
-      
-      // Check if it's a regulatory restriction - handle gracefully
-      if (errorMessage.includes('Regulatory restriction') || errorMessage.includes('10024')) {
-        await this.addBotLog(bot.id, {
-          level: 'warning',
-          category: 'restriction',
-          message: `⚠️ Trading blocked due to regulatory restrictions. Please complete KYC verification on Bybit.`,
-          details: { 
-            error: errorMessage,
-            action: 'Complete KYC or contact Bybit Customer Support',
-            skipTrade: true
-          }
-        });
-        console.warn(`⚠️ Trading skipped for ${bot.name} due to regulatory restrictions. Bot will continue monitoring but won't execute trades until restriction is resolved.`);
-        return; // Skip this trade but don't mark as failed
-      }
-      
+      console.error(`Bot execution error for ${bot.name}:`, error);
       await this.addBotLog(bot.id, {
         level: 'error',
         category: 'error',
-        message: `Execution error: ${errorMessage}`,
-        details: { error: errorMessage }
+        message: `Execution error: ${error.message}`,
+        details: { error: error.message }
       });
     }
   }
@@ -805,14 +770,11 @@ class BotExecutor {
       
       const tradingType = bot.tradingType || bot.trading_type || 'spot';
       
-      // For spot trading: verify we own the asset before selling
+      // For spot trading: can only buy with USDT (can't sell if we don't own the asset)
       // For futures: can both buy (long) and sell (short)
       if (tradingType === 'spot' && (tradeSignal.side.toLowerCase() === 'sell')) {
-        const ownsAsset = await this.checkAssetOwnership(bot, bot.symbol);
-        if (!ownsAsset) {
-          console.log(`⚠️ Spot trading: Cannot sell ${bot.symbol} without owning it. Skipping sell signal.`);
-          throw new Error('Cannot sell on spot market without owning the asset. Only buy orders are supported for spot trading.');
-        }
+        console.log(`⚠️ Spot trading: Cannot sell ${bot.symbol} without owning it. Skipping sell signal.`);
+        throw new Error('Cannot sell on spot market without owning the asset. Only buy orders are supported for spot trading.');
       }
       
       // Check balance before placing order
@@ -951,12 +913,6 @@ class BotExecutor {
           console.warn(`💰 Order value: $${orderValue.toFixed(2)}`);
           console.warn(`💡 This may happen temporarily. The bot will retry on the next execution.`);
           throw new Error(`Insufficient balance for ${symbol} order. Order value: $${orderValue.toFixed(2)}. Please check your account balance or wait for funds to become available. This is often temporary and will retry automatically.`);
-        } else if (data.retCode === 10024) {
-          // Regulatory restrictions - account needs KYC or has access restrictions
-          console.warn(`⚠️ Regulatory restriction detected for ${symbol} trading`);
-          console.warn(`📋 Error message: ${data.retMsg}`);
-          console.warn(`💡 Action required: Complete KYC verification or contact Bybit Customer Support`);
-          throw new Error(`Regulatory restriction: ${data.retMsg}. Please complete KYC verification on Bybit or contact Customer Support. Trading for this symbol will be skipped until the restriction is resolved.`);
         }
         
         throw new Error(`Bybit order error: ${data.retMsg} (Code: ${data.retCode})`);
@@ -1387,21 +1343,10 @@ class BotExecutor {
   }
   
   private calculateTradeAmount(bot: any, price: number): number {
-    // Base position sizing based on bot's configured trade amount, leverage, and risk level
-    const baseAmount = bot.trade_amount || bot.tradeAmount || 100; // Use bot's trade amount or default to $100
+    // Position sizing based on bot's configured trade amount, leverage, and risk level
+    const baseAmount = bot.trade_amount || 100; // Use bot's trade amount or default to $100
     const leverageMultiplier = bot.leverage || 1;
     const riskMultiplier = bot.risk_level === 'high' ? 2 : bot.risk_level === 'medium' ? 1.5 : 1;
-    
-    // Check if Dynamic Position Sizing is enabled
-    const strategyConfig = typeof bot.strategy_config === 'string' 
-      ? JSON.parse(bot.strategy_config) 
-      : bot.strategy_config || {};
-    
-    if (strategyConfig.dynamic_position_sizing_enabled) {
-      // Calculate position size based on volatility (ATR-based)
-      const dynamicSize = this.calculateDynamicPositionSize(bot, baseAmount, strategyConfig);
-      return dynamicSize * leverageMultiplier * riskMultiplier;
-    }
     
     // Ensure minimum trade amount for futures trading
     const minTradeAmount = bot.tradingType === 'futures' ? 50 : 10; // Minimum $50 for futures, $10 for spot
@@ -1571,7 +1516,7 @@ class BotExecutor {
         };
       }
 
-      // 4. Daily Loss Limit Check (Global)
+      // 4. Daily Loss Limit Check
       const dailyLoss = await this.getDailyLoss(bot.id);
       const dailyLossLimit = this.getDailyLossLimit(bot);
       if (dailyLoss >= dailyLossLimit) {
@@ -1579,16 +1524,6 @@ class BotExecutor {
           canTrade: false,
           reason: `Daily loss limit exceeded: $${dailyLoss.toFixed(2)} >= $${dailyLossLimit.toFixed(2)}. Trading paused for today.`,
           shouldPause: true
-        };
-      }
-
-      // 4b. Daily Loss Guard Check (Bot-Specific)
-      const dailyLossGuard = await this.checkDailyLossGuard(bot);
-      if (!dailyLossGuard.canTrade) {
-        return {
-          canTrade: false,
-          reason: dailyLossGuard.reason,
-          shouldPause: false // Don't permanently pause, just block for 24 hours
         };
       }
 
@@ -1909,168 +1844,6 @@ class BotExecutor {
       return strategyConfig.weekly_loss_limit_pct || 6.0; // Default: 6%
     } catch (error) {
       return 6.0; // Default 6%
-    }
-  }
-
-  /**
-   * Check if we own the asset for spot trading (before allowing sell)
-   */
-  private async checkAssetOwnership(bot: any, symbol: string): Promise<boolean> {
-    try {
-      // Extract base asset from symbol (e.g., XRPUSDT -> XRP)
-      const baseAsset = symbol.replace(/USDT$/, '').replace(/BTC$/, '').replace(/ETH$/, '');
-      
-      if (bot.exchange === 'bybit') {
-        // Get API keys
-        const { data: apiKeys } = await this.supabaseClient
-          .from('api_keys')
-          .select('api_key, api_secret, is_testnet')
-          .eq('user_id', this.user.id)
-          .eq('exchange', bot.exchange)
-          .eq('is_active', true)
-          .single();
-        
-        if (!apiKeys) {
-          console.warn('⚠️ No API keys found, cannot check asset ownership');
-          return false;
-        }
-        
-        const apiKey = this.decrypt(apiKeys.api_key);
-        const apiSecret = this.decrypt(apiKeys.api_secret);
-        const baseUrl = apiKeys.is_testnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com';
-        
-        // Check spot wallet balance for the base asset
-        const timestamp = Date.now().toString();
-        const recvWindow = '5000';
-        const queryParams = `accountType=SPOT&coin=${baseAsset}`;
-        const signaturePayload = timestamp + apiKey + recvWindow + queryParams;
-        const signature = await this.createBybitSignature(signaturePayload, apiSecret);
-        
-        const response = await fetch(`${baseUrl}/v5/account/wallet-balance?${queryParams}`, {
-          method: 'GET',
-          headers: {
-            'X-BAPI-API-KEY': apiKey,
-            'X-BAPI-TIMESTAMP': timestamp,
-            'X-BAPI-RECV-WINDOW': recvWindow,
-            'X-BAPI-SIGN': signature,
-          },
-        });
-        
-        const data = await response.json();
-        
-        if (data.retCode !== 0) {
-          console.warn(`⚠️ Failed to check asset ownership (retCode: ${data.retCode}):`, data.retMsg);
-          return false; // Fail safe - assume we don't own it if we can't check
-        }
-        
-        // Extract available balance for the base asset
-        const coinList = data.result?.list?.[0]?.coin || [];
-        const coinData = coinList.find((c: any) => c.coin === baseAsset);
-        
-        if (!coinData) {
-          console.log(`📊 No ${baseAsset} balance found in spot wallet`);
-          return false;
-        }
-        
-        const availableBalance = parseFloat(coinData.availableToWithdraw || coinData.walletBalance || '0');
-        console.log(`📊 ${baseAsset} spot balance: ${availableBalance}`);
-        
-        // Consider we own the asset if balance > 0
-        return availableBalance > 0;
-      }
-      
-      // For other exchanges, assume we don't own it (conservative approach)
-      console.warn(`⚠️ Asset ownership check not implemented for ${bot.exchange}`);
-      return false;
-    } catch (error) {
-      console.error('Error checking asset ownership:', error);
-      // Fail safe - assume we don't own it if check fails
-      return false;
-    }
-  }
-
-  /**
-   * Check Daily Loss Guard (Bot-Specific Daily Loss Percentage Limit)
-   */
-  private async checkDailyLossGuard(bot: any): Promise<{ canTrade: boolean; reason: string }> {
-    try {
-      const strategyConfig = typeof bot.strategy_config === 'string' 
-        ? JSON.parse(bot.strategy_config) 
-        : bot.strategy_config || {};
-      
-      // Check if Daily Loss Guard is enabled
-      if (!strategyConfig.daily_loss_guard_enabled) {
-        return { canTrade: true, reason: 'Daily Loss Guard not enabled' };
-      }
-
-      const maxDailyLossPct = strategyConfig.max_daily_loss_pct || 3.0;
-      
-      // Get today's realized PnL for this bot
-      const todayUTC = new Date();
-      todayUTC.setUTCHours(0, 0, 0, 0);
-      const todayISO = todayUTC.toISOString();
-
-      const { data: trades } = await this.supabaseClient
-        .from('trades')
-        .select('pnl, status')
-        .eq('bot_id', bot.id)
-        .eq('status', 'filled')
-        .gte('executed_at', todayISO);
-
-      if (!trades || trades.length === 0) {
-        return { canTrade: true, reason: 'No trades today' };
-      }
-
-      // Calculate today's realized PnL
-      const todayPnL = trades.reduce((sum: number, trade: any) => sum + (trade.pnl || 0), 0);
-      
-      // Get bot's starting equity (approximate from current bot PnL or default)
-      // For simplicity, use bot's total PnL as baseline or default to $1000
-      const botBaseValue = 1000; // TODO: Get actual bot account value
-      const todayLossPct = (Math.abs(todayPnL < 0 ? todayPnL : 0) / botBaseValue) * 100;
-
-      if (todayLossPct >= maxDailyLossPct) {
-        console.warn(`⚠️ Daily Loss Guard triggered for ${bot.name}: ${todayLossPct.toFixed(2)}% >= ${maxDailyLossPct}%`);
-        return {
-          canTrade: false,
-          reason: `Daily Loss Guard: Today's realized loss (${todayLossPct.toFixed(2)}%) reached limit (${maxDailyLossPct}%). Trading paused until next day. Open trades can still manage TP/SL.`
-        };
-      }
-
-      return { canTrade: true, reason: 'Daily Loss Guard passed' };
-    } catch (error) {
-      console.warn('Error checking Daily Loss Guard:', error);
-      // If check fails, allow trading (fail open)
-      return { canTrade: true, reason: 'Daily Loss Guard check failed, allowing trade' };
-    }
-  }
-
-  /**
-   * Calculate Dynamic Position Size based on volatility (ATR-based)
-   */
-  private calculateDynamicPositionSize(bot: any, baseAmount: number, strategyConfig: any): number {
-    try {
-      const minPosition = strategyConfig.min_position_usd || 50;
-      const maxPosition = strategyConfig.max_position_usd || 1000;
-
-      // Mock volatility calculation - in production, this would use real ATR/volatility data
-      // High volatility = reduce size, Normal volatility = full size
-      const currentPrice = 0; // Would be fetched from market data
-      // Simulate volatility factor (0.7 = high volatility, 1.0 = normal volatility)
-      const volatilityFactor = 0.85; // Average volatility for now
-      
-      // Adjust base amount based on volatility
-      let adjustedSize = baseAmount * volatilityFactor;
-
-      // Apply min/max constraints
-      adjustedSize = Math.max(minPosition, Math.min(maxPosition, adjustedSize));
-
-      console.log(`📊 Dynamic Position Sizing for ${bot.name}: Base=$${baseAmount}, Volatility Factor=${volatilityFactor.toFixed(2)}, Adjusted=$${adjustedSize.toFixed(2)}`);
-      
-      return adjustedSize;
-    } catch (error) {
-      console.warn('Error calculating dynamic position size, using base amount:', error);
-      return baseAmount;
     }
   }
 
