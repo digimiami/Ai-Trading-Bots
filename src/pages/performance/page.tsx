@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import Header from '../../components/feature/Header';
 import Navigation from '../../components/feature/Navigation';
 import Card from '../../components/base/Card';
@@ -8,8 +8,8 @@ export default function Performance() {
   const [assetType, setAssetType] = useState<'all' | 'perpetuals' | 'spot'>('all');
   const [selectedPeriod, setSelectedPeriod] = useState('7d');
 
-  // Calculate date range based on selected period
-  const getDateRange = () => {
+  // Calculate date range based on selected period - memoized to prevent infinite loops
+  const dateRange = useMemo(() => {
     const end = new Date();
     let start = new Date();
 
@@ -34,10 +34,9 @@ export default function Performance() {
     }
 
     return { start, end };
-  };
+  }, [selectedPeriod]);
 
-  const { start, end } = getDateRange();
-  const { metrics, loading, error } = usePerformance(start, end, assetType);
+  const { metrics, loading, error } = usePerformance(dateRange.start, dateRange.end, assetType);
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -237,8 +236,8 @@ export default function Performance() {
                 )}
               </div>
             </div>
-            <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-right">
-              Data as of {end.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} (UTC)
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-2 text-right">
+              Data as of {dateRange.end.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })} (UTC)
             </div>
           </Card>
         )}

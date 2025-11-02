@@ -43,8 +43,18 @@ export function usePerformance(
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<PerformanceMetrics | null>(null);
+  const [abortController, setAbortController] = useState<AbortController | null>(null);
 
   const fetchPerformance = async () => {
+    // Cancel any pending request
+    if (abortController) {
+      abortController.abort();
+    }
+
+    // Create new abort controller for this request
+    const controller = new AbortController();
+    setAbortController(controller);
+
     try {
       setLoading(true);
       setError(null);
@@ -60,9 +70,15 @@ export function usePerformance(
         .select('*, trading_bots(symbol, trading_type)')
         .gte('created_at', start.toISOString())
         .lte('created_at', end.toISOString())
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(10000); // Limit to prevent excessive data
 
       const { data: trades, error: tradesError } = await query;
+
+      // Check if request was aborted
+      if (controller.signal.aborted) {
+        return;
+      }
       
       if (tradesError) throw tradesError;
 
@@ -241,16 +257,35 @@ export function usePerformance(
         dailyPnL,
         symbolRanking,
       });
-    } catch (err) {
+    } catch (err: any) {
+      // Don't set error if request was aborted
+      if (err?.name === 'AbortError' || controller.signal.aborted) {
+        return;
+      }
       console.error('Error fetching performance data:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch performance data');
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
+    // Only fetch if dates are valid
+    if (!startDate || !endDate || isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      return;
+    }
+
     fetchPerformance();
+
+    // Cleanup: abort request on unmount or dependency change
+    return () => {
+      if (abortController) {
+        abortController.abort();
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [startDate?.getTime(), endDate?.getTime(), assetType]);
 
   return {
