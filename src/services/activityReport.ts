@@ -95,11 +95,11 @@ export async function generateActivityReport(
   // Calculate overview
   const totalBots = bots?.length || 0;
   const activeBots = bots?.filter(b => b.status === 'running').length || 0;
-  const totalLogs = activityLogs.length;
+  const total_logs = activityLogs.length;
   const errors = activityLogs.filter(l => l.level === 'error').length;
   const warnings = activityLogs.filter(l => l.level === 'warning').length;
   const successes = activityLogs.filter(l => l.level === 'success').length;
-  const infoLogs = activityLogs.filter(l => l.level === 'info').length;
+  const info_logs = activityLogs.filter(l => l.level === 'info').length;
 
   // Calculate performance summary
   const filledTrades = trades?.filter(t => t.status === 'filled' || t.status === 'closed') || [];
@@ -189,11 +189,11 @@ export async function generateActivityReport(
     overview: {
       total_bots: totalBots,
       active_bots: activeBots,
-      total_logs,
-      errors,
-      warnings,
-      successes,
-      info_logs: infoLogs
+      total_logs: total_logs,
+      errors: errors,
+      warnings: warnings,
+      successes: successes,
+      info_logs: info_logs
     },
     bot_activity: Array.from(botActivityMap.values()),
     performance_summary: {
