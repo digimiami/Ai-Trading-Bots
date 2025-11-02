@@ -140,13 +140,28 @@ export function usePerformance(
           return t;
         }
         
-        // Try to calculate PnL from entry/exit prices if available
+        // Get entry price and size (handle field variations)
         const entryPrice = parseFloat(t.entry_price || t.price || 0);
         const exitPrice = parseFloat(t.exit_price || 0);
         const size = parseFloat(t.size || t.amount || 0);
         const side = (t.side || 'long').toLowerCase();
         const fee = parseFloat(t.fee || 0);
         
+        // Debug: Log trade details to understand why PnL can't be calculated
+        if (closedTrades.length > 0 && !t.pnl) {
+          console.log('📊 Trade PnL calculation:', {
+            id: t.id,
+            status: t.status,
+            hasExitPrice: !!exitPrice,
+            entryPrice,
+            exitPrice,
+            size,
+            side,
+            currentPnL: t.pnl
+          });
+        }
+        
+        // If we have exit price, calculate realized PnL
         if (entryPrice > 0 && exitPrice > 0 && size > 0) {
           let calculatedPnL = 0;
           if (side === 'long') {
@@ -155,14 +170,13 @@ export function usePerformance(
             calculatedPnL = (entryPrice - exitPrice) * size - fee;
           }
           
-          // Return trade with calculated PnL
           return {
             ...t,
             pnl: calculatedPnL
           };
         }
         
-        // Return trade as-is if we can't calculate PnL
+        // Return trade as-is if we can't calculate PnL (no exit_price)
         return t;
       });
       
