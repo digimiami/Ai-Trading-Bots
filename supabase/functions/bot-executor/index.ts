@@ -880,7 +880,6 @@ class BotExecutor {
       }
       
       // Order parameters for the request BODY (and the signature string)
-      // For spot market orders, use quoteQty (USDT amount) instead of qty for better precision
       const requestBody: any = {
         category: bybitCategory, // 'linear' for perpetual futures, 'spot' for spot
         symbol: symbol,
@@ -888,14 +887,17 @@ class BotExecutor {
         orderType: 'Market',
       };
       
-      // For spot trading, use quoteQty (order value in USDT) for better control
-      // For futures/linear, use qty (quantity in base currency)
+      // For spot trading with market orders, use marketUnit to specify quote currency amount
+      // marketUnit: 0 = base currency (use qty in BTC/ETH/etc), 1 = quote currency (use qty in USDT)
+      // For futures/linear, always use qty in base currency
       if (bybitCategory === 'spot') {
         const orderValue = parseFloat(formattedQty) * currentMarketPrice;
-        requestBody.quoteQty = orderValue.toFixed(2); // Use USDT amount for spot
-        console.log(`💰 Spot order using quoteQty: $${orderValue.toFixed(2)} (calculated from qty: ${formattedQty} × price: ${currentMarketPrice})`);
+        // Use marketUnit: 1 to specify order value in USDT (quote currency)
+        requestBody.marketUnit = 1; // 1 = quote currency (USDT)
+        requestBody.qty = orderValue.toFixed(2); // Order value in USDT
+        console.log(`💰 Spot order using marketUnit=1 (quote currency): $${orderValue.toFixed(2)} USDT`);
       } else {
-        requestBody.qty = formattedQty; // Use quantity for futures
+        requestBody.qty = formattedQty; // Use quantity in base currency for futures
         console.log(`💰 Futures order using qty: ${formattedQty}`);
       }
       
@@ -959,16 +961,27 @@ class BotExecutor {
           throw new Error(`Insufficient balance for ${symbol} order. Order value: $${orderValue.toFixed(2)}. Please check your account balance or wait for funds to become available. This is often temporary and will retry automatically.`);
         } else if (data.retCode === 170140) {
           // Calculate actual order value that was sent
-          const orderValue = bybitCategory === 'spot' && requestBody.quoteQty 
-            ? parseFloat(requestBody.quoteQty) 
+          const orderValue = bybitCategory === 'spot' && requestBody.marketUnit === 1
+            ? parseFloat(requestBody.qty) // For spot with marketUnit=1, qty is the USDT amount
             : parseFloat(formattedQty) * currentMarketPrice;
           const minOrderValue = this.getMinimumOrderValue(symbol, bybitCategory);
           console.error(`❌ Order value below minimum for ${symbol}`);
           console.error(`💰 Current order value: $${orderValue.toFixed(2)}`);
           console.error(`📏 Minimum required: $${minOrderValue.toFixed(2)}`);
           console.error(`💡 Increase trade amount or adjust bot configuration to meet minimum order value.`);
-          console.error(`📋 Order details: category=${bybitCategory}, qty=${formattedQty}, quoteQty=${requestBody.quoteQty || 'N/A'}, price=${currentMarketPrice}`);
+          console.error(`📋 Order details: category=${bybitCategory}, marketUnit=${requestBody.marketUnit || 'N/A'}, qty=${requestBody.qty}, price=${currentMarketPrice}`);
           throw new Error(`Order value $${orderValue.toFixed(2)} is below minimum $${minOrderValue.toFixed(2)} for ${symbol} on Bybit. Please increase trade amount to at least $${minOrderValue.toFixed(2)} per trade.`);
+        } else if (data.retCode === 170003) {
+          // Unknown parameter error - log full request for debugging
+          console.error(`❌ Unknown parameter error for ${symbol}`);
+          console.error(`📋 Request body:`, JSON.stringify(requestBody, null, 2));
+          console.error(`📋 Bybit response:`, JSON.stringify(data, null, 2));
+          throw new Error(`Bybit order error: ${data.retMsg} (Code: ${data.retCode}). Check API parameters - this may indicate an invalid parameter or API change.`);
+        } else if (data.retCode === 10024) {
+          // Regulatory restriction - account/region limitation
+          console.error(`❌ Regulatory restriction for ${symbol}`);
+          console.error(`📋 This is an account/region restriction from Bybit. Please contact Bybit support.`);
+          throw new Error(`Bybit account restriction: ${data.retMsg} (Code: ${data.retCode}). This trading pair or service is not available in your region. Please contact Bybit support for assistance.`);
         }
         
         throw new Error(`Bybit order error: ${data.retMsg} (Code: ${data.retCode})`);
