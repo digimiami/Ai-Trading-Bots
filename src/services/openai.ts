@@ -53,17 +53,24 @@ interface AIRecommendation {
 class OpenAIService {
   private apiKey: string;
   private baseUrl: string = 'https://api.openai.com/v1';
+  private deepseekApiKey: string;
+  private deepseekBaseUrl: string = 'https://api.deepseek.com/v1';
+  private useDeepSeek: boolean = false;
 
   constructor() {
     this.apiKey = import.meta.env.VITE_OPENAI_API_KEY || '';
+    this.deepseekApiKey = import.meta.env.VITE_DEEPSEEK_API_KEY || '';
+    // Prefer DeepSeek if available
+    this.useDeepSeek = !!this.deepseekApiKey;
   }
 
   /**
    * Analyze bot performance and generate strategy recommendations
    */
   async analyzeBotPerformance(botId: string, performanceData: PerformanceData): Promise<AIRecommendation> {
-    if (!this.apiKey) {
-      console.warn('OpenAI API key not configured');
+    const aiConfig = this.getAIConfig();
+    if (!aiConfig.apiKey) {
+      console.warn('AI API key not configured (neither DeepSeek nor OpenAI)');
       return this.getDefaultRecommendation();
     }
 
@@ -86,7 +93,8 @@ class OpenAIService {
     marketData: any,
     historicalTrades: TradeAnalysis[]
   ): Promise<{ signal: 'buy' | 'sell' | 'hold'; confidence: number; reasoning: string }> {
-    if (!this.apiKey) {
+    const aiConfig = this.getAIConfig();
+    if (!aiConfig.apiKey) {
       return { signal: 'hold', confidence: 0.5, reasoning: 'AI not configured' };
     }
 
@@ -119,11 +127,12 @@ class OpenAIService {
     expectedImprovement: string;
     confidence: number;
   }> {
-    if (!this.apiKey) {
+    const aiConfig = this.getAIConfig();
+    if (!aiConfig.apiKey) {
       return {
         strategy: strategies.strategy,
         advancedConfig: strategies.advancedConfig,
-        reasoning: 'AI optimization not available - configure OpenAI API key',
+        reasoning: 'AI optimization not available - configure DeepSeek API key or OpenAI API key',
         expectedImprovement: 'N/A',
         confidence: 0
       };
@@ -363,7 +372,27 @@ Return JSON:
   }
 
   /**
-   * Call OpenAI API with JSON mode support
+   * Get the active AI provider configuration
+   */
+  private getAIConfig(): { apiKey: string; baseUrl: string; model: string; provider: string } {
+    if (this.useDeepSeek && this.deepseekApiKey) {
+      return {
+        apiKey: this.deepseekApiKey,
+        baseUrl: this.deepseekBaseUrl,
+        model: 'deepseek-chat',
+        provider: 'DeepSeek'
+      };
+    }
+    return {
+      apiKey: this.apiKey,
+      baseUrl: this.baseUrl,
+      model: 'gpt-4o',
+      provider: 'OpenAI'
+    };
+  }
+
+  /**
+   * Call AI API (DeepSeek or OpenAI) with JSON mode support
    */
   private async callOpenAI(prompt: string, useJsonMode: boolean = true): Promise<any> {
       // Check prompt size and warn if too large
@@ -385,8 +414,9 @@ Return JSON:
         }
       }
 
+      const aiConfig = this.getAIConfig();
       const body: any = {
-      model: 'gpt-4o', // Use latest GPT-4 model
+      model: aiConfig.model,
       messages: [
         { 
           role: 'system', 
@@ -403,19 +433,21 @@ Return JSON:
       body.response_format = { type: 'json_object' };
     }
 
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+    console.log(`🤖 Using ${aiConfig.provider} API (${aiConfig.model}) for optimization`);
+
+    const response = await fetch(`${aiConfig.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.apiKey}`
+        'Authorization': `Bearer ${aiConfig.apiKey}`
       },
       body: JSON.stringify(body)
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('OpenAI API error:', response.status, errorText);
-      throw new Error(`OpenAI API error: ${response.status}`);
+      console.error(`${aiConfig.provider} API error:`, response.status, errorText);
+      throw new Error(`${aiConfig.provider} API error: ${response.status}`);
     }
 
     const data = await response.json();

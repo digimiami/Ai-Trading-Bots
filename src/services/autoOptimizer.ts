@@ -388,26 +388,55 @@ class AutoOptimizer {
         return false;
       }
 
-      // Store optimization record
+      // Store optimization record with comprehensive logging
       const performanceBefore = await this.getPerformanceSnapshot(botId);
       
-      const { error: recordError } = await supabase
+      // Get AI provider info (if available from openAIService)
+      const aiProvider = (import.meta.env.VITE_DEEPSEEK_API_KEY ? 'DeepSeek' : 'OpenAI') || 'Unknown';
+      const aiModel = import.meta.env.VITE_DEEPSEEK_API_KEY ? 'deepseek-chat' : 'gpt-4o';
+      
+      const optimizationRecord: any = {
+        bot_id: botId,
+        original_strategy: optimization.originalStrategy,
+        suggested_changes: {
+          strategy: optimization.optimizedStrategy,
+          advancedConfig: optimization.optimizedAdvancedConfig
+        },
+        reasoning: optimization.reasoning,
+        expected_improvement: Math.min(999.99, Math.max(-999.99, parseFloat(optimization.expectedImprovement.replace(/[^0-9.-]/g, '')) || 0)),
+        performance_before: {
+          ...performanceBefore,
+          timestamp: new Date().toISOString(),
+          // Store AI metadata in performance_before JSONB as backup
+          ai_provider: aiProvider,
+          ai_model: aiModel,
+          confidence: optimization.confidence
+        },
+        status: 'applied',
+        applied_at: new Date().toISOString()
+      };
+      
+      // Try to add dedicated columns if they exist (after migration)
+      // These will be ignored if columns don't exist, so AI info is still in performance_before JSONB
+      try {
+        optimizationRecord.ai_provider = aiProvider;
+        optimizationRecord.ai_model = aiModel;
+        optimizationRecord.confidence = optimization.confidence;
+      } catch (e) {
+        // Columns don't exist yet, that's okay - data is in performance_before JSONB
+        console.log('Note: AI metadata columns not found, storing in performance_before JSONB');
+      }
+      
+      const { data: optimizationData, error: recordError } = await supabase
         .from('strategy_optimizations')
-        .insert({
-          bot_id: botId,
-          original_strategy: optimization.originalStrategy,
-          suggested_changes: {
-            strategy: optimization.optimizedStrategy,
-            advancedConfig: optimization.optimizedAdvancedConfig
-          },
-          reasoning: optimization.reasoning,
-          expected_improvement: Math.min(999.99, Math.max(-999.99, parseFloat(optimization.expectedImprovement.replace(/[^0-9.-]/g, '')) || 0)),
-          performance_before: performanceBefore,
-          status: 'applied'
-        });
+        .insert(optimizationRecord)
+        .select()
+        .single();
 
       if (recordError) {
         console.error('Error recording optimization:', recordError);
+      } else {
+        console.log(`✅ Optimization record created: ${optimizationData?.id} using ${aiProvider}`);
       }
 
       // Log to activity logs with performance snapshot
@@ -463,7 +492,7 @@ class AutoOptimizer {
   }
 
   /**
-   * Log optimization to bot activity logs
+   * Log optimization to bot activity logs with comprehensive details
    */
   private async logOptimization(botId: string, optimization: OptimizationResult): Promise<void> {
     try {
@@ -471,19 +500,28 @@ class AutoOptimizer {
         `${change.parameter}: ${JSON.stringify(change.oldValue)} → ${JSON.stringify(change.newValue)}`
       ).join(', ');
 
-      const logMessage = `AI/ML Optimization Applied (Confidence: ${(optimization.confidence * 100).toFixed(1)}%)`;
+      // Get AI provider info
+      const aiProvider = (import.meta.env.VITE_DEEPSEEK_API_KEY ? 'DeepSeek' : 'OpenAI') || 'Unknown';
+      const aiModel = import.meta.env.VITE_DEEPSEEK_API_KEY ? 'deepseek-chat' : 'gpt-4o';
+
+      const logMessage = `${aiProvider} Auto-Optimization Applied (Confidence: ${(optimization.confidence * 100).toFixed(1)}%)`;
       
       const logDetails = {
-        type: 'ai_ml_optimization',
+        type: 'ai_ml_optimization_applied',
+        ai_provider: aiProvider,
+        ai_model: aiModel,
         confidence: optimization.confidence,
         reasoning: optimization.reasoning,
         expectedImprovement: optimization.expectedImprovement,
         changes: optimization.changes,
+        changeCount: optimization.changes.length,
         changeSummary,
         optimizedStrategy: optimization.optimizedStrategy,
         optimizedAdvancedConfig: optimization.optimizedAdvancedConfig,
         originalStrategy: optimization.originalStrategy,
-        originalAdvancedConfig: optimization.originalAdvancedConfig
+        originalAdvancedConfig: optimization.originalAdvancedConfig,
+        applied_at: new Date().toISOString(),
+        trigger: 'auto-pilot_mode'
       };
 
       // Log to bot_activity_logs table
@@ -500,6 +538,8 @@ class AutoOptimizer {
 
       if (error) {
         console.error('Error logging optimization:', error);
+      } else {
+        console.log(`✅ Optimization logged to bot_activity_logs for bot ${botId} using ${aiProvider}`);
       }
     } catch (error) {
       console.error('Error logging optimization:', error);

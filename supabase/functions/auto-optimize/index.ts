@@ -43,28 +43,36 @@ serve(async (req) => {
     }
 
     // ============================================================
-    // GET OPENAI API KEY FROM EDGE FUNCTION SECRETS
+    // GET DEEPSEEK API KEY FROM EDGE FUNCTION SECRETS
     // ============================================================
     // This reads the secret that was set in Supabase Dashboard:
     // Project Settings → Edge Functions → Secrets
     // 
-    // Secret Name: OPENAI_API_KEY (exact, case-sensitive)
-    // Secret Value: sk-your-actual-openai-api-key-here
+    // Secret Name: DEEPSEEK_API_KEY (exact, case-sensitive)
+    // Secret Value: sk-your-actual-deepseek-api-key-here
     //
     // Edge Functions automatically inject secrets as environment variables
     // accessible via Deno.env.get(). No manual configuration needed!
     // ============================================================
-    const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY')
+    const DEEPSEEK_API_KEY = Deno.env.get('DEEPSEEK_API_KEY')
+    const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY') // Fallback to OpenAI if DeepSeek not available
     
-    if (!OPENAI_API_KEY) {
+    const AI_API_KEY = DEEPSEEK_API_KEY || OPENAI_API_KEY
+    const AI_PROVIDER = DEEPSEEK_API_KEY ? 'DeepSeek' : 'OpenAI'
+    const AI_BASE_URL = DEEPSEEK_API_KEY 
+      ? 'https://api.deepseek.com/v1/chat/completions'
+      : 'https://api.openai.com/v1/chat/completions'
+    const AI_MODEL = DEEPSEEK_API_KEY ? 'deepseek-chat' : 'gpt-4o'
+    
+    if (!AI_API_KEY) {
       return new Response(JSON.stringify({ 
-        error: 'OpenAI API key not configured',
-        message: 'Please set OPENAI_API_KEY in Supabase Edge Function Secrets',
+        error: 'AI API key not configured',
+        message: 'Please set DEEPSEEK_API_KEY or OPENAI_API_KEY in Supabase Edge Function Secrets',
         instructions: [
           '1. Go to Supabase Dashboard → Project Settings → Edge Functions → Secrets',
           '2. Click "Add new secret"',
-          '3. Name: OPENAI_API_KEY',
-          '4. Value: sk-your-actual-openai-api-key-here',
+          '3. Name: DEEPSEEK_API_KEY (preferred) or OPENAI_API_KEY',
+          '4. Value: sk-your-actual-api-key-here',
           '5. Click "Save"',
           '6. The function will automatically use the secret after deployment'
         ]
@@ -73,6 +81,8 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
+    
+    console.log(`🤖 Using ${AI_PROVIDER} API for optimization`)
 
     // Fetch active bots with AI/ML enabled
     let query = supabaseClient
@@ -180,14 +190,17 @@ Provide optimized parameters as JSON with confidence score:
 }
 `
 
-        const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        console.log(`🤖 Calling ${AI_PROVIDER} API for bot ${bot.id} (${bot.name})`)
+        const startTime = Date.now()
+        
+        const aiResponse = await fetch(AI_BASE_URL, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${OPENAI_API_KEY}`
+            'Authorization': `Bearer ${AI_API_KEY}`
           },
           body: JSON.stringify({
-            model: 'gpt-4o',
+            model: AI_MODEL,
             messages: [
               { 
                 role: 'system', 
@@ -201,18 +214,42 @@ Provide optimized parameters as JSON with confidence score:
           })
         })
 
-        if (!openaiResponse.ok) {
+        const apiCallDuration = Date.now() - startTime
+
+        if (!aiResponse.ok) {
+          const errorText = await aiResponse.text()
+          console.error(`❌ ${AI_PROVIDER} API error for bot ${bot.id}:`, aiResponse.status, errorText)
+          
+          // Log error to bot activity logs
+          await supabaseClient
+            .from('bot_activity_logs')
+            .insert({
+              bot_id: bot.id,
+              level: 'error',
+              category: 'strategy',
+              message: `AI Optimization Failed: ${AI_PROVIDER} API error (${aiResponse.status})`,
+              details: {
+                type: 'ai_ml_optimization_error',
+                provider: AI_PROVIDER,
+                error: errorText.substring(0, 500),
+                status: aiResponse.status
+              },
+              timestamp: new Date().toISOString()
+            })
+          
           results.push({
             botId: bot.id,
             botName: bot.name,
             status: 'error',
-            reason: `OpenAI API error: ${openaiResponse.status}`
+            reason: `${AI_PROVIDER} API error: ${aiResponse.status}`
           })
           continue
         }
 
-        const openaiData = await openaiResponse.json()
-        const optimization = JSON.parse(openaiData.choices[0].message.content)
+        const aiData = await aiResponse.json()
+        const optimization = JSON.parse(aiData.choices[0].message.content)
+        
+        console.log(`✅ ${AI_PROVIDER} API response received for bot ${bot.id} (${apiCallDuration}ms)`)
 
         if (optimization.confidence < minConfidence) {
           results.push({
@@ -225,28 +262,57 @@ Provide optimized parameters as JSON with confidence score:
           continue
         }
 
-        // Record optimization
-        const { error: recordError } = await supabaseClient
+        // Record optimization with comprehensive logging
+        // Store AI metadata in performance_before JSONB (works even if columns don't exist yet)
+        const optimizationRecord: any = {
+          bot_id: bot.id,
+          original_strategy: bot.strategy,
+          suggested_changes: {
+            strategy: optimization.strategy,
+            advancedConfig: optimization.advancedConfig
+          },
+          reasoning: optimization.reasoning,
+          expected_improvement: Math.min(999.99, Math.max(-999.99, parseFloat((optimization.expectedImprovement || '0').replace(/[^0-9.-]/g, '')) || 0)),
+          performance_before: {
+            winRate,
+            totalPnL,
+            profitFactor,
+            avgWinPnL,
+            avgLossPnL,
+            closedTrades: closedTrades.length,
+            timestamp: new Date().toISOString(),
+            // Store AI metadata in performance_before JSONB as backup
+            ai_provider: AI_PROVIDER,
+            ai_model: AI_MODEL,
+            api_call_duration_ms: apiCallDuration,
+            confidence: optimization.confidence
+          },
+          status: 'applied',
+          applied_at: new Date().toISOString()
+        }
+        
+        // Try to add dedicated columns if they exist (after migration)
+        // These will be ignored if columns don't exist, so AI info is still in performance_before JSONB
+        try {
+          optimizationRecord.ai_provider = AI_PROVIDER
+          optimizationRecord.ai_model = AI_MODEL
+          optimizationRecord.api_call_duration_ms = apiCallDuration
+          optimizationRecord.confidence = optimization.confidence
+        } catch (e) {
+          // Columns don't exist yet, that's okay - data is in performance_before JSONB
+          console.log('Note: AI metadata columns not found, storing in performance_before JSONB')
+        }
+        
+        const { data: optimizationData, error: recordError } = await supabaseClient
           .from('strategy_optimizations')
-          .insert({
-            bot_id: bot.id,
-            original_strategy: bot.strategy,
-            suggested_changes: {
-              strategy: optimization.strategy,
-              advancedConfig: optimization.advancedConfig
-            },
-            reasoning: optimization.reasoning,
-            expected_improvement: Math.min(999.99, Math.max(-999.99, parseFloat((optimization.expectedImprovement || '0').replace(/[^0-9.-]/g, '')) || 0)),
-            performance_before: {
-              winRate,
-              totalPnL,
-              profitFactor
-            },
-            status: 'applied'
-          })
+          .insert(optimizationRecord)
+          .select()
+          .single()
 
         if (recordError) {
-          console.error('Error recording optimization:', recordError)
+          console.error('❌ Error recording optimization:', recordError)
+        } else {
+          console.log(`✅ Optimization record created: ${optimizationData?.id}`)
         }
 
         // Validate and clamp advanced config values before applying
@@ -330,33 +396,56 @@ Provide optimized parameters as JSON with confidence score:
           }
         })
 
-        // Log optimization to bot activity logs
+        // Log optimization to bot activity logs with comprehensive details
         const changeSummary = changes.map(c => 
           `${c.parameter}: ${JSON.stringify(c.oldValue)} → ${JSON.stringify(c.newValue)}`
         ).join(', ')
 
-        await supabaseClient
-          .from('bot_activity_logs')
-          .insert({
-            bot_id: bot.id,
-            level: 'success',
-            category: 'strategy',
-            message: `AI/ML Optimization Applied (Confidence: ${(optimization.confidence * 100).toFixed(1)}%)`,
-            details: {
-              type: 'ai_ml_optimization',
-              confidence: optimization.confidence,
-              reasoning: optimization.reasoning,
-              expectedImprovement: optimization.expectedImprovement,
-              changes: changes,
-              changeSummary,
-              optimizedStrategy: optimization.strategy,
-              optimizedAdvancedConfig: optimization.advancedConfig,
-              originalStrategy: bot.strategy,
-              originalAdvancedConfig: bot.strategy_config,
-              performanceBefore: { winRate, totalPnL, profitFactor }
+        const optimizationLogEntry = {
+          bot_id: bot.id,
+          level: 'success',
+          category: 'strategy',
+          message: `${AI_PROVIDER} Auto-Optimization Applied (Confidence: ${(optimization.confidence * 100).toFixed(1)}%)`,
+          details: {
+            type: 'ai_ml_optimization_applied',
+            ai_provider: AI_PROVIDER,
+            ai_model: AI_MODEL,
+            optimization_id: optimizationData?.id,
+            confidence: optimization.confidence,
+            reasoning: optimization.reasoning,
+            expectedImprovement: optimization.expectedImprovement,
+            changes: changes,
+            changeCount: changes.length,
+            changeSummary,
+            optimizedStrategy: optimization.strategy,
+            optimizedAdvancedConfig: optimization.advancedConfig,
+            originalStrategy: bot.strategy,
+            originalAdvancedConfig: bot.strategy_config,
+            performanceBefore: { 
+              winRate, 
+              totalPnL, 
+              profitFactor,
+              avgWinPnL,
+              avgLossPnL,
+              closedTrades: closedTrades.length,
+              totalTrades: trades.length
             },
-            timestamp: new Date().toISOString()
-          })
+            api_call_duration_ms: apiCallDuration,
+            applied_at: new Date().toISOString(),
+            trigger: 'auto-pilot_mode'
+          },
+          timestamp: new Date().toISOString()
+        }
+
+        const { error: logError } = await supabaseClient
+          .from('bot_activity_logs')
+          .insert(optimizationLogEntry)
+
+        if (logError) {
+          console.error('❌ Error logging optimization:', logError)
+        } else {
+          console.log(`✅ Optimization logged to bot_activity_logs for bot ${bot.id}`)
+        }
 
         results.push({
           botId: bot.id,
