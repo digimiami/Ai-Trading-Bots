@@ -109,27 +109,57 @@ export function usePerformance(
         return;
       }
 
-      // Calculate overview metrics
-      const closedTrades = filteredTrades.filter(
-        (t: any) => (t.status === 'filled' || t.status === 'closed') && t.pnl !== null && t.pnl !== undefined
-      );
-      const winningTrades = closedTrades.filter((t: any) => (parseFloat(t.pnl) || 0) > 0);
-      const losingTrades = closedTrades.filter((t: any) => (parseFloat(t.pnl) || 0) <= 0);
+      // Debug: Log sample trade data to see what we're getting
+      if (filteredTrades.length > 0) {
+        console.log('📊 Sample trade data:', {
+          first: filteredTrades[0],
+          count: filteredTrades.length,
+          sampleStatuses: [...new Set(filteredTrades.map((t: any) => t.status))],
+          samplePnL: filteredTrades.slice(0, 5).map((t: any) => ({ 
+            id: t.id, 
+            pnl: t.pnl, 
+            status: t.status,
+            amount: t.amount,
+            price: t.price,
+            side: t.side
+          }))
+        });
+      }
 
-      const totalPnL = closedTrades.reduce(
+      // Calculate overview metrics
+      // Include all filled trades, even if PnL is 0 (it may be calculated later)
+      const closedTrades = filteredTrades.filter(
+        (t: any) => t.status === 'filled' || t.status === 'closed' || t.status === 'completed'
+      );
+      
+      // Separate trades with actual PnL vs trades with PnL = 0 or null
+      const tradesWithPnL = closedTrades.filter(
+        (t: any) => t.pnl !== null && t.pnl !== undefined && parseFloat(t.pnl) !== 0
+      );
+      
+      const winningTrades = tradesWithPnL.filter((t: any) => (parseFloat(t.pnl) || 0) > 0);
+      const losingTrades = tradesWithPnL.filter((t: any) => (parseFloat(t.pnl) || 0) <= 0);
+
+      // Calculate total P&L from trades that have actual PnL values
+      const totalPnL = tradesWithPnL.reduce(
         (sum: number, t: any) => sum + (parseFloat(t.pnl) || 0),
         0
       );
 
+      // Calculate trading volume - try both field name variations
       const tradingVolume = filteredTrades.reduce(
-        (sum: number, t: any) =>
-          sum + (parseFloat(t.amount) || 0) * (parseFloat(t.price) || 0),
+        (sum: number, t: any) => {
+          const amount = parseFloat(t.amount || t.size || 0);
+          const price = parseFloat(t.price || t.entry_price || 0);
+          return sum + (amount * price);
+        },
         0
       );
 
+      // Win rate should only be calculated from trades with actual PnL values
       const winRate =
-        closedTrades.length > 0
-          ? (winningTrades.length / closedTrades.length) * 100
+        tradesWithPnL.length > 0
+          ? (winningTrades.length / tradesWithPnL.length) * 100
           : 0;
 
       const avgWin =
@@ -168,8 +198,9 @@ export function usePerformance(
 
         const daily = dailyPnLMap.get(date)!;
         const pnl = parseFloat(trade.pnl) || 0;
-        const volume =
-          (parseFloat(trade.amount) || 0) * (parseFloat(trade.price) || 0);
+        const amount = parseFloat(trade.amount || trade.size || 0);
+        const price = parseFloat(trade.price || trade.entry_price || 0);
+        const volume = amount * price;
 
         daily.pnl += pnl;
         daily.volume += volume;
@@ -177,7 +208,7 @@ export function usePerformance(
 
         if (pnl > 0) {
           daily.profit += pnl;
-        } else {
+        } else if (pnl < 0) {
           daily.loss += Math.abs(pnl);
         }
       });
@@ -192,14 +223,15 @@ export function usePerformance(
 
       const profitableDays = dailyPnL.filter((day) => day.pnl > 0).length;
 
-      // Calculate symbol ranking
+      // Calculate symbol ranking - only use trades with actual PnL
       const symbolMap = new Map<string, SymbolPnL>();
 
-      closedTrades.forEach((trade: any) => {
+      tradesWithPnL.forEach((trade: any) => {
         const symbol = trade.symbol;
         const pnl = parseFloat(trade.pnl) || 0;
-        const volume =
-          (parseFloat(trade.amount) || 0) * (parseFloat(trade.price) || 0);
+        const amount = parseFloat(trade.amount || trade.size || 0);
+        const price = parseFloat(trade.price || trade.entry_price || 0);
+        const volume = amount * price;
 
         if (!symbolMap.has(symbol)) {
           symbolMap.set(symbol, {
@@ -217,16 +249,39 @@ export function usePerformance(
         symbolData.trades += 1;
       });
 
-      // Calculate win rate for each symbol
+      // Also count total trades per symbol (including those with PnL = 0) for volume
+      filteredTrades.forEach((trade: any) => {
+        const symbol = trade.symbol;
+        if (!symbolMap.has(symbol)) {
+          symbolMap.set(symbol, {
+            symbol,
+            pnl: 0,
+            volume: 0,
+            trades: 0,
+            winRate: 0,
+          });
+        }
+        const symbolData = symbolMap.get(symbol)!;
+        // Only add volume if not already added from tradesWithPnL
+        if (!tradesWithPnL.find((t: any) => t.id === trade.id)) {
+          const amount = parseFloat(trade.amount || trade.size || 0);
+          const price = parseFloat(trade.price || trade.entry_price || 0);
+          symbolData.volume += amount * price;
+        }
+        symbolData.trades += 1;
+      });
+
+      // Calculate win rate for each symbol (only from trades with actual PnL)
       symbolMap.forEach((symbolData, symbol) => {
-        const symbolTrades = closedTrades.filter(
+        const symbolTradesWithPnL = tradesWithPnL.filter(
           (t: any) => t.symbol === symbol
         );
-        const wins = symbolTrades.filter(
-          (t: any) => (parseFloat(t.pnl) || 0) > 0
-        ).length;
-        symbolData.winRate =
-          symbolTrades.length > 0 ? (wins / symbolTrades.length) * 100 : 0;
+        if (symbolTradesWithPnL.length > 0) {
+          const wins = symbolTradesWithPnL.filter(
+            (t: any) => (parseFloat(t.pnl) || 0) > 0
+          ).length;
+          symbolData.winRate = (wins / symbolTradesWithPnL.length) * 100;
+        }
       });
 
       const symbolRanking = Array.from(symbolMap.values())
