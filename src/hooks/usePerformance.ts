@@ -132,9 +132,46 @@ export function usePerformance(
         (t: any) => t.status === 'filled' || t.status === 'closed' || t.status === 'completed'
       );
       
+      // Try to calculate PnL for trades that don't have it yet
+      // This handles trades where PnL wasn't calculated when closed
+      const processedTrades = closedTrades.map((t: any) => {
+        // If PnL is already calculated and non-zero, use it
+        if (t.pnl !== null && t.pnl !== undefined && parseFloat(t.pnl) !== 0) {
+          return t;
+        }
+        
+        // Try to calculate PnL from entry/exit prices if available
+        const entryPrice = parseFloat(t.entry_price || t.price || 0);
+        const exitPrice = parseFloat(t.exit_price || 0);
+        const size = parseFloat(t.size || t.amount || 0);
+        const side = (t.side || 'long').toLowerCase();
+        const fee = parseFloat(t.fee || 0);
+        
+        if (entryPrice > 0 && exitPrice > 0 && size > 0) {
+          let calculatedPnL = 0;
+          if (side === 'long') {
+            calculatedPnL = (exitPrice - entryPrice) * size - fee;
+          } else {
+            calculatedPnL = (entryPrice - exitPrice) * size - fee;
+          }
+          
+          // Return trade with calculated PnL
+          return {
+            ...t,
+            pnl: calculatedPnL
+          };
+        }
+        
+        // Return trade as-is if we can't calculate PnL
+        return t;
+      });
+      
       // Separate trades with actual PnL vs trades with PnL = 0 or null
-      const tradesWithPnL = closedTrades.filter(
-        (t: any) => t.pnl !== null && t.pnl !== undefined && parseFloat(t.pnl) !== 0
+      const tradesWithPnL = processedTrades.filter(
+        (t: any) => {
+          const pnl = parseFloat(t.pnl || 0);
+          return !isNaN(pnl) && pnl !== 0;
+        }
       );
       
       const winningTrades = tradesWithPnL.filter((t: any) => (parseFloat(t.pnl) || 0) > 0);
@@ -181,7 +218,8 @@ export function usePerformance(
       // Calculate daily P&L
       const dailyPnLMap = new Map<string, DailyPnL>();
 
-      filteredTrades.forEach((trade: any) => {
+      // Use processed trades for daily PnL calculation
+      processedTrades.forEach((trade: any) => {
         const tradeDate = trade.executed_at || trade.created_at || trade.timestamp;
         const date = new Date(tradeDate).toISOString().split('T')[0];
 
@@ -197,7 +235,26 @@ export function usePerformance(
         }
 
         const daily = dailyPnLMap.get(date)!;
-        const pnl = parseFloat(trade.pnl) || 0;
+        // Use calculated PnL if available
+        let pnl = parseFloat(trade.pnl) || 0;
+        
+        // If PnL is 0, try to calculate from entry/exit prices
+        if (pnl === 0) {
+          const entryPrice = parseFloat(trade.entry_price || trade.price || 0);
+          const exitPrice = parseFloat(trade.exit_price || 0);
+          const size = parseFloat(trade.size || trade.amount || 0);
+          const side = (trade.side || 'long').toLowerCase();
+          const fee = parseFloat(trade.fee || 0);
+          
+          if (entryPrice > 0 && exitPrice > 0 && size > 0) {
+            if (side === 'long') {
+              pnl = (exitPrice - entryPrice) * size - fee;
+            } else {
+              pnl = (entryPrice - exitPrice) * size - fee;
+            }
+          }
+        }
+        
         const amount = parseFloat(trade.amount || trade.size || 0);
         const price = parseFloat(trade.price || trade.entry_price || 0);
         const volume = amount * price;

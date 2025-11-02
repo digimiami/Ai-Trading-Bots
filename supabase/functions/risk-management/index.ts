@@ -254,12 +254,83 @@ serve(async (req) => {
           const body = await req.json()
           const { tradeId, reason } = body
 
+          // First, get the trade to fetch entry details
+          const { data: existingTrade, error: fetchError } = await supabaseClient
+            .from('trades')
+            .select('*')
+            .eq('id', tradeId)
+            .eq('user_id', user.id)
+            .single()
+
+          if (fetchError || !existingTrade) {
+            throw new Error('Trade not found')
+          }
+
+          // Fetch current market price
+          let exitPrice = 0
+          try {
+            const tradingType = existingTrade.trading_type || 'spot'
+            const exchange = existingTrade.exchange || 'bybit'
+            const symbol = existingTrade.symbol
+
+            if (exchange === 'bybit') {
+              const categoryMap: { [key: string]: string } = {
+                'spot': 'spot',
+                'futures': 'linear',
+                'linear': 'linear',
+                'inverse': 'inverse'
+              }
+              const bybitCategory = categoryMap[tradingType] || 'spot'
+              
+              const response = await fetch(`https://api.bybit.com/v5/market/tickers?category=${bybitCategory}&symbol=${symbol}`)
+              const data = await response.json()
+              
+              if (data.retCode === 0 && data.result?.list?.length > 0) {
+                exitPrice = parseFloat(data.result.list[0].lastPrice || '0')
+              }
+            } else if (exchange === 'okx') {
+              const response = await fetch(`https://www.okx.com/api/v5/market/ticker?instId=${symbol}`)
+              const data = await response.json()
+              
+              if (data.code === '0' && data.data?.length > 0) {
+                exitPrice = parseFloat(data.data[0].last || '0')
+              }
+            }
+          } catch (priceError) {
+            console.error('Error fetching exit price:', priceError)
+            // Continue with pnl calculation even if price fetch fails
+            // We'll use entry price as fallback (resulting in 0 pnl)
+            exitPrice = parseFloat(existingTrade.entry_price || existingTrade.price || '0')
+          }
+
+          // Get entry price and size from trade (handle both field name variations)
+          const entryPrice = parseFloat(existingTrade.entry_price || existingTrade.price || '0')
+          const size = parseFloat(existingTrade.size || existingTrade.amount || '0')
+          const side = existingTrade.side || 'long'
+          const fee = parseFloat(existingTrade.fee || '0')
+
+          // Calculate PnL based on side
+          let pnl = 0
+          if (entryPrice > 0 && exitPrice > 0 && size > 0) {
+            if (side.toLowerCase() === 'long') {
+              // Long: profit = (exit_price - entry_price) * size - fees
+              pnl = (exitPrice - entryPrice) * size - fee
+            } else {
+              // Short: profit = (entry_price - exit_price) * size - fees
+              pnl = (entryPrice - exitPrice) * size - fee
+            }
+          }
+
+          // Update trade with exit price, PnL, and status
           const { data: trade, error } = await supabaseClient
             .from('trades')
             .update({ 
               status: 'closed',
+              exit_price: exitPrice,
+              pnl: parseFloat(pnl.toFixed(2)),
               closed_at: new Date().toISOString(),
-              close_reason: reason
+              close_reason: reason,
+              updated_at: new Date().toISOString()
             })
             .eq('id', tradeId)
             .eq('user_id', user.id)
@@ -273,7 +344,7 @@ serve(async (req) => {
             body: {
               action: 'send-alert',
               type: 'closePositionAlert',
-              message: `Position closed: ${trade.symbol} - ${reason}`,
+              message: `Position closed: ${trade.symbol} - ${reason} | P&L: $${pnl.toFixed(2)}`,
               data: trade
             }
           })
