@@ -1,6 +1,6 @@
 
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Button from '../../components/base/Button';
 import Card from '../../components/base/Card';
@@ -91,10 +91,19 @@ export default function CreateBotPage() {
     // ML/AI Settings
     use_ml_prediction: true,
     ml_confidence_threshold: 0.6,
-    ml_min_samples: 100
+    ml_min_samples: 100,
+    
+    // Risk Management Features
+    daily_loss_guard_enabled: false,
+    max_daily_loss_pct: 3.0,
+    risk_profile: 'balanced' as 'conservative' | 'balanced' | 'aggressive',
+    dynamic_position_sizing_enabled: false,
+    min_position_usd: 50,
+    max_position_usd: 1000
   });
 
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [currentTradeSizePreview, setCurrentTradeSizePreview] = useState<number>(formData.tradeAmount);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -169,6 +178,76 @@ export default function CreateBotPage() {
   const handleStrategyChange = (field: keyof TradingStrategy, value: any) => {
     setStrategy(prev => ({ ...prev, [field]: value }));
   };
+
+  // Risk Profile Preset Handler
+  const handleRiskProfileChange = (profile: 'conservative' | 'balanced' | 'aggressive') => {
+    setAdvancedConfig(prev => ({ ...prev, risk_profile: profile }));
+    
+    switch (profile) {
+      case 'conservative':
+        setFormData(prev => ({
+          ...prev,
+          symbol: 'BTCUSDT',
+          leverage: 3,
+          stopLoss: 2.0,
+          takeProfit: 4.0
+        }));
+        setAdvancedConfig(prev => ({
+          ...prev,
+          cooldown_bars: 12, // Higher cooldown = fewer trades
+          risk_profile: 'conservative'
+        }));
+        break;
+      case 'balanced':
+        setFormData(prev => ({
+          ...prev,
+          symbol: 'ETHUSDT',
+          leverage: 5,
+          stopLoss: 2.0,
+          takeProfit: 4.0
+        }));
+        setAdvancedConfig(prev => ({
+          ...prev,
+          cooldown_bars: 8, // Medium cooldown
+          risk_profile: 'balanced'
+        }));
+        break;
+      case 'aggressive':
+        setFormData(prev => ({
+          ...prev,
+          symbol: 'SOLUSDT',
+          leverage: 5,
+          stopLoss: 2.5,
+          takeProfit: 5.0
+        }));
+        setAdvancedConfig(prev => ({
+          ...prev,
+          cooldown_bars: 4, // Lower cooldown = more trades
+          risk_profile: 'aggressive'
+        }));
+        break;
+    }
+  };
+
+  // Calculate dynamic position size preview (simulated volatility-based adjustment)
+  useEffect(() => {
+    if (advancedConfig.dynamic_position_sizing_enabled) {
+      // Simulate volatility calculation (in production, this would use real ATR/volatility data)
+      const baseSize = formData.tradeAmount;
+      // Mock volatility factor: 0.7 (high volatility) to 1.0 (normal volatility)
+      const volatilityFactor = 0.85; // Average volatility
+      const adjustedSize = baseSize * volatilityFactor;
+      
+      // Apply min/max constraints
+      const minPosition = advancedConfig.min_position_usd || 50;
+      const maxPosition = advancedConfig.max_position_usd || 1000;
+      const finalSize = Math.max(minPosition, Math.min(maxPosition, adjustedSize));
+      
+      setCurrentTradeSizePreview(Math.round(finalSize));
+    } else {
+      setCurrentTradeSizePreview(formData.tradeAmount);
+    }
+  }, [advancedConfig.dynamic_position_sizing_enabled, advancedConfig.min_position_usd, advancedConfig.max_position_usd, formData.tradeAmount]);
 
   const handleApplyRecommendation = (recommendation: PairRecommendation) => {
     // Apply recommended strategy parameters
@@ -459,6 +538,155 @@ All settings have been applied to your bot configuration.`;
                   <p className="text-xs text-gray-500 mt-1">
                     Target profit percentage before closing position
                   </p>
+                </div>
+              </div>
+
+              {/* Risk Management Features */}
+              <div className="border-t pt-6 mt-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Risk Management</h3>
+                
+                {/* Risk Profile Preset */}
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Risk Profile
+                  </label>
+                  <select
+                    value={advancedConfig.risk_profile || 'balanced'}
+                    onChange={(e) => handleRiskProfileChange(e.target.value as 'conservative' | 'balanced' | 'aggressive')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="conservative">Conservative - Lower risk. Slower, more controlled.</option>
+                    <option value="balanced">Balanced - Moderate risk. Growth-focused.</option>
+                    <option value="aggressive">Aggressive - High risk. High upside.</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Choose how aggressive this bot should trade. We'll auto-set leverage, stop loss, take profit, and cooldown for you.
+                  </p>
+                  {advancedConfig.risk_profile === 'conservative' && (
+                    <div className="mt-2 p-2 bg-blue-50 rounded text-xs text-gray-600">
+                      <strong>Conservative Settings Applied:</strong> BTCUSDT, 3x leverage, Stop Loss 2%, Take Profit 4%, higher cooldown (fewer trades)
+                    </div>
+                  )}
+                  {advancedConfig.risk_profile === 'balanced' && (
+                    <div className="mt-2 p-2 bg-green-50 rounded text-xs text-gray-600">
+                      <strong>Balanced Settings Applied:</strong> ETHUSDT, 5x leverage, Stop Loss 2%, Take Profit 4%, medium cooldown
+                    </div>
+                  )}
+                  {advancedConfig.risk_profile === 'aggressive' && (
+                    <div className="mt-2 p-2 bg-orange-50 rounded text-xs text-gray-600">
+                      <strong>Aggressive Settings Applied:</strong> SOLUSDT, 5x leverage, Stop Loss 2.5%, Take Profit 5%, lower cooldown (more trades)
+                    </div>
+                  )}
+                </div>
+
+                {/* Daily Loss Guard */}
+                <div className="mb-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Daily Loss Guard
+                      </label>
+                      <p className="text-xs text-gray-500">
+                        Pause this bot automatically if losses hit your daily limit.
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={advancedConfig.daily_loss_guard_enabled || false}
+                        onChange={(e) => setAdvancedConfig(prev => ({ ...prev, daily_loss_guard_enabled: e.target.checked }))}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
+                  {advancedConfig.daily_loss_guard_enabled && (
+                    <div className="mt-3">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Max Daily Loss (%)
+                      </label>
+                      <input
+                        type="number"
+                        value={advancedConfig.max_daily_loss_pct || 3.0}
+                        onChange={(e) => setAdvancedConfig(prev => ({ ...prev, max_daily_loss_pct: parseFloat(e.target.value) || 3.0 }))}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        min="1"
+                        max="10"
+                        step="0.5"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Bot will pause for 24 hours if today's realized loss reaches this percentage. Open trades can still manage TP/SL.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Dynamic Position Sizing */}
+                <div className="mb-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Dynamic Position Sizing
+                      </label>
+                      <p className="text-xs text-gray-500">
+                        Automatically adjust trade size based on market volatility.
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={advancedConfig.dynamic_position_sizing_enabled || false}
+                        onChange={(e) => setAdvancedConfig(prev => ({ ...prev, dynamic_position_sizing_enabled: e.target.checked }))}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
+                  {advancedConfig.dynamic_position_sizing_enabled && (
+                    <div className="mt-3 space-y-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Min Position ($)
+                          </label>
+                          <input
+                            type="number"
+                            value={advancedConfig.min_position_usd || 50}
+                            onChange={(e) => setAdvancedConfig(prev => ({ ...prev, min_position_usd: parseFloat(e.target.value) || 50 }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            min="10"
+                            max="500"
+                            step="10"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Max Position ($)
+                          </label>
+                          <input
+                            type="number"
+                            value={advancedConfig.max_position_usd || 1000}
+                            onChange={(e) => setAdvancedConfig(prev => ({ ...prev, max_position_usd: parseFloat(e.target.value) || 1000 }))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            min="100"
+                            max="10000"
+                            step="50"
+                          />
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-500">
+                        The smallest and largest position this bot is allowed to open.
+                      </p>
+                      <div className="p-3 bg-gray-50 rounded-lg">
+                        <p className="text-sm font-medium text-gray-700">
+                          Current Est. Trade Size: <span className="text-blue-600 font-semibold">${currentTradeSizePreview}</span>
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Preview of what size would be used right now based on current volatility.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div>

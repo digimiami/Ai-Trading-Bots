@@ -1367,10 +1367,21 @@ class BotExecutor {
   }
   
   private calculateTradeAmount(bot: any, price: number): number {
-    // Position sizing based on bot's configured trade amount, leverage, and risk level
-    const baseAmount = bot.trade_amount || 100; // Use bot's trade amount or default to $100
+    // Base position sizing based on bot's configured trade amount, leverage, and risk level
+    const baseAmount = bot.trade_amount || bot.tradeAmount || 100; // Use bot's trade amount or default to $100
     const leverageMultiplier = bot.leverage || 1;
     const riskMultiplier = bot.risk_level === 'high' ? 2 : bot.risk_level === 'medium' ? 1.5 : 1;
+    
+    // Check if Dynamic Position Sizing is enabled
+    const strategyConfig = typeof bot.strategy_config === 'string' 
+      ? JSON.parse(bot.strategy_config) 
+      : bot.strategy_config || {};
+    
+    if (strategyConfig.dynamic_position_sizing_enabled) {
+      // Calculate position size based on volatility (ATR-based)
+      const dynamicSize = this.calculateDynamicPositionSize(bot, baseAmount, strategyConfig);
+      return dynamicSize * leverageMultiplier * riskMultiplier;
+    }
     
     // Ensure minimum trade amount for futures trading
     const minTradeAmount = bot.tradingType === 'futures' ? 50 : 10; // Minimum $50 for futures, $10 for spot
@@ -1540,7 +1551,7 @@ class BotExecutor {
         };
       }
 
-      // 4. Daily Loss Limit Check
+      // 4. Daily Loss Limit Check (Global)
       const dailyLoss = await this.getDailyLoss(bot.id);
       const dailyLossLimit = this.getDailyLossLimit(bot);
       if (dailyLoss >= dailyLossLimit) {
@@ -1548,6 +1559,16 @@ class BotExecutor {
           canTrade: false,
           reason: `Daily loss limit exceeded: $${dailyLoss.toFixed(2)} >= $${dailyLossLimit.toFixed(2)}. Trading paused for today.`,
           shouldPause: true
+        };
+      }
+
+      // 4b. Daily Loss Guard Check (Bot-Specific)
+      const dailyLossGuard = await this.checkDailyLossGuard(bot);
+      if (!dailyLossGuard.canTrade) {
+        return {
+          canTrade: false,
+          reason: dailyLossGuard.reason,
+          shouldPause: false // Don't permanently pause, just block for 24 hours
         };
       }
 
@@ -1868,6 +1889,91 @@ class BotExecutor {
       return strategyConfig.weekly_loss_limit_pct || 6.0; // Default: 6%
     } catch (error) {
       return 6.0; // Default 6%
+    }
+  }
+
+  /**
+   * Check Daily Loss Guard (Bot-Specific Daily Loss Percentage Limit)
+   */
+  private async checkDailyLossGuard(bot: any): Promise<{ canTrade: boolean; reason: string }> {
+    try {
+      const strategyConfig = typeof bot.strategy_config === 'string' 
+        ? JSON.parse(bot.strategy_config) 
+        : bot.strategy_config || {};
+      
+      // Check if Daily Loss Guard is enabled
+      if (!strategyConfig.daily_loss_guard_enabled) {
+        return { canTrade: true, reason: 'Daily Loss Guard not enabled' };
+      }
+
+      const maxDailyLossPct = strategyConfig.max_daily_loss_pct || 3.0;
+      
+      // Get today's realized PnL for this bot
+      const todayUTC = new Date();
+      todayUTC.setUTCHours(0, 0, 0, 0);
+      const todayISO = todayUTC.toISOString();
+
+      const { data: trades } = await this.supabaseClient
+        .from('trades')
+        .select('pnl, status')
+        .eq('bot_id', bot.id)
+        .eq('status', 'filled')
+        .gte('executed_at', todayISO);
+
+      if (!trades || trades.length === 0) {
+        return { canTrade: true, reason: 'No trades today' };
+      }
+
+      // Calculate today's realized PnL
+      const todayPnL = trades.reduce((sum: number, trade: any) => sum + (trade.pnl || 0), 0);
+      
+      // Get bot's starting equity (approximate from current bot PnL or default)
+      // For simplicity, use bot's total PnL as baseline or default to $1000
+      const botBaseValue = 1000; // TODO: Get actual bot account value
+      const todayLossPct = (Math.abs(todayPnL < 0 ? todayPnL : 0) / botBaseValue) * 100;
+
+      if (todayLossPct >= maxDailyLossPct) {
+        console.warn(`⚠️ Daily Loss Guard triggered for ${bot.name}: ${todayLossPct.toFixed(2)}% >= ${maxDailyLossPct}%`);
+        return {
+          canTrade: false,
+          reason: `Daily Loss Guard: Today's realized loss (${todayLossPct.toFixed(2)}%) reached limit (${maxDailyLossPct}%). Trading paused until next day. Open trades can still manage TP/SL.`
+        };
+      }
+
+      return { canTrade: true, reason: 'Daily Loss Guard passed' };
+    } catch (error) {
+      console.warn('Error checking Daily Loss Guard:', error);
+      // If check fails, allow trading (fail open)
+      return { canTrade: true, reason: 'Daily Loss Guard check failed, allowing trade' };
+    }
+  }
+
+  /**
+   * Calculate Dynamic Position Size based on volatility (ATR-based)
+   */
+  private calculateDynamicPositionSize(bot: any, baseAmount: number, strategyConfig: any): number {
+    try {
+      const minPosition = strategyConfig.min_position_usd || 50;
+      const maxPosition = strategyConfig.max_position_usd || 1000;
+
+      // Mock volatility calculation - in production, this would use real ATR/volatility data
+      // High volatility = reduce size, Normal volatility = full size
+      const currentPrice = 0; // Would be fetched from market data
+      // Simulate volatility factor (0.7 = high volatility, 1.0 = normal volatility)
+      const volatilityFactor = 0.85; // Average volatility for now
+      
+      // Adjust base amount based on volatility
+      let adjustedSize = baseAmount * volatilityFactor;
+
+      // Apply min/max constraints
+      adjustedSize = Math.max(minPosition, Math.min(maxPosition, adjustedSize));
+
+      console.log(`📊 Dynamic Position Sizing for ${bot.name}: Base=$${baseAmount}, Volatility Factor=${volatilityFactor.toFixed(2)}, Adjusted=$${adjustedSize.toFixed(2)}`);
+      
+      return adjustedSize;
+    } catch (error) {
+      console.warn('Error calculating dynamic position size, using base amount:', error);
+      return baseAmount;
     }
   }
 

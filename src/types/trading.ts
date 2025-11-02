@@ -91,6 +91,14 @@ export interface AdvancedStrategyConfig {
   use_ml_prediction?: boolean;
   ml_confidence_threshold?: number;
   ml_min_samples?: number;
+  
+  // Risk Management Features
+  daily_loss_guard_enabled?: boolean;
+  max_daily_loss_pct?: number; // Bot-specific daily loss limit
+  risk_profile?: 'conservative' | 'balanced' | 'aggressive';
+  dynamic_position_sizing_enabled?: boolean;
+  min_position_usd?: number;
+  max_position_usd?: number;
 }
 
 export interface Trade {
