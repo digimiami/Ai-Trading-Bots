@@ -146,23 +146,18 @@ serve(async (req) => {
     
     // If no user from session and this is a POST with 'send' action, check body for user_id
     // (This is for cron jobs that don't have user sessions)
+    // Store bodyText in outer scope so POST handler can access it
+    let bodyText: string | null = null;
     if (!user && action === 'send' && req.method === 'POST') {
       try {
-        // Read body once - we'll pass it to the POST handler below
-        const bodyText = await req.text();
+        // Read body once and store it - we'll reuse it in POST handler below
+        bodyText = await req.text();
         const body = JSON.parse(bodyText);
         const userId = body.data?.user_id || null;
         
         if (userId) {
           user = { id: userId }; // Create minimal user object for cron jobs
           console.log('✅ Using user_id from body for cron job:', userId);
-          
-          // Recreate request with body for POST handler below
-          req = new Request(req.url, {
-            method: req.method,
-            headers: req.headers,
-            body: bodyText
-          });
         }
       } catch (bodyError) {
         console.warn('⚠️ Could not read user_id from body:', bodyError);
@@ -221,7 +216,16 @@ serve(async (req) => {
     }
 
     if (req.method === 'POST') {
-      const body = await req.json()
+      // Body might have been read above for user_id extraction
+      // If req.body was consumed, recreate it from the stored bodyText
+      let body: any;
+      if (bodyText) {
+        // Body was already consumed above, parse from stored text
+        body = JSON.parse(bodyText);
+      } else {
+        // Body not consumed yet, read it normally
+        body = await req.json();
+      }
 
       if (action === 'save_config') {
         const { bot_token, chat_id, enabled, notifications } = body
