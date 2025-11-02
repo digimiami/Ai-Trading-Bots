@@ -2,21 +2,41 @@
 
 ## Quick Checklist
 
-### ✅ Step 1: Check if AI/ML is Enabled for Your Bot
+### ✅ Step 1: Find Your Bot ID
 
+**First, get your bot ID(s):**
+```sql
+SELECT id, name, ai_ml_enabled, status 
+FROM trading_bots 
+WHERE user_id = auth.uid()
+ORDER BY created_at DESC;
+```
+
+This will show all your bots with their IDs (UUID format). **Copy one of the IDs** to use in the queries below.
+
+**OR** Get the bot ID from the app:
+1. Go to **Bots Page** (`/bots`)
+2. Click on a bot
+3. Look at the URL - the bot ID is in the path: `/bots/[BOT-ID-HERE]`
+
+### ✅ Step 2: Check if AI/ML is Enabled for Your Bot
+
+**Replace `'YOUR-BOT-ID'` with your actual bot ID from Step 1:**
+```sql
+SELECT id, name, ai_ml_enabled, status 
+FROM trading_bots 
+WHERE id = 'YOUR-BOT-ID';
+```
+
+**OR** Check via the app:
 1. **Go to Bots Page** (`/bots`)
 2. **Find your bot** and click on it
 3. **Look for "AI/ML System" toggle** in bot settings
 4. **Make sure it's turned ON** (green/enabled)
 
-**OR** Check via SQL in Supabase SQL Editor:
-```sql
-SELECT id, name, ai_ml_enabled, status 
-FROM trading_bots 
-WHERE user_id = auth.uid();
-```
+### ✅ Step 3: Verify Bot Has Enough Trades
 
-### ✅ Step 2: Verify Bot Has Enough Trades
+**Replace `'YOUR-BOT-ID'` with your actual bot ID:**
 
 AI/ML optimization requires **at least 10 trades in the last 30 days** to analyze:
 
@@ -27,12 +47,12 @@ SELECT
   MIN(created_at) as first_trade,
   MAX(created_at) as last_trade
 FROM trades
-WHERE bot_id = 'your-bot-id-here'
+WHERE bot_id = 'YOUR-BOT-ID'
   AND created_at >= NOW() - INTERVAL '30 days'
 GROUP BY bot_id;
 ```
 
-### ✅ Step 3: Check if AI API Key is Configured
+### ✅ Step 4: Check if AI API Key is Configured
 
 1. **Go to Supabase Dashboard**
 2. **Project Settings → Edge Functions → Secrets**
@@ -40,7 +60,7 @@ GROUP BY bot_id;
    - `DEEPSEEK_API_KEY` (preferred)
    - `OPENAI_API_KEY` (fallback)
 
-### ✅ Step 4: Test the Auto-Optimize Function Manually
+### ✅ Step 5: Test the Auto-Optimize Function Manually
 
 **Via Supabase Dashboard:**
 1. Go to **Edge Functions → auto-optimize**
@@ -48,7 +68,7 @@ GROUP BY bot_id;
 3. Set Request Body:
    ```json
    {
-     "botId": "your-bot-id-here",
+     "botId": "YOUR-BOT-ID",
      "minConfidence": 0.7
    }
    ```
@@ -59,10 +79,10 @@ GROUP BY bot_id;
 curl -X POST https://dkawxgwdqiirgmmjbvhc.supabase.co/functions/v1/auto-optimize \
   -H 'Authorization: Bearer YOUR_ANON_KEY' \
   -H 'Content-Type: application/json' \
-  -d '{"botId": "your-bot-id-here", "minConfidence": 0.7}'
+  -d '{"botId": "YOUR-BOT-ID", "minConfidence": 0.7}'
 ```
 
-### ✅ Step 5: Check Optimization Logs
+### ✅ Step 6: Check Optimization Logs
 
 **In the App:**
 1. Go to **Bot Details Page**
@@ -71,7 +91,7 @@ curl -X POST https://dkawxgwdqiirgmmjbvhc.supabase.co/functions/v1/auto-optimize
    - "AI/ML Optimization Applied (Confidence: XX%)"
    - Parameter changes listed
 
-**In Database (SQL):**
+**In Database (SQL) - Replace `'YOUR-BOT-ID'` with your actual bot ID:**
 ```sql
 SELECT 
   id,
@@ -81,20 +101,22 @@ SELECT
   details->>'confidence' as confidence,
   details->>'changes' as changes
 FROM bot_activity_logs
-WHERE bot_id = 'your-bot-id-here'
+WHERE bot_id = 'YOUR-BOT-ID'
   AND category = 'strategy'
   AND (details->>'type' = 'ai_ml_optimization' OR message LIKE '%AI/ML%')
 ORDER BY timestamp DESC
 LIMIT 10;
 ```
 
-### ✅ Step 6: Check Bot Activity Logs Table
+### ✅ Step 7: Check Bot Activity Logs Table
+
+**Replace `'YOUR-BOT-ID'` with your actual bot ID:**
 
 Make sure the table exists and has data:
 ```sql
 SELECT COUNT(*) 
 FROM bot_activity_logs 
-WHERE bot_id = 'your-bot-id-here';
+WHERE bot_id = 'YOUR-BOT-ID';
 ```
 
 ## 🔧 Common Issues & Solutions
@@ -111,18 +133,18 @@ WHERE bot_id = 'your-bot-id-here';
 
 **Solutions:**
 
-1. **Enable AI/ML:**
+1. **Enable AI/ML - Replace `'YOUR-BOT-ID'` with your actual bot ID:**
    ```sql
    UPDATE trading_bots 
    SET ai_ml_enabled = true 
-   WHERE id = 'your-bot-id-here';
+   WHERE id = 'YOUR-BOT-ID';
    ```
 
 2. **Make sure bot is running:**
    ```sql
    UPDATE trading_bots 
    SET status = 'running' 
-   WHERE id = 'your-bot-id-here';
+   WHERE id = 'YOUR-BOT-ID';
    ```
 
 3. **Wait for more trades** or reduce requirement in code
@@ -150,11 +172,11 @@ WHERE status = 'running';
 
 ### Issue: "Insufficient trades"
 
-**Check trade count:**
+**Check trade count - Replace `'YOUR-BOT-ID'` with your actual bot ID:**
 ```sql
 SELECT COUNT(*) 
 FROM trades 
-WHERE bot_id = 'your-bot-id-here' 
+WHERE bot_id = 'YOUR-BOT-ID' 
   AND created_at >= NOW() - INTERVAL '30 days';
 ```
 
