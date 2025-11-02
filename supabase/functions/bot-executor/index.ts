@@ -722,6 +722,29 @@ class BotExecutor {
       });
       
     } catch (error) {
+      // Check if it's a regulatory restriction error (10024) - requires pausing bot
+      const isRegulatoryRestriction = error.message?.includes('regulatory restrictions') || 
+                                     error.message?.includes('regulatory restriction') ||
+                                     error.message?.includes('Code: 10024') ||
+                                     error.message?.includes('10024');
+      
+      if (isRegulatoryRestriction) {
+        console.error('❌ Regulatory restriction detected - pausing bot:', error.message);
+        await this.pauseBotForSafety(bot.id, `Regulatory restriction: ${error.message}`);
+        await this.addBotLog(bot.id, {
+          level: 'error',
+          category: 'trade',
+          message: `Bot paused automatically due to regulatory restriction: ${error.message}`,
+          details: { 
+            error: error.message,
+            pausedAt: TimeSync.getCurrentTimeISO(),
+            recommendation: 'Contact Bybit support to enable trading for your region. Bot has been paused automatically.'
+          }
+        });
+        // Don't throw - bot is paused, no need to keep retrying
+        return;
+      }
+      
       // Check if it's an insufficient balance error (less critical)
       const isInsufficientBalance = error.message?.includes('Insufficient balance') || error.message?.includes('not enough');
       
@@ -980,8 +1003,10 @@ class BotExecutor {
         } else if (data.retCode === 10024) {
           // Regulatory restriction - account/region limitation
           console.error(`❌ Regulatory restriction for ${symbol}`);
+          console.error(`📋 Environment: ${isTestnet ? 'TESTNET' : 'MAINNET'}`);
           console.error(`📋 This is an account/region restriction from Bybit. Please contact Bybit support.`);
-          throw new Error(`Bybit account restriction: ${data.retMsg} (Code: ${data.retCode}). This trading pair or service is not available in your region. Please contact Bybit support for assistance.`);
+          console.error(`💡 Suggestion: If using mainnet, try switching to testnet. If using testnet, verify your account has access.`);
+          throw new Error(`Bybit account restriction (Code: ${data.retCode}): ${data.retMsg} This trading pair or service is not available in your region (${isTestnet ? 'Testnet' : 'Mainnet'}). Please contact Bybit support (/en/help-center/s/webform) to enable trading for your region, or switch to testnet if using mainnet.`);
         }
         
         throw new Error(`Bybit order error: ${data.retMsg} (Code: ${data.retCode})`);
