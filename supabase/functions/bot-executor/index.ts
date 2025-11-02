@@ -849,7 +849,10 @@ class BotExecutor {
       // Calculate decimals for formatting - ensure we have enough precision
       // For stepSize 0.1, we need 1 decimal place; for 0.01, we need 2, etc.
       const stepDecimals = stepSize < 1 ? stepSize.toString().split('.')[1]?.length || 0 : 0;
-      const formattedQty = parseFloat(qty.toFixed(stepDecimals)).toString(); // Remove trailing zeros but keep step precision
+      // Ensure qty is properly rounded to step size and formatted
+      const roundedQty = Math.round(qty / stepSize) * stepSize;
+      // Format with appropriate decimals, but use Number() to remove unnecessary trailing zeros
+      const formattedQty = Number(roundedQty.toFixed(stepDecimals)).toString();
       
       // Bybit V5 API requires capitalized side: "Buy" or "Sell"
       const capitalizedSide = side.charAt(0).toUpperCase() + side.slice(1).toLowerCase();
@@ -920,7 +923,9 @@ class BotExecutor {
         requestBody.qty = orderValue.toFixed(2); // Order value in USDT
         console.log(`💰 Spot order using marketUnit=1 (quote currency): $${orderValue.toFixed(2)} USDT`);
       } else {
-        requestBody.qty = formattedQty; // Use quantity in base currency for futures
+        // For linear/futures, ensure quantity is properly formatted as string with correct precision
+        // Bybit requires qty as string, not number, and must match step size precisely
+        requestBody.qty = formattedQty.toString(); // Ensure it's a string
         console.log(`💰 Futures order using qty: ${formattedQty}`);
       }
       
@@ -1275,17 +1280,39 @@ class BotExecutor {
       let takeProfitPrice: string;
       
       const { tickSize } = this.getSymbolSteps(symbol);
-      const tickDecimals = tickSize.toString().includes('.') ? tickSize.toString().split('.')[1].length : 0;
-      const roundToTick = (v: number) => (Math.round(v / tickSize) * tickSize);
+      // Calculate proper decimal places for tick size
+      let tickDecimals = 0;
+      if (tickSize < 1) {
+        const tickStr = tickSize.toString();
+        if (tickStr.includes('.')) {
+          tickDecimals = tickStr.split('.')[1].length;
+        } else if (tickStr.includes('e-')) {
+          // Handle scientific notation like 1e-6
+          tickDecimals = Math.abs(parseInt(tickStr.split('e-')[1]));
+        }
+      }
+      // Ensure at least 2 decimal places for prices
+      tickDecimals = Math.max(tickDecimals, 2);
+      
+      const roundToTick = (v: number) => {
+        if (tickSize <= 0) return v;
+        return Math.round(v / tickSize) * tickSize;
+      };
 
       if (side === 'Buy') {
         // Long position: SL below entry, TP above entry
-        stopLossPrice = roundToTick(entryPrice * 0.98).toFixed(tickDecimals);
-        takeProfitPrice = roundToTick(entryPrice * 1.03).toFixed(tickDecimals);
+        const slValue = roundToTick(entryPrice * 0.98);
+        const tpValue = roundToTick(entryPrice * 1.03);
+        // Format prices as strings with proper precision, ensuring no scientific notation
+        stopLossPrice = Number(slValue.toFixed(tickDecimals)).toString();
+        takeProfitPrice = Number(tpValue.toFixed(tickDecimals)).toString();
       } else {
         // Short position: SL above entry, TP below entry
-        stopLossPrice = roundToTick(entryPrice * 1.02).toFixed(tickDecimals);
-        takeProfitPrice = roundToTick(entryPrice * 0.97).toFixed(tickDecimals);
+        const slValue = roundToTick(entryPrice * 1.02);
+        const tpValue = roundToTick(entryPrice * 0.97);
+        // Format prices as strings with proper precision, ensuring no scientific notation
+        stopLossPrice = Number(slValue.toFixed(tickDecimals)).toString();
+        takeProfitPrice = Number(tpValue.toFixed(tickDecimals)).toString();
       }
       
       // Validate TP/SL direction. If invalid, skip setting to avoid API errors
