@@ -132,9 +132,96 @@ export function usePerformance(
         (t: any) => t.status === 'filled' || t.status === 'closed' || t.status === 'completed'
       );
       
+      // For spot trading, match buy/sell pairs to calculate PnL
+      // Group trades by symbol and try to match long/short pairs
+      const symbolGroups = new Map<string, any[]>();
+      closedTrades.forEach((t: any) => {
+        const symbol = t.symbol || t.trading_bots?.symbol;
+        if (!symbolGroups.has(symbol)) {
+          symbolGroups.set(symbol, []);
+        }
+        symbolGroups.get(symbol)!.push(t);
+      });
+      
+      // Match buy/sell pairs for spot trading and calculate PnL
+      const processedTradesMap = new Map<string, any>();
+      
+      symbolGroups.forEach((trades, symbol) => {
+        // Sort by date (oldest first)
+        trades.sort((a, b) => {
+          const dateA = new Date(a.executed_at || a.created_at || a.timestamp || 0).getTime();
+          const dateB = new Date(b.executed_at || b.created_at || b.timestamp || 0).getTime();
+          return dateA - dateB;
+        });
+        
+        // Match buys and sells (long and short)
+        const buys: any[] = [];
+        const sells: any[] = [];
+        
+        trades.forEach((t: any) => {
+          const side = (t.side || 'long').toLowerCase();
+          if (side === 'long' || side === 'buy') {
+            buys.push(t);
+          } else if (side === 'short' || side === 'sell') {
+            sells.push(t);
+          }
+        });
+        
+        // Match buy/sell pairs using FIFO (First In First Out)
+        let buyIndex = 0;
+        sells.forEach((sell: any) => {
+          while (buyIndex < buys.length) {
+            const buy = buys[buyIndex];
+            
+            // Get prices and sizes
+            const buyPrice = parseFloat(buy.entry_price || buy.price || 0);
+            const sellPrice = parseFloat(sell.entry_price || sell.price || 0);
+            const buySize = parseFloat(buy.size || buy.amount || 0);
+            const sellSize = parseFloat(sell.size || sell.amount || 0);
+            
+            if (buyPrice > 0 && sellPrice > 0 && buySize > 0 && sellSize > 0) {
+              // Calculate PnL for this pair
+              const matchedSize = Math.min(buySize, sellSize);
+              const pnl = (sellPrice - buyPrice) * matchedSize;
+              
+              // Update buy trade with PnL
+              if (!processedTradesMap.has(buy.id)) {
+                processedTradesMap.set(buy.id, { ...buy, pnl: pnl, matched: true });
+              } else {
+                const existing = processedTradesMap.get(buy.id);
+                processedTradesMap.set(buy.id, { ...existing, pnl: (existing.pnl || 0) + pnl });
+              }
+              
+              // Update sell trade with PnL (same value)
+              if (!processedTradesMap.has(sell.id)) {
+                processedTradesMap.set(sell.id, { ...sell, pnl: pnl, matched: true });
+              } else {
+                const existing = processedTradesMap.get(sell.id);
+                processedTradesMap.set(sell.id, { ...existing, pnl: (existing.pnl || 0) + pnl });
+              }
+              
+              // Reduce remaining sizes
+              if (sellSize >= buySize) {
+                buyIndex++;
+                break;
+              } else {
+                buys[buyIndex] = { ...buy, size: buySize - sellSize };
+                break;
+              }
+            } else {
+              buyIndex++;
+            }
+          }
+        });
+      });
+      
       // Try to calculate PnL for trades that don't have it yet
       // This handles trades where PnL wasn't calculated when closed
       const processedTrades = closedTrades.map((t: any) => {
+        // If already processed from matching, use that
+        if (processedTradesMap.has(t.id)) {
+          return processedTradesMap.get(t.id);
+        }
         // If PnL is already calculated and non-zero, use it
         if (t.pnl !== null && t.pnl !== undefined && parseFloat(t.pnl) !== 0) {
           return t;
@@ -150,14 +237,16 @@ export function usePerformance(
         // Debug: Log trade details to understand why PnL can't be calculated
         if (closedTrades.length > 0 && !t.pnl) {
           console.log('📊 Trade PnL calculation:', {
-            id: t.id,
+            id: t.id?.substring(0, 8) || 'unknown',
             status: t.status,
             hasExitPrice: !!exitPrice,
             entryPrice,
             exitPrice,
             size,
             side,
-            currentPnL: t.pnl
+            currentPnL: t.pnl,
+            canCalculate: entryPrice > 0 && exitPrice > 0 && size > 0,
+            reason: !exitPrice ? 'Missing exit_price' : entryPrice === 0 ? 'Missing entry_price' : size === 0 ? 'Missing size' : 'Unknown'
           });
         }
         
