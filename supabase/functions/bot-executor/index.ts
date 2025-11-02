@@ -846,6 +846,39 @@ class BotExecutor {
         }
       }
       
+      // Validate minimum order value before placing order
+      const minOrderValue = this.getMinimumOrderValue(symbol, bybitCategory);
+      const currentOrderValue = parseFloat(formattedQty) * currentMarketPrice;
+      
+      if (currentOrderValue < minOrderValue && currentMarketPrice > 0) {
+        console.warn(`⚠️ Order value $${currentOrderValue.toFixed(2)} below minimum $${minOrderValue.toFixed(2)} for ${symbol}`);
+        console.warn(`💡 Attempting to increase quantity to meet minimum order value...`);
+        
+        // Calculate minimum quantity needed to meet order value requirement
+        const minQuantity = (minOrderValue / currentMarketPrice) * 1.01; // Add 1% buffer
+        
+        // Round up to meet step size and constraints
+        let adjustedQty = Math.max(minQuantity, constraints.min);
+        if (stepSize > 0) {
+          adjustedQty = Math.ceil(adjustedQty / stepSize) * stepSize;
+        }
+        adjustedQty = Math.min(adjustedQty, constraints.max);
+        
+        // Recalculate order value with adjusted quantity
+        const adjustedOrderValue = adjustedQty * currentMarketPrice;
+        const adjustedStepDecimals = stepSize < 1 ? stepSize.toString().split('.')[1]?.length || 0 : 0;
+        const adjustedFormattedQty = parseFloat(adjustedQty.toFixed(adjustedStepDecimals)).toString();
+        
+        if (adjustedOrderValue >= minOrderValue && adjustedQty <= constraints.max) {
+          console.log(`✅ Adjusted quantity from ${formattedQty} to ${adjustedFormattedQty} to meet minimum order value`);
+          console.log(`💰 New order value: $${adjustedOrderValue.toFixed(2)} (minimum: $${minOrderValue.toFixed(2)})`);
+          qty = adjustedQty;
+          formattedQty = adjustedFormattedQty;
+        } else {
+          throw new Error(`Order value $${currentOrderValue.toFixed(2)} is below minimum $${minOrderValue.toFixed(2)} for ${symbol} on Bybit. Calculated minimum quantity ${adjustedQty.toFixed(6)} exceeds maximum ${constraints.max}. Please increase trade amount or adjust bot configuration.`);
+        }
+      }
+      
       // Order parameters for the request BODY (and the signature string)
       const requestBody: any = {
         category: bybitCategory, // 'linear' for perpetual futures, 'spot' for spot
@@ -913,6 +946,14 @@ class BotExecutor {
           console.warn(`💰 Order value: $${orderValue.toFixed(2)}`);
           console.warn(`💡 This may happen temporarily. The bot will retry on the next execution.`);
           throw new Error(`Insufficient balance for ${symbol} order. Order value: $${orderValue.toFixed(2)}. Please check your account balance or wait for funds to become available. This is often temporary and will retry automatically.`);
+        } else if (data.retCode === 170140) {
+          const orderValue = parseFloat(formattedQty) * currentMarketPrice;
+          const minOrderValue = this.getMinimumOrderValue(symbol, bybitCategory);
+          console.error(`❌ Order value below minimum for ${symbol}`);
+          console.error(`💰 Current order value: $${orderValue.toFixed(2)}`);
+          console.error(`📏 Minimum required: $${minOrderValue.toFixed(2)}`);
+          console.error(`💡 Increase trade amount or adjust bot configuration to meet minimum order value.`);
+          throw new Error(`Order value $${orderValue.toFixed(2)} is below minimum $${minOrderValue.toFixed(2)} for ${symbol} on Bybit. Please increase trade amount to at least $${minOrderValue.toFixed(2)} per trade.`);
         }
         
         throw new Error(`Bybit order error: ${data.retMsg} (Code: ${data.retCode})`);
@@ -1380,6 +1421,41 @@ class BotExecutor {
     }
     
     return clampedQuantity;
+  }
+
+  private getMinimumOrderValue(symbol: string, category: string): number {
+    // Bybit minimum order values (in USDT) per trading pair
+    // Spot trading: typically $1-5 USDT minimum
+    // Futures trading: typically $5-10 USDT minimum
+    const minOrderValues: { [key: string]: { spot: number, linear: number } } = {
+      'BTCUSDT': { spot: 1, linear: 5 },
+      'ETHUSDT': { spot: 1, linear: 5 },
+      'XRPUSDT': { spot: 5, linear: 5 },
+      'ADAUSDT': { spot: 5, linear: 5 },
+      'DOTUSDT': { spot: 5, linear: 5 },
+      'UNIUSDT': { spot: 5, linear: 5 },
+      'AVAXUSDT': { spot: 5, linear: 5 },
+      'SOLUSDT': { spot: 5, linear: 5 },
+      'BNBUSDT': { spot: 1, linear: 5 },
+      'MATICUSDT': { spot: 5, linear: 5 },
+      'LINKUSDT': { spot: 5, linear: 5 },
+      'LTCUSDT': { spot: 1, linear: 5 },
+      // Meme coins and low-value tokens - typically need larger minimum order values
+      'PEPEUSDT': { spot: 5, linear: 5 },
+      'DOGEUSDT': { spot: 5, linear: 5 },
+      'SHIBUSDT': { spot: 5, linear: 5 }
+    };
+    
+    // Determine which minimum to use based on category
+    const isFutures = category === 'linear' || category === 'futures';
+    const minValue = minOrderValues[symbol];
+    
+    if (minValue) {
+      return isFutures ? minValue.linear : minValue.spot;
+    }
+    
+    // Default minimum order values
+    return isFutures ? 5 : 1; // $5 for futures, $1 for spot
   }
 
   private getQuantityConstraints(symbol: string): { min: number, max: number } {
