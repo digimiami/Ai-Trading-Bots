@@ -567,6 +567,63 @@ All settings have been applied to your bot configuration.`;
                     max="90"
                     step="5"
                   />
+                  <p className="text-xs text-gray-500 mt-1">
+                    RSI level that triggers trades (overbought/oversold)
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    RSI Period
+                  </label>
+                  <input
+                    type="number"
+                    value={advancedConfig.rsi_period || 14}
+                    onChange={(e) => setAdvancedConfig(prev => ({ ...prev, rsi_period: parseInt(e.target.value) || 14 }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    min="7"
+                    max="21"
+                    step="1"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    RSI calculation period (default: 14)
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    RSI Oversold Level
+                  </label>
+                  <input
+                    type="number"
+                    value={advancedConfig.rsi_oversold || 30}
+                    onChange={(e) => setAdvancedConfig(prev => ({ ...prev, rsi_oversold: parseInt(e.target.value) || 30 }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    min="10"
+                    max="40"
+                    step="1"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    RSI level considered oversold (buy signal)
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    RSI Overbought Level
+                  </label>
+                  <input
+                    type="number"
+                    value={advancedConfig.rsi_overbought || 70}
+                    onChange={(e) => setAdvancedConfig(prev => ({ ...prev, rsi_overbought: parseInt(e.target.value) || 70 }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    min="60"
+                    max="90"
+                    step="1"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    RSI level considered overbought (sell signal)
+                  </p>
                 </div>
 
                 <div>
