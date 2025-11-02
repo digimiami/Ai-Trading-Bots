@@ -7,6 +7,7 @@ import { useBotActivity } from '../../hooks/useBotActivity';
 import { useBots } from '../../hooks/useBots';
 import BotActivityLogs from '../../components/bot/BotActivityLogs';
 import BotReportViewer from '../../components/bot/BotReportViewer';
+import ActivityReportGenerator from '../../components/activity/ActivityReportGenerator';
 
 export default function BotActivityPage() {
   const { bots } = useBots();
@@ -122,6 +123,9 @@ export default function BotActivityPage() {
             ))
           )}
         </div>
+
+        {/* Activity Report Generator */}
+        <ActivityReportGenerator />
 
         {/* Bot Performance Report */}
         <BotReportViewer />
