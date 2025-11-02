@@ -720,6 +720,14 @@ class BotExecutor {
         message: `${tradeSignal.side.toUpperCase()} order placed: ${tradeAmount} ${bot.symbol} at $${currentPrice}`,
         details: { trade, signal: tradeSignal, orderResult }
       });
+
+      // Send Telegram notification for trade execution
+      try {
+        await this.sendTradeNotification(bot, trade, orderResult);
+      } catch (notifError) {
+        // Don't fail the trade if notification fails - just log it
+        console.warn('⚠️ Failed to send Telegram notification (non-critical):', notifError);
+      }
       
     } catch (error) {
       // Check if it's a regulatory restriction error (10024) - requires pausing bot
@@ -2060,6 +2068,79 @@ class BotExecutor {
       }
     } catch (error) {
       console.error('Error pausing bot for safety:', error);
+    }
+  }
+
+  /**
+   * Send Telegram notification for trade execution
+   */
+  private async sendTradeNotification(bot: any, trade: any, orderResult: any): Promise<void> {
+    try {
+      // Get Supabase URL and keys from environment
+      const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+      const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
+      const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+      
+      if (!supabaseUrl || !supabaseAnonKey) {
+        console.warn('⚠️ Supabase URL or Anon Key not configured for Telegram notifications');
+        return;
+      }
+
+      // When called from cron, we don't have a user session, but we have user_id from the trade/bot
+      // Use service role key to call the function and pass user_id in body
+      // The telegram-notifier will handle user lookup internally
+      const useServiceRole = !this.user || !this.supabaseClient.auth; // Check if we have user context
+      
+      // Invoke telegram-notifier Edge Function via HTTP
+      const functionUrl = `${supabaseUrl}/functions/v1/telegram-notifier?action=send`;
+      
+      // Try to get session token first (for manual calls), fall back to service role (for cron)
+      let authToken = supabaseAnonKey;
+      try {
+        const { data: { session } } = await this.supabaseClient.auth.getSession();
+        if (session?.access_token) {
+          authToken = session.access_token;
+        } else if (useServiceRole && supabaseServiceKey) {
+          authToken = supabaseServiceKey; // Use service role for cron jobs
+        }
+      } catch (sessionError) {
+        // If getSession fails (e.g., in cron context), use service role key
+        if (supabaseServiceKey) {
+          authToken = supabaseServiceKey;
+        }
+      }
+      
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+          'apikey': supabaseAnonKey
+        },
+        body: JSON.stringify({
+          notification_type: 'trade_executed',
+          data: {
+            bot_name: bot.name,
+            symbol: bot.symbol || trade.symbol,
+            side: trade.side,
+            price: trade.price || trade.entry_price,
+            amount: trade.amount || trade.size,
+            order_id: trade.exchange_order_id || orderResult?.orderId,
+            user_id: this.user?.id || trade.user_id || bot.user_id // Pass user_id explicitly
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.warn('⚠️ Telegram notification HTTP error:', response.status, errorText);
+      } else {
+        const result = await response.json();
+        console.log('✅ Telegram notification sent for trade:', trade.id, result);
+      }
+    } catch (err) {
+      console.warn('⚠️ Failed to send Telegram notification:', err);
+      // Don't throw - notification failures shouldn't break trades
     }
   }
 

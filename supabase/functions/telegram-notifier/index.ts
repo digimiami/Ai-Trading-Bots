@@ -130,16 +130,59 @@ serve(async (req) => {
       }
     )
 
-    const { data: { user } } = await supabaseClient.auth.getUser()
-    if (!user) {
+    // Try to get user from session (for manual calls)
+    let user: any = null;
+    
+    try {
+      const userResult = await supabaseClient.auth.getUser();
+      user = userResult.data?.user || null;
+    } catch (authError) {
+      // Auth might fail for cron jobs using service role key - that's OK, we'll handle it below
+      console.log('⚠️ Auth check failed (may be cron job), will check body for user_id...');
+    }
+
+    const url = new URL(req.url)
+    const action = url.searchParams.get('action') || 'send'
+    
+    // If no user from session and this is a POST with 'send' action, check body for user_id
+    // (This is for cron jobs that don't have user sessions)
+    if (!user && action === 'send' && req.method === 'POST') {
+      try {
+        // Read body once - we'll pass it to the POST handler below
+        const bodyText = await req.text();
+        const body = JSON.parse(bodyText);
+        const userId = body.data?.user_id || null;
+        
+        if (userId) {
+          user = { id: userId }; // Create minimal user object for cron jobs
+          console.log('✅ Using user_id from body for cron job:', userId);
+          
+          // Recreate request with body for POST handler below
+          req = new Request(req.url, {
+            method: req.method,
+            headers: req.headers,
+            body: bodyText
+          });
+        }
+      } catch (bodyError) {
+        console.warn('⚠️ Could not read user_id from body:', bodyError);
+      }
+    }
+    
+    // For non-send actions or if still no user, require authenticated session
+    if (!user && action !== 'send') {
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
-
-    const url = new URL(req.url)
-    const action = url.searchParams.get('action') || 'send'
+    
+    if (!user && action === 'send') {
+      return new Response(
+        JSON.stringify({ error: 'No user found. Please provide user_id in request body or use authenticated session.' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
 
     if (req.method === 'GET') {
       if (action === 'get_config') {
