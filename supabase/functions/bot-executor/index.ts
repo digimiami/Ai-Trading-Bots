@@ -880,13 +880,24 @@ class BotExecutor {
       }
       
       // Order parameters for the request BODY (and the signature string)
+      // For spot market orders, use quoteQty (USDT amount) instead of qty for better precision
       const requestBody: any = {
         category: bybitCategory, // 'linear' for perpetual futures, 'spot' for spot
         symbol: symbol,
         side: capitalizedSide, // "Buy" or "Sell" (capitalized for Bybit V5)
         orderType: 'Market',
-        qty: formattedQty,
       };
+      
+      // For spot trading, use quoteQty (order value in USDT) for better control
+      // For futures/linear, use qty (quantity in base currency)
+      if (bybitCategory === 'spot') {
+        const orderValue = parseFloat(formattedQty) * currentMarketPrice;
+        requestBody.quoteQty = orderValue.toFixed(2); // Use USDT amount for spot
+        console.log(`💰 Spot order using quoteQty: $${orderValue.toFixed(2)} (calculated from qty: ${formattedQty} × price: ${currentMarketPrice})`);
+      } else {
+        requestBody.qty = formattedQty; // Use quantity for futures
+        console.log(`💰 Futures order using qty: ${formattedQty}`);
+      }
       
       // NOTE: SL/TP disabled for now - will be implemented after position is opened
       // Bybit V5 API has specific requirements for SL/TP format and position mode
@@ -947,12 +958,16 @@ class BotExecutor {
           console.warn(`💡 This may happen temporarily. The bot will retry on the next execution.`);
           throw new Error(`Insufficient balance for ${symbol} order. Order value: $${orderValue.toFixed(2)}. Please check your account balance or wait for funds to become available. This is often temporary and will retry automatically.`);
         } else if (data.retCode === 170140) {
-          const orderValue = parseFloat(formattedQty) * currentMarketPrice;
+          // Calculate actual order value that was sent
+          const orderValue = bybitCategory === 'spot' && requestBody.quoteQty 
+            ? parseFloat(requestBody.quoteQty) 
+            : parseFloat(formattedQty) * currentMarketPrice;
           const minOrderValue = this.getMinimumOrderValue(symbol, bybitCategory);
           console.error(`❌ Order value below minimum for ${symbol}`);
           console.error(`💰 Current order value: $${orderValue.toFixed(2)}`);
           console.error(`📏 Minimum required: $${minOrderValue.toFixed(2)}`);
           console.error(`💡 Increase trade amount or adjust bot configuration to meet minimum order value.`);
+          console.error(`📋 Order details: category=${bybitCategory}, qty=${formattedQty}, quoteQty=${requestBody.quoteQty || 'N/A'}, price=${currentMarketPrice}`);
           throw new Error(`Order value $${orderValue.toFixed(2)} is below minimum $${minOrderValue.toFixed(2)} for ${symbol} on Bybit. Please increase trade amount to at least $${minOrderValue.toFixed(2)} per trade.`);
         }
         
