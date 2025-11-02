@@ -577,6 +577,23 @@ class BotExecutor {
       console.log('Bot strategy:', JSON.stringify(strategy, null, 2));
       const shouldTrade = this.evaluateStrategy(strategy, { price: currentPrice, rsi, adx });
       
+      // For spot trading, filter out sell signals if we don't own the asset
+      const tradingType = bot.tradingType || bot.trading_type || 'spot';
+      if (tradingType === 'spot' && shouldTrade.shouldTrade && shouldTrade.side === 'sell') {
+        // Check if we own the asset before allowing sell
+        const ownsAsset = await this.checkAssetOwnership(bot, bot.symbol);
+        if (!ownsAsset) {
+          console.log(`⚠️ Spot trading: Cannot sell ${bot.symbol} without owning it. Skipping sell signal.`);
+          await this.addBotLog(bot.id, {
+            level: 'info',
+            category: 'strategy',
+            message: `Sell signal generated but skipped: No ${bot.symbol} assets owned for spot trading`,
+            details: { signal: shouldTrade, reason: 'Spot trading requires asset ownership to sell' }
+          });
+          return; // Skip execution, don't throw error
+        }
+      }
+      
       console.log('Strategy evaluation result:', JSON.stringify(shouldTrade, null, 2));
       
       if (shouldTrade.shouldTrade) {
@@ -788,11 +805,14 @@ class BotExecutor {
       
       const tradingType = bot.tradingType || bot.trading_type || 'spot';
       
-      // For spot trading: can only buy with USDT (can't sell if we don't own the asset)
+      // For spot trading: verify we own the asset before selling
       // For futures: can both buy (long) and sell (short)
       if (tradingType === 'spot' && (tradeSignal.side.toLowerCase() === 'sell')) {
-        console.log(`⚠️ Spot trading: Cannot sell ${bot.symbol} without owning it. Skipping sell signal.`);
-        throw new Error('Cannot sell on spot market without owning the asset. Only buy orders are supported for spot trading.');
+        const ownsAsset = await this.checkAssetOwnership(bot, bot.symbol);
+        if (!ownsAsset) {
+          console.log(`⚠️ Spot trading: Cannot sell ${bot.symbol} without owning it. Skipping sell signal.`);
+          throw new Error('Cannot sell on spot market without owning the asset. Only buy orders are supported for spot trading.');
+        }
       }
       
       // Check balance before placing order
@@ -1889,6 +1909,83 @@ class BotExecutor {
       return strategyConfig.weekly_loss_limit_pct || 6.0; // Default: 6%
     } catch (error) {
       return 6.0; // Default 6%
+    }
+  }
+
+  /**
+   * Check if we own the asset for spot trading (before allowing sell)
+   */
+  private async checkAssetOwnership(bot: any, symbol: string): Promise<boolean> {
+    try {
+      // Extract base asset from symbol (e.g., XRPUSDT -> XRP)
+      const baseAsset = symbol.replace(/USDT$/, '').replace(/BTC$/, '').replace(/ETH$/, '');
+      
+      if (bot.exchange === 'bybit') {
+        // Get API keys
+        const { data: apiKeys } = await this.supabaseClient
+          .from('api_keys')
+          .select('api_key, api_secret, is_testnet')
+          .eq('user_id', this.user.id)
+          .eq('exchange', bot.exchange)
+          .eq('is_active', true)
+          .single();
+        
+        if (!apiKeys) {
+          console.warn('⚠️ No API keys found, cannot check asset ownership');
+          return false;
+        }
+        
+        const apiKey = this.decrypt(apiKeys.api_key);
+        const apiSecret = this.decrypt(apiKeys.api_secret);
+        const baseUrl = apiKeys.is_testnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com';
+        
+        // Check spot wallet balance for the base asset
+        const timestamp = Date.now().toString();
+        const recvWindow = '5000';
+        const queryParams = `accountType=SPOT&coin=${baseAsset}`;
+        const signaturePayload = timestamp + apiKey + recvWindow + queryParams;
+        const signature = await this.createBybitSignature(signaturePayload, apiSecret);
+        
+        const response = await fetch(`${baseUrl}/v5/account/wallet-balance?${queryParams}`, {
+          method: 'GET',
+          headers: {
+            'X-BAPI-API-KEY': apiKey,
+            'X-BAPI-TIMESTAMP': timestamp,
+            'X-BAPI-RECV-WINDOW': recvWindow,
+            'X-BAPI-SIGN': signature,
+          },
+        });
+        
+        const data = await response.json();
+        
+        if (data.retCode !== 0) {
+          console.warn(`⚠️ Failed to check asset ownership (retCode: ${data.retCode}):`, data.retMsg);
+          return false; // Fail safe - assume we don't own it if we can't check
+        }
+        
+        // Extract available balance for the base asset
+        const coinList = data.result?.list?.[0]?.coin || [];
+        const coinData = coinList.find((c: any) => c.coin === baseAsset);
+        
+        if (!coinData) {
+          console.log(`📊 No ${baseAsset} balance found in spot wallet`);
+          return false;
+        }
+        
+        const availableBalance = parseFloat(coinData.availableToWithdraw || coinData.walletBalance || '0');
+        console.log(`📊 ${baseAsset} spot balance: ${availableBalance}`);
+        
+        // Consider we own the asset if balance > 0
+        return availableBalance > 0;
+      }
+      
+      // For other exchanges, assume we don't own it (conservative approach)
+      console.warn(`⚠️ Asset ownership check not implemented for ${bot.exchange}`);
+      return false;
+    } catch (error) {
+      console.error('Error checking asset ownership:', error);
+      // Fail safe - assume we don't own it if check fails
+      return false;
     }
   }
 
