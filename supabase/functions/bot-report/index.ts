@@ -47,7 +47,7 @@ serve(async (req) => {
     // Total P&L from trades (more accurate) - filter by user_id
     const { data: tradesData } = await supabaseClient
       .from('trades')
-      .select('pnl, fee, amount, price, bot_id, symbol, exchange, created_at')
+      .select('pnl, fee, amount, price, bot_id, symbol, exchange, created_at, executed_at, status, entry_price, exit_price, side')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
 
@@ -261,15 +261,15 @@ serve(async (req) => {
         // Calculate win/loss trades and drawdown
         // Get trades with calculated PnL (either has pnl or has exit_price for calculation)
         const filledTrades = botTrades.map(t => {
-          let calculatedPnL = t.pnl || 0
+          let calculatedPnL = parseFloat(t.pnl) || 0
           
           // If PnL is 0 or null but we have entry/exit prices, calculate it
-          if ((calculatedPnL === 0 || calculatedPnL === null) && (t as any).entry_price && (t as any).exit_price) {
+          if ((calculatedPnL === 0 || t.pnl === null) && (t as any).entry_price && (t as any).exit_price) {
             const entryPrice = parseFloat((t as any).entry_price || 0)
             const exitPrice = parseFloat((t as any).exit_price || 0)
             const size = parseFloat(t.amount || 0)
             const side = ((t as any).side || 'long').toLowerCase()
-            const tradeFee = t.fee || 0
+            const tradeFee = parseFloat(t.fee || 0)
             
             if (entryPrice > 0 && exitPrice > 0 && size > 0) {
               if (side === 'long' || side === 'buy') {
@@ -281,7 +281,13 @@ serve(async (req) => {
           }
           
           return { ...t, calculatedPnL }
-        }).filter(t => t.calculatedPnL !== 0 || (t as any).exit_price) // Only include trades with actual PnL or closed positions
+        }).filter(t => {
+          // Include trades with:
+          // 1. Non-zero calculated PnL, OR
+          // 2. Has exit_price (closed position), OR
+          // 3. Has explicit pnl value (even if 0, it was calculated)
+          return (t as any).calculatedPnL !== 0 || (t as any).exit_price || t.pnl !== null
+        })
         
         const winTrades = filledTrades.filter(t => (t as any).calculatedPnL > 0).length
         const lossTrades = filledTrades.filter(t => (t as any).calculatedPnL < 0).length
