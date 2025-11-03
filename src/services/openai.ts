@@ -114,17 +114,19 @@ class OpenAIService {
    * Set AI provider preference
    */
   setProvider(provider: 'openai' | 'deepseek'): void {
-    if (provider === 'deepseek' && !this.deepseekApiKey) {
-      console.warn('DeepSeek API key not configured');
-      return;
+    // Check availability using the method that checks Edge Function secrets first
+    // This ensures keys stored in Edge Function secrets are recognized
+    const isAvailable = this.isProviderAvailable(provider);
+    
+    if (!isAvailable) {
+      console.warn(`${provider === 'deepseek' ? 'DeepSeek' : 'OpenAI'} API key not configured`);
+      // Still allow setting the preference, but warn the user
+      // The UI should handle disabling unavailable providers
     }
-    if (provider === 'openai' && !this.apiKey) {
-      console.warn('OpenAI API key not configured');
-      return;
-    }
+    
     this.useDeepSeek = provider === 'deepseek';
     localStorage.setItem('ai_provider_preference', provider);
-    console.log(`✅ AI Provider set to: ${provider}`);
+    console.log(`✅ AI Provider set to: ${provider}${isAvailable ? '' : ' (key not configured, may not work)'}`);
   }
 
   /**
