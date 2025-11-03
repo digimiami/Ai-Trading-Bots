@@ -298,16 +298,20 @@ serve(async (req) => {
           
           return { ...t, calculatedPnL }
         }).filter(t => {
-          // Include trades with:
-          // 1. Non-zero calculated PnL, OR
-          // 2. Has exit_price (closed position), OR
-          // 3. Has explicit pnl value (even if 0, it was calculated)
-          return (t as any).calculatedPnL !== 0 || (t as any).exit_price || t.pnl !== null
+          // Include ALL trades with status filled/closed/completed
+          // Even if PnL is 0, we want to include them for fee calculation
+          // But for win/loss, we only count trades with actual PnL
+          return true
         })
         
-        const winTrades = filledTrades.filter(t => (t as any).calculatedPnL > 0).length
-        const lossTrades = filledTrades.filter(t => (t as any).calculatedPnL < 0).length
-        const totalFilledTrades = filledTrades.length
+        // For win/loss, only count trades with actual PnL (non-zero or has exit_price)
+        const tradesWithPnL = filledTrades.filter(t => {
+          return (t as any).calculatedPnL !== 0 || (t as any).exit_price || (t.pnl !== null && t.pnl !== undefined)
+        })
+        
+        const winTrades = tradesWithPnL.filter(t => (t as any).calculatedPnL > 0).length
+        const lossTrades = tradesWithPnL.filter(t => (t as any).calculatedPnL < 0).length
+        const totalFilledTrades = tradesWithPnL.length
         const winRate = totalFilledTrades > 0 ? (winTrades / totalFilledTrades) * 100 : (bot.win_rate || 0)
         
         // Calculate drawdown
@@ -316,9 +320,10 @@ serve(async (req) => {
         let peakPnL = 0
         let currentPnL = 0
         
-        if (filledTrades.length > 0) {
+        // Use tradesWithPnL for drawdown calculation (only closed trades)
+        if (tradesWithPnL.length > 0) {
           // Sort trades by execution time (oldest first)
-          const sortedTrades = [...filledTrades].sort((a, b) => {
+          const sortedTrades = [...tradesWithPnL].sort((a, b) => {
             const dateA = new Date((a as any).executed_at || a.created_at || 0).getTime()
             const dateB = new Date((b as any).executed_at || b.created_at || 0).getTime()
             return dateA - dateB
@@ -337,6 +342,11 @@ serve(async (req) => {
           }
           currentPnL = runningPnL
           drawdownPercentage = peakPnL > 0 ? (drawdown / peakPnL) * 100 : 0
+        } else if (bot.pnl !== 0 && bot.pnl !== null) {
+          // Fallback: if no trades with PnL but bot has PnL, use bot PnL for peak/current
+          peakPnL = bot.pnl > 0 ? bot.pnl : 0
+          currentPnL = bot.pnl
+          // Can't calculate drawdown without trade history, but at least show current P&L
         }
         
         const botPnL = bot.pnl || 0

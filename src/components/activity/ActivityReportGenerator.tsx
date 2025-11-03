@@ -270,9 +270,9 @@ export default function ActivityReportGenerator() {
                 <div className="text-lg font-semibold text-gray-700">{report.performance_summary.total_trades}</div>
                 <div className="text-xs text-gray-500">Total Trades</div>
               </div>
-              <div className={`p-3 rounded-lg ${report.performance_summary.total_pnl >= 0 ? 'bg-green-50' : 'bg-red-50'}`}>
-                <div className={`text-lg font-semibold ${report.performance_summary.total_pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  ${report.performance_summary.total_pnl.toFixed(2)}
+              <div className={`p-3 rounded-lg ${(report.performance_summary?.total_pnl || 0) >= 0 ? 'bg-green-50' : 'bg-red-50'}`}>
+                <div className={`text-lg font-semibold ${(report.performance_summary?.total_pnl || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  ${(report.performance_summary?.total_pnl || 0).toFixed(2)}
                 </div>
                 <div className="text-xs text-gray-500">Total P&L</div>
               </div>
