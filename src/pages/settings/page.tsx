@@ -77,6 +77,7 @@ export default function Settings() {
     };
   });
   const [showAiConfig, setShowAiConfig] = useState(false);
+  const [aiKeysRefresh, setAiKeysRefresh] = useState(0); // Force re-render when keys change
 
   const [alerts, setAlerts] = useState({
     priceThreshold: 5,
@@ -146,6 +147,11 @@ export default function Settings() {
     }
     console.log(`🎨 Theme applied: ${appearance.theme}`);
   }, [appearance.theme]); // Watch for theme changes
+
+  useEffect(() => {
+    // Refresh AI API keys from localStorage on mount and when refresh trigger changes
+    openAIService.refreshKeys();
+  }, [aiKeysRefresh]);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -532,12 +538,6 @@ export default function Settings() {
       // Save OpenAI API key
       if (aiSettings.openaiApiKey) {
         openAIService.setOpenAIKey(aiSettings.openaiApiKey);
-      } else {
-        // If empty, check if user wants to clear it
-        const currentKeys = openAIService.getApiKeys();
-        if (currentKeys.openai) {
-          // Don't clear unless explicitly cleared
-        }
       }
 
       // Save DeepSeek API key
@@ -545,11 +545,19 @@ export default function Settings() {
         openAIService.setDeepSeekKey(aiSettings.deepseekApiKey);
       }
 
+      // Refresh keys from localStorage to ensure sync
+      openAIService.refreshKeys();
+      
+      // Trigger UI update
+      setAiKeysRefresh(prev => prev + 1);
+
       setShowAiConfig(false);
       alert('AI API keys saved successfully!');
       
-      // Refresh the page to update UI
-      window.location.reload();
+      // Small delay before reload to ensure localStorage is written and UI updates
+      setTimeout(() => {
+        window.location.reload();
+      }, 200);
     } catch (error: any) {
       alert(`Failed to save AI API keys: ${error.message}`);
     }

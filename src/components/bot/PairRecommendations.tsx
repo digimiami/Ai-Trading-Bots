@@ -89,6 +89,9 @@ export default function PairRecommendations({
   };
 
   useEffect(() => {
+    // Refresh API keys on mount to ensure we have latest from localStorage
+    openAIService.refreshKeys();
+    
     // Fetch recommendations when symbol, tradingType, or AI provider changes
     if (symbol && symbol.trim()) {
       console.log('🔍 PairRecommendations - Fetching recommendations for:', symbol, 'using', aiProvider);

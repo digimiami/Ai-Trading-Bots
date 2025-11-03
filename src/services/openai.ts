@@ -135,13 +135,44 @@ class OpenAIService {
   }
 
   /**
-   * Check if a provider is available
+   * Refresh API keys from localStorage (useful after saving via UI)
+   */
+  refreshKeys(): void {
+    // Reload from localStorage (don't override if env vars exist)
+    if (!import.meta.env.VITE_OPENAI_API_KEY) {
+      this.apiKey = localStorage.getItem('ai_openai_api_key') || '';
+    }
+    if (!import.meta.env.VITE_DEEPSEEK_API_KEY) {
+      this.deepseekApiKey = localStorage.getItem('ai_deepseek_api_key') || '';
+    }
+    console.log('🔄 AI API keys refreshed from localStorage');
+  }
+
+  /**
+   * Check if a provider is available (checks both instance and localStorage)
    */
   isProviderAvailable(provider: 'openai' | 'deepseek'): boolean {
-    if (provider === 'deepseek') {
-      return !!this.deepseekApiKey;
+    // First check instance property
+    let hasKey = provider === 'deepseek' ? !!this.deepseekApiKey : !!this.apiKey;
+    
+    // If not found in instance, check localStorage directly (for fresh data)
+    if (!hasKey) {
+      if (provider === 'deepseek') {
+        const stored = localStorage.getItem('ai_deepseek_api_key') || import.meta.env.VITE_DEEPSEEK_API_KEY || '';
+        hasKey = !!stored;
+        if (hasKey && !this.deepseekApiKey) {
+          this.deepseekApiKey = stored; // Update instance
+        }
+      } else {
+        const stored = localStorage.getItem('ai_openai_api_key') || import.meta.env.VITE_OPENAI_API_KEY || '';
+        hasKey = !!stored;
+        if (hasKey && !this.apiKey) {
+          this.apiKey = stored; // Update instance
+        }
+      }
     }
-    return !!this.apiKey;
+    
+    return hasKey;
   }
 
   /**
