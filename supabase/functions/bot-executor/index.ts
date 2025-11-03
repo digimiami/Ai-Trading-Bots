@@ -1921,18 +1921,50 @@ class BotExecutor {
     const newPnL = (bot?.pnl || 0) + tradePnL;
     const newPnLPercentage = (newPnL / 1000) * 100; // Mock percentage calculation
     
-    // Calculate win rate based on profitable trades
+    // Calculate win rate, win trades, loss trades, and drawdown
     const { data: allTrades } = await this.supabaseClient
       .from('trades')
-      .select('pnl')
+      .select('pnl, executed_at')
       .eq('bot_id', botId)
-      .eq('status', 'filled');
+      .in('status', ['filled', 'closed', 'completed'])
+      .order('executed_at', { ascending: false });
     
-    const profitableTrades = allTrades?.filter(t => (t.pnl || 0) > 0).length || 0;
+    const profitableTrades = allTrades?.filter(t => (t.pnl || 0) > 0) || [];
+    const losingTrades = allTrades?.filter(t => (t.pnl || 0) < 0) || [];
+    const winTrades = profitableTrades.length;
+    const lossTrades = losingTrades.length;
     const totalFilledTrades = allTrades?.length || 0;
-    const newWinRate = totalFilledTrades > 0 ? (profitableTrades / totalFilledTrades) * 100 : 0;
+    const newWinRate = totalFilledTrades > 0 ? (winTrades / totalFilledTrades) * 100 : 0;
     
-    console.log(`📊 Win rate calculation: ${profitableTrades}/${totalFilledTrades} = ${newWinRate.toFixed(2)}%`);
+    // Calculate drawdown (max peak to trough decline)
+    let maxDrawdown = 0;
+    let peakPnL = 0;
+    let runningPnL = 0;
+    if (allTrades && allTrades.length > 0) {
+      // Sort trades by execution time (oldest first for drawdown calculation)
+      const sortedTrades = [...allTrades].sort((a, b) => {
+        const dateA = new Date(a.executed_at || a.created_at || 0).getTime();
+        const dateB = new Date(b.executed_at || b.created_at || 0).getTime();
+        return dateA - dateB;
+      });
+      
+      for (const t of sortedTrades) {
+        runningPnL += (t.pnl || 0);
+        if (runningPnL > peakPnL) {
+          peakPnL = runningPnL;
+        }
+        const drawdown = peakPnL - runningPnL;
+        if (drawdown > maxDrawdown) {
+          maxDrawdown = drawdown;
+        }
+      }
+    }
+    
+    // Calculate drawdown percentage
+    const drawdownPercentage = peakPnL > 0 ? (maxDrawdown / peakPnL) * 100 : 0;
+    
+    console.log(`📊 Win rate calculation: ${winTrades}/${totalFilledTrades} = ${newWinRate.toFixed(2)}%`);
+    console.log(`📊 Performance: Wins: ${winTrades}, Losses: ${lossTrades}, Drawdown: $${maxDrawdown.toFixed(2)} (${drawdownPercentage.toFixed(2)}%)`);
     
     await this.supabaseClient
       .from('trading_bots')
@@ -1945,6 +1977,23 @@ class BotExecutor {
         updated_at: TimeSync.getCurrentTimeISO()
       })
       .eq('id', botId);
+    
+    // Log performance metrics to activity logs
+    await this.addBotLog(botId, {
+      level: 'info',
+      category: 'trade',
+      message: `Performance Update: ${winTrades} wins, ${lossTrades} losses, ${newWinRate.toFixed(1)}% win rate, $${maxDrawdown.toFixed(2)} drawdown (${drawdownPercentage.toFixed(1)}%)`,
+      details: {
+        winTrades,
+        lossTrades,
+        totalTrades: totalFilledTrades,
+        winRate: newWinRate,
+        drawdown: maxDrawdown,
+        drawdownPercentage,
+        peakPnL,
+        currentPnL: runningPnL
+      }
+    });
   }
   
   /**
