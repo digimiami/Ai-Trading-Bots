@@ -288,6 +288,13 @@ Provide a JSON response with:
     const advancedStr = advancedSummary ? 
       `bias:${advancedSummary.bias},risk:${advancedSummary.risk},adxHtf:${advancedSummary.adxHtf},regime:${advancedSummary.regime},sl:${advancedSummary.sl},tp1:${advancedSummary.tp1},tp2:${advancedSummary.tp2}` : '';
 
+    // Safely extract metrics with defaults to prevent undefined errors
+    const winRate = metrics?.winRate ?? 0;
+    const totalPnL = metrics?.totalPnL ?? 0;
+    const profitFactor = metrics?.profitFactor ?? 0;
+    const sharpeRatio = metrics?.sharpeRatio ?? 0;
+    const maxDrawdown = metrics?.maxDrawdown ?? 0;
+
     return `
 Optimize trading strategy.
 
@@ -296,7 +303,7 @@ S:${strategyStr}
 ${advancedStr ? `A:${advancedStr}` : ''}
 
 PERF:
-WR:${Math.round(metrics.winRate)}% PnL:$${Math.round(metrics.totalPnL)} PF:${metrics.profitFactor.toFixed(2)} SR:${metrics.sharpeRatio.toFixed(2)} DD:${Math.round(metrics.maxDrawdown)}%
+WR:${Math.round(winRate)}% PnL:$${Math.round(totalPnL)} PF:${profitFactor.toFixed(2)} SR:${sharpeRatio.toFixed(2)} DD:${Math.round(maxDrawdown)}%
 
 TRADES (last 3):
 ${recentTrades.slice(-3).map(t => {
