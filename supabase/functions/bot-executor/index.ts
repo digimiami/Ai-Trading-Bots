@@ -1336,7 +1336,38 @@ class BotExecutor {
         const position = data.result.list.find((p: any) => parseFloat(p.size || '0') !== 0);
         if (position && position.avgPrice) {
           const entryPrice = parseFloat(position.avgPrice);
-          console.log(`📊 Fetched position entry price for ${symbol}: ${entryPrice}`);
+          const positionSize = parseFloat(position.size || '0');
+          console.log(`📊 Fetched position entry price for ${symbol}: ${entryPrice} (size: ${positionSize})`);
+          return entryPrice;
+        }
+      }
+      
+      // If no position found, wait and retry once (position might still be updating)
+      console.log(`⚠️ No position found for ${symbol} on first attempt, waiting 1 second and retrying...`);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Retry once
+      const retryTimestamp = Date.now().toString();
+      const retrySigPayload = retryTimestamp + apiKey + recvWindow + queryParams;
+      const retrySig = await this.createBybitSignature(retrySigPayload, apiSecret);
+      
+      const retryResponse = await fetch(`${baseUrl}/v5/position/list?${queryParams}`, {
+        method: 'GET',
+        headers: {
+          'X-BAPI-API-KEY': apiKey,
+          'X-BAPI-TIMESTAMP': retryTimestamp,
+          'X-BAPI-RECV-WINDOW': recvWindow,
+          'X-BAPI-SIGN': retrySig,
+        },
+      });
+      
+      const retryData = await retryResponse.json();
+      if (retryData.retCode === 0 && retryData.result?.list && retryData.result.list.length > 0) {
+        const position = retryData.result.list.find((p: any) => parseFloat(p.size || '0') !== 0);
+        if (position && position.avgPrice) {
+          const entryPrice = parseFloat(position.avgPrice);
+          const positionSize = parseFloat(position.size || '0');
+          console.log(`📊 Fetched position entry price for ${symbol} on retry: ${entryPrice} (size: ${positionSize})`);
           return entryPrice;
         }
       }
