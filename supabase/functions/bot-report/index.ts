@@ -74,7 +74,7 @@ serve(async (req) => {
     }, 0) || 0
 
     // Contract summary - get trades with bot info
-    // First get user's bots, then get their trades
+    // First get ALL user's bots (active and inactive) to show historical data
     const { data: userBots } = await supabaseClient
       .from('trading_bots')
       .select('id, trading_type, symbol, exchange, pnl')
@@ -83,6 +83,14 @@ serve(async (req) => {
     const botIds = userBots?.map(b => b.id) || []
     const botMap = new Map(userBots?.map(b => [b.id, b.trading_type]) || [])
     
+    // Also get all trades for botIds (for contract summary)
+    const { data: allTradesForContract } = await supabaseClient
+      .from('trades')
+      .select('symbol, exchange, pnl, fee, amount, price, bot_id, executed_at, status, entry_price, exit_price, side, created_at')
+      .eq('user_id', user.id)
+      .in('bot_id', botIds.length > 0 ? botIds : [])
+      .limit(10000)
+    
     // Create bot P&L by contract map for fallback
     const botPnLByContract = new Map<string, number>()
     userBots?.forEach(bot => {
@@ -90,17 +98,21 @@ serve(async (req) => {
       botPnLByContract.set(contractKey, (botPnLByContract.get(contractKey) || 0) + (bot.pnl || 0))
     })
     
+    // Get ALL trades for contract summary (not just filled/closed) to show all pairs
+    // Include trades from all bots (active and inactive) to show historical data
     const { data: contractData } = await supabaseClient
       .from('trades')
-      .select('symbol, exchange, pnl, fee, amount, price, bot_id, executed_at, status, entry_price, exit_price, side')
+      .select('symbol, exchange, pnl, fee, amount, price, bot_id, executed_at, status, entry_price, exit_price, side, created_at')
       .eq('user_id', user.id)
-      .in('bot_id', botIds)
-      .in('status', ['filled', 'closed', 'completed'])
+      .limit(10000) // Limit to prevent excessive data
 
+    // Use allTradesForContract if available, otherwise use contractData
+    const tradesForContract = allTradesForContract || contractData || []
+    
     // Group by contract
     const contractSummary: any = {}
-    if (contractData) {
-      for (const trade of contractData) {
+    if (tradesForContract && tradesForContract.length > 0) {
+      for (const trade of tradesForContract) {
         const tradingType = botMap.get(trade.bot_id) || 'spot'
         const contract = `${trade.symbol}_${trade.exchange}`
         
@@ -135,11 +147,12 @@ serve(async (req) => {
           }
         }
         
+        // Count ALL trades for this contract (for total_trades)
         contractSummary[contract].total_trades++
         
         // Calculate PnL: use stored pnl, or calculate from entry/exit prices if available
-        let tradePnL = trade.pnl || 0
-        if ((tradePnL === 0 || tradePnL === null) && trade.entry_price && trade.exit_price) {
+        let tradePnL = parseFloat(trade.pnl) || 0
+        if ((tradePnL === 0 || trade.pnl === null || trade.pnl === undefined) && trade.entry_price && trade.exit_price) {
           // Calculate PnL from entry and exit prices
           const entryPrice = parseFloat(trade.entry_price || 0)
           const exitPrice = parseFloat(trade.exit_price || 0)
@@ -160,17 +173,23 @@ serve(async (req) => {
         contractSummary[contract].total_fees_paid += fee
         contractSummary[contract].net_profit_loss = contractSummary[contract].total_net_pnl - contractSummary[contract].total_fees_paid
         
-        // Track for win/loss and drawdown (only if PnL is non-zero or we have exit_price)
-        // Only count trades with actual PnL calculation for win/loss
-        if (tradePnL !== 0 || trade.exit_price) {
+        // Track for win/loss and drawdown
+        // Include trades with:
+        // 1. Non-zero PnL, OR
+        // 2. Has exit_price (closed position), OR  
+        // 3. Status is filled/closed/completed (for historical tracking)
+        const isClosedTrade = trade.exit_price || ['filled', 'closed', 'completed'].includes((trade.status || '').toLowerCase())
+        
+        if (tradePnL !== 0 || isClosedTrade) {
           contractSummary[contract].trades.push({
             pnl: tradePnL,
             executed_at: trade.executed_at || trade.created_at || new Date().toISOString()
           })
           
-          if (tradePnL > 0) {
+          // Only count as win/loss if PnL is actually calculated (non-zero or has exit_price)
+          if (tradePnL > 0 && (tradePnL !== 0 || trade.exit_price)) {
             contractSummary[contract].win_trades++
-          } else if (tradePnL < 0) {
+          } else if (tradePnL < 0 && (tradePnL !== 0 || trade.exit_price)) {
             contractSummary[contract].loss_trades++
           }
         }
