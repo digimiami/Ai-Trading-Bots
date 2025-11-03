@@ -190,33 +190,20 @@ class OpenAIService {
     // Start new check
     this.aiKeysCheckPromise = (async () => {
       try {
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-        const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+        // Use supabase.functions.invoke() - this automatically handles authentication
+        const { supabase } = await import('../lib/supabase');
         
-        if (!supabaseUrl || !supabaseAnonKey) {
-          console.warn('⚠️ Supabase URL/Key not configured for AI keys check');
+        const { data, error } = await supabase.functions.invoke('check-ai-keys', {
+          method: 'GET'
+        });
+
+        if (error) {
+          console.error('⚠️ Failed to check AI keys from Edge Function:', error);
           this.aiKeysStatus = { openai: false, deepseek: false };
           return;
         }
 
-        // Import supabase client
-        const { createClient } = await import('../lib/supabase');
-        const supabase = createClient();
-        
-        // Get session for auth
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        const response = await fetch(`${supabaseUrl}/functions/v1/check-ai-keys`, {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${session?.access_token || supabaseAnonKey}`,
-            'apikey': supabaseAnonKey,
-            'Content-Type': 'application/json'
-          }
-        });
-
-        if (response.ok) {
-          const data = await response.json();
+        if (data) {
           this.aiKeysStatus = {
             openai: data.openai?.available || false,
             deepseek: data.deepseek?.available || false
@@ -228,8 +215,7 @@ class OpenAIService {
             console.log(`   OpenAI key present: ${data.debug.openaiKeyPresent}, length: ${data.debug.openaiKeyLength}`);
           }
         } else {
-          const errorText = await response.text().catch(() => 'Unknown error');
-          console.error('⚠️ Failed to check AI keys from Edge Function:', response.status, errorText);
+          console.warn('⚠️ No data returned from Edge Function');
           this.aiKeysStatus = { openai: false, deepseek: false };
         }
       } catch (error) {
