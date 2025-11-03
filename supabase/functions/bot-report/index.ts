@@ -90,7 +90,7 @@ serve(async (req) => {
     
     const { data: contractData } = await supabaseClient
       .from('trades')
-      .select('symbol, exchange, pnl, fee, amount, price, bot_id, executed_at, status')
+      .select('symbol, exchange, pnl, fee, amount, price, bot_id, executed_at, status, entry_price, exit_price, side')
       .eq('user_id', user.id)
       .in('bot_id', botIds)
       .in('status', ['filled', 'closed', 'completed'])
@@ -134,22 +134,43 @@ serve(async (req) => {
         }
         
         contractSummary[contract].total_trades++
-        // Use trade P&L if available, otherwise use bot P&L
-        const tradePnL = trade.pnl || 0
+        
+        // Calculate PnL: use stored pnl, or calculate from entry/exit prices if available
+        let tradePnL = trade.pnl || 0
+        if ((tradePnL === 0 || tradePnL === null) && trade.entry_price && trade.exit_price) {
+          // Calculate PnL from entry and exit prices
+          const entryPrice = parseFloat(trade.entry_price || 0)
+          const exitPrice = parseFloat(trade.exit_price || 0)
+          const size = parseFloat(trade.amount || 0)
+          const side = (trade.side || 'long').toLowerCase()
+          const tradeFee = trade.fee || fee || 0
+          
+          if (entryPrice > 0 && exitPrice > 0 && size > 0) {
+            if (side === 'long' || side === 'buy') {
+              tradePnL = (exitPrice - entryPrice) * size - tradeFee
+            } else {
+              tradePnL = (entryPrice - exitPrice) * size - tradeFee
+            }
+          }
+        }
+        
         contractSummary[contract].total_net_pnl += tradePnL
         contractSummary[contract].total_fees_paid += fee
         contractSummary[contract].net_profit_loss = contractSummary[contract].total_net_pnl - contractSummary[contract].total_fees_paid
         
-        // Track for win/loss and drawdown
-        contractSummary[contract].trades.push({
-          pnl: tradePnL,
-          executed_at: trade.executed_at || trade.created_at || new Date().toISOString()
-        })
-        
-        if (tradePnL > 0) {
-          contractSummary[contract].win_trades++
-        } else if (tradePnL < 0) {
-          contractSummary[contract].loss_trades++
+        // Track for win/loss and drawdown (only if PnL is non-zero or we have exit_price)
+        // Only count trades with actual PnL calculation for win/loss
+        if (tradePnL !== 0 || trade.exit_price) {
+          contractSummary[contract].trades.push({
+            pnl: tradePnL,
+            executed_at: trade.executed_at || trade.created_at || new Date().toISOString()
+          })
+          
+          if (tradePnL > 0) {
+            contractSummary[contract].win_trades++
+          } else if (tradePnL < 0) {
+            contractSummary[contract].loss_trades++
+          }
         }
       }
       
@@ -238,9 +259,32 @@ serve(async (req) => {
         }, 0)
         
         // Calculate win/loss trades and drawdown
-        const filledTrades = botTrades.filter(t => t.pnl !== null && t.pnl !== undefined)
-        const winTrades = filledTrades.filter(t => (t.pnl || 0) > 0).length
-        const lossTrades = filledTrades.filter(t => (t.pnl || 0) < 0).length
+        // Get trades with calculated PnL (either has pnl or has exit_price for calculation)
+        const filledTrades = botTrades.map(t => {
+          let calculatedPnL = t.pnl || 0
+          
+          // If PnL is 0 or null but we have entry/exit prices, calculate it
+          if ((calculatedPnL === 0 || calculatedPnL === null) && (t as any).entry_price && (t as any).exit_price) {
+            const entryPrice = parseFloat((t as any).entry_price || 0)
+            const exitPrice = parseFloat((t as any).exit_price || 0)
+            const size = parseFloat(t.amount || 0)
+            const side = ((t as any).side || 'long').toLowerCase()
+            const tradeFee = t.fee || 0
+            
+            if (entryPrice > 0 && exitPrice > 0 && size > 0) {
+              if (side === 'long' || side === 'buy') {
+                calculatedPnL = (exitPrice - entryPrice) * size - tradeFee
+              } else {
+                calculatedPnL = (entryPrice - exitPrice) * size - tradeFee
+              }
+            }
+          }
+          
+          return { ...t, calculatedPnL }
+        }).filter(t => t.calculatedPnL !== 0 || (t as any).exit_price) // Only include trades with actual PnL or closed positions
+        
+        const winTrades = filledTrades.filter(t => (t as any).calculatedPnL > 0).length
+        const lossTrades = filledTrades.filter(t => (t as any).calculatedPnL < 0).length
         const totalFilledTrades = filledTrades.length
         const winRate = totalFilledTrades > 0 ? (winTrades / totalFilledTrades) * 100 : (bot.win_rate || 0)
         
@@ -260,7 +304,7 @@ serve(async (req) => {
           
           let runningPnL = 0
           for (const t of sortedTrades) {
-            runningPnL += (t.pnl || 0)
+            runningPnL += ((t as any).calculatedPnL || 0)
             if (runningPnL > peakPnL) {
               peakPnL = runningPnL
             }
