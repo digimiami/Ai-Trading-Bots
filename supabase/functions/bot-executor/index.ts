@@ -1411,21 +1411,74 @@ class BotExecutor {
         
         // In one-way mode:
         // - SELL order on LONG position reduces/closes the LONG
-        // - If SELL size >= LONG size, the LONG is closed
-        // - If SELL size < LONG size, the LONG is reduced (still LONG)
+        // - If SELL size >= LONG size, the LONG is closed (or reversed to SHORT if SELL > LONG)
+        // - If SELL size < LONG size, the LONG is reduced (still LONG, but smaller)
         // - If no position exists, SELL creates a SHORT
         
-        // For now, if there's a mismatch and position still exists:
-        // Skip SL/TP to avoid errors - the position state is uncertain
-        if (side === 'Sell' && actualPositionSide === 'Buy') {
-          console.warn(`   Skipping SL/TP: SELL trade on LONG position - position may be closing/reversing`);
-          console.warn(`   SL/TP will be set automatically when the position stabilizes after the trade`);
-          return; // Skip SL/TP when there's a mismatch
+        // For SELL on LONG: The position might be closing, but if position still exists and is LONG,
+        // we should set SL/TP for the remaining LONG position. However, if the error suggests it's a SELL
+        // position, we might need to wait for position to fully update or check if position was reversed.
+        
+        // Wait a bit longer for position to update, then check again
+        console.log(`   Waiting 1 second for position to update after ${side} trade...`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Re-check position after delay
+        const retryTimestamp = Date.now().toString();
+        const retryPositionQuery = `category=linear&symbol=${symbol}`;
+        const retrySigPayload = retryTimestamp + apiKey + recvWindow + retryPositionQuery;
+        const retryPositionSig = await this.createBybitSignature(retrySigPayload, apiSecret);
+        
+        const retryPositionResponse = await fetch(`${baseUrl}/v5/position/list?${retryPositionQuery}`, {
+          method: 'GET',
+          headers: {
+            'X-BAPI-API-KEY': apiKey,
+            'X-BAPI-TIMESTAMP': retryTimestamp,
+            'X-BAPI-RECV-WINDOW': recvWindow,
+            'X-BAPI-SIGN': retryPositionSig,
+          },
+        });
+        
+        const retryPositionData = await retryPositionResponse.json();
+        if (retryPositionData.retCode === 0 && retryPositionData.result?.list) {
+          const updatedPosition = retryPositionData.result.list.find((p: any) => {
+            const size = parseFloat(p.size || '0');
+            return size !== 0;
+          });
+          
+          if (updatedPosition) {
+            const updatedSize = parseFloat(updatedPosition.size || '0');
+            const updatedSide = updatedSize > 0 ? 'Buy' : 'Sell';
+            console.log(`📊 Position after delay: ${updatedSide} (size: ${updatedSize})`);
+            
+            // Update with the new position info
+            if (updatedPosition.avgPrice && parseFloat(updatedPosition.avgPrice) > 0) {
+              entryPrice = parseFloat(updatedPosition.avgPrice);
+              console.log(`📊 Updated entry price: ${entryPrice}`);
+            }
+            actualPositionSide = updatedSide;
+            positionSize = updatedSize;
+            
+            // Check if now matches
+            const nowMatches = (side === 'Buy' && actualPositionSide === 'Buy') || 
+                              (side === 'Sell' && actualPositionSide === 'Sell');
+            if (!nowMatches && Math.abs(positionSize) < 0.01) {
+              // Position was closed
+              console.log(`   Position was closed - skipping SL/TP`);
+              return;
+            }
+          } else {
+            // No position found after delay - position was closed
+            console.log(`   No position found after delay - position was closed, skipping SL/TP`);
+            return;
+          }
         }
         
-        // For BUY on SHORT position, similar logic applies
-        if (side === 'Buy' && actualPositionSide === 'Sell') {
-          console.warn(`   Skipping SL/TP: BUY trade on SHORT position - position may be closing/reversing`);
+        // After retry, if still mismatch, skip to avoid errors
+        const finalMatch = (side === 'Buy' && actualPositionSide === 'Buy') || 
+                          (side === 'Sell' && actualPositionSide === 'Sell');
+        if (!finalMatch) {
+          console.warn(`   Still mismatch after delay - skipping SL/TP to avoid errors`);
           return;
         }
       }
