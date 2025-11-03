@@ -1367,6 +1367,7 @@ class BotExecutor {
       
       const positionData = await positionResponse.json();
       let actualPositionSide = side; // Default to trade side
+      let positionSize = 0;
       
       if (positionData.retCode === 0 && positionData.result?.list) {
         const position = positionData.result.list.find((p: any) => {
@@ -1375,7 +1376,7 @@ class BotExecutor {
         });
         
         if (position) {
-          const positionSize = parseFloat(position.size || '0');
+          positionSize = parseFloat(position.size || '0');
           actualPositionSide = positionSize > 0 ? 'Buy' : 'Sell'; // Positive = Long (Buy), Negative = Short (Sell)
           console.log(`📊 Actual position side for ${symbol}: ${actualPositionSide} (size: ${positionSize})`);
           
@@ -1384,6 +1385,34 @@ class BotExecutor {
             entryPrice = parseFloat(position.avgPrice);
             console.log(`📊 Using actual position entry price: ${entryPrice}`);
           }
+        } else {
+          console.log(`📊 No open position found for ${symbol} - position may have been closed`);
+          // If no position found, the trade likely closed the position - skip SL/TP
+          return;
+        }
+      }
+      
+      // Critical: If trade side doesn't match position side, the position might have been closed or reversed
+      // In one-way mode, a SELL trade closes a LONG position or opens a SHORT
+      // We need to determine which position we're actually setting SL/TP for
+      const tradeSideMatch = (side === 'Buy' && actualPositionSide === 'Buy') || 
+                            (side === 'Sell' && actualPositionSide === 'Sell');
+      
+      if (!tradeSideMatch) {
+        // Trade side doesn't match position side - this could mean:
+        // 1. SELL order closed a LONG position (position is now closed or reversed)
+        // 2. Position hasn't updated yet after the trade
+        console.warn(`⚠️ Trade side (${side}) doesn't match position side (${actualPositionSide}) for ${symbol}`);
+        console.warn(`   Position size: ${positionSize}. May need to wait for position to update or position may be closing.`);
+        
+        // For SELL trades that don't match position: the position might be closing
+        // For now, use the trade side to determine SL/TP direction
+        // This handles the case where a SELL order creates a SHORT position
+        if (side === 'Sell' && actualPositionSide === 'Buy' && positionSize > 0) {
+          console.log(`   Using trade side (${side}) for SL/TP calculation - SELL order may have closed LONG position`);
+          actualPositionSide = 'Sell'; // Use SELL side for SL/TP
+          // Use the current market price as entry for the new SHORT position
+          entryPrice = entryPrice; // Keep the provided entry price (from the trade)
         }
       }
       
@@ -1411,7 +1440,7 @@ class BotExecutor {
         return Math.round(v / tickSize) * tickSize;
       };
 
-      // Use actual position side, not trade side
+      // Use the determined position side for SL/TP calculation
       if (actualPositionSide === 'Buy') {
         // Long position: SL below entry, TP above entry
         const slValue = roundToTick(entryPrice * 0.98);
@@ -1470,13 +1499,19 @@ class BotExecutor {
       
       if (data.retCode !== 0) {
         console.error('SL/TP Response:', data);
-        throw new Error(`Failed to set SL/TP: ${data.retMsg} (Code: ${data.retCode})`);
+        
+        // If SL/TP fails, it's non-critical - the trade was successful
+        // Log the error but don't throw - we don't want to fail the entire trade
+        console.warn(`⚠️ SL/TP setting failed for ${symbol} (non-critical): ${data.retMsg}`);
+        console.warn(`   Trade was successful, but SL/TP could not be set. You may need to set it manually.`);
+        return; // Return gracefully instead of throwing
       }
       
       console.log('✅ SL/TP set successfully');
     } catch (error) {
-      console.error('SL/TP setting error:', error);
-      throw error;
+      // SL/TP errors are non-critical - the trade was already placed
+      console.error('⚠️ SL/TP setting error (non-critical, trade successful):', error);
+      // Don't throw - allow the trade to complete successfully
     }
   }
   
