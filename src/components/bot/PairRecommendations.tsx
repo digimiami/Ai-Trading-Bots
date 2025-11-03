@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import Card from '../base/Card';
 import Button from '../base/Button';
 import { pairRecommendationsService, type PairRecommendation } from '../../services/pairRecommendations';
+import { openAIService } from '../../services/openai';
 import type { TradingStrategy, AdvancedStrategyConfig } from '../../types/trading';
 
 interface PairRecommendationsProps {
@@ -36,12 +37,24 @@ export default function PairRecommendations({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [aiProvider, setAiProvider] = useState<'openai' | 'deepseek'>(() => {
+    // Load from localStorage or default
+    const saved = localStorage.getItem('ai_provider_preference');
+    if (saved === 'openai' || saved === 'deepseek') {
+      return saved;
+    }
+    // Default to DeepSeek if available, otherwise OpenAI
+    return openAIService.isProviderAvailable('deepseek') ? 'deepseek' : 'openai';
+  });
 
   const fetchRecommendations = async () => {
     setLoading(true);
     setError(null);
     
     try {
+      // Set AI provider before fetching
+      openAIService.setProvider(aiProvider);
+      
       const rec = await pairRecommendationsService.getRecommendationsForPair(
         symbol,
         tradingType,
@@ -76,15 +89,25 @@ export default function PairRecommendations({
   };
 
   useEffect(() => {
-    // Fetch recommendations when symbol changes
+    // Fetch recommendations when symbol, tradingType, or AI provider changes
     if (symbol && symbol.trim()) {
-      console.log('🔍 PairRecommendations - Fetching recommendations for:', symbol);
+      console.log('🔍 PairRecommendations - Fetching recommendations for:', symbol, 'using', aiProvider);
       fetchRecommendations();
     } else {
       console.log('⚠️ PairRecommendations - No symbol provided or symbol is empty');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [symbol, tradingType]);
+  }, [symbol, tradingType, aiProvider]);
+
+  const handleProviderChange = (provider: 'openai' | 'deepseek') => {
+    if (!openAIService.isProviderAvailable(provider)) {
+      setError(`${provider === 'openai' ? 'OpenAI' : 'DeepSeek'} API key not configured. Please set it in your environment variables.`);
+      return;
+    }
+    setAiProvider(provider);
+    openAIService.setProvider(provider);
+    // fetchRecommendations will be called automatically by useEffect
+  };
 
   const handleApply = () => {
     if (recommendation) {
@@ -99,7 +122,23 @@ export default function PairRecommendations({
         <div className="flex items-center justify-between">
           <div className="flex items-center">
             <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-3"></div>
-            <span className="text-blue-700 font-medium">🤖 AI analyzing {symbol}...</span>
+            <span className="text-blue-700 font-medium">🤖 AI ({aiProvider}) analyzing {symbol}...</span>
+          </div>
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-gray-600">Using:</span>
+            <select
+              value={aiProvider}
+              onChange={(e) => handleProviderChange(e.target.value as 'openai' | 'deepseek')}
+              className="px-2 py-1 border border-gray-300 rounded bg-white text-gray-700 text-xs"
+              disabled={loading}
+            >
+              <option value="deepseek" disabled={!openAIService.isProviderAvailable('deepseek')}>
+                DeepSeek {!openAIService.isProviderAvailable('deepseek') ? '(Not configured)' : ''}
+              </option>
+              <option value="openai" disabled={!openAIService.isProviderAvailable('openai')}>
+                OpenAI {!openAIService.isProviderAvailable('openai') ? '(Not configured)' : ''}
+              </option>
+            </select>
           </div>
         </div>
       </Card>
@@ -116,14 +155,29 @@ export default function PairRecommendations({
               <i className="ri-information-line text-yellow-600 mr-2"></i>
               <span className="text-yellow-700">⚠️ {error}</span>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={fetchRecommendations}
-              className="text-xs"
-            >
-              Retry
-            </Button>
+            <div className="flex items-center gap-2">
+              <select
+                value={aiProvider}
+                onChange={(e) => handleProviderChange(e.target.value as 'openai' | 'deepseek')}
+                className="px-2 py-1 border border-gray-300 rounded bg-white text-gray-700 text-xs"
+                disabled={loading}
+              >
+                <option value="deepseek" disabled={!openAIService.isProviderAvailable('deepseek')}>
+                  DeepSeek {!openAIService.isProviderAvailable('deepseek') ? '(Not configured)' : ''}
+                </option>
+                <option value="openai" disabled={!openAIService.isProviderAvailable('openai')}>
+                  OpenAI {!openAIService.isProviderAvailable('openai') ? '(Not configured)' : ''}
+                </option>
+              </select>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={fetchRecommendations}
+                className="text-xs"
+              >
+                Retry
+              </Button>
+            </div>
           </div>
           <p className="text-xs text-yellow-600">
             The AI recommendation service may not be available. You can still create the bot with default settings.
@@ -166,7 +220,7 @@ export default function PairRecommendations({
         {/* Header */}
         <div className="flex items-start justify-between">
           <div className="flex-1">
-            <div className="flex items-center mb-2">
+            <div className="flex items-center mb-2 flex-wrap gap-2">
               <i className="ri-magic-line text-purple-600 text-xl mr-2"></i>
               <h3 className="text-lg font-bold text-gray-900">
                 🤖 AI Recommendations for {symbol}
@@ -178,6 +232,32 @@ export default function PairRecommendations({
               }`}>
                 {Math.round(recommendation.confidence * 100)}% Confidence
               </span>
+              <div className="flex items-center gap-2 ml-auto">
+                <span className="text-xs text-gray-500">AI Provider:</span>
+                <select
+                  value={aiProvider}
+                  onChange={(e) => handleProviderChange(e.target.value as 'openai' | 'deepseek')}
+                  className="px-2 py-1 border border-gray-300 rounded bg-white text-gray-700 text-xs font-medium"
+                  disabled={loading}
+                >
+                  <option value="deepseek" disabled={!openAIService.isProviderAvailable('deepseek')}>
+                    DeepSeek {!openAIService.isProviderAvailable('deepseek') ? '(Not configured)' : ''}
+                  </option>
+                  <option value="openai" disabled={!openAIService.isProviderAvailable('openai')}>
+                    OpenAI {!openAIService.isProviderAvailable('openai') ? '(Not configured)' : ''}
+                  </option>
+                </select>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={fetchRecommendations}
+                  className="text-xs"
+                  title="Refresh recommendations with current AI provider"
+                >
+                  <i className="ri-refresh-line mr-1"></i>
+                  Refresh
+                </Button>
+              </div>
             </div>
             <p className="text-sm text-gray-700 mb-2">
               {recommendation.reasoning}

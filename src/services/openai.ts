@@ -60,8 +60,48 @@ class OpenAIService {
   constructor() {
     this.apiKey = import.meta.env.VITE_OPENAI_API_KEY || '';
     this.deepseekApiKey = import.meta.env.VITE_DEEPSEEK_API_KEY || '';
-    // Prefer DeepSeek if available
-    this.useDeepSeek = !!this.deepseekApiKey;
+    // Load provider preference from localStorage, default to DeepSeek if available
+    const savedProvider = localStorage.getItem('ai_provider_preference');
+    if (savedProvider === 'openai' || savedProvider === 'deepseek') {
+      this.useDeepSeek = savedProvider === 'deepseek';
+    } else {
+      // Auto-detect: Prefer DeepSeek if available
+      this.useDeepSeek = !!this.deepseekApiKey;
+    }
+  }
+
+  /**
+   * Set AI provider preference
+   */
+  setProvider(provider: 'openai' | 'deepseek'): void {
+    if (provider === 'deepseek' && !this.deepseekApiKey) {
+      console.warn('DeepSeek API key not configured');
+      return;
+    }
+    if (provider === 'openai' && !this.apiKey) {
+      console.warn('OpenAI API key not configured');
+      return;
+    }
+    this.useDeepSeek = provider === 'deepseek';
+    localStorage.setItem('ai_provider_preference', provider);
+    console.log(`✅ AI Provider set to: ${provider}`);
+  }
+
+  /**
+   * Get current AI provider preference
+   */
+  getProvider(): 'openai' | 'deepseek' {
+    return this.useDeepSeek ? 'deepseek' : 'openai';
+  }
+
+  /**
+   * Check if a provider is available
+   */
+  isProviderAvailable(provider: 'openai' | 'deepseek'): boolean {
+    if (provider === 'deepseek') {
+      return !!this.deepseekApiKey;
+    }
+    return !!this.apiKey;
   }
 
   /**
