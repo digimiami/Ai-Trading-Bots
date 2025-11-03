@@ -11,41 +11,46 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  // Allow GET and POST methods
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+    })
+  }
+
   try {
-    // Get authorization header
+    // This is a read-only operation that doesn't expose actual API keys
+    // We only return availability status, so authentication is optional
+    // But try to get user if auth header is present (for logging)
     const authHeader = req.headers.get('Authorization');
     
-    // Debug: Log auth header presence (but not the actual token)
-    console.log('🔍 [check-ai-keys] Auth check:');
-    console.log(`   Authorization header present: ${!!authHeader}`);
+    console.log('🔍 [check-ai-keys] Request received:');
     console.log(`   Method: ${req.method}`);
     console.log(`   URL: ${req.url}`);
+    console.log(`   Authorization header present: ${!!authHeader}`);
     
-    // If no auth header, try to get user from request (for supabase.functions.invoke)
-    if (!authHeader) {
-      console.warn('⚠️ No Authorization header - trying alternative auth methods');
-      // For supabase.functions.invoke(), auth might be in the request context
-      // We'll allow this for key checking (read-only, doesn't expose keys)
-      console.log('✅ Allowing request without auth header (read-only operation)');
-    } else {
-      // Verify authentication if header is provided
-      const supabaseClient = createClient(
-        Deno.env.get('SUPABASE_URL') ?? '',
-        Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-        { global: { headers: { Authorization: authHeader } } }
-      )
+    // Optional: Verify authentication if header is provided (for logging only)
+    if (authHeader) {
+      try {
+        const supabaseClient = createClient(
+          Deno.env.get('SUPABASE_URL') ?? '',
+          Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+          { global: { headers: { Authorization: authHeader } } }
+        )
 
-      const { data: { user }, error: authError } = await supabaseClient.auth.getUser()
-      
-      if (authError) {
-        console.warn('⚠️ Auth error (but allowing for key check):', authError.message);
-        // Continue anyway - this is a read-only check
-      } else if (!user) {
-        console.warn('⚠️ No user found (but allowing for key check)');
-        // Continue anyway - this is a read-only check
-      } else {
-        console.log(`✅ Authenticated as user: ${user.id}`);
+        const { data: { user }, error: authError } = await supabaseClient.auth.getUser()
+        
+        if (user) {
+          console.log(`✅ Authenticated as user: ${user.id}`);
+        } else if (authError) {
+          console.log(`⚠️ Auth check failed (continuing anyway): ${authError.message}`);
+        }
+      } catch (authErr) {
+        console.log('⚠️ Auth check error (continuing anyway):', authErr);
       }
+    } else {
+      console.log('ℹ️ No auth header - proceeding with public availability check');
     }
 
     // Check if AI API keys are configured in Edge Function secrets
