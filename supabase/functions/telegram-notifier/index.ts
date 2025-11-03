@@ -325,7 +325,8 @@ serve(async (req) => {
         }
 
         // For cron jobs (service role auth), we need to use a service role client to bypass RLS
-        const isServiceRole = !userResult?.data?.user && req.headers.get('Authorization')?.includes(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '');
+        // If user was extracted from body (cron job), use service role client to bypass RLS
+        const isServiceRole = !userResult?.data?.user && user?.id && bodyText !== null;
         const queryClient = isServiceRole 
           ? createClient(
               Deno.env.get('SUPABASE_URL') ?? '',
