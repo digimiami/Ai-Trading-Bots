@@ -13,6 +13,7 @@ import type { ApiKeyFormData } from '../../hooks/useApiKeys';
 import { useProfile } from '../../hooks/useProfile';
 import type { ProfileData } from '../../hooks/useProfile';
 import { supabase } from '../../lib/supabase';
+import { openAIService } from '../../services/openai';
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -65,6 +66,17 @@ export default function Settings() {
     webhookSecret: '',
     alertsEnabled: true
   });
+
+  const [aiSettings, setAiSettings] = useState(() => {
+    // Load AI API keys from localStorage or service
+    const keys = openAIService.getApiKeys();
+    return {
+      openaiApiKey: '',
+      deepseekApiKey: '',
+      showKeys: false // Don't show full keys by default
+    };
+  });
+  const [showAiConfig, setShowAiConfig] = useState(false);
 
   const [alerts, setAlerts] = useState({
     priceThreshold: 5,
@@ -511,6 +523,38 @@ export default function Settings() {
     setShowRiskConfig(false);
   };
 
+  const handleAiSettingsChange = (key: string, value: string) => {
+    setAiSettings(prev => ({ ...prev, [key]: value }));
+  };
+
+  const handleAiSave = () => {
+    try {
+      // Save OpenAI API key
+      if (aiSettings.openaiApiKey) {
+        openAIService.setOpenAIKey(aiSettings.openaiApiKey);
+      } else {
+        // If empty, check if user wants to clear it
+        const currentKeys = openAIService.getApiKeys();
+        if (currentKeys.openai) {
+          // Don't clear unless explicitly cleared
+        }
+      }
+
+      // Save DeepSeek API key
+      if (aiSettings.deepseekApiKey) {
+        openAIService.setDeepSeekKey(aiSettings.deepseekApiKey);
+      }
+
+      setShowAiConfig(false);
+      alert('AI API keys saved successfully!');
+      
+      // Refresh the page to update UI
+      window.location.reload();
+    } catch (error: any) {
+      alert(`Failed to save AI API keys: ${error.message}`);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Header title="Settings" />
@@ -654,6 +698,88 @@ export default function Settings() {
               </button>
           </div>
           )}
+        </Card>
+
+        {/* AI API Configuration */}
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">AI Recommendations</h3>
+            <div className="flex items-center space-x-2">
+              <div className={`w-2 h-2 rounded-full ${
+                openAIService.isProviderAvailable('openai') || openAIService.isProviderAvailable('deepseek') 
+                  ? 'bg-green-500' 
+                  : 'bg-gray-400'
+              }`}></div>
+              <span className={`text-sm ${
+                openAIService.isProviderAvailable('openai') || openAIService.isProviderAvailable('deepseek')
+                  ? 'text-green-600' 
+                  : 'text-gray-600'
+              }`}>
+                {openAIService.isProviderAvailable('openai') && openAIService.isProviderAvailable('deepseek')
+                  ? 'Both Configured'
+                  : openAIService.isProviderAvailable('openai')
+                  ? 'OpenAI Only'
+                  : openAIService.isProviderAvailable('deepseek')
+                  ? 'DeepSeek Only'
+                  : 'Not Configured'}
+              </span>
+            </div>
+          </div>
+          <p className="text-gray-500 text-sm mb-4">Configure AI API keys for strategy recommendations (optional)</p>
+          
+          <div className="space-y-3 mb-4">
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div className="flex items-center space-x-3">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                  openAIService.isProviderAvailable('openai') ? 'bg-green-100' : 'bg-gray-100'
+                }`}>
+                  <i className={`ri-openai-fill ${openAIService.isProviderAvailable('openai') ? 'text-green-600' : 'text-gray-400'} text-xl`}></i>
+                </div>
+                <div>
+                  <p className="font-medium text-gray-900">OpenAI API</p>
+                  <p className="text-sm text-gray-500">
+                    {openAIService.isProviderAvailable('openai') 
+                      ? `Configured • ${openAIService.getApiKeys().openai}`
+                      : 'Not configured'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAiConfig(true)}
+                className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+              >
+                Configure
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div className="flex items-center space-x-3">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                  openAIService.isProviderAvailable('deepseek') ? 'bg-blue-100' : 'bg-gray-100'
+                }`}>
+                  <i className={`ri-brain-line ${openAIService.isProviderAvailable('deepseek') ? 'text-blue-600' : 'text-gray-400'}`}></i>
+                </div>
+                <div>
+                  <p className="font-medium text-gray-900">DeepSeek API</p>
+                  <p className="text-sm text-gray-500">
+                    {openAIService.isProviderAvailable('deepseek') 
+                      ? `Configured • ${openAIService.getApiKeys().deepseek}`
+                      : 'Not configured'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAiConfig(true)}
+                className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+              >
+                Configure
+              </button>
+            </div>
+          </div>
+
+          <p className="text-xs text-gray-400">
+            💡 Get API keys from <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">OpenAI</a> or <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">DeepSeek</a>
+          </p>
         </Card>
 
         {/* Risk Management */}
@@ -1249,6 +1375,114 @@ export default function Settings() {
                 >
                   Save Settings
                 </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI API Configuration Modal */}
+      {showAiConfig && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-semibold text-gray-900">AI API Configuration</h2>
+                <button
+                  onClick={() => setShowAiConfig(false)}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <i className="ri-close-line text-xl text-gray-500"></i>
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                {/* OpenAI API */}
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-3 flex items-center">
+                    <i className="ri-openai-fill text-green-600 mr-2 text-xl"></i>
+                    OpenAI API
+                  </h3>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        API Key
+                      </label>
+                      <input
+                        type="password"
+                        value={aiSettings.openaiApiKey}
+                        onChange={(e) => handleAiSettingsChange('openaiApiKey', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        placeholder={openAIService.isProviderAvailable('openai') ? 'Enter new key to update' : 'Enter OpenAI API Key'}
+                      />
+                      {openAIService.isProviderAvailable('openai') && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Current: {openAIService.getApiKeys().openai}
+                        </p>
+                      )}
+                    </div>
+                    <div className="p-3 bg-blue-50 rounded-lg">
+                      <p className="text-xs text-blue-800">
+                        <strong>💡 Note:</strong> Get your API key from{' '}
+                        <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="underline">
+                          OpenAI Platform
+                        </a>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* DeepSeek API */}
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-3 flex items-center">
+                    <i className="ri-brain-line text-blue-600 mr-2"></i>
+                    DeepSeek API
+                  </h3>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        API Key
+                      </label>
+                      <input
+                        type="password"
+                        value={aiSettings.deepseekApiKey}
+                        onChange={(e) => handleAiSettingsChange('deepseekApiKey', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        placeholder={openAIService.isProviderAvailable('deepseek') ? 'Enter new key to update' : 'Enter DeepSeek API Key'}
+                      />
+                      {openAIService.isProviderAvailable('deepseek') && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Current: {openAIService.getApiKeys().deepseek}
+                        </p>
+                      )}
+                    </div>
+                    <div className="p-3 bg-blue-50 rounded-lg">
+                      <p className="text-xs text-blue-800">
+                        <strong>💡 Note:</strong> Get your API key from{' '}
+                        <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener noreferrer" className="underline">
+                          DeepSeek Platform
+                        </a>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t border-gray-200">
+                  <div className="flex space-x-3">
+                    <button
+                      onClick={handleAiSave}
+                      className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg transition-colors text-sm font-medium"
+                    >
+                      Save API Keys
+                    </button>
+                    <button
+                      onClick={() => setShowAiConfig(false)}
+                      className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 px-4 rounded-lg transition-colors text-sm font-medium"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

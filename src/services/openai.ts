@@ -58,8 +58,10 @@ class OpenAIService {
   private useDeepSeek: boolean = false;
 
   constructor() {
-    this.apiKey = import.meta.env.VITE_OPENAI_API_KEY || '';
-    this.deepseekApiKey = import.meta.env.VITE_DEEPSEEK_API_KEY || '';
+    // Load API keys from environment variables or localStorage
+    this.apiKey = import.meta.env.VITE_OPENAI_API_KEY || localStorage.getItem('ai_openai_api_key') || '';
+    this.deepseekApiKey = import.meta.env.VITE_DEEPSEEK_API_KEY || localStorage.getItem('ai_deepseek_api_key') || '';
+    
     // Load provider preference from localStorage, default to DeepSeek if available
     const savedProvider = localStorage.getItem('ai_provider_preference');
     if (savedProvider === 'openai' || savedProvider === 'deepseek') {
@@ -68,6 +70,44 @@ class OpenAIService {
       // Auto-detect: Prefer DeepSeek if available
       this.useDeepSeek = !!this.deepseekApiKey;
     }
+  }
+
+  /**
+   * Set OpenAI API key (for UI configuration)
+   */
+  setOpenAIKey(apiKey: string): void {
+    this.apiKey = apiKey;
+    if (apiKey) {
+      localStorage.setItem('ai_openai_api_key', apiKey);
+      console.log('✅ OpenAI API key saved');
+    } else {
+      localStorage.removeItem('ai_openai_api_key');
+      console.log('✅ OpenAI API key removed');
+    }
+  }
+
+  /**
+   * Set DeepSeek API key (for UI configuration)
+   */
+  setDeepSeekKey(apiKey: string): void {
+    this.deepseekApiKey = apiKey;
+    if (apiKey) {
+      localStorage.setItem('ai_deepseek_api_key', apiKey);
+      console.log('✅ DeepSeek API key saved');
+    } else {
+      localStorage.removeItem('ai_deepseek_api_key');
+      console.log('✅ DeepSeek API key removed');
+    }
+  }
+
+  /**
+   * Get current API keys (masked for security)
+   */
+  getApiKeys(): { openai: string; deepseek: string } {
+    return {
+      openai: this.apiKey ? `${this.apiKey.substring(0, 7)}...${this.apiKey.substring(this.apiKey.length - 4)}` : '',
+      deepseek: this.deepseekApiKey ? `${this.deepseekApiKey.substring(0, 7)}...${this.deepseekApiKey.substring(this.deepseekApiKey.length - 4)}` : ''
+    };
   }
 
   /**
