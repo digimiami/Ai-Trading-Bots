@@ -197,9 +197,13 @@ export default function BotReportViewer() {
                       <th className="text-left py-2 px-3">Contract</th>
                       <th className="text-left py-2 px-3">Exchange</th>
                       <th className="text-right py-2 px-3">Trades</th>
+                      <th className="text-right py-2 px-3">Win/Loss</th>
+                      <th className="text-right py-2 px-3">Win Rate</th>
                       <th className="text-right py-2 px-3">Total P&L</th>
                       <th className="text-right py-2 px-3">Fees</th>
                       <th className="text-right py-2 px-3">Net Profit/Loss</th>
+                      <th className="text-right py-2 px-3">Drawdown</th>
+                      <th className="text-right py-2 px-3">Peak/Current P&L</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -208,12 +212,32 @@ export default function BotReportViewer() {
                         <td className="py-2 px-3 font-medium">{contract.contract}</td>
                         <td className="py-2 px-3 text-gray-600">{contract.exchange}</td>
                         <td className="py-2 px-3 text-right">{contract.total_trades}</td>
+                        <td className="py-2 px-3 text-right">
+                          <span className="text-green-600 font-medium">{contract.win_trades || 0}</span>
+                          <span className="text-gray-400 mx-1">/</span>
+                          <span className="text-red-600 font-medium">{contract.loss_trades || 0}</span>
+                        </td>
+                        <td className="py-2 px-3 text-right">
+                          <span className={`font-medium ${(contract.win_rate || 0) >= 50 ? 'text-green-600' : 'text-red-600'}`}>
+                            {(contract.win_rate || 0).toFixed(1)}%
+                          </span>
+                        </td>
                         <td className={`py-2 px-3 text-right font-medium ${contract.total_net_pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {formatCurrency(contract.total_net_pnl)}
                         </td>
                         <td className="py-2 px-3 text-right text-gray-600">{formatCurrency(contract.total_fees_paid)}</td>
                         <td className={`py-2 px-3 text-right font-semibold ${contract.net_profit_loss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {formatCurrency(contract.net_profit_loss)}
+                        </td>
+                        <td className="py-2 px-3 text-right">
+                          <div className="text-red-600 font-medium">{formatCurrency(contract.drawdown || 0)}</div>
+                          <div className="text-xs text-gray-500">{(contract.drawdown_percentage || 0).toFixed(1)}%</div>
+                        </td>
+                        <td className="py-2 px-3 text-right">
+                          <div className="text-green-600 font-medium">{formatCurrency(contract.peak_pnl || 0)}</div>
+                          <div className={`text-xs font-medium ${(contract.current_pnl || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {formatCurrency(contract.current_pnl || 0)}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -238,7 +262,10 @@ export default function BotReportViewer() {
                       <th className="text-right py-2 px-3">Fees</th>
                       <th className="text-right py-2 px-3">Net Profit/Loss</th>
                       <th className="text-right py-2 px-3">Trades</th>
+                      <th className="text-right py-2 px-3">Win/Loss</th>
                       <th className="text-right py-2 px-3">Win Rate</th>
+                      <th className="text-right py-2 px-3">Drawdown</th>
+                      <th className="text-right py-2 px-3">Peak/Current P&L</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -255,7 +282,26 @@ export default function BotReportViewer() {
                           {formatCurrency(bot.net_profit_loss || 0)}
                         </td>
                         <td className="py-2 px-3 text-right">{bot.total_trades}</td>
-                        <td className="py-2 px-3 text-right">{bot.win_rate.toFixed(1)}%</td>
+                        <td className="py-2 px-3 text-right">
+                          <span className="text-green-600 font-medium">{bot.win_trades || 0}</span>
+                          <span className="text-gray-400 mx-1">/</span>
+                          <span className="text-red-600 font-medium">{bot.loss_trades || 0}</span>
+                        </td>
+                        <td className="py-2 px-3 text-right">
+                          <span className={`font-medium ${bot.win_rate >= 50 ? 'text-green-600' : 'text-red-600'}`}>
+                            {bot.win_rate.toFixed(1)}%
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 text-right">
+                          <div className="text-red-600 font-medium">{formatCurrency(bot.drawdown || 0)}</div>
+                          <div className="text-xs text-gray-500">{(bot.drawdown_percentage || 0).toFixed(1)}%</div>
+                        </td>
+                        <td className="py-2 px-3 text-right">
+                          <div className="text-green-600 font-medium">{formatCurrency(bot.peak_pnl || 0)}</div>
+                          <div className={`text-xs font-medium ${(bot.current_pnl || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {formatCurrency(bot.current_pnl || 0)}
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

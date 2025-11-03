@@ -27,6 +27,12 @@ export interface BotReport {
     net_profit_loss: number;
     total_trades: number;
     win_rate: number;
+    win_trades?: number;
+    loss_trades?: number;
+    drawdown?: number;
+    drawdown_percentage?: number;
+    peak_pnl?: number;
+    current_pnl?: number;
     last_trade_at: string | null;
   }>;
   contract_summary: Array<{
@@ -36,6 +42,13 @@ export interface BotReport {
     total_net_pnl: number;
     total_fees_paid: number;
     net_profit_loss: number;
+    win_trades?: number;
+    loss_trades?: number;
+    win_rate?: number;
+    drawdown?: number;
+    drawdown_percentage?: number;
+    peak_pnl?: number;
+    current_pnl?: number;
   }>;
   recent_trades: Array<{
     id: string;

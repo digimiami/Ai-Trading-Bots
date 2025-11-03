@@ -90,9 +90,10 @@ serve(async (req) => {
     
     const { data: contractData } = await supabaseClient
       .from('trades')
-      .select('symbol, exchange, pnl, fee, amount, price, bot_id')
+      .select('symbol, exchange, pnl, fee, amount, price, bot_id, executed_at, status')
       .eq('user_id', user.id)
       .in('bot_id', botIds)
+      .in('status', ['filled', 'closed', 'completed'])
 
     // Group by contract
     const contractSummary: any = {}
@@ -108,7 +109,15 @@ serve(async (req) => {
             total_trades: 0,
             total_net_pnl: 0,
             total_fees_paid: 0,
-            net_profit_loss: 0
+            net_profit_loss: 0,
+            win_trades: 0,
+            loss_trades: 0,
+            win_rate: 0,
+            drawdown: 0,
+            drawdown_percentage: 0,
+            peak_pnl: 0,
+            current_pnl: 0,
+            trades: [] // Store trades for drawdown calculation
           }
         }
         
@@ -130,6 +139,58 @@ serve(async (req) => {
         contractSummary[contract].total_net_pnl += tradePnL
         contractSummary[contract].total_fees_paid += fee
         contractSummary[contract].net_profit_loss = contractSummary[contract].total_net_pnl - contractSummary[contract].total_fees_paid
+        
+        // Track for win/loss and drawdown
+        contractSummary[contract].trades.push({
+          pnl: tradePnL,
+          executed_at: trade.executed_at || trade.created_at || new Date().toISOString()
+        })
+        
+        if (tradePnL > 0) {
+          contractSummary[contract].win_trades++
+        } else if (tradePnL < 0) {
+          contractSummary[contract].loss_trades++
+        }
+      }
+      
+      // Calculate win rate, drawdown, and peak P&L for each contract
+      for (const contractKey in contractSummary) {
+        const contract = contractSummary[contractKey]
+        const totalFilledTrades = contract.win_trades + contract.loss_trades
+        contract.win_rate = totalFilledTrades > 0 ? (contract.win_trades / totalFilledTrades) * 100 : 0
+        
+        // Calculate drawdown
+        if (contract.trades.length > 0) {
+          // Sort trades by execution time (oldest first)
+          const sortedTrades = [...contract.trades].sort((a: any, b: any) => {
+            const dateA = new Date(a.executed_at || 0).getTime()
+            const dateB = new Date(b.executed_at || 0).getTime()
+            return dateA - dateB
+          })
+          
+          let maxDrawdown = 0
+          let peakPnL = 0
+          let runningPnL = 0
+          
+          for (const t of sortedTrades) {
+            runningPnL += (t.pnl || 0)
+            if (runningPnL > peakPnL) {
+              peakPnL = runningPnL
+            }
+            const drawdown = peakPnL - runningPnL
+            if (drawdown > maxDrawdown) {
+              maxDrawdown = drawdown
+            }
+          }
+          
+          contract.drawdown = maxDrawdown
+          contract.drawdown_percentage = peakPnL > 0 ? (maxDrawdown / peakPnL) * 100 : 0
+          contract.peak_pnl = peakPnL
+          contract.current_pnl = runningPnL
+        }
+        
+        // Clean up trades array (not needed in response)
+        delete contract.trades
       }
     }
     
@@ -160,7 +221,7 @@ serve(async (req) => {
       },
       active_bots: activeBotsData?.map(bot => {
         // Calculate fees for this bot from trades
-        const botTrades = tradesData?.filter(t => t.bot_id === bot.id) || []
+        const botTrades = tradesData?.filter(t => t.bot_id === bot.id && ['filled', 'closed', 'completed'].includes(t.status || '')) || []
         const botFees = botTrades.reduce((sum, t) => {
           let fee = t.fee || 0
           // Calculate fee if not stored
@@ -176,6 +237,42 @@ serve(async (req) => {
           return sum + fee
         }, 0)
         
+        // Calculate win/loss trades and drawdown
+        const filledTrades = botTrades.filter(t => t.pnl !== null && t.pnl !== undefined)
+        const winTrades = filledTrades.filter(t => (t.pnl || 0) > 0).length
+        const lossTrades = filledTrades.filter(t => (t.pnl || 0) < 0).length
+        const totalFilledTrades = filledTrades.length
+        const winRate = totalFilledTrades > 0 ? (winTrades / totalFilledTrades) * 100 : (bot.win_rate || 0)
+        
+        // Calculate drawdown
+        let drawdown = 0
+        let drawdownPercentage = 0
+        let peakPnL = 0
+        let currentPnL = 0
+        
+        if (filledTrades.length > 0) {
+          // Sort trades by execution time (oldest first)
+          const sortedTrades = [...filledTrades].sort((a, b) => {
+            const dateA = new Date((a as any).executed_at || a.created_at || 0).getTime()
+            const dateB = new Date((b as any).executed_at || b.created_at || 0).getTime()
+            return dateA - dateB
+          })
+          
+          let runningPnL = 0
+          for (const t of sortedTrades) {
+            runningPnL += (t.pnl || 0)
+            if (runningPnL > peakPnL) {
+              peakPnL = runningPnL
+            }
+            const dd = peakPnL - runningPnL
+            if (dd > drawdown) {
+              drawdown = dd
+            }
+          }
+          currentPnL = runningPnL
+          drawdownPercentage = peakPnL > 0 ? (drawdown / peakPnL) * 100 : 0
+        }
+        
         const botPnL = bot.pnl || 0
         const netProfitLoss = botPnL - botFees
         
@@ -190,7 +287,13 @@ serve(async (req) => {
           total_fees: Math.round(botFees * 100) / 100,
           net_profit_loss: Math.round(netProfitLoss * 100) / 100,
           total_trades: bot.total_trades || 0,
-          win_rate: bot.win_rate || 0,
+          win_rate: Math.round(winRate * 10) / 10,
+          win_trades: winTrades,
+          loss_trades: lossTrades,
+          drawdown: Math.round(drawdown * 100) / 100,
+          drawdown_percentage: Math.round(drawdownPercentage * 10) / 10,
+          peak_pnl: Math.round(peakPnL * 100) / 100,
+          current_pnl: Math.round(currentPnL * 100) / 100,
           last_trade_at: bot.last_trade_at
         }
       }) || [],
@@ -200,7 +303,14 @@ serve(async (req) => {
         total_trades: cs.total_trades,
         total_net_pnl: Math.round(cs.total_net_pnl * 100) / 100,
         total_fees_paid: Math.round(cs.total_fees_paid * 100) / 100,
-        net_profit_loss: Math.round(cs.net_profit_loss * 100) / 100
+        net_profit_loss: Math.round(cs.net_profit_loss * 100) / 100,
+        win_trades: cs.win_trades || 0,
+        loss_trades: cs.loss_trades || 0,
+        win_rate: Math.round(cs.win_rate * 10) / 10,
+        drawdown: Math.round(cs.drawdown * 100) / 100,
+        drawdown_percentage: Math.round(cs.drawdown_percentage * 10) / 10,
+        peak_pnl: Math.round(cs.peak_pnl * 100) / 100,
+        current_pnl: Math.round(cs.current_pnl * 100) / 100
       })).sort((a: any, b: any) => b.net_profit_loss - a.net_profit_loss),
       recent_trades: tradesData?.slice(0, 10).map(t => ({
         id: t.bot_id,
