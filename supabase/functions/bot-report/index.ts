@@ -83,13 +83,27 @@ serve(async (req) => {
     const botIds = userBots?.map(b => b.id) || []
     const botMap = new Map(userBots?.map(b => [b.id, b.trading_type]) || [])
     
-    // Also get all trades for botIds (for contract summary)
-    const { data: allTradesForContract } = await supabaseClient
-      .from('trades')
-      .select('symbol, exchange, pnl, fee, amount, price, bot_id, executed_at, status, entry_price, exit_price, side, created_at')
-      .eq('user_id', user.id)
-      .in('bot_id', botIds.length > 0 ? botIds : [])
-      .limit(10000)
+    // Get ALL trades for contract summary (from all bots, all statuses)
+    // This ensures we show historical pairs even if bots are inactive
+    let allTradesForContract: any[] = []
+    if (botIds.length > 0) {
+      const { data } = await supabaseClient
+        .from('trades')
+        .select('symbol, exchange, pnl, fee, amount, price, bot_id, executed_at, status, entry_price, exit_price, side, created_at')
+        .eq('user_id', user.id)
+        .in('bot_id', botIds)
+        .limit(10000)
+      allTradesForContract = data || []
+    }
+    // If no bots exist but trades might exist, get all trades for user
+    if (allTradesForContract.length === 0) {
+      const { data } = await supabaseClient
+        .from('trades')
+        .select('symbol, exchange, pnl, fee, amount, price, bot_id, executed_at, status, entry_price, exit_price, side, created_at')
+        .eq('user_id', user.id)
+        .limit(10000)
+      allTradesForContract = data || []
+    }
     
     // Create bot P&L by contract map for fallback
     const botPnLByContract = new Map<string, number>()
