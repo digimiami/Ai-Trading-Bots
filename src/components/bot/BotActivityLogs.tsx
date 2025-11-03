@@ -119,6 +119,20 @@ export default function BotActivityLogs({ activity, onClearLogs, onSimulateActiv
     filter === 'all' || log.level === filter
   );
 
+  // Extract performance metrics from activity logs
+  const performanceLog = activity.logs.find(log => 
+    log.message?.includes('Performance Update') || 
+    log.details?.winTrades !== undefined
+  );
+  
+  const performanceMetrics = performanceLog?.details || null;
+  const winTrades = performanceMetrics?.winTrades || 0;
+  const lossTrades = performanceMetrics?.lossTrades || 0;
+  const drawdown = performanceMetrics?.drawdown || 0;
+  const drawdownPercentage = performanceMetrics?.drawdownPercentage || 0;
+  const winRate = performanceMetrics?.winRate || 0;
+  const totalTrades = performanceMetrics?.totalTrades || 0;
+
   const formatTime = (timestamp: string) => {
     return new Date(timestamp).toLocaleTimeString();
   };
