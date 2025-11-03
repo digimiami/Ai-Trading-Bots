@@ -98,19 +98,17 @@ serve(async (req) => {
       botPnLByContract.set(contractKey, (botPnLByContract.get(contractKey) || 0) + (bot.pnl || 0))
     })
     
-    // Get ALL trades for contract summary (not just filled/closed) to show all pairs
-    // Include trades from all bots (active and inactive) to show historical data
-    const { data: contractData } = await supabaseClient
-      .from('trades')
-      .select('symbol, exchange, pnl, fee, amount, price, bot_id, executed_at, status, entry_price, exit_price, side, created_at')
-      .eq('user_id', user.id)
-      .limit(10000) // Limit to prevent excessive data
-
-    // Use allTradesForContract if available, otherwise use contractData
-    const tradesForContract = allTradesForContract || contractData || []
+    // Use allTradesForContract for contract summary (includes all trades from all bots)
+    const tradesForContract = allTradesForContract || []
+    
+    console.log(`📊 Contract Summary: Found ${tradesForContract.length} trades for contract summary`)
+    console.log(`📊 Bot IDs: ${botIds.length} bots, trades will be grouped by symbol+exchange`)
     
     // Group by contract
     const contractSummary: any = {}
+    
+    console.log(`📊 Processing ${tradesForContract.length} trades for contract summary...`)
+    
     if (tradesForContract && tradesForContract.length > 0) {
       for (const trade of tradesForContract) {
         const tradingType = botMap.get(trade.bot_id) || 'spot'
@@ -236,6 +234,11 @@ serve(async (req) => {
         // Clean up trades array (not needed in response)
         delete contract.trades
       }
+      
+      console.log(`📊 Contract Summary: Created ${Object.keys(contractSummary).length} contracts`)
+      console.log(`📊 Contract keys:`, Object.keys(contractSummary))
+    } else {
+      console.log(`⚠️ No trades found for contract summary`)
     }
     
     // Update contract summary with bot P&L if trades don't have P&L
