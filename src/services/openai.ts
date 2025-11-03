@@ -710,13 +710,19 @@ Return JSON:
     const data = await response.json();
     const content = data.choices[0]?.message?.content;
     
+    console.log(`📦 [API Call] Response parsed, content length: ${content?.length || 0} chars`);
+    
     if (!content) {
+      console.error(`❌ [API Call] No content in ${aiConfig.provider} response:`, data);
       throw new Error('No content in OpenAI response');
     }
 
     try {
-      return JSON.parse(content);
+      const parsed = JSON.parse(content);
+      console.log(`✅ [API Call] Successfully parsed JSON response from ${aiConfig.provider}`);
+      return parsed;
     } catch (parseError) {
+      console.warn(`⚠️ [API Call] JSON parse error, attempting to extract JSON from content`);
       // Try to extract JSON from markdown code blocks
       const jsonMatch = content.match(/```json\s*(\{.*\})\s*```/s) || content.match(/(\{.*\})/s);
       if (jsonMatch) {
