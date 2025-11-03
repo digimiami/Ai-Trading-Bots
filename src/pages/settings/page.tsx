@@ -149,16 +149,22 @@ export default function Settings() {
   }, [appearance.theme]); // Watch for theme changes
 
   useEffect(() => {
-    // Check AI keys from Edge Function secrets on mount
+    // Check AI keys from Edge Function secrets on mount only
     const checkKeys = async () => {
-      await openAIService.checkKeysFromEdgeFunction();
-      setAiKeysRefresh(prev => prev + 1); // Trigger UI update
+      try {
+        await openAIService.checkKeysFromEdgeFunction();
+        // Update UI after check completes
+        setAiKeysRefresh(prev => prev + 1);
+      } catch (error) {
+        console.error('Error checking AI keys:', error);
+      }
     };
     checkKeys();
     
     // Also refresh from localStorage (fallback)
     openAIService.refreshKeys();
-  }, [aiKeysRefresh]);
+    // Only run on mount - remove aiKeysRefresh from dependencies to prevent infinite loop
+  }, []); // Empty array = run only once on mount
 
   useEffect(() => {
     const loadProfile = async () => {
