@@ -779,37 +779,31 @@ class BotExecutor {
         const requiredMatch = error.message.match(/Required: \$?([0-9.]+)/i);
         const shortfallMatch = error.message.match(/Shortfall: \$?([0-9.]+)/i);
         
+        const shortfall = shortfallMatch ? parseFloat(shortfallMatch[1]) : null;
+        const errorMessage = `❌ Trade blocked: Insufficient balance for ${bot.symbol} ${tradeSignal?.side || 'order'}. ${shortfall ? `Need $${shortfall.toFixed(2)} more.` : 'Please add funds or reduce trade size.'}`;
+        
+        console.log(`📝 Logging insufficient balance error to bot_activity_logs for bot ${bot.id}...`);
+        
+        // Log as error level for better visibility in Recent Activity
         await this.addBotLog(bot.id, {
-          level: 'warning',
+          level: 'error',
           category: 'trade',
-          message: `Insufficient balance: ${error.message}`,
+          message: errorMessage,
           details: { 
             error: error.message,
             errorType: 'insufficient_balance',
             availableBalance: balanceMatch ? parseFloat(balanceMatch[1]) : null,
             requiredBalance: requiredMatch ? parseFloat(requiredMatch[1]) : null,
-            shortfall: shortfallMatch ? parseFloat(shortfallMatch[1]) : null,
+            shortfall: shortfall,
             symbol: bot.symbol,
             side: tradeSignal?.side || 'unknown',
+            recommendation: shortfall ? `Add at least $${(shortfall + 5).toFixed(2)} to your ${bot.exchange} ${bot.tradingType === 'futures' ? 'UNIFIED/Futures' : 'Spot'} wallet` : 'Reduce trade amount in bot settings or add funds',
             note: 'Add funds to your exchange wallet or reduce trade amount. Will retry on next execution cycle.',
             timestamp: TimeSync.getCurrentTimeISO()
           }
         });
         
-        // Also log as error level for better visibility in Recent Activity
-        await this.addBotLog(bot.id, {
-          level: 'error',
-          category: 'trade',
-          message: `❌ Trade blocked: Insufficient balance for ${bot.symbol} ${tradeSignal?.side || 'order'}. ${shortfallMatch ? `Need $${shortfallMatch[1]} more.` : 'Please add funds or reduce trade size.'}`,
-          details: { 
-            error: error.message,
-            errorType: 'insufficient_balance',
-            symbol: bot.symbol,
-            side: tradeSignal?.side || 'unknown',
-            recommendation: shortfallMatch ? `Add at least $${parseFloat(shortfallMatch[1]) + 5} to your exchange wallet` : 'Reduce trade amount in bot settings or add funds',
-            timestamp: TimeSync.getCurrentTimeISO()
-          }
-        });
+        console.log(`✅ Insufficient balance error logged to bot_activity_logs`);
       } else {
         console.error('❌ Trade execution error:', error);
         await this.addBotLog(bot.id, {
@@ -2197,7 +2191,7 @@ class BotExecutor {
   private async addBotLog(botId: string, log: any): Promise<void> {
     // Store log in database instead of localStorage
     try {
-      await this.supabaseClient
+      const { data, error } = await this.supabaseClient
         .from('bot_activity_logs')
         .insert({
           bot_id: botId,
@@ -2206,9 +2200,19 @@ class BotExecutor {
           message: log.message,
           details: log.details,
           timestamp: TimeSync.getCurrentTimeISO()
-        });
+        })
+        .select()
+        .single();
+      
+      if (error) {
+        console.error(`❌ Failed to save bot log for bot ${botId}:`, error);
+        console.error(`   Log level: ${log.level}, category: ${log.category}`);
+        console.error(`   Message: ${log.message}`);
+      } else {
+        console.log(`✅ Bot log saved: ${log.level}/${log.category} for bot ${botId}: ${log.message.substring(0, 50)}...`);
+      }
     } catch (error) {
-      console.error('Failed to save bot log:', error);
+      console.error(`❌ Exception saving bot log for bot ${botId}:`, error);
       // Continue execution even if logging fails
     }
   }
