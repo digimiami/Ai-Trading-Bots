@@ -608,6 +608,7 @@ Return JSON:
    */
   private getAIConfig(): { apiKey: string; baseUrl: string; model: string; provider: string } {
     if (this.useDeepSeek && this.deepseekApiKey) {
+      console.log(`🔑 [getAIConfig] Using DeepSeek API key (length: ${this.deepseekApiKey.length})`);
       return {
         apiKey: this.deepseekApiKey,
         baseUrl: this.deepseekBaseUrl,
@@ -615,6 +616,14 @@ Return JSON:
         provider: 'DeepSeek'
       };
     }
+    
+    if (!this.apiKey) {
+      console.error('❌ [getAIConfig] OpenAI API key is missing! Keys must be stored in localStorage or env vars for client-side API calls.');
+      console.log('💡 Tip: Edge Function secrets are server-side only. For client-side recommendations, add your API keys in Settings → AI Recommendations.');
+    } else {
+      console.log(`🔑 [getAIConfig] Using OpenAI API key (length: ${this.apiKey.length})`);
+    }
+    
     return {
       apiKey: this.apiKey,
       baseUrl: this.baseUrl,
@@ -666,7 +675,18 @@ Return JSON:
     }
 
     console.log(`🤖 Using ${aiConfig.provider} API (${aiConfig.model}) for optimization`);
+    console.log(`🌐 [API Call] Making request to ${aiConfig.baseUrl}/chat/completions`);
+    console.log(`🔑 [API Call] API key present: ${!!aiConfig.apiKey} (length: ${aiConfig.apiKey?.length || 0})`);
 
+    if (!aiConfig.apiKey) {
+      const errorMsg = `❌ ${aiConfig.provider} API key is missing! Cannot make API call.`;
+      console.error(errorMsg);
+      console.error('💡 Note: API keys stored in Edge Function secrets are server-side only.');
+      console.error('💡 For client-side recommendations, you must add API keys in Settings → AI Recommendations.');
+      throw new Error(errorMsg);
+    }
+
+    const requestStartTime = Date.now();
     const response = await fetch(`${aiConfig.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -676,11 +696,16 @@ Return JSON:
       body: JSON.stringify(body)
     });
 
+    const requestDuration = Date.now() - requestStartTime;
+    console.log(`⏱️ [API Call] Response received in ${requestDuration}ms, status: ${response.status}`);
+
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`${aiConfig.provider} API error:`, response.status, errorText);
+      console.error(`❌ ${aiConfig.provider} API error:`, response.status, errorText);
       throw new Error(`${aiConfig.provider} API error: ${response.status}`);
     }
+
+    console.log(`✅ [API Call] ${aiConfig.provider} API call successful!`);
 
     const data = await response.json();
     const content = data.choices[0]?.message?.content;
