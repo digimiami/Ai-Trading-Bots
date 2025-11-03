@@ -222,8 +222,14 @@ class OpenAIService {
             deepseek: data.deepseek?.available || false
           };
           console.log('✅ AI keys status from Edge Function:', this.aiKeysStatus);
+          if (data.debug) {
+            console.log('🔍 Debug info from Edge Function:', data.debug);
+            console.log(`   DeepSeek key present: ${data.debug.deepseekKeyPresent}, length: ${data.debug.deepseekKeyLength}`);
+            console.log(`   OpenAI key present: ${data.debug.openaiKeyPresent}, length: ${data.debug.openaiKeyLength}`);
+          }
         } else {
-          console.warn('⚠️ Failed to check AI keys from Edge Function:', response.status);
+          const errorText = await response.text().catch(() => 'Unknown error');
+          console.error('⚠️ Failed to check AI keys from Edge Function:', response.status, errorText);
           this.aiKeysStatus = { openai: false, deepseek: false };
         }
       } catch (error) {

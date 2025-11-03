@@ -92,13 +92,32 @@ export default function PairRecommendations({
   useEffect(() => {
     // Check AI keys from Edge Function secrets on mount
     const checkKeys = async () => {
-      await openAIService.checkKeysFromEdgeFunction();
-      // Check availability after Edge Function check
-      const openai = await openAIService.isProviderAvailableAsync('openai');
-      const deepseek = await openAIService.isProviderAvailableAsync('deepseek');
-      setHasAnyProvider(openai || deepseek);
-      // Force re-render to update availability status
-      setAiProvider(prev => prev); // Trigger re-check
+      console.log('🔍 [PairRecommendations] Checking AI keys from Edge Function...');
+      try {
+        const status = await openAIService.checkKeysFromEdgeFunction();
+        console.log('✅ [PairRecommendations] Keys status:', status);
+        
+        // Check availability after Edge Function check
+        const openai = await openAIService.isProviderAvailableAsync('openai');
+        const deepseek = await openAIService.isProviderAvailableAsync('deepseek');
+        
+        console.log(`🔍 [PairRecommendations] Provider availability - OpenAI: ${openai}, DeepSeek: ${deepseek}`);
+        setHasAnyProvider(openai || deepseek);
+        
+        // Update provider selection based on availability
+        if (!openAIService.isProviderAvailable(aiProvider)) {
+          // Current provider not available, switch to available one
+          if (deepseek) {
+            setAiProvider('deepseek');
+            console.log('🔄 [PairRecommendations] Switched to DeepSeek (current provider not available)');
+          } else if (openai) {
+            setAiProvider('openai');
+            console.log('🔄 [PairRecommendations] Switched to OpenAI (current provider not available)');
+          }
+        }
+      } catch (error) {
+        console.error('❌ [PairRecommendations] Error checking keys:', error);
+      }
     };
     checkKeys();
     
