@@ -186,10 +186,10 @@ serve(async (req) => {
             executed_at: trade.executed_at || trade.created_at || new Date().toISOString()
           })
           
-          // Only count as win/loss if PnL is actually calculated (non-zero or has exit_price)
-          if (tradePnL > 0 && (tradePnL !== 0 || trade.exit_price)) {
+          // Only count as win/loss if PnL is actually calculated
+          if (tradePnL > 0) {
             contractSummary[contract].win_trades++
-          } else if (tradePnL < 0 && (tradePnL !== 0 || trade.exit_price)) {
+          } else if (tradePnL < 0) {
             contractSummary[contract].loss_trades++
           }
         }
@@ -396,21 +396,23 @@ serve(async (req) => {
           last_trade_at: bot.last_trade_at
         }
       }) || [],
-      contract_summary: Object.values(contractSummary).map((cs: any) => ({
-        contract: cs.contract,
-        exchange: cs.exchange,
-        total_trades: cs.total_trades,
-        total_net_pnl: Math.round(cs.total_net_pnl * 100) / 100,
-        total_fees_paid: Math.round(cs.total_fees_paid * 100) / 100,
-        net_profit_loss: Math.round(cs.net_profit_loss * 100) / 100,
-        win_trades: cs.win_trades || 0,
-        loss_trades: cs.loss_trades || 0,
-        win_rate: Math.round(cs.win_rate * 10) / 10,
-        drawdown: Math.round(cs.drawdown * 100) / 100,
-        drawdown_percentage: Math.round(cs.drawdown_percentage * 10) / 10,
-        peak_pnl: Math.round(cs.peak_pnl * 100) / 100,
-        current_pnl: Math.round(cs.current_pnl * 100) / 100
-      })).sort((a: any, b: any) => b.net_profit_loss - a.net_profit_loss),
+      contract_summary: Object.keys(contractSummary).length > 0 
+        ? Object.values(contractSummary).map((cs: any) => ({
+            contract: cs.contract,
+            exchange: cs.exchange,
+            total_trades: cs.total_trades || 0,
+            total_net_pnl: Math.round((cs.total_net_pnl || 0) * 100) / 100,
+            total_fees_paid: Math.round((cs.total_fees_paid || 0) * 100) / 100,
+            net_profit_loss: Math.round((cs.net_profit_loss || 0) * 100) / 100,
+            win_trades: cs.win_trades || 0,
+            loss_trades: cs.loss_trades || 0,
+            win_rate: Math.round((cs.win_rate || 0) * 10) / 10,
+            drawdown: Math.round((cs.drawdown || 0) * 100) / 100,
+            drawdown_percentage: Math.round((cs.drawdown_percentage || 0) * 10) / 10,
+            peak_pnl: Math.round((cs.peak_pnl || 0) * 100) / 100,
+            current_pnl: Math.round((cs.current_pnl || 0) * 100) / 100
+          })).sort((a: any, b: any) => (b.net_profit_loss || 0) - (a.net_profit_loss || 0))
+        : [], // Return empty array if no contracts, not undefined
       recent_trades: tradesData?.slice(0, 10).map(t => ({
         id: t.bot_id,
         symbol: (t as any).symbol,
