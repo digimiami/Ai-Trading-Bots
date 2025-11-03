@@ -1490,28 +1490,39 @@ class BotExecutor {
             actualPositionSide = updatedSide;
             positionSize = updatedSize;
             
-            // Check if now matches
+            // Check if position was closed
+            if (Math.abs(positionSize) < 0.01) {
+              // Position was closed
+              console.log(`   Position was closed (size: ${positionSize}) - skipping SL/TP`);
+              return;
+            }
+            
+            // In one-way mode: SELL on LONG reduces the LONG (but it's still LONG)
+            // BUY on SHORT reduces the SHORT (but it's still SHORT)
+            // If position still exists, we should set SL/TP for that position
             const nowMatches = (side === 'Buy' && actualPositionSide === 'Buy') || 
                               (side === 'Sell' && actualPositionSide === 'Sell');
-            if (!nowMatches && Math.abs(positionSize) < 0.01) {
-              // Position was closed
-              console.log(`   Position was closed - skipping SL/TP`);
-              return;
+            
+            if (!nowMatches) {
+              // Trade reduced but didn't close/reverse the position
+              // Set SL/TP for the remaining position (not the trade direction)
+              console.log(`   Trade (${side}) reduced ${actualPositionSide} position but didn't close it`);
+              console.log(`   Setting SL/TP for remaining ${actualPositionSide} position (size: ${positionSize})`);
+              // Continue with actualPositionSide for SL/TP calculation (already set above)
             }
           } else {
             // No position found after delay - position was closed
             console.log(`   No position found after delay - position was closed, skipping SL/TP`);
             return;
           }
-        }
-        
-        // After retry, if still mismatch, skip to avoid errors
-        const finalMatch = (side === 'Buy' && actualPositionSide === 'Buy') || 
-                          (side === 'Sell' && actualPositionSide === 'Sell');
-        if (!finalMatch) {
-          console.warn(`   Still mismatch after delay - skipping SL/TP to avoid errors`);
+        } else {
+          // Retry fetch failed - skip to avoid errors
+          console.warn(`   Could not re-check position after delay - skipping SL/TP to avoid errors`);
           return;
         }
+        
+        // If we get here, we have a valid position (either matches trade side or was reduced but still open)
+        // Continue to set SL/TP for the actual position
       }
       
       // Calculate SL/TP prices with proper validation
