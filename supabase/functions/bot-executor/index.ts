@@ -594,12 +594,27 @@ class BotExecutor {
       
     } catch (error) {
       console.error(`Bot execution error for ${bot.name}:`, error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      
       await this.addBotLog(bot.id, {
         level: 'error',
         category: 'error',
-        message: `Execution error: ${error.message}`,
-        details: { error: error.message }
+        message: `Bot execution error: ${errorMessage}`,
+        details: { 
+          error: errorMessage,
+          errorType: error instanceof Error ? error.name : typeof error,
+          stack: errorStack,
+          botId: bot.id,
+          botName: bot.name,
+          symbol: bot.symbol,
+          exchange: bot.exchange,
+          timestamp: TimeSync.getCurrentTimeISO()
+        }
       });
+      
+      // Re-throw to be caught by Promise.allSettled in execute_all_bots
+      throw error;
     }
   }
   
@@ -754,17 +769,45 @@ class BotExecutor {
       }
       
       // Check if it's an insufficient balance error (less critical)
-      const isInsufficientBalance = error.message?.includes('Insufficient balance') || error.message?.includes('not enough');
+      const isInsufficientBalance = error.message?.includes('Insufficient balance') || error.message?.includes('not enough') || error.message?.includes('Shortfall');
       
       if (isInsufficientBalance) {
         console.warn('⚠️ Trade execution skipped due to insufficient balance:', error.message);
+        
+        // Extract balance details from error message if available
+        const balanceMatch = error.message.match(/Available: \$?([0-9.]+)/i);
+        const requiredMatch = error.message.match(/Required: \$?([0-9.]+)/i);
+        const shortfallMatch = error.message.match(/Shortfall: \$?([0-9.]+)/i);
+        
         await this.addBotLog(bot.id, {
           level: 'warning',
           category: 'trade',
-          message: `Trade execution skipped: ${error.message}`,
+          message: `Insufficient balance: ${error.message}`,
           details: { 
             error: error.message,
-            note: 'This is often temporary and will retry on the next execution cycle.'
+            errorType: 'insufficient_balance',
+            availableBalance: balanceMatch ? parseFloat(balanceMatch[1]) : null,
+            requiredBalance: requiredMatch ? parseFloat(requiredMatch[1]) : null,
+            shortfall: shortfallMatch ? parseFloat(shortfallMatch[1]) : null,
+            symbol: bot.symbol,
+            side: tradeSignal?.side || 'unknown',
+            note: 'Add funds to your exchange wallet or reduce trade amount. Will retry on next execution cycle.',
+            timestamp: TimeSync.getCurrentTimeISO()
+          }
+        });
+        
+        // Also log as error level for better visibility in Recent Activity
+        await this.addBotLog(bot.id, {
+          level: 'error',
+          category: 'trade',
+          message: `❌ Trade blocked: Insufficient balance for ${bot.symbol} ${tradeSignal?.side || 'order'}. ${shortfallMatch ? `Need $${shortfallMatch[1]} more.` : 'Please add funds or reduce trade size.'}`,
+          details: { 
+            error: error.message,
+            errorType: 'insufficient_balance',
+            symbol: bot.symbol,
+            side: tradeSignal?.side || 'unknown',
+            recommendation: shortfallMatch ? `Add at least $${parseFloat(shortfallMatch[1]) + 5} to your exchange wallet` : 'Reduce trade amount in bot settings or add funds',
+            timestamp: TimeSync.getCurrentTimeISO()
           }
         });
       } else {
@@ -773,7 +816,14 @@ class BotExecutor {
           level: 'error',
           category: 'trade',
           message: `Trade execution failed: ${error.message}`,
-          details: { error: error.message }
+          details: { 
+            error: error.message,
+            errorType: error.name || 'unknown',
+            symbol: bot.symbol,
+            side: tradeSignal?.side || 'unknown',
+            stack: error.stack,
+            timestamp: TimeSync.getCurrentTimeISO()
+          }
         });
       }
     }
@@ -2443,6 +2493,26 @@ serve(async (req) => {
             } catch (error) {
               const duration = Date.now() - botStartTime;
               console.error(`❌ [${bot.name}] Execution failed after ${duration}ms:`, error);
+              
+              // Log error to bot activity logs for visibility
+              try {
+                const execForLogging = new BotExecutor(supabaseClient, { id: isCron ? bot.user_id : user.id });
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                await execForLogging.addBotLog(bot.id, {
+                  level: 'error',
+                  category: 'error',
+                  message: `Bot execution failed: ${errorMessage}`,
+                  details: { 
+                    error: errorMessage,
+                    errorType: error instanceof Error ? error.name : typeof error,
+                    duration: `${duration}ms`,
+                    timestamp: new Date().toISOString()
+                  }
+                });
+              } catch (logError) {
+                console.error('Failed to log error to bot activity:', logError);
+              }
+              
               throw error;
             }
           })
