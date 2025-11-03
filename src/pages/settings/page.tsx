@@ -149,7 +149,14 @@ export default function Settings() {
   }, [appearance.theme]); // Watch for theme changes
 
   useEffect(() => {
-    // Refresh AI API keys from localStorage on mount and when refresh trigger changes
+    // Check AI keys from Edge Function secrets on mount
+    const checkKeys = async () => {
+      await openAIService.checkKeysFromEdgeFunction();
+      setAiKeysRefresh(prev => prev + 1); // Trigger UI update
+    };
+    checkKeys();
+    
+    // Also refresh from localStorage (fallback)
     openAIService.refreshKeys();
   }, [aiKeysRefresh]);
 

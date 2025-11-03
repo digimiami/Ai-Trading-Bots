@@ -89,7 +89,15 @@ export default function PairRecommendations({
   };
 
   useEffect(() => {
-    // Refresh API keys on mount to ensure we have latest from localStorage
+    // Check AI keys from Edge Function secrets on mount
+    const checkKeys = async () => {
+      await openAIService.checkKeysFromEdgeFunction();
+      // Force re-render to update availability status
+      setAiProvider(prev => prev); // Trigger re-check
+    };
+    checkKeys();
+    
+    // Also refresh from localStorage (fallback)
     openAIService.refreshKeys();
     
     // DO NOT auto-fetch - user must click "Get AI Recommendations" button
@@ -187,7 +195,20 @@ export default function PairRecommendations({
 
   // If no recommendation but also no error/loading, show manual trigger button
   if (!recommendation && !error && !loading) {
-    const hasAnyProvider = openAIService.isProviderAvailable('openai') || openAIService.isProviderAvailable('deepseek');
+    // Check both sync (for immediate render) and async (for Edge Function secrets)
+    const [hasAnyProvider, setHasAnyProvider] = useState(false);
+    
+    useEffect(() => {
+      const check = async () => {
+        const openai = await openAIService.isProviderAvailableAsync('openai');
+        const deepseek = await openAIService.isProviderAvailableAsync('deepseek');
+        setHasAnyProvider(openai || deepseek);
+      };
+      check();
+    }, []);
+    
+    const hasAnyProviderSync = openAIService.isProviderAvailable('openai') || openAIService.isProviderAvailable('deepseek');
+    const finalHasAnyProvider = hasAnyProvider || hasAnyProviderSync;
     
     return (
       <Card className="p-4 border-2 border-gray-200 bg-gray-50">

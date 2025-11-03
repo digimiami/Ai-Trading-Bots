@@ -169,50 +169,130 @@ class OpenAIService {
     });
   }
 
+  private aiKeysStatus: { openai: boolean; deepseek: boolean } | null = null;
+  private aiKeysCheckPromise: Promise<void> | null = null;
+
   /**
-   * Check if a provider is available (checks both instance and localStorage)
+   * Check AI keys availability from Edge Function secrets (async)
    */
-  isProviderAvailable(provider: 'openai' | 'deepseek'): boolean {
-    // Always check localStorage first (most reliable source of truth)
+  async checkKeysFromEdgeFunction(): Promise<{ openai: boolean; deepseek: boolean }> {
+    // Return cached status if available
+    if (this.aiKeysStatus !== null) {
+      return this.aiKeysStatus;
+    }
+
+    // If check is already in progress, wait for it
+    if (this.aiKeysCheckPromise) {
+      await this.aiKeysCheckPromise;
+      return this.aiKeysStatus || { openai: false, deepseek: false };
+    }
+
+    // Start new check
+    this.aiKeysCheckPromise = (async () => {
+      try {
+        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+        const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+        
+        if (!supabaseUrl || !supabaseAnonKey) {
+          console.warn('⚠️ Supabase URL/Key not configured for AI keys check');
+          this.aiKeysStatus = { openai: false, deepseek: false };
+          return;
+        }
+
+        // Import supabase client
+        const { createClient } = await import('../lib/supabase');
+        const supabase = createClient();
+        
+        // Get session for auth
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        const response = await fetch(`${supabaseUrl}/functions/v1/check-ai-keys`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${session?.access_token || supabaseAnonKey}`,
+            'apikey': supabaseAnonKey,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          this.aiKeysStatus = {
+            openai: data.openai?.available || false,
+            deepseek: data.deepseek?.available || false
+          };
+          console.log('✅ AI keys status from Edge Function:', this.aiKeysStatus);
+        } else {
+          console.warn('⚠️ Failed to check AI keys from Edge Function:', response.status);
+          this.aiKeysStatus = { openai: false, deepseek: false };
+        }
+      } catch (error) {
+        console.error('❌ Error checking AI keys from Edge Function:', error);
+        this.aiKeysStatus = { openai: false, deepseek: false };
+      } finally {
+        this.aiKeysCheckPromise = null;
+      }
+    })();
+
+    await this.aiKeysCheckPromise;
+    return this.aiKeysStatus || { openai: false, deepseek: false };
+  }
+
+  /**
+   * Check if a provider is available (checks Edge Function secrets first, then fallback to localStorage)
+   */
+  async isProviderAvailableAsync(provider: 'openai' | 'deepseek'): Promise<boolean> {
+    // Check Edge Function secrets first
+    const status = await this.checkKeysFromEdgeFunction();
+    if (provider === 'deepseek' && status.deepseek) {
+      return true;
+    }
+    if (provider === 'openai' && status.openai) {
+      return true;
+    }
+
+    // Fallback to localStorage/client-side keys
     let storedKey = '';
     if (provider === 'deepseek') {
-      // Check localStorage first, then env var
-      storedKey = localStorage.getItem('ai_deepseek_api_key') || '';
-      if (!storedKey) {
-        storedKey = import.meta.env.VITE_DEEPSEEK_API_KEY || '';
-      }
-      // Update instance if found
+      storedKey = localStorage.getItem('ai_deepseek_api_key') || import.meta.env.VITE_DEEPSEEK_API_KEY || '';
       if (storedKey && storedKey !== this.deepseekApiKey) {
         this.deepseekApiKey = storedKey;
-        console.log('✅ DeepSeek API key loaded from storage');
       }
     } else {
-      // Check localStorage first, then env var
-      storedKey = localStorage.getItem('ai_openai_api_key') || '';
-      if (!storedKey) {
-        storedKey = import.meta.env.VITE_OPENAI_API_KEY || '';
-      }
-      // Update instance if found
+      storedKey = localStorage.getItem('ai_openai_api_key') || import.meta.env.VITE_OPENAI_API_KEY || '';
       if (storedKey && storedKey !== this.apiKey) {
         this.apiKey = storedKey;
-        console.log('✅ OpenAI API key loaded from storage');
       }
     }
     
-    const hasKey = !!storedKey || (provider === 'deepseek' ? !!this.deepseekApiKey : !!this.apiKey);
-    
-    // Debug logging
+    return !!storedKey || (provider === 'deepseek' ? !!this.deepseekApiKey : !!this.apiKey);
+  }
+
+  /**
+   * Synchronous version (for backwards compatibility, uses cached status or localStorage)
+   */
+  isProviderAvailable(provider: 'openai' | 'deepseek'): boolean {
+    // Use cached Edge Function status if available
+    if (this.aiKeysStatus) {
+      if (provider === 'deepseek' && this.aiKeysStatus.deepseek) return true;
+      if (provider === 'openai' && this.aiKeysStatus.openai) return true;
+    }
+
+    // Fallback to localStorage/client-side check
+    let storedKey = '';
     if (provider === 'deepseek') {
-      console.log(`🔍 DeepSeek availability check:`, {
-        localStorage: !!localStorage.getItem('ai_deepseek_api_key'),
-        envVar: !!import.meta.env.VITE_DEEPSEEK_API_KEY,
-        instance: !!this.deepseekApiKey,
-        storedKey: !!storedKey,
-        result: hasKey
-      });
+      storedKey = localStorage.getItem('ai_deepseek_api_key') || import.meta.env.VITE_DEEPSEEK_API_KEY || '';
+      if (storedKey && storedKey !== this.deepseekApiKey) {
+        this.deepseekApiKey = storedKey;
+      }
+    } else {
+      storedKey = localStorage.getItem('ai_openai_api_key') || import.meta.env.VITE_OPENAI_API_KEY || '';
+      if (storedKey && storedKey !== this.apiKey) {
+        this.apiKey = storedKey;
+      }
     }
     
-    return hasKey;
+    return !!storedKey || (provider === 'deepseek' ? !!this.deepseekApiKey : !!this.apiKey);
   }
 
   /**
