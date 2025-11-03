@@ -2171,7 +2171,23 @@ serve(async (req) => {
 
   try {
     const cronSecretHeader = req.headers.get('x-cron-secret') ?? ''
-    const isCron = !!cronSecretHeader && cronSecretHeader === (Deno.env.get('CRON_SECRET') ?? '')
+    const cronSecretEnv = Deno.env.get('CRON_SECRET') ?? ''
+    const isCron = !!cronSecretHeader && cronSecretHeader === cronSecretEnv
+    
+    // Log cron detection for debugging
+    if (req.method === 'POST') {
+      console.log('🔍 [bot-executor] Cron detection:');
+      console.log(`   x-cron-secret header present: ${!!cronSecretHeader} (length: ${cronSecretHeader.length})`);
+      console.log(`   CRON_SECRET env present: ${!!cronSecretEnv} (length: ${cronSecretEnv.length})`);
+      console.log(`   Secrets match: ${cronSecretHeader === cronSecretEnv}`);
+      console.log(`   Detected as cron: ${isCron}`);
+      if (!isCron && cronSecretHeader) {
+        console.warn(`   ⚠️ Cron secret mismatch - header doesn't match env var`);
+        if (cronSecretHeader.length === cronSecretEnv.length) {
+          console.warn(`   ⚠️ Lengths match but values differ - check for whitespace/encoding issues`);
+        }
+      }
+    }
 
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',

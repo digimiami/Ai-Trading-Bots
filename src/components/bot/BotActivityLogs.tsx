@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Card from '../../components/base/Card';
 import Button from '../../components/base/Button';
 import { BotActivityLog, BotActivity } from '../../hooks/useBotActivity';
@@ -12,6 +12,31 @@ interface BotActivityLogsProps {
 export default function BotActivityLogs({ activity, onClearLogs, onSimulateActivity }: BotActivityLogsProps) {
   const [expanded, setExpanded] = useState(false);
   const [filter, setFilter] = useState<'all' | 'info' | 'warning' | 'error' | 'success'>('all');
+  const [timeSinceActivity, setTimeSinceActivity] = useState<string>('');
+
+  // Update time since activity every second for real-time display
+  useEffect(() => {
+    const updateTime = () => {
+      if (activity.lastActivity) {
+        const timeDiff = Date.now() - new Date(activity.lastActivity).getTime();
+        const seconds = Math.floor(timeDiff / 1000);
+        const minutes = Math.floor(seconds / 60);
+        const hours = Math.floor(minutes / 60);
+        
+        if (hours > 0) {
+          setTimeSinceActivity(`${hours}h ${minutes % 60}m ago`);
+        } else if (minutes > 0) {
+          setTimeSinceActivity(`${minutes}m ${seconds % 60}s ago`);
+        } else {
+          setTimeSinceActivity(`${seconds}s ago`);
+        }
+      }
+    };
+    
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, [activity.lastActivity]);
 
   const getLevelColor = (level: string) => {
     switch (level) {
@@ -43,6 +68,53 @@ export default function BotActivityLogs({ activity, onClearLogs, onSimulateActiv
     }
   };
 
+  const getExecutionStateInfo = (state?: string) => {
+    switch (state) {
+      case 'executing':
+        return {
+          icon: 'ri-loader-4-line animate-spin',
+          color: 'bg-purple-100 text-purple-800 border-purple-200',
+          label: 'Executing',
+          badge: 'Executing Trade'
+        };
+      case 'analyzing':
+        return {
+          icon: 'ri-bar-chart-line',
+          color: 'bg-blue-100 text-blue-800 border-blue-200',
+          label: 'Analyzing',
+          badge: 'Analyzing Market'
+        };
+      case 'waiting':
+        return {
+          icon: 'ri-time-line',
+          color: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+          label: 'Waiting',
+          badge: 'Waiting for Signal'
+        };
+      case 'error':
+        return {
+          icon: 'ri-error-warning-line',
+          color: 'bg-red-100 text-red-800 border-red-200',
+          label: 'Error',
+          badge: 'Error Detected'
+        };
+      case 'idle':
+        return {
+          icon: 'ri-pause-line',
+          color: 'bg-gray-100 text-gray-800 border-gray-200',
+          label: 'Idle',
+          badge: 'Not Running'
+        };
+      default:
+        return {
+          icon: 'ri-question-line',
+          color: 'bg-gray-100 text-gray-800 border-gray-200',
+          label: 'Unknown',
+          badge: 'Unknown State'
+        };
+    }
+  };
+
   const filteredLogs = activity.logs.filter(log => 
     filter === 'all' || log.level === filter
   );
@@ -58,13 +130,35 @@ export default function BotActivityLogs({ activity, onClearLogs, onSimulateActiv
   return (
     <Card className="p-4">
       <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-3 flex-1">
           <i className={`${getStatusIcon(activity.status)} text-xl`}></i>
-          <div>
-            <h3 className="font-semibold text-gray-900">{activity.botName}</h3>
-            <p className="text-sm text-gray-500">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="font-semibold text-gray-900">{activity.botName}</h3>
+              {activity.executionState && (
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${getExecutionStateInfo(activity.executionState).color}`}>
+                  <i className={`${getExecutionStateInfo(activity.executionState).icon} mr-1`}></i>
+                  {getExecutionStateInfo(activity.executionState).badge}
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-gray-600 mb-1">
               {activity.currentAction || 'No recent activity'}
             </p>
+            <div className="flex items-center gap-3 text-xs text-gray-500">
+              {timeSinceActivity && (
+                <span>
+                  <i className="ri-time-line mr-1"></i>
+                  {timeSinceActivity}
+                </span>
+              )}
+              {activity.lastExecutionTime && (
+                <span>
+                  <i className="ri-exchange-line mr-1"></i>
+                  Last trade: {new Date(activity.lastExecutionTime).toLocaleString()}
+                </span>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex items-center space-x-2">
@@ -103,17 +197,59 @@ export default function BotActivityLogs({ activity, onClearLogs, onSimulateActiv
         </div>
       </div>
 
-      {/* Current Status */}
-      {activity.waitingFor && (
-        <div className="mb-4 p-3 bg-blue-50 rounded-lg">
+      {/* Current Status - Real-time Activity Indicator */}
+      <div className="mb-4 p-3 rounded-lg border-2" style={{
+        backgroundColor: activity.executionState === 'executing' ? '#f3e8ff' :
+                         activity.executionState === 'analyzing' ? '#eff6ff' :
+                         activity.executionState === 'waiting' ? '#fefce8' :
+                         activity.executionState === 'error' ? '#fef2f2' :
+                         '#f9fafb',
+        borderColor: activity.executionState === 'executing' ? '#c084fc' :
+                     activity.executionState === 'analyzing' ? '#60a5fa' :
+                     activity.executionState === 'waiting' ? '#eab308' :
+                     activity.executionState === 'error' ? '#f87171' :
+                     '#e5e7eb'
+      }}>
+        <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <i className="ri-time-line text-blue-600"></i>
-            <span className="text-sm text-blue-800">
-              Waiting for: {activity.waitingFor}
-            </span>
+            {activity.executionState && (
+              <i className={`${getExecutionStateInfo(activity.executionState).icon} text-lg ${
+                activity.executionState === 'executing' ? 'text-purple-600' :
+                activity.executionState === 'analyzing' ? 'text-blue-600' :
+                activity.executionState === 'waiting' ? 'text-yellow-600' :
+                activity.executionState === 'error' ? 'text-red-600' :
+                'text-gray-600'
+              }`}></i>
+            )}
+            <div>
+              <span className={`text-sm font-medium ${
+                activity.executionState === 'executing' ? 'text-purple-800' :
+                activity.executionState === 'analyzing' ? 'text-blue-800' :
+                activity.executionState === 'waiting' ? 'text-yellow-800' :
+                activity.executionState === 'error' ? 'text-red-800' :
+                'text-gray-800'
+              }`}>
+                {activity.executionState ? getExecutionStateInfo(activity.executionState).label : 'Status'}:
+              </span>
+              <span className={`ml-2 text-sm ${
+                activity.executionState === 'executing' ? 'text-purple-700' :
+                activity.executionState === 'analyzing' ? 'text-blue-700' :
+                activity.executionState === 'waiting' ? 'text-yellow-700' :
+                activity.executionState === 'error' ? 'text-red-700' :
+                'text-gray-700'
+              }`}>
+                {activity.currentAction || 'No activity'}
+              </span>
+            </div>
           </div>
+          {activity.waitingFor && (
+            <div className="text-xs text-gray-600">
+              <i className="ri-hourglass-line mr-1"></i>
+              {activity.waitingFor}
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Expanded Logs */}
       {expanded && (

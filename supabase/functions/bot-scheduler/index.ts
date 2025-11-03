@@ -125,11 +125,14 @@ serve(async (req) => {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json', 
-          'x-cron-secret': CRON_SECRET,
-          'Authorization': `Bearer ${SERVICE_ROLE_KEY}`
+          'x-cron-secret': CRON_SECRET,  // CRITICAL: This tells bot-executor it's a cron call
+          'Authorization': `Bearer ${SERVICE_ROLE_KEY}`  // Used when isCron=true
         },
         body: JSON.stringify({ action: 'execute_all_bots' })
       });
+      
+      console.log(`📤 [${requestId}] Request to bot-executor:`);
+      console.log(`   Headers sent: x-cron-secret=${CRON_SECRET ? `${CRON_SECRET.substring(0, 4)}...${CRON_SECRET.substring(CRON_SECRET.length - 4)}` : '(empty)'}, Authorization=Bearer ${SERVICE_ROLE_KEY ? '***' : '(empty)'}`);
       
       const duration = Date.now() - callStartTime;
       responseBody = await executorResponse.text();

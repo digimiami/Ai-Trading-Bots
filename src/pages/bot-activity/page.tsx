@@ -56,6 +56,129 @@ export default function BotActivityPage() {
       />
       
       <div className="pt-20 pb-20 px-4 space-y-6">
+        {/* Recent Activity Overview */}
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+              <i className="ri-pulse-line mr-2 text-blue-600 animate-pulse"></i>
+              Recent Activity
+            </h3>
+            <span className="text-xs text-gray-500">
+              Updates every 10s
+            </span>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Executing Bots */}
+            {activities.filter(a => a.executionState === 'executing').length > 0 && (
+              <div className="p-4 bg-purple-50 border-2 border-purple-200 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-purple-800">Executing</span>
+                  <i className="ri-loader-4-line animate-spin text-purple-600"></i>
+                </div>
+                <div className="space-y-2">
+                  {activities
+                    .filter(a => a.executionState === 'executing')
+                    .slice(0, 3)
+                    .map(activity => (
+                      <div key={activity.botId} className="text-sm">
+                        <span className="font-medium text-purple-900">{activity.botName}</span>
+                        <span className="text-purple-700 ml-2">• {activity.currentAction}</span>
+                      </div>
+                    ))}
+                  {activities.filter(a => a.executionState === 'executing').length > 3 && (
+                    <div className="text-xs text-purple-600">
+                      +{activities.filter(a => a.executionState === 'executing').length - 3} more
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Analyzing Bots */}
+            {activities.filter(a => a.executionState === 'analyzing').length > 0 && (
+              <div className="p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-blue-800">Analyzing Market</span>
+                  <i className="ri-bar-chart-line text-blue-600"></i>
+                </div>
+                <div className="space-y-2">
+                  {activities
+                    .filter(a => a.executionState === 'analyzing')
+                    .slice(0, 3)
+                    .map(activity => (
+                      <div key={activity.botId} className="text-sm">
+                        <span className="font-medium text-blue-900">{activity.botName}</span>
+                        <span className="text-blue-700 ml-2">• {activity.currentAction}</span>
+                      </div>
+                    ))}
+                  {activities.filter(a => a.executionState === 'analyzing').length > 3 && (
+                    <div className="text-xs text-blue-600">
+                      +{activities.filter(a => a.executionState === 'analyzing').length - 3} more
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Waiting Bots */}
+            {activities.filter(a => a.executionState === 'waiting').length > 0 && (
+              <div className="p-4 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-yellow-800">Waiting</span>
+                  <i className="ri-time-line text-yellow-600"></i>
+                </div>
+                <div className="space-y-2">
+                  {activities
+                    .filter(a => a.executionState === 'waiting')
+                    .slice(0, 3)
+                    .map(activity => (
+                      <div key={activity.botId} className="text-sm">
+                        <span className="font-medium text-yellow-900">{activity.botName}</span>
+                        <span className="text-yellow-700 ml-2">
+                          {activity.waitingFor ? `• Waiting: ${activity.waitingFor}` : `• ${activity.currentAction}`}
+                        </span>
+                      </div>
+                    ))}
+                  {activities.filter(a => a.executionState === 'waiting').length > 3 && (
+                    <div className="text-xs text-yellow-600">
+                      +{activities.filter(a => a.executionState === 'waiting').length - 3} more
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Quick Stats Row */}
+          <div className="mt-4 pt-4 border-t border-gray-200 grid grid-cols-4 gap-4 text-center">
+            <div>
+              <div className="text-2xl font-bold text-purple-600">
+                {activities.filter(a => a.executionState === 'executing').length}
+              </div>
+              <div className="text-xs text-gray-500">Executing</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-blue-600">
+                {activities.filter(a => a.executionState === 'analyzing').length}
+              </div>
+              <div className="text-xs text-gray-500">Analyzing</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-yellow-600">
+                {activities.filter(a => a.executionState === 'waiting').length}
+              </div>
+              <div className="text-xs text-gray-500">Waiting</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-red-600">
+                {activities.filter(a => a.executionState === 'error').length}
+              </div>
+              <div className="text-xs text-gray-500">Errors</div>
+            </div>
+          </div>
+        </Card>
+
         {/* Filter Tabs */}
         <div className="flex space-x-2 overflow-x-auto">
           {['all', 'running', 'paused', 'stopped'].map((status) => (

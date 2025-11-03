@@ -17,10 +17,12 @@ export interface BotActivity {
   botName: string;
   status: string;
   lastActivity: string;
+  lastExecutionTime?: string | null;
   logs: BotActivityLog[];
   isActive: boolean;
   currentAction?: string;
   waitingFor?: string;
+  executionState?: 'executing' | 'analyzing' | 'waiting' | 'idle' | 'error';
   errorCount: number;
   successCount: number;
 }
@@ -109,6 +111,120 @@ export function useBotActivity(bots?: any[]) {
     }
   };
 
+  // Analyze logs to determine current activity state
+  const analyzeActivityState = (logs: BotActivityLog[], botStatus: string): { currentAction: string; waitingFor?: string; executionState: 'executing' | 'analyzing' | 'waiting' | 'idle' | 'error' } => {
+    if (botStatus !== 'running') {
+      return {
+        currentAction: `Bot is ${botStatus}`,
+        executionState: 'idle'
+      };
+    }
+
+    if (logs.length === 0) {
+      return {
+        currentAction: 'Initializing...',
+        waitingFor: 'First execution',
+        executionState: 'waiting'
+      };
+    }
+
+    const latestLog = logs[0];
+    const logTime = new Date(latestLog.timestamp).getTime();
+    const now = Date.now();
+    const timeSinceLastLog = now - logTime;
+    const fiveMinutesAgo = 5 * 60 * 1000;
+    const oneMinuteAgo = 60 * 1000;
+
+    // Check for recent errors
+    const recentErrors = logs.filter(log => 
+      log.level === 'error' && 
+      (now - new Date(log.timestamp).getTime()) < fiveMinutesAgo
+    );
+    if (recentErrors.length > 0) {
+      return {
+        currentAction: `Error: ${recentErrors[0].message}`,
+        executionState: 'error'
+      };
+    }
+
+    // Analyze latest log message to infer state
+    const message = latestLog.message.toLowerCase();
+    
+    // Execution states based on log messages
+    if (message.includes('executing') || message.includes('execution') || message.includes('starting execution')) {
+      return {
+        currentAction: latestLog.message,
+        executionState: 'executing'
+      };
+    }
+    
+    if (message.includes('analyzing') || message.includes('analysis') || message.includes('market data') || message.includes('rsi') || message.includes('adx')) {
+      return {
+        currentAction: latestLog.message,
+        executionState: 'analyzing'
+      };
+    }
+    
+    if (message.includes('trade') && (message.includes('placed') || message.includes('executed') || message.includes('opened') || message.includes('closed'))) {
+      return {
+        currentAction: latestLog.message,
+        executionState: 'executing'
+      };
+    }
+    
+    if (message.includes('waiting') || message.includes('monitoring') || message.includes('syncing time')) {
+      return {
+        currentAction: latestLog.message,
+        waitingFor: message.includes('waiting') ? 'Market signal' : 'Next execution cycle',
+        executionState: 'waiting'
+      };
+    }
+
+    // Check time since last activity
+    if (timeSinceLastLog > fiveMinutesAgo) {
+      return {
+        currentAction: `Last activity: ${formatTimeAgo(timeSinceLastLog)}`,
+        waitingFor: 'Next cron execution',
+        executionState: 'waiting'
+      };
+    }
+
+    if (timeSinceLastLog < oneMinuteAgo) {
+      // Very recent activity
+      return {
+        currentAction: latestLog.message,
+        executionState: latestLog.category === 'trade' ? 'executing' : 'analyzing'
+      };
+    }
+
+    // Default based on category
+    const executionStateMap: Record<string, 'executing' | 'analyzing' | 'waiting' | 'idle'> = {
+      'trade': 'executing',
+      'market': 'analyzing',
+      'strategy': 'analyzing',
+      'system': 'waiting',
+      'error': 'error' as any
+    };
+
+    return {
+      currentAction: latestLog.message,
+      waitingFor: latestLog.category === 'market' ? 'Market conditions' : undefined,
+      executionState: executionStateMap[latestLog.category] || 'waiting'
+    };
+  };
+
+  const formatTimeAgo = (ms: number): string => {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    
+    if (days > 0) return `${days}d ago`;
+    if (hours > 0) return `${hours}h ago`;
+    if (minutes > 0) return `${minutes}m ago`;
+    return `${seconds}s ago`;
+  };
+
   const fetchAllActivities = async () => {
     try {
       setLoading(true);
@@ -127,15 +243,24 @@ export function useBotActivity(bots?: any[]) {
           const errorCount = logs.filter((log: BotActivityLog) => log.level === 'error').length;
           const successCount = logs.filter((log: BotActivityLog) => log.level === 'success').length;
           
+          // Analyze activity state
+          const activityState = analyzeActivityState(logs, bot.status);
+          
+          // Get last execution time
+          const lastTradeLog = logs.find(log => log.category === 'trade');
+          const lastExecutionTime = lastTradeLog ? lastTradeLog.timestamp : null;
+          
           return {
             botId: bot.id,
             botName: bot.name,
             status: bot.status,
             lastActivity: logs.length > 0 ? logs[0].timestamp : bot.createdAt,
+            lastExecutionTime: lastExecutionTime,
             logs: logs.slice(0, 50), // Keep only last 50 logs
             isActive: bot.status === 'running',
-            currentAction: logs.length > 0 ? logs[0].message : 'Initializing...',
-            waitingFor: bot.status === 'running' ? 'Market conditions' : undefined,
+            currentAction: activityState.currentAction,
+            waitingFor: activityState.waitingFor,
+            executionState: activityState.executionState,
             errorCount,
             successCount,
           };
@@ -181,11 +306,12 @@ export function useBotActivity(bots?: any[]) {
   useEffect(() => {
     fetchAllActivities();
     
-    // Set up polling for real-time updates
-    const interval = setInterval(fetchAllActivities, 30000); // Update every 30 seconds
+    // Set up polling for real-time updates (every 10 seconds for more responsive UI)
+    const interval = setInterval(fetchAllActivities, 10000); // Update every 10 seconds
     
     return () => clearInterval(interval);
-  }, [bots]); // Depend on bots parameter
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bots]); // Depend on bots parameter - fetchAllActivities is stable
 
   return {
     activities,
