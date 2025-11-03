@@ -1123,8 +1123,9 @@ class BotExecutor {
       
       // For futures/linear, check wallet balance
       if (bybitCategory === 'linear') {
-        // Get wallet balance for USDT (required for margin)
-        const queryParams = `accountType=UNIFIED&coin=USDT`;
+        // For Unified Trading Account, get total equity (all assets can be used as collateral)
+        // Don't filter by coin - get the entire account to check total equity
+        const queryParams = `accountType=UNIFIED`;
         const signaturePayload = timestamp + apiKey + recvWindow + queryParams;
         const signature = await this.createBybitSignature(signaturePayload, apiSecret);
         
@@ -1151,9 +1152,10 @@ class BotExecutor {
           };
         }
         
-        // Extract available balance
-        const wallet = data.result?.list?.[0]?.coin?.[0];
-        if (!wallet) {
+        // For Unified Trading Account, check TOTAL EQUITY (all assets combined)
+        // This allows using other assets (like TRUMP, WLFI, etc.) as collateral
+        const accountInfo = data.result?.list?.[0];
+        if (!accountInfo) {
           console.warn('⚠️ Could not parse balance response, proceeding with order attempt');
           return {
             hasBalance: true, // Assume sufficient if we can't parse
@@ -1163,25 +1165,46 @@ class BotExecutor {
           };
         }
         
-        // Extract available balance - try multiple fields for compatibility
-        const availableBalance = parseFloat(
-          wallet.walletBalance || 
-          wallet.availableToWithdraw || 
-          wallet.availableBalance || 
-          wallet.equity || 
+        // Total Equity = all assets combined value (Bybit uses all assets as collateral in Unified Trading)
+        // Try multiple fields: totalEquity, totalWalletBalance, totalAvailableBalance
+        const totalEquity = parseFloat(
+          accountInfo.totalEquity || 
+          accountInfo.totalWalletBalance || 
+          accountInfo.totalAvailableBalance ||
+          accountInfo.totalMarginBalance ||
           '0'
         );
+        
+        // Also get USDT-specific balance for detailed logging
+        const usdtCoin = accountInfo.coin?.find((c: any) => c.coin === 'USDT');
+        const usdtBalance = usdtCoin ? parseFloat(
+          usdtCoin.walletBalance || 
+          usdtCoin.availableToWithdraw || 
+          usdtCoin.availableBalance || 
+          usdtCoin.equity || 
+          '0'
+        ) : 0;
+        
         const requiredValue = orderValue;
         
-        console.log(`💰 Balance check for ${symbol} ${side}: Available=$${availableBalance.toFixed(2)}, Required=$${requiredValue.toFixed(2)}`);
-        console.log(`📊 Balance details: walletBalance=${wallet.walletBalance}, availableToWithdraw=${wallet.availableToWithdraw}, availableBalance=${wallet.availableBalance}, equity=${wallet.equity}`);
+        console.log(`💰 Unified Trading Balance check for ${symbol} ${side}:`);
+        console.log(`   Total Equity (all assets): $${totalEquity.toFixed(2)}`);
+        console.log(`   USDT Balance: $${usdtBalance.toFixed(2)}`);
+        console.log(`   Required: $${requiredValue.toFixed(2)}`);
+        console.log(`📊 Account details: totalEquity=${accountInfo.totalEquity}, totalWalletBalance=${accountInfo.totalWalletBalance}`);
+        
+        // Use TOTAL EQUITY for balance check (Unified Trading uses all assets as collateral)
+        const availableBalance = totalEquity > 0 ? totalEquity : usdtBalance; // Fallback to USDT if totalEquity not available
         
         // Add 5% buffer to account for fees and price fluctuations
         const buffer = requiredValue * 0.05;
         const totalRequired = requiredValue + buffer;
         
         if (availableBalance >= totalRequired) {
-          console.log(`✅ Sufficient balance: $${availableBalance.toFixed(2)} >= $${totalRequired.toFixed(2)} (required + 5% buffer)`);
+          console.log(`✅ Sufficient balance: $${availableBalance.toFixed(2)} (Total Equity) >= $${totalRequired.toFixed(2)} (required + 5% buffer)`);
+          if (usdtBalance < totalRequired && totalEquity >= totalRequired) {
+            console.log(`💡 Note: Using other assets as collateral (USDT: $${usdtBalance.toFixed(2)}, Total Equity: $${totalEquity.toFixed(2)})`);
+          }
           return {
             hasBalance: true,
             availableBalance: availableBalance,
@@ -1190,8 +1213,9 @@ class BotExecutor {
           };
         } else {
           const shortfall = totalRequired - availableBalance;
-          console.warn(`⚠️ Insufficient balance: $${availableBalance.toFixed(2)} < $${totalRequired.toFixed(2)} (required + 5% buffer)`);
-          console.warn(`💡 Tip: Add at least $${Math.ceil(shortfall)} to your Bybit UNIFIED/Futures wallet to enable trading`);
+          console.warn(`⚠️ Insufficient balance: $${availableBalance.toFixed(2)} (Total Equity) < $${totalRequired.toFixed(2)} (required + 5% buffer)`);
+          console.warn(`   USDT Balance: $${usdtBalance.toFixed(2)}, Total Equity: $${totalEquity.toFixed(2)}`);
+          console.warn(`💡 Tip: Add at least $${Math.ceil(shortfall)} to your Bybit UNIFIED account to enable trading`);
           return {
             hasBalance: false,
             availableBalance: availableBalance,
