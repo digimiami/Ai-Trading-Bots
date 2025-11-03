@@ -2181,10 +2181,20 @@ serve(async (req) => {
       console.log(`   CRON_SECRET env present: ${!!cronSecretEnv} (length: ${cronSecretEnv.length})`);
       console.log(`   Secrets match: ${cronSecretHeader === cronSecretEnv}`);
       console.log(`   Detected as cron: ${isCron}`);
-      if (!isCron && cronSecretHeader) {
+      
+      // Enhanced error messages for missing CRON_SECRET
+      if (cronSecretHeader && !cronSecretEnv) {
+        console.error('❌ [bot-executor] CRITICAL: CRON_SECRET environment variable is NOT SET!');
+        console.error('   This function received an x-cron-secret header but CRON_SECRET env var is missing.');
+        console.error('   ACTION REQUIRED: Set CRON_SECRET environment variable in bot-executor function settings.');
+        console.error('   The value must match the CRON_SECRET in bot-scheduler function.');
+        console.error('   Without this, bot-executor cannot recognize cron requests and will return 401 Invalid JWT.');
+      } else if (!isCron && cronSecretHeader) {
         console.warn(`   ⚠️ Cron secret mismatch - header doesn't match env var`);
         if (cronSecretHeader.length === cronSecretEnv.length) {
           console.warn(`   ⚠️ Lengths match but values differ - check for whitespace/encoding issues`);
+        } else {
+          console.warn(`   ⚠️ Length mismatch: header=${cronSecretHeader.length}, env=${cronSecretEnv.length}`);
         }
       }
     }
