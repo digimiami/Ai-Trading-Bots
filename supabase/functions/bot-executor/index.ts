@@ -1076,14 +1076,18 @@ class BotExecutor {
       };
       
       // Set SL/TP on the position after order is filled (for futures only)
+      // Wait a short moment for position to update after order fills
       if (bybitCategory === 'linear' && currentMarketPrice > 0) {
         try {
+          // Small delay to allow position to update after order fills
+          await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
+          
           // Get actual position entry price from Bybit
           const entryPrice = await this.getBybitPositionEntryPrice(apiKey, apiSecret, isTestnet, symbol);
-          if (entryPrice) {
+          if (entryPrice && entryPrice > 0) {
             await this.setBybitSLTP(apiKey, apiSecret, isTestnet, symbol, capitalizedSide, entryPrice);
           } else {
-            console.warn('⚠️ Could not fetch position entry price, skipping SL/TP');
+            console.warn('⚠️ Could not fetch position entry price, skipping SL/TP (position may have been closed)');
           }
         } catch (slTpError) {
           console.warn('⚠️ Failed to set SL/TP (non-critical):', slTpError);
@@ -1400,19 +1404,29 @@ class BotExecutor {
       
       if (!tradeSideMatch) {
         // Trade side doesn't match position side - this could mean:
-        // 1. SELL order closed a LONG position (position is now closed or reversed)
+        // 1. SELL order closed/reversed a LONG position (one-way mode)
         // 2. Position hasn't updated yet after the trade
         console.warn(`⚠️ Trade side (${side}) doesn't match position side (${actualPositionSide}) for ${symbol}`);
-        console.warn(`   Position size: ${positionSize}. May need to wait for position to update or position may be closing.`);
+        console.warn(`   Position size: ${positionSize}. This may indicate position closure or reversal.`);
         
-        // For SELL trades that don't match position: the position might be closing
-        // For now, use the trade side to determine SL/TP direction
-        // This handles the case where a SELL order creates a SHORT position
-        if (side === 'Sell' && actualPositionSide === 'Buy' && positionSize > 0) {
-          console.log(`   Using trade side (${side}) for SL/TP calculation - SELL order may have closed LONG position`);
-          actualPositionSide = 'Sell'; // Use SELL side for SL/TP
-          // Use the current market price as entry for the new SHORT position
-          entryPrice = entryPrice; // Keep the provided entry price (from the trade)
+        // In one-way mode:
+        // - SELL order on LONG position reduces/closes the LONG
+        // - If SELL size >= LONG size, the LONG is closed
+        // - If SELL size < LONG size, the LONG is reduced (still LONG)
+        // - If no position exists, SELL creates a SHORT
+        
+        // For now, if there's a mismatch and position still exists:
+        // Skip SL/TP to avoid errors - the position state is uncertain
+        if (side === 'Sell' && actualPositionSide === 'Buy') {
+          console.warn(`   Skipping SL/TP: SELL trade on LONG position - position may be closing/reversing`);
+          console.warn(`   SL/TP will be set automatically when the position stabilizes after the trade`);
+          return; // Skip SL/TP when there's a mismatch
+        }
+        
+        // For BUY on SHORT position, similar logic applies
+        if (side === 'Buy' && actualPositionSide === 'Sell') {
+          console.warn(`   Skipping SL/TP: BUY trade on SHORT position - position may be closing/reversing`);
+          return;
         }
       }
       
