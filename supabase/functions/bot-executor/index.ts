@@ -1348,8 +1348,44 @@ class BotExecutor {
     const baseUrl = isTestnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com';
     
     try {
+      // First, check actual position to determine correct side
       const timestamp = Date.now().toString();
       const recvWindow = '5000';
+      const positionQuery = `category=linear&symbol=${symbol}`;
+      const positionSigPayload = timestamp + apiKey + recvWindow + positionQuery;
+      const positionSig = await this.createBybitSignature(positionSigPayload, apiSecret);
+      
+      const positionResponse = await fetch(`${baseUrl}/v5/position/list?${positionQuery}`, {
+        method: 'GET',
+        headers: {
+          'X-BAPI-API-KEY': apiKey,
+          'X-BAPI-TIMESTAMP': timestamp,
+          'X-BAPI-RECV-WINDOW': recvWindow,
+          'X-BAPI-SIGN': positionSig,
+        },
+      });
+      
+      const positionData = await positionResponse.json();
+      let actualPositionSide = side; // Default to trade side
+      
+      if (positionData.retCode === 0 && positionData.result?.list) {
+        const position = positionData.result.list.find((p: any) => {
+          const size = parseFloat(p.size || '0');
+          return size !== 0;
+        });
+        
+        if (position) {
+          const positionSize = parseFloat(position.size || '0');
+          actualPositionSide = positionSize > 0 ? 'Buy' : 'Sell'; // Positive = Long (Buy), Negative = Short (Sell)
+          console.log(`📊 Actual position side for ${symbol}: ${actualPositionSide} (size: ${positionSize})`);
+          
+          // Update entry price from actual position if available
+          if (position.avgPrice && parseFloat(position.avgPrice) > 0) {
+            entryPrice = parseFloat(position.avgPrice);
+            console.log(`📊 Using actual position entry price: ${entryPrice}`);
+          }
+        }
+      }
       
       // Calculate SL/TP prices with proper validation
       let stopLossPrice: string;
@@ -1375,7 +1411,8 @@ class BotExecutor {
         return Math.round(v / tickSize) * tickSize;
       };
 
-      if (side === 'Buy') {
+      // Use actual position side, not trade side
+      if (actualPositionSide === 'Buy') {
         // Long position: SL below entry, TP above entry
         const slValue = roundToTick(entryPrice * 0.98);
         const tpValue = roundToTick(entryPrice * 1.03);
@@ -1394,11 +1431,11 @@ class BotExecutor {
       // Validate TP/SL direction. If invalid, skip setting to avoid API errors
       const tpValue = parseFloat(takeProfitPrice);
       const slValue = parseFloat(stopLossPrice);
-      console.log(`🔍 SL/TP Validation: Side=${side}, Entry=${entryPrice}, TP=${tpValue}, SL=${slValue}`);
+      console.log(`🔍 SL/TP Validation: ActualPositionSide=${actualPositionSide}, Entry=${entryPrice}, TP=${tpValue}, SL=${slValue}`);
 
-      if ((side === 'Buy'  && (tpValue <= entryPrice || slValue >= entryPrice)) ||
-          (side === 'Sell' && (tpValue >= entryPrice || slValue <= entryPrice))) {
-        console.warn(`⚠️ Skipping SL/TP: direction invalid for ${side}. Entry=${entryPrice}, TP=${tpValue}, SL=${slValue}`);
+      if ((actualPositionSide === 'Buy'  && (tpValue <= entryPrice || slValue >= entryPrice)) ||
+          (actualPositionSide === 'Sell' && (tpValue >= entryPrice || slValue <= entryPrice))) {
+        console.warn(`⚠️ Skipping SL/TP: direction invalid for ${actualPositionSide}. Entry=${entryPrice}, TP=${tpValue}, SL=${slValue}`);
         return; // Non-critical; order already placed
       }
 
@@ -1652,7 +1689,7 @@ class BotExecutor {
       'SOLUSDT': { stepSize: 0.1,   tickSize: 0.01 }, // Updated to match Bybit linear futures qtyStep
       'ADAUSDT': { stepSize: 1,     tickSize: 0.0001 },
       'UNIUSDT': { stepSize: 0.1,   tickSize: 0.001 },
-      'LINKUSDT':{ stepSize: 0.01,  tickSize: 0.01 },
+      'LINKUSDT':{ stepSize: 0.1,   tickSize: 0.01 }, // Updated: Bybit requires 0.1 step size for LINKUSDT
       'AVAXUSDT':{ stepSize: 0.1,   tickSize: 0.01 },
       'XRPUSDT': { stepSize: 1,     tickSize: 0.0001 },
       'DOTUSDT': { stepSize: 0.1,   tickSize: 0.01 },
