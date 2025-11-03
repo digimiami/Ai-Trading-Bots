@@ -138,38 +138,78 @@ class OpenAIService {
    * Refresh API keys from localStorage (useful after saving via UI)
    */
   refreshKeys(): void {
-    // Reload from localStorage (don't override if env vars exist)
-    if (!import.meta.env.VITE_OPENAI_API_KEY) {
-      this.apiKey = localStorage.getItem('ai_openai_api_key') || '';
+    // Always reload from localStorage first (user-set keys take precedence)
+    const storedOpenAI = localStorage.getItem('ai_openai_api_key');
+    const storedDeepSeek = localStorage.getItem('ai_deepseek_api_key');
+    
+    // Only use env vars if localStorage doesn't have the key
+    if (storedOpenAI) {
+      this.apiKey = storedOpenAI;
+      console.log('✅ OpenAI key refreshed from localStorage');
+    } else if (import.meta.env.VITE_OPENAI_API_KEY) {
+      this.apiKey = import.meta.env.VITE_OPENAI_API_KEY;
+      console.log('✅ OpenAI key loaded from env var');
+    } else {
+      this.apiKey = '';
     }
-    if (!import.meta.env.VITE_DEEPSEEK_API_KEY) {
-      this.deepseekApiKey = localStorage.getItem('ai_deepseek_api_key') || '';
+    
+    if (storedDeepSeek) {
+      this.deepseekApiKey = storedDeepSeek;
+      console.log('✅ DeepSeek key refreshed from localStorage');
+    } else if (import.meta.env.VITE_DEEPSEEK_API_KEY) {
+      this.deepseekApiKey = import.meta.env.VITE_DEEPSEEK_API_KEY;
+      console.log('✅ DeepSeek key loaded from env var');
+    } else {
+      this.deepseekApiKey = '';
     }
-    console.log('🔄 AI API keys refreshed from localStorage');
+    
+    console.log('🔄 AI API keys refreshed:', {
+      openai: !!this.apiKey,
+      deepseek: !!this.deepseekApiKey
+    });
   }
 
   /**
    * Check if a provider is available (checks both instance and localStorage)
    */
   isProviderAvailable(provider: 'openai' | 'deepseek'): boolean {
-    // First check instance property
-    let hasKey = provider === 'deepseek' ? !!this.deepseekApiKey : !!this.apiKey;
-    
-    // If not found in instance, check localStorage directly (for fresh data)
-    if (!hasKey) {
-      if (provider === 'deepseek') {
-        const stored = localStorage.getItem('ai_deepseek_api_key') || import.meta.env.VITE_DEEPSEEK_API_KEY || '';
-        hasKey = !!stored;
-        if (hasKey && !this.deepseekApiKey) {
-          this.deepseekApiKey = stored; // Update instance
-        }
-      } else {
-        const stored = localStorage.getItem('ai_openai_api_key') || import.meta.env.VITE_OPENAI_API_KEY || '';
-        hasKey = !!stored;
-        if (hasKey && !this.apiKey) {
-          this.apiKey = stored; // Update instance
-        }
+    // Always check localStorage first (most reliable source of truth)
+    let storedKey = '';
+    if (provider === 'deepseek') {
+      // Check localStorage first, then env var
+      storedKey = localStorage.getItem('ai_deepseek_api_key') || '';
+      if (!storedKey) {
+        storedKey = import.meta.env.VITE_DEEPSEEK_API_KEY || '';
       }
+      // Update instance if found
+      if (storedKey && storedKey !== this.deepseekApiKey) {
+        this.deepseekApiKey = storedKey;
+        console.log('✅ DeepSeek API key loaded from storage');
+      }
+    } else {
+      // Check localStorage first, then env var
+      storedKey = localStorage.getItem('ai_openai_api_key') || '';
+      if (!storedKey) {
+        storedKey = import.meta.env.VITE_OPENAI_API_KEY || '';
+      }
+      // Update instance if found
+      if (storedKey && storedKey !== this.apiKey) {
+        this.apiKey = storedKey;
+        console.log('✅ OpenAI API key loaded from storage');
+      }
+    }
+    
+    const hasKey = !!storedKey || (provider === 'deepseek' ? !!this.deepseekApiKey : !!this.apiKey);
+    
+    // Debug logging
+    if (provider === 'deepseek') {
+      console.log(`🔍 DeepSeek availability check:`, {
+        localStorage: !!localStorage.getItem('ai_deepseek_api_key'),
+        envVar: !!import.meta.env.VITE_DEEPSEEK_API_KEY,
+        instance: !!this.deepseekApiKey,
+        storedKey: !!storedKey,
+        result: hasKey
+      });
     }
     
     return hasKey;

@@ -92,15 +92,10 @@ export default function PairRecommendations({
     // Refresh API keys on mount to ensure we have latest from localStorage
     openAIService.refreshKeys();
     
-    // Fetch recommendations when symbol, tradingType, or AI provider changes
-    if (symbol && symbol.trim()) {
-      console.log('🔍 PairRecommendations - Fetching recommendations for:', symbol, 'using', aiProvider);
-      fetchRecommendations();
-    } else {
-      console.log('⚠️ PairRecommendations - No symbol provided or symbol is empty');
-    }
+    // DO NOT auto-fetch - user must click "Get AI Recommendations" button
+    // Removed automatic fetching to give user control
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [symbol, tradingType, aiProvider]);
+  }, []); // Only run on mount
 
   const handleProviderChange = (provider: 'openai' | 'deepseek') => {
     if (!openAIService.isProviderAvailable(provider)) {
@@ -190,23 +185,53 @@ export default function PairRecommendations({
     );
   }
 
-  // If no recommendation but also no error/loading, show a placeholder
+  // If no recommendation but also no error/loading, show manual trigger button
   if (!recommendation && !error && !loading) {
+    const hasAnyProvider = openAIService.isProviderAvailable('openai') || openAIService.isProviderAvailable('deepseek');
+    
     return (
       <Card className="p-4 border-2 border-gray-200 bg-gray-50">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-medium text-gray-700 mb-1">🤖 AI Recommendations</h3>
-            <p className="text-xs text-gray-500">Loading recommendations for {symbol}...</p>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-medium text-gray-700 mb-1">🤖 AI Recommendations</h3>
+              <p className="text-xs text-gray-500">
+                {hasAnyProvider 
+                  ? `Get AI-powered recommendations for ${symbol}`
+                  : 'Configure AI API keys in Settings to get recommendations'}
+              </p>
+            </div>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={fetchRecommendations}
-            className="text-xs"
-          >
-            Load
-          </Button>
+          <div className="flex items-center gap-2">
+            <select
+              value={aiProvider}
+              onChange={(e) => handleProviderChange(e.target.value as 'openai' | 'deepseek')}
+              className="px-2 py-1 border border-gray-300 rounded bg-white text-gray-700 text-xs"
+              disabled={loading}
+            >
+              <option value="deepseek" disabled={!openAIService.isProviderAvailable('deepseek')}>
+                DeepSeek {!openAIService.isProviderAvailable('deepseek') ? '(Not configured)' : ''}
+              </option>
+              <option value="openai" disabled={!openAIService.isProviderAvailable('openai')}>
+                OpenAI {!openAIService.isProviderAvailable('openai') ? '(Not configured)' : ''}
+              </option>
+            </select>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={fetchRecommendations}
+              className="text-xs"
+              disabled={loading || !hasAnyProvider}
+            >
+              <i className="ri-magic-line mr-1"></i>
+              Get AI Recommendations
+            </Button>
+          </div>
+          {!hasAnyProvider && (
+            <p className="text-xs text-yellow-600">
+              ⚠️ No AI providers configured. Go to Settings → AI Recommendations to add your API keys.
+            </p>
+          )}
         </div>
       </Card>
     );
