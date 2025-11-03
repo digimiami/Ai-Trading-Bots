@@ -496,7 +496,7 @@ class BotExecutor {
         console.warn(`⚠️ Trading blocked for ${bot.name}: ${safetyCheck.reason}`);
         await this.addBotLog(bot.id, {
           level: 'warning',
-          category: 'safety',
+          category: 'system',
           message: `Trading blocked: ${safetyCheck.reason}`,
           details: safetyCheck
         });
@@ -1579,6 +1579,60 @@ class BotExecutor {
 
       console.log(`✅ Final SL/TP: SL=${stopLossPrice}, TP=${takeProfitPrice}`);
       
+      // Double-check position side right before setting SL/TP (position might have changed)
+      // This is especially important for small positions that might be closing
+      const finalCheckTimestamp = Date.now().toString();
+      const finalCheckQuery = `category=linear&symbol=${symbol}`;
+      const finalCheckSigPayload = finalCheckTimestamp + apiKey + recvWindow + finalCheckQuery;
+      const finalCheckSig = await this.createBybitSignature(finalCheckSigPayload, apiSecret);
+      
+      const finalCheckResponse = await fetch(`${baseUrl}/v5/position/list?${finalCheckQuery}`, {
+        method: 'GET',
+        headers: {
+          'X-BAPI-API-KEY': apiKey,
+          'X-BAPI-TIMESTAMP': finalCheckTimestamp,
+          'X-BAPI-RECV-WINDOW': recvWindow,
+          'X-BAPI-SIGN': finalCheckSig,
+        },
+      });
+      
+      const finalCheckData = await finalCheckResponse.json();
+      let finalPositionSide = actualPositionSide;
+      if (finalCheckData.retCode === 0 && finalCheckData.result?.list) {
+        const finalPosition = finalCheckData.result.list.find((p: any) => {
+          const size = parseFloat(p.size || '0');
+          return size !== 0;
+        });
+        if (finalPosition) {
+          const finalSize = parseFloat(finalPosition.size || '0');
+          finalPositionSide = finalSize > 0 ? 'Buy' : 'Sell';
+          console.log(`🔍 Final position check before SL/TP: ${finalPositionSide} (size: ${finalSize})`);
+          
+          // If position side changed, recalculate SL/TP
+          if (finalPositionSide !== actualPositionSide) {
+            console.warn(`⚠️ Position side changed from ${actualPositionSide} to ${finalPositionSide} - recalculating SL/TP`);
+            actualPositionSide = finalPositionSide;
+            
+            // Recalculate SL/TP for the correct side
+            if (actualPositionSide === 'Buy') {
+              const slValue = roundToTick(entryPrice * 0.98);
+              const tpValue = roundToTick(entryPrice * 1.03);
+              stopLossPrice = Number(slValue.toFixed(tickDecimals)).toString();
+              takeProfitPrice = Number(tpValue.toFixed(tickDecimals)).toString();
+            } else {
+              const slValue = roundToTick(entryPrice * 1.02);
+              const tpValue = roundToTick(entryPrice * 0.97);
+              stopLossPrice = Number(slValue.toFixed(tickDecimals)).toString();
+              takeProfitPrice = Number(tpValue.toFixed(tickDecimals)).toString();
+            }
+            console.log(`✅ Recalculated SL/TP: SL=${stopLossPrice}, TP=${takeProfitPrice} for ${actualPositionSide}`);
+          }
+        } else {
+          console.warn(`⚠️ No position found in final check - position may have been closed, skipping SL/TP`);
+          return;
+        }
+      }
+      
       const requestBody = {
         category: 'linear',
         symbol: symbol,
@@ -2310,7 +2364,7 @@ class BotExecutor {
         
         await this.addBotLog(botId, {
           level: 'warning',
-          category: 'safety',
+          category: 'system',
           message: `Bot paused automatically: ${reason}`,
           details: { reason, pausedAt: TimeSync.getCurrentTimeISO() }
         });
