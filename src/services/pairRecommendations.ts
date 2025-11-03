@@ -111,19 +111,57 @@ class PairRecommendationsService {
   ): {
     totalTrades: number;
     winRate: number;
+    totalPnL: number;
     avgPnL: number;
+    profitFactor: number;
+    sharpeRatio: number;
+    maxDrawdown: number;
     bestStrategy?: any;
     avgTradeAmount: number;
     avgLeverage: number;
     avgStopLoss: number;
     avgTakeProfit: number;
   } {
-    const closedTrades = trades.filter(t => t.status === 'filled' || t.status === 'closed');
+    const closedTrades = trades.filter(t => t.status === 'filled' || t.status === 'closed' || t.status === 'completed');
     const wins = closedTrades.filter(t => (t.pnl || 0) > 0);
+    const losses = closedTrades.filter(t => (t.pnl || 0) < 0);
     const winRate = closedTrades.length > 0 ? (wins.length / closedTrades.length) * 100 : 0;
-    const avgPnL = closedTrades.length > 0
-      ? closedTrades.reduce((sum, t) => sum + (t.pnl || 0), 0) / closedTrades.length
+    
+    // Calculate total PnL (sum of all trades)
+    const totalPnL = closedTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+    
+    // Calculate average PnL
+    const avgPnL = closedTrades.length > 0 ? totalPnL / closedTrades.length : 0;
+
+    // Calculate Profit Factor (total profits / total losses)
+    const totalProfit = wins.reduce((sum, t) => sum + (t.pnl || 0), 0);
+    const totalLoss = Math.abs(losses.reduce((sum, t) => sum + (t.pnl || 0), 0));
+    const profitFactor = totalLoss > 0 ? totalProfit / totalLoss : (totalProfit > 0 ? 999 : 0);
+
+    // Calculate Sharpe Ratio (simplified: average return / standard deviation of returns)
+    const returns = closedTrades.map(t => t.pnl || 0);
+    const avgReturn = returns.length > 0 ? returns.reduce((sum, r) => sum + r, 0) / returns.length : 0;
+    const variance = returns.length > 0
+      ? returns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / returns.length
       : 0;
+    const sharpeRatio = variance > 0 ? avgReturn / Math.sqrt(variance) : 0;
+
+    // Calculate Max Drawdown (simplified: maximum consecutive loss period)
+    let maxDrawdown = 0;
+    let runningPnL = 0;
+    let peakPnL = 0;
+    for (const trade of closedTrades) {
+      runningPnL += (trade.pnl || 0);
+      if (runningPnL > peakPnL) {
+        peakPnL = runningPnL;
+      }
+      const drawdown = peakPnL - runningPnL;
+      if (drawdown > maxDrawdown) {
+        maxDrawdown = drawdown;
+      }
+    }
+    // Convert to percentage if peakPnL > 0
+    const maxDrawdownPercent = peakPnL > 0 ? (maxDrawdown / peakPnL) * 100 : 0;
 
     // Find best performing bot configuration
     const bestBot = bots.reduce((best, bot) => {
@@ -147,7 +185,11 @@ class PairRecommendationsService {
     return {
       totalTrades: closedTrades.length,
       winRate,
+      totalPnL,
       avgPnL,
+      profitFactor,
+      sharpeRatio,
+      maxDrawdown: maxDrawdownPercent,
       bestStrategy: bestBot?.strategy,
       avgTradeAmount,
       avgLeverage,
@@ -219,15 +261,23 @@ class PairRecommendationsService {
       };
 
       // Build recommendation from optimization result
-      // Always return recommended=true and show all parameters, even if AI confidence is low
+      // If no historical trades, customize the reasoning to be more helpful
+      const hasHistoricalData = metrics.totalTrades > 0;
+      const defaultReasoning = hasHistoricalData
+        ? `Optimized settings for ${symbol} based on ${metrics.totalTrades} historical trades (${metrics.winRate.toFixed(1)}% win rate, $${metrics.totalPnL.toFixed(2)} PnL)`
+        : `Recommended settings for ${symbol} based on pair characteristics. No historical trades found - these are baseline recommendations to get started.`;
+
       return {
         symbol,
         recommended: true, // Always show as recommended (even with low confidence)
-        confidence: result.confidence || 0.6, // Use AI confidence or default to 0.6
-        reasoning: result.reasoning || `Optimized settings for ${symbol} based on pair characteristics and historical performance`,
+        confidence: result.confidence || (hasHistoricalData ? 0.7 : 0.6), // Higher confidence if we have data
+        reasoning: result.reasoning || defaultReasoning,
         strategy: completeStrategy, // Always include full strategy
         advancedConfig: completeAdvancedConfig, // Always include full advanced config
-        expectedPerformance: result.expectedImprovement || `Expected improved performance with optimized parameters for ${symbol}`,
+        expectedPerformance: result.expectedImprovement || 
+          (hasHistoricalData 
+            ? `Expected improved performance with optimized parameters for ${symbol}`
+            : `These baseline settings for ${symbol} are designed to start trading safely with pair-specific optimizations`),
         riskAssessment: this.getPairRiskAssessment(symbol),
         suggestedTradeAmount: pairBasicSettings.tradeAmount,
         suggestedLeverage: pairBasicSettings.leverage,
