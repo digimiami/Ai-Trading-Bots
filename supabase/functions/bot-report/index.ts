@@ -45,11 +45,13 @@ serve(async (req) => {
       .order('pnl', { ascending: false })
 
     // Total P&L from trades (more accurate) - filter by user_id
+    // Get ALL trades (not just filled/closed) to show accurate total counts
     const { data: tradesData } = await supabaseClient
       .from('trades')
       .select('pnl, fee, amount, price, bot_id, symbol, exchange, created_at, executed_at, status, entry_price, exit_price, side')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
+      .limit(10000) // Limit to prevent excessive data
 
     // Calculate total PnL from trades
     const totalPnLFromTrades = tradesData?.reduce((sum, t) => sum + (t.pnl || 0), 0) || 0
@@ -258,7 +260,9 @@ serve(async (req) => {
       },
       active_bots: activeBotsData?.map(bot => {
         // Calculate fees for this bot from trades
-        const botTrades = tradesData?.filter(t => t.bot_id === bot.id && ['filled', 'closed', 'completed'].includes(t.status || '')) || []
+        // Include all trades for fee calculation, but filter for filled/closed/completed for PnL
+        const botTrades = tradesData?.filter(t => t.bot_id === bot.id && ['filled', 'closed', 'completed'].includes((t as any).status || '')) || []
+        const allBotTrades = tradesData?.filter(t => t.bot_id === bot.id) || []
         const botFees = botTrades.reduce((sum, t) => {
           let fee = t.fee || 0
           // Calculate fee if not stored
@@ -362,7 +366,7 @@ serve(async (req) => {
           pnl: botPnL,
           total_fees: Math.round(botFees * 100) / 100,
           net_profit_loss: Math.round(netProfitLoss * 100) / 100,
-          total_trades: bot.total_trades || 0,
+          total_trades: allBotTrades.length || bot.total_trades || 0,
           win_rate: Math.round(winRate * 10) / 10,
           win_trades: winTrades,
           loss_trades: lossTrades,
