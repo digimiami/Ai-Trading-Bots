@@ -194,7 +194,9 @@ serve(async (req) => {
           let runningPnL = 0
           
           for (const t of sortedTrades) {
-            runningPnL += (t.pnl || 0)
+            // Use the calculated PnL (which may have been computed from entry/exit prices)
+            const tradePnL = t.pnl || 0
+            runningPnL += tradePnL
             if (runningPnL > peakPnL) {
               peakPnL = runningPnL
             }
@@ -216,10 +218,24 @@ serve(async (req) => {
     }
     
     // Update contract summary with bot P&L if trades don't have P&L
+    // But first, ensure we have at least some data even if trades don't have exit_price
     for (const contractKey in contractSummary) {
       const contract = contractSummary[contractKey]
-      // If contract has no P&L from trades, use bot P&L
-      if (contract.total_net_pnl === 0) {
+      
+      // If we have trades but no win/loss counts, try to calculate from bot P&L
+      // This handles cases where trades are open positions (no exit_price yet)
+      if (contract.total_trades > 0 && contract.win_trades === 0 && contract.loss_trades === 0) {
+        // Try to use bot-level data if available
+        const botPnL = botPnLByContract.get(contractKey) || 0
+        
+        // If bot has P&L but trades don't, we can't calculate win/loss accurately
+        // But we can at least show the bot P&L
+        if (botPnL !== 0 && contract.total_net_pnl === 0) {
+          contract.total_net_pnl = botPnL
+          contract.net_profit_loss = botPnL - contract.total_fees_paid
+        }
+      } else if (contract.total_net_pnl === 0 && contract.total_trades === 0) {
+        // If no trades but bot has P&L, use bot P&L
         const botPnL = botPnLByContract.get(contractKey) || 0
         if (botPnL !== 0) {
           contract.total_net_pnl = botPnL
