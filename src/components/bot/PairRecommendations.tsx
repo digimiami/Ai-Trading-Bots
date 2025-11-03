@@ -37,6 +37,7 @@ export default function PairRecommendations({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [hasAnyProvider, setHasAnyProvider] = useState(false);
   const [aiProvider, setAiProvider] = useState<'openai' | 'deepseek'>(() => {
     // Load from localStorage or default
     const saved = localStorage.getItem('ai_provider_preference');
@@ -92,6 +93,10 @@ export default function PairRecommendations({
     // Check AI keys from Edge Function secrets on mount
     const checkKeys = async () => {
       await openAIService.checkKeysFromEdgeFunction();
+      // Check availability after Edge Function check
+      const openai = await openAIService.isProviderAvailableAsync('openai');
+      const deepseek = await openAIService.isProviderAvailableAsync('deepseek');
+      setHasAnyProvider(openai || deepseek);
       // Force re-render to update availability status
       setAiProvider(prev => prev); // Trigger re-check
     };
@@ -195,20 +200,8 @@ export default function PairRecommendations({
 
   // If no recommendation but also no error/loading, show manual trigger button
   if (!recommendation && !error && !loading) {
-    // Check both sync (for immediate render) and async (for Edge Function secrets)
-    const [hasAnyProvider, setHasAnyProvider] = useState(false);
-    
-    useEffect(() => {
-      const check = async () => {
-        const openai = await openAIService.isProviderAvailableAsync('openai');
-        const deepseek = await openAIService.isProviderAvailableAsync('deepseek');
-        setHasAnyProvider(openai || deepseek);
-      };
-      check();
-    }, []);
-    
-    const hasAnyProviderSync = openAIService.isProviderAvailable('openai') || openAIService.isProviderAvailable('deepseek');
-    const finalHasAnyProvider = hasAnyProvider || hasAnyProviderSync;
+    // Use state value from useEffect (checks Edge Function secrets)
+    const finalHasAnyProvider = hasAnyProvider || openAIService.isProviderAvailable('openai') || openAIService.isProviderAvailable('deepseek');
     
     return (
       <Card className="p-4 border-2 border-gray-200 bg-gray-50">
