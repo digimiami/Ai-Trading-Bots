@@ -132,9 +132,10 @@ serve(async (req) => {
 
     // Try to get user from session (for manual calls)
     let user: any = null;
+    let userResult: any = null;
     
     try {
-      const userResult = await supabaseClient.auth.getUser();
+      userResult = await supabaseClient.auth.getUser();
       user = userResult.data?.user || null;
     } catch (authError) {
       // Auth might fail for cron jobs using service role key - that's OK, we'll handle it below
@@ -323,16 +324,35 @@ serve(async (req) => {
           throw new Error('notification_type is required')
         }
 
+        // For cron jobs (service role auth), we need to use a service role client to bypass RLS
+        const isServiceRole = !userResult?.data?.user && req.headers.get('Authorization')?.includes(Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '');
+        const queryClient = isServiceRole 
+          ? createClient(
+              Deno.env.get('SUPABASE_URL') ?? '',
+              Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+            )
+          : supabaseClient;
+
+        console.log(`🔍 Looking up Telegram config for user_id: ${user.id}`);
+        
         // Get user's Telegram config
-        const { data: config, error: configError } = await supabaseClient
+        const { data: config, error: configError } = await queryClient
           .from('telegram_config')
           .select('*')
           .eq('user_id', user.id)
           .single()
 
-        if (configError || !config) {
-          throw new Error('Telegram not configured')
+        if (configError) {
+          console.error('❌ Telegram config query error:', configError);
+          throw new Error(`Telegram not configured: ${configError.message || 'No config found for this user'}`)
         }
+        
+        if (!config) {
+          console.warn('⚠️ No Telegram config found for user_id:', user.id);
+          throw new Error('Telegram not configured. Please configure Telegram in Settings → Notifications.')
+        }
+        
+        console.log(`✅ Telegram config found for user_id: ${user.id}, enabled: ${config.enabled}`);
 
         // Check if this notification type is enabled
         if (!config.enabled || !(config.notifications as any)[notification_type]) {
