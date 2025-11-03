@@ -55,6 +55,7 @@ jobs:
           supabase functions deploy profile-management --no-verify-jwt || echo "⚠️ profile-management deployment failed"
           supabase functions deploy risk-management --no-verify-jwt || echo "⚠️ risk-management deployment failed"
           supabase functions deploy invitation-management --no-verify-jwt || echo "⚠️ invitation-management deployment failed"
+          supabase functions deploy check-ai-keys --no-verify-jwt || echo "⚠️ check-ai-keys deployment failed"
           
           echo "✅ Edge functions deployment completed!"
       
