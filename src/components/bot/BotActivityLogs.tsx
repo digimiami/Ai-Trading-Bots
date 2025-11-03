@@ -191,6 +191,95 @@ export default function BotActivityLogs({ activity, onClearLogs, onSimulateActiv
         </div>
       </div>
 
+      {/* Performance Metrics Section */}
+      {performanceMetrics && (
+        <div className="mb-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-lg">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-sm font-semibold text-gray-900 flex items-center">
+              <i className="ri-line-chart-line mr-2 text-blue-600"></i>
+              Performance Metrics
+            </h4>
+            {performanceLog && (
+              <span className="text-xs text-gray-500">
+                Updated: {formatTime(performanceLog.timestamp)}
+              </span>
+            )}
+          </div>
+          
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {/* Win Trades */}
+            <div className="bg-white rounded-lg p-3 border border-green-200">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-gray-600">Win Trades</span>
+                <i className="ri-arrow-up-line text-green-600"></i>
+              </div>
+              <div className="text-xl font-bold text-green-600">{winTrades}</div>
+              <div className="text-xs text-gray-500">
+                {totalTrades > 0 ? `${((winTrades / totalTrades) * 100).toFixed(1)}%` : '0%'} of total
+              </div>
+            </div>
+
+            {/* Loss Trades */}
+            <div className="bg-white rounded-lg p-3 border border-red-200">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-gray-600">Loss Trades</span>
+                <i className="ri-arrow-down-line text-red-600"></i>
+              </div>
+              <div className="text-xl font-bold text-red-600">{lossTrades}</div>
+              <div className="text-xs text-gray-500">
+                {totalTrades > 0 ? `${((lossTrades / totalTrades) * 100).toFixed(1)}%` : '0%'} of total
+              </div>
+            </div>
+
+            {/* Win Rate */}
+            <div className="bg-white rounded-lg p-3 border border-blue-200">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-gray-600">Win Rate</span>
+                <i className="ri-percent-line text-blue-600"></i>
+              </div>
+              <div className="text-xl font-bold text-blue-600">{winRate.toFixed(1)}%</div>
+              <div className="text-xs text-gray-500">
+                {totalTrades} total trades
+              </div>
+            </div>
+
+            {/* Drawdown */}
+            <div className="bg-white rounded-lg p-3 border border-orange-200">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-gray-600">Drawdown</span>
+                <i className="ri-line-chart-line text-orange-600"></i>
+              </div>
+              <div className="text-xl font-bold text-orange-600">
+                ${drawdown.toFixed(2)}
+              </div>
+              <div className="text-xs text-gray-500">
+                {drawdownPercentage.toFixed(1)}% of peak
+              </div>
+            </div>
+          </div>
+
+          {/* Additional Performance Details */}
+          {performanceMetrics.peakPnL !== undefined && (
+            <div className="mt-3 pt-3 border-t border-blue-200 grid grid-cols-2 gap-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-gray-600">Peak P&L:</span>
+                <span className="font-medium text-green-600">
+                  ${(performanceMetrics.peakPnL || 0).toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">Current P&L:</span>
+                <span className={`font-medium ${
+                  (performanceMetrics.currentPnL || 0) >= 0 ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  ${(performanceMetrics.currentPnL || 0).toFixed(2)}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Activity Stats */}
       <div className="grid grid-cols-4 gap-4 mb-4">
         <div className="text-center">
