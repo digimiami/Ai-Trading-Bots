@@ -288,7 +288,8 @@ serve(async (req) => {
           lastTradeAt: bot.last_trade_at,
           riskLevel: bot.risk_level,
           strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy,
-          aiMlEnabled: bot.ai_ml_enabled || false
+          aiMlEnabled: bot.ai_ml_enabled || false,
+          paperTrading: bot.paper_trading || false
         }
 
         return new Response(
@@ -331,7 +332,8 @@ serve(async (req) => {
           lastTradeAt: bot.last_trade_at,
           riskLevel: bot.risk_level,
           strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy,
-          aiMlEnabled: bot.ai_ml_enabled || false
+          aiMlEnabled: bot.ai_ml_enabled || false,
+          paperTrading: bot.paper_trading || false
         }
 
         return new Response(
@@ -368,7 +370,8 @@ serve(async (req) => {
           lastTradeAt: bot.last_trade_at,
           riskLevel: bot.risk_level,
           strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy,
-          aiMlEnabled: bot.ai_ml_enabled || false
+          aiMlEnabled: bot.ai_ml_enabled || false,
+          paperTrading: bot.paper_trading || false
         }
 
         return new Response(
