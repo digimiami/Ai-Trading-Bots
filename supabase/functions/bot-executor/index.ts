@@ -1969,10 +1969,7 @@ class BotExecutor {
         try {
           console.log(`🛡️ Attempting to close unprotected position: ${symbol} ${actualPositionSide}`);
           
-          // Get opposite side to close position
-          const closeSide = actualPositionSide === 'Buy' ? 'Sell' : 'Buy';
-          
-          // Re-fetch position to get current size
+          // Re-fetch position to get current size and ACTUAL side
           const closeCheckTimestamp = Date.now().toString();
           const closeCheckQuery = `category=linear&symbol=${symbol}`;
           const closeCheckSigPayload = closeCheckTimestamp + apiKey + recvWindow + closeCheckQuery;
@@ -1990,6 +1987,7 @@ class BotExecutor {
           
           const closeCheckData = await closeCheckResponse.json();
           let closePositionSize = 0;
+          let actualClosePositionSide = actualPositionSide; // Default to what we detected earlier
           
           if (closeCheckData.retCode === 0 && closeCheckData.result?.list) {
             const closePosition = closeCheckData.result.list.find((p: any) => {
@@ -1997,12 +1995,30 @@ class BotExecutor {
               return size !== 0;
             });
             if (closePosition) {
-              closePositionSize = Math.abs(parseFloat(closePosition.size || '0'));
+              const rawSize = parseFloat(closePosition.size || '0');
+              closePositionSize = Math.abs(rawSize);
+              
+              // CRITICAL: Re-determine position side from actual position data
+              // Positive size = Long (Buy), Negative size = Short (Sell)
+              actualClosePositionSide = rawSize > 0 ? 'Buy' : 'Sell';
+              
+              // Also check position.side if available (some Bybit responses include this)
+              const bybitCloseSide = closePosition.side;
+              if (bybitCloseSide && (bybitCloseSide === 'Buy' || bybitCloseSide === 'Sell')) {
+                actualClosePositionSide = bybitCloseSide;
+                console.log(`📊 Using Bybit reported side for closure: ${actualClosePositionSide}`);
+              }
+              
+              console.log(`📊 Position closure check: size=${rawSize}, detected side=${actualClosePositionSide}, bybit side=${bybitCloseSide || 'not reported'}`);
             }
           }
           
+          // Get opposite side to close position (use the ACTUAL detected side)
+          const closeSide = actualClosePositionSide === 'Buy' ? 'Sell' : 'Buy';
+          console.log(`🛡️ Closing ${actualClosePositionSide} position with ${closeSide} order (reduceOnly)`);
+          
           if (closePositionSize > 0) {
-            console.log(`🛡️ Closing position: ${symbol} ${actualPositionSide}, Size: ${closePositionSize}`);
+            console.log(`🛡️ Closing position: ${symbol} ${actualClosePositionSide}, Size: ${closePositionSize}`);
             
             // CRITICAL: Use bot's actual trading type to determine category
             const botTradingType = bot?.tradingType || bot?.trading_type || 'futures';
@@ -2101,10 +2117,10 @@ class BotExecutor {
                 await this.addBotLog(bot.id, {
                   level: 'warning',
                   category: 'trade',
-                  message: `🛡️ Unprotected position closed: ${symbol} ${actualPositionSide} (safety protocol)`,
+                  message: `🛡️ Unprotected position closed: ${symbol} ${actualClosePositionSide} (safety protocol)`,
                   details: {
                     symbol,
-                    originalSide: actualPositionSide,
+                    originalSide: actualClosePositionSide,
                     closeSide,
                     positionSize: closePositionSize,
                     closeOrderId: closeOrderResult?.orderId,
