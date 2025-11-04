@@ -186,14 +186,100 @@ export default function PaperTradingPerformance() {
           }
         }
 
-        const totalWins = winningTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
-        const totalLosses = Math.abs(losingTrades.reduce((sum, t) => sum + (t.pnl || 0), 0));
+        // Calculate performance by pair
+        const pairsMap = new Map<string, PairPerformance>();
         
-        const initialBalance = account?.initial_balance || 10000;
-        const winRate = trades.length > 0 ? (winningTrades.length / trades.length) * 100 : 0;
-        const averageWin = winningTrades.length > 0 ? totalWins / winningTrades.length : 0;
-        const averageLoss = losingTrades.length > 0 ? totalLosses / losingTrades.length : 0;
-        const profitFactor = totalLosses > 0 ? totalWins / totalLosses : totalWins > 0 ? 999 : 0;
+        // Process closed trades by symbol
+        trades.forEach((trade: any) => {
+          const symbol = trade.symbol || 'UNKNOWN';
+          if (!pairsMap.has(symbol)) {
+            pairsMap.set(symbol, {
+              symbol: symbol,
+              totalTrades: 0,
+              winningTrades: 0,
+              losingTrades: 0,
+              winRate: 0,
+              totalPnL: 0,
+              totalFees: 0,
+              totalVolume: 0,
+              averageWin: 0,
+              averageLoss: 0,
+              profitFactor: 0,
+              openPositions: 0,
+              unrealizedPnL: 0
+            });
+          }
+          
+          const pairPerf = pairsMap.get(symbol)!;
+          pairPerf.totalTrades++;
+          pairPerf.totalPnL += trade.pnl || 0;
+          pairPerf.totalFees += trade.fees || 0;
+          pairPerf.totalVolume += parseFloat(trade.quantity || 0) * parseFloat(trade.price || 0);
+          
+          if ((trade.pnl || 0) > 0) {
+            pairPerf.winningTrades++;
+          } else if ((trade.pnl || 0) < 0) {
+            pairPerf.losingTrades++;
+          }
+        });
+        
+        // Process open positions by symbol
+        if (openPositions && positionsWithPrices) {
+          openPositions.forEach((position: any) => {
+            const symbol = position.symbol || 'UNKNOWN';
+            if (!pairsMap.has(symbol)) {
+              pairsMap.set(symbol, {
+                symbol: symbol,
+                totalTrades: 0,
+                winningTrades: 0,
+                losingTrades: 0,
+                winRate: 0,
+                totalPnL: 0,
+                totalFees: 0,
+                totalVolume: 0,
+                averageWin: 0,
+                averageLoss: 0,
+                profitFactor: 0,
+                openPositions: 0,
+                unrealizedPnL: 0
+              });
+            }
+            
+            const pairPerf = pairsMap.get(symbol)!;
+            pairPerf.openPositions++;
+            // Get unrealized PnL from positionsWithPrices
+            const positionWithPrice = positionsWithPrices.find((p: any) => p.id === position.id);
+            if (positionWithPrice) {
+              pairPerf.unrealizedPnL += positionWithPrice.unrealized_pnl || 0;
+            } else {
+              // Fallback to stored unrealized_pnl
+              pairPerf.unrealizedPnL += parseFloat(position.unrealized_pnl || 0);
+            }
+          });
+        }
+        
+        // Calculate final metrics for each pair
+        const pairsPerformance: PairPerformance[] = Array.from(pairsMap.values()).map((pair) => {
+          const pairTrades = trades.filter((t: any) => (t.symbol || 'UNKNOWN') === pair.symbol);
+          const pairWinningTrades = pairTrades.filter((t: any) => (t.pnl || 0) > 0);
+          const pairLosingTrades = pairTrades.filter((t: any) => (t.pnl || 0) < 0);
+          
+          const pairTotalWins = pairWinningTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+          const pairTotalLosses = Math.abs(pairLosingTrades.reduce((sum, t) => sum + (t.pnl || 0), 0));
+          
+          return {
+            ...pair,
+            winRate: pair.totalTrades > 0 ? (pair.winningTrades / pair.totalTrades) * 100 : 0,
+            averageWin: pair.winningTrades > 0 ? pairTotalWins / pair.winningTrades : 0,
+            averageLoss: pair.losingTrades > 0 ? pairTotalLosses / pair.losingTrades : 0,
+            profitFactor: pairTotalLosses > 0 ? pairTotalWins / pairTotalLosses : pairTotalWins > 0 ? 999 : 0
+          };
+        }).sort((a, b) => {
+          // Sort by total PnL (realized + unrealized) descending
+          const aTotal = a.totalPnL + a.unrealizedPnL;
+          const bTotal = b.totalPnL + b.unrealizedPnL;
+          return bTotal - aTotal;
+        });
 
         setPerformance({
           totalTrades: trades.length,
