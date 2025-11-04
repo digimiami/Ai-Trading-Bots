@@ -3172,27 +3172,47 @@ class PaperTradingExecutor {
   
   // Get or create paper trading account
   private async getPaperAccount(): Promise<any> {
-    let { data: account } = await this.supabaseClient
-      .from('paper_trading_accounts')
-      .select('*')
-      .eq('user_id', this.user.id)
-      .single();
-    
-    if (!account) {
-      // Create default account with $10,000
-      const { data: newAccount } = await this.supabaseClient
+    try {
+      let { data: account, error: fetchError } = await this.supabaseClient
         .from('paper_trading_accounts')
-        .insert({
-          user_id: this.user.id,
-          balance: 10000,
-          initial_balance: 10000
-        })
-        .select()
+        .select('*')
+        .eq('user_id', this.user.id)
         .single();
-      return newAccount;
+      
+      // If account doesn't exist or query failed, create one
+      if (!account || fetchError) {
+        console.log(`📝 [PAPER] Creating new paper trading account for user ${this.user.id}`);
+        
+        const { data: newAccount, error: insertError } = await this.supabaseClient
+          .from('paper_trading_accounts')
+          .insert({
+            user_id: this.user.id,
+            balance: 10000,
+            initial_balance: 10000,
+            total_deposited: 0,
+            total_withdrawn: 0
+          })
+          .select()
+          .single();
+        
+        if (insertError) {
+          console.error(`❌ [PAPER] Failed to create account:`, insertError);
+          throw new Error(`Failed to create paper trading account: ${insertError.message}`);
+        }
+        
+        if (!newAccount) {
+          throw new Error('Failed to create paper trading account: No data returned');
+        }
+        
+        console.log(`✅ [PAPER] Created paper trading account:`, newAccount.id);
+        return newAccount;
+      }
+      
+      return account;
+    } catch (error) {
+      console.error(`❌ [PAPER] Error getting paper account:`, error);
+      throw error;
     }
-    
-    return account;
   }
   
   // Add funds to paper trading account
@@ -3223,7 +3243,16 @@ class PaperTradingExecutor {
       
       // Get account balance
       const account = await this.getPaperAccount();
-      const availableBalance = parseFloat(account.balance);
+      
+      if (!account) {
+        throw new Error('Paper trading account not found and could not be created');
+      }
+      
+      if (!account.balance && account.balance !== 0) {
+        throw new Error(`Invalid account balance: ${account.balance}`);
+      }
+      
+      const availableBalance = parseFloat(account.balance || 10000);
       
       // Get REAL market data from MAINNET (same as real trading)
       const currentPrice = await MarketDataFetcher.fetchPrice(
@@ -3439,6 +3468,12 @@ class PaperTradingExecutor {
           
           // Return margin + PnL to account
           const account = await this.getPaperAccount();
+          
+          if (!account || !account.balance) {
+            console.error(`❌ [PAPER] Invalid account when closing position:`, account);
+            throw new Error('Paper trading account not found');
+          }
+          
           const marginReturn = parseFloat(position.margin_used);
           const newBalance = parseFloat(account.balance) + marginReturn + finalPnL;
           
