@@ -17,6 +17,22 @@ interface PaperPosition {
   opened_at: string;
 }
 
+interface PairPerformance {
+  symbol: string;
+  totalTrades: number;
+  winningTrades: number;
+  losingTrades: number;
+  winRate: number;
+  totalPnL: number;
+  totalFees: number;
+  totalVolume: number;
+  averageWin: number;
+  averageLoss: number;
+  profitFactor: number;
+  openPositions: number;
+  unrealizedPnL: number;
+}
+
 interface PaperPerformance {
   totalTrades: number;
   winningTrades: number;
@@ -34,6 +50,7 @@ interface PaperPerformance {
   initialBalance: number;
   openPositions: number;
   totalVolume: number;
+  pairsPerformance: PairPerformance[];
 }
 
 export default function PaperTradingPerformance() {
@@ -168,6 +185,15 @@ export default function PaperTradingPerformance() {
           }
         }
 
+        const totalWins = winningTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+        const totalLosses = Math.abs(losingTrades.reduce((sum, t) => sum + (t.pnl || 0), 0));
+        
+        const initialBalance = account?.initial_balance || 10000;
+        const winRate = trades.length > 0 ? (winningTrades.length / trades.length) * 100 : 0;
+        const averageWin = winningTrades.length > 0 ? totalWins / winningTrades.length : 0;
+        const averageLoss = losingTrades.length > 0 ? totalLosses / losingTrades.length : 0;
+        const profitFactor = totalLosses > 0 ? totalWins / totalLosses : totalWins > 0 ? 999 : 0;
+
         setPerformance({
           totalTrades: trades.length,
           winningTrades: winningTrades.length,
@@ -184,7 +210,8 @@ export default function PaperTradingPerformance() {
           currentBalance: account?.balance || initialBalance,
           initialBalance: initialBalance,
           openPositions: openPositions?.length || 0,
-          totalVolume: totalVolume
+          totalVolume: totalVolume,
+          pairsPerformance: pairsPerformance
         });
       } else {
         // No trades yet
@@ -204,7 +231,8 @@ export default function PaperTradingPerformance() {
           currentBalance: account?.balance || 10000,
           initialBalance: account?.initial_balance || 10000,
           openPositions: openPositions?.length || 0,
-          totalVolume: 0
+          totalVolume: 0,
+          pairsPerformance: []
         });
       }
     } catch (error) {
@@ -438,6 +466,107 @@ export default function PaperTradingPerformance() {
           </div>
         )}
       </Card>
+
+      {/* Performance by Pair */}
+      {performance.pairsPerformance && performance.pairsPerformance.length > 0 && (
+        <Card className="p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">
+            📊 Performance by Trading Pair
+            <span className="ml-2 text-sm font-normal text-gray-500">
+              ({performance.pairsPerformance.length} {performance.pairsPerformance.length === 1 ? 'pair' : 'pairs'})
+            </span>
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {performance.pairsPerformance.map((pair) => {
+              const totalPnLWithUnrealized = pair.totalPnL + pair.unrealizedPnL;
+              
+              return (
+                <div
+                  key={pair.symbol}
+                  className="p-4 bg-gray-50 rounded-lg border border-gray-200 hover:shadow-md transition-shadow"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-semibold text-gray-900 text-lg">{pair.symbol}</h4>
+                    <div className={`text-right ${totalPnLWithUnrealized >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      <div className="text-xl font-bold">
+                        {totalPnLWithUnrealized >= 0 ? '+' : ''}${totalPnLWithUnrealized.toFixed(2)}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {pair.unrealizedPnL !== 0 && (
+                          <span>
+                            ${pair.totalPnL.toFixed(2)} realized
+                            {pair.unrealizedPnL > 0 ? ' +' : ' '}
+                            ${pair.unrealizedPnL.toFixed(2)} unrealized
+                          </span>
+                        )}
+                        {pair.unrealizedPnL === 0 && pair.totalPnL !== 0 && (
+                          <span>Realized PnL</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                    <div>
+                      <span className="text-gray-500 block text-xs mb-1">Win Rate</span>
+                      <span className={`font-semibold ${pair.winRate >= 50 ? 'text-green-600' : 'text-red-600'}`}>
+                        {pair.winRate.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 block text-xs mb-1">Trades</span>
+                      <span className="font-semibold text-gray-900">
+                        {pair.totalTrades} ({pair.winningTrades}W / {pair.losingTrades}L)
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 block text-xs mb-1">Profit Factor</span>
+                      <span className={`font-semibold ${pair.profitFactor >= 1 ? 'text-green-600' : 'text-red-600'}`}>
+                        {pair.profitFactor.toFixed(2)}x
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 block text-xs mb-1">Open Positions</span>
+                      <span className="font-semibold text-gray-900">
+                        {pair.openPositions}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div className="pt-3 border-t border-gray-200">
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-gray-500">Avg Win:</span>
+                        <span className="ml-1 font-medium text-green-600">
+                          ${pair.averageWin.toFixed(2)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Avg Loss:</span>
+                        <span className="ml-1 font-medium text-red-600">
+                          ${pair.averageLoss.toFixed(2)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Volume:</span>
+                        <span className="ml-1 font-medium text-gray-900">
+                          ${pair.totalVolume.toFixed(2)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500">Fees:</span>
+                        <span className="ml-1 font-medium text-red-600">
+                          ${pair.totalFees.toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
