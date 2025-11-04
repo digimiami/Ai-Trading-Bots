@@ -323,7 +323,8 @@ serve(async (req) => {
         }, 0)
         
         // Calculate win/loss trades and drawdown
-        // Process ALL trades and calculate PnL where possible
+        // Process ALL trades and calculate PnL where possible (same logic as Performance page)
+        // First, try to calculate PnL from entry/exit prices for trades that don't have it
         const processedTrades = allBotTrades.map(t => {
           let calculatedPnL = parseFloat(t.pnl) || 0
           
@@ -347,46 +348,104 @@ serve(async (req) => {
           return { ...t, calculatedPnL }
         })
         
-        // For win/loss: count trades that have been closed (have exit_price) OR have non-zero PnL
-        // Also check if bot has PnL but no closed trades - this might indicate positions were closed
-        // but trades weren't updated with exit_price
-        const closedTrades = processedTrades.filter(t => {
-          const hasExitPrice = !!(t as any).exit_price
-          const hasNonZeroPnL = (t as any).calculatedPnL !== 0 && (t as any).calculatedPnL !== null && (t as any).calculatedPnL !== undefined
-          const isClosedStatus = ['closed', 'completed'].includes((t.status || '').toLowerCase())
+        // For spot trading, match buy/sell pairs to calculate PnL (FIFO matching)
+        // This is the same logic as usePerformance hook
+        if (bot.trading_type === 'spot') {
+          // Sort trades by execution time (oldest first)
+          const sortedTrades = [...processedTrades].sort((a, b) => {
+            const dateA = new Date((a as any).executed_at || a.created_at || 0).getTime()
+            const dateB = new Date((b as any).executed_at || b.created_at || 0).getTime()
+            return dateA - dateB
+          })
           
-          // Include if any of these conditions are true
-          return hasExitPrice || hasNonZeroPnL || isClosedStatus
-        })
-        
-        // If no closed trades but bot has PnL, try to infer from bot PnL
-        // This handles cases where positions were closed but trades weren't updated
-        let winTrades = closedTrades.filter(t => (t as any).calculatedPnL > 0).length
-        let lossTrades = closedTrades.filter(t => (t as any).calculatedPnL < 0).length
-        let totalClosedTrades = closedTrades.length
-        
-        // Fallback: If bot has PnL but no closed trades, try to estimate from bot performance
-        // This is a heuristic - if bot has positive PnL, assume at least some wins
-        if (totalClosedTrades === 0 && bot.pnl !== 0 && bot.pnl !== null && bot.win_rate !== null && bot.win_rate !== undefined && bot.win_rate > 0) {
-          // Use bot's stored win_rate if available
-          const estimatedTotalTrades = Math.max(1, Math.round(bot.total_trades || allBotTrades.length))
-          winTrades = Math.round((bot.win_rate / 100) * estimatedTotalTrades)
-          lossTrades = estimatedTotalTrades - winTrades
-          totalClosedTrades = estimatedTotalTrades
+          const buys: any[] = []
+          const sells: any[] = []
+          
+          sortedTrades.forEach((t: any) => {
+            const side = ((t as any).side || 'long').toLowerCase()
+            if (side === 'long' || side === 'buy') {
+              buys.push(t)
+            } else if (side === 'short' || side === 'sell') {
+              sells.push(t)
+            }
+          })
+          
+          // Match buy/sell pairs using FIFO
+          let buyIndex = 0
+          const matchedTrades = new Map<string, any>()
+          
+          sells.forEach((sell: any) => {
+            while (buyIndex < buys.length) {
+              const buy = buys[buyIndex]
+              
+              const buyPrice = parseFloat(buy.entry_price || buy.price || 0)
+              const sellPrice = parseFloat(sell.entry_price || sell.price || 0)
+              const buySize = parseFloat(buy.size || buy.amount || 0)
+              const sellSize = parseFloat(sell.size || sell.amount || 0)
+              
+              if (buyPrice > 0 && sellPrice > 0 && buySize > 0 && sellSize > 0) {
+                const matchedSize = Math.min(buySize, sellSize)
+                const pnl = (sellPrice - buyPrice) * matchedSize
+                
+                // Update buy trade PnL
+                if (!matchedTrades.has(buy.id)) {
+                  matchedTrades.set(buy.id, { ...buy, calculatedPnL: pnl, matched: true })
+                } else {
+                  const existing = matchedTrades.get(buy.id)
+                  matchedTrades.set(buy.id, { ...existing, calculatedPnL: (existing.calculatedPnL || 0) + pnl })
+                }
+                
+                // Update sell trade PnL
+                if (!matchedTrades.has(sell.id)) {
+                  matchedTrades.set(sell.id, { ...sell, calculatedPnL: pnl, matched: true })
+                } else {
+                  const existing = matchedTrades.get(sell.id)
+                  matchedTrades.set(sell.id, { ...existing, calculatedPnL: (existing.calculatedPnL || 0) + pnl })
+                }
+                
+                if (sellSize >= buySize) {
+                  buyIndex++
+                  break
+                } else {
+                  buys[buyIndex] = { ...buy, size: buySize - sellSize }
+                  break
+                }
+              } else {
+                buyIndex++
+              }
+            }
+          })
+          
+          // Merge matched trades back into processedTrades
+          processedTrades.forEach((t, index) => {
+            if (matchedTrades.has(t.id)) {
+              processedTrades[index] = matchedTrades.get(t.id)
+            }
+          })
         }
         
-        const winRate = totalClosedTrades > 0 ? (winTrades / totalClosedTrades) * 100 : (bot.win_rate || 0)
+        // For win/loss: count trades that have actual PnL (non-zero), not just closed trades
+        // This matches the Performance page logic which uses tradesWithPnL
+        const tradesWithPnL = processedTrades.filter(t => {
+          const pnl = (t as any).calculatedPnL || 0
+          return !isNaN(pnl) && pnl !== 0
+        })
         
-        // Calculate drawdown
+        const winTrades = tradesWithPnL.filter(t => (t as any).calculatedPnL > 0).length
+        const lossTrades = tradesWithPnL.filter(t => (t as any).calculatedPnL < 0).length
+        const totalTradesWithPnL = tradesWithPnL.length
+        const winRate = totalTradesWithPnL > 0 ? (winTrades / totalTradesWithPnL) * 100 : (bot.win_rate || 0)
+        
+        // Calculate drawdown from trades with PnL (same as Performance page)
         let drawdown = 0
         let drawdownPercentage = 0
         let peakPnL = 0
         let currentPnL = 0
         
-        // Use closedTrades for drawdown calculation (only closed trades have realized PnL)
-        if (closedTrades.length > 0) {
+        // Use tradesWithPnL for drawdown calculation (only trades with actual PnL)
+        if (tradesWithPnL.length > 0) {
           // Sort trades by execution time (oldest first)
-          const sortedTrades = [...closedTrades].sort((a, b) => {
+          const sortedTrades = [...tradesWithPnL].sort((a, b) => {
             const dateA = new Date((a as any).executed_at || a.created_at || 0).getTime()
             const dateB = new Date((b as any).executed_at || b.created_at || 0).getTime()
             return dateA - dateB
@@ -407,9 +466,7 @@ serve(async (req) => {
           currentPnL = runningPnL
           drawdownPercentage = peakPnL > 0 ? (drawdown / peakPnL) * 100 : 0
         } else if (bot.pnl !== 0 && bot.pnl !== null) {
-          // Fallback: if no closed trades but bot has PnL, use bot PnL for peak/current
-          // This handles cases where positions are still open (no exit_price yet)
-          // For drawdown, if bot has negative PnL, that's the current drawdown
+          // Fallback: if no trades with PnL but bot has PnL, use bot PnL for peak/current
           peakPnL = bot.pnl > 0 ? bot.pnl : 0
           currentPnL = bot.pnl
           if (bot.pnl < 0) {
