@@ -314,14 +314,24 @@ serve(async (req) => {
         // Get ALL trades for this bot (including pending/open positions for total count)
         const allBotTrades = tradesData?.filter(t => t.bot_id === bot.id) || []
         
+        console.log(`📊 Bot ${bot.name} (${bot.id.substring(0, 8)}): Found ${allBotTrades.length} trades`)
+        
+        // Debug: Log sample trade to see what fields are available
+        if (allBotTrades.length > 0) {
+          const sampleTrade = allBotTrades[0]
+          console.log(`📊 Bot ${bot.name} sample trade: amount=${sampleTrade.amount || 'null'}, size=${(sampleTrade as any).size || 'null'}, price=${sampleTrade.price || 'null'}, entry_price=${(sampleTrade as any).entry_price || 'null'}, fee=${sampleTrade.fee || 'null'}`)
+        }
+        
         // For fees: calculate from ALL trades (including open positions)
         // Every trade that executes has a fee, even if it's an opening position
         // CRITICAL: Always calculate fee even if stored fee is 0 (trades are inserted with fee: 0)
         const botFees = allBotTrades.reduce((sum, t) => {
           let fee = 0
           // Always calculate fee from amount and price (trades are stored with fee: 0)
-          const amount = parseFloat(t.amount || t.size || 0)
-          const price = parseFloat(t.price || t.entry_price || 0)
+          const amount = parseFloat(t.amount || (t as any).size || 0)
+          const price = parseFloat(t.price || (t as any).entry_price || 0)
+          
+          console.log(`📊 Bot ${bot.name} trade fee calc: amount=${amount}, price=${price}, amount*price=${amount * price}`)
           
           if (amount > 0 && price > 0) {
             const tradeValue = amount * price
@@ -332,12 +342,16 @@ serve(async (req) => {
             } else {
               fee = tradeValue * 0.001 // Default 0.1%
             }
+            console.log(`📊 Bot ${bot.name} calculated fee: $${fee.toFixed(4)} (tradeValue=$${tradeValue.toFixed(2)}, exchange=${bot.exchange}, type=${bot.trading_type})`)
+          } else {
+            console.log(`⚠️ Bot ${bot.name} trade skipped fee calc: amount=${amount}, price=${price} (both must be > 0)`)
           }
           
           // Use stored fee only if it's greater than calculated (shouldn't happen, but safety)
           const storedFee = parseFloat(t.fee || 0)
           if (storedFee > fee) {
             fee = storedFee
+            console.log(`📊 Bot ${bot.name} using stored fee: $${fee.toFixed(4)}`)
           }
           
           return sum + fee
