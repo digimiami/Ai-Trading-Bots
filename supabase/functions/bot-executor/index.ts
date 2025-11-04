@@ -801,12 +801,32 @@ class BotExecutor {
   }
   
   private evaluateStrategy(strategy: any, marketData: any, bot: any = null): any {
-    const { rsi, adx, price } = marketData;
+    const { rsi, adx, price, mlPrediction } = marketData;
     
     // Initialize signals array to collect all strategy signals
     const signals: any[] = [];
     let confidence = 0;
     let reason = '';
+    
+    // 🤖 ML Prediction Signal (if available and enabled)
+    if (mlPrediction && strategy.useMLPrediction === true) {
+      const mlConfidence = mlPrediction.confidence || 0.5;
+      const mlSignal = mlPrediction.prediction?.toLowerCase();
+      
+      if (mlSignal === 'buy' && mlConfidence > 0.6) {
+        signals.push({
+          side: 'buy',
+          reason: `ML predicts BUY (${(mlConfidence * 100).toFixed(1)}% confidence)`,
+          confidence: mlConfidence * 0.3 // Weight ML prediction at 30% of total confidence
+        });
+      } else if (mlSignal === 'sell' && mlConfidence > 0.6) {
+        signals.push({
+          side: 'sell',
+          reason: `ML predicts SELL (${(mlConfidence * 100).toFixed(1)}% confidence)`,
+          confidence: mlConfidence * 0.3 // Weight ML prediction at 30% of total confidence
+        });
+      }
+    }
     
     // RSI strategy
     if (strategy.rsiThreshold) {
