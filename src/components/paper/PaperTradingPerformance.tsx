@@ -88,8 +88,9 @@ export default function PaperTradingPerformance() {
         .order('opened_at', { ascending: false });
 
       // Fetch current prices for open positions
+      let positionsWithPrices: any[] = [];
       if (openPositions && openPositions.length > 0) {
-        const positionsWithPrices = await Promise.all(
+        positionsWithPrices = await Promise.all(
           openPositions.map(async (position: any) => {
             try {
               // Fetch current price from market data
