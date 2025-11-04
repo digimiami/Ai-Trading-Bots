@@ -55,16 +55,28 @@ serve(async (req) => {
     
     console.log(`📊 Bot Report: Found ${tradesData?.length || 0} total trades for user`)
     
-    // Debug: Log sample trade data
+    // Debug: Log sample trade data AND check fee calculation
     if (tradesData && tradesData.length > 0) {
       const sampleTrade = tradesData[0]
       console.log(`📊 Sample trade: ID=${sampleTrade.id?.substring(0, 8)}, Symbol=${sampleTrade.symbol}, Status=${sampleTrade.status}, Side=${sampleTrade.side}, Entry=${sampleTrade.entry_price || sampleTrade.price}, Exit=${sampleTrade.exit_price || 'none'}, PnL=${sampleTrade.pnl || 0}`)
+      console.log(`📊 Sample trade FEE DEBUG: amount=${sampleTrade.amount} (type=${typeof sampleTrade.amount}), price=${sampleTrade.price} (type=${typeof sampleTrade.price}), size=${(sampleTrade as any).size}, entry_price=${(sampleTrade as any).entry_price}`)
+      
+      // Test fee calculation on sample trade
+      const testAmount = parseFloat(sampleTrade.amount || (sampleTrade as any).size || 0)
+      const testPrice = parseFloat(sampleTrade.price || (sampleTrade as any).entry_price || 0)
+      console.log(`📊 Sample trade FEE CALC: parsed amount=${testAmount}, parsed price=${testPrice}, tradeValue=${testAmount * testPrice}, fee at 0.1%=${(testAmount * testPrice * 0.001).toFixed(4)}`)
+      
       const tradesWithPnL = tradesData.filter((t: any) => {
         const pnl = parseFloat(t.pnl || 0)
         return !isNaN(pnl) && pnl !== 0
       })
       const tradesWithExitPrice = tradesData.filter((t: any) => !!(t as any).exit_price)
-      console.log(`📊 Trade stats: Total=${tradesData.length}, WithPnL=${tradesWithPnL.length}, WithExitPrice=${tradesWithExitPrice.length}`)
+      const tradesWithAmountPrice = tradesData.filter((t: any) => {
+        const amount = parseFloat(t.amount || (t as any).size || 0)
+        const price = parseFloat(t.price || (t as any).entry_price || 0)
+        return amount > 0 && price > 0
+      })
+      console.log(`📊 Trade stats: Total=${tradesData.length}, WithPnL=${tradesWithPnL.length}, WithExitPrice=${tradesWithExitPrice.length}, WithAmountPrice=${tradesWithAmountPrice.length}`)
     }
 
     // Calculate total PnL from trades
@@ -77,15 +89,30 @@ serve(async (req) => {
     // Fall back to trades P&L only if bot P&L is unavailable
     const totalPnL = totalPnLFromBots !== 0 ? totalPnLFromBots : totalPnLFromTrades
     
-    // Calculate total fees
+    // Calculate total fees (for overview - use same logic as per-bot calculation)
+    // This should match the per-bot fee calculation logic
     const totalFees = tradesData?.reduce((sum, t) => {
-      const fee = t.fee || 0
-      // If fee is 0, calculate from volume (0.1% default)
-      if (fee === 0 && t.amount && t.price) {
-        return sum + (t.amount * t.price * 0.001)
+      let fee = 0
+      const amount = parseFloat(t.amount || (t as any).size || 0)
+      const price = parseFloat(t.price || (t as any).entry_price || 0)
+      
+      if (amount > 0 && price > 0) {
+        const tradeValue = amount * price
+        // Default to 0.1% if we can't determine exchange/trading_type from trade
+        // Per-bot calculation will use correct rates based on bot.exchange and bot.trading_type
+        fee = tradeValue * 0.001 // Default 0.1%
       }
+      
+      // Use stored fee if greater
+      const storedFee = parseFloat(t.fee || 0)
+      if (storedFee > fee) {
+        fee = storedFee
+      }
+      
       return sum + fee
     }, 0) || 0
+    
+    console.log(`📊 Overview total fees calculated: $${totalFees.toFixed(2)} from ${tradesData?.length || 0} trades`)
 
     // Contract summary - get trades with bot info
     // First get ALL user's bots (active and inactive) to show historical data
