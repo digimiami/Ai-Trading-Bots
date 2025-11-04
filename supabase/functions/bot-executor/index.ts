@@ -2004,33 +2004,115 @@ class BotExecutor {
           if (closePositionSize > 0) {
             console.log(`🛡️ Closing position: ${symbol} ${actualPositionSide}, Size: ${closePositionSize}`);
             
-            // Close position by placing opposite order
-            // CRITICAL: Use bot's actual trading type, not hardcoded 'linear'
-            // If bot is spot, we can't close a futures position - this is a critical error
+            // CRITICAL: Use bot's actual trading type to determine category
             const botTradingType = bot?.tradingType || bot?.trading_type || 'futures';
             const closeCategory = botTradingType === 'spot' ? 'spot' : 'linear';
             
             console.log(`🛡️ Closing position with category: ${closeCategory} (bot trading type: ${botTradingType})`);
             
-            // Validate: If position exists in linear but bot is spot, this is a configuration error
-            if (closeCategory === 'spot' && botTradingType === 'spot') {
-              console.error(`❌ CRITICAL: Cannot close linear position with spot order. Bot is configured as spot but position is linear.`);
-              throw new Error(`Configuration error: Bot ${bot?.name || 'unknown'} is spot but trying to close linear position. Check bot configuration.`);
+            // For linear (futures), use reduceOnly order to close position exactly
+            if (closeCategory === 'linear') {
+              // Use Bybit's reduceOnly parameter to close position exactly
+              const closeTimestamp = Date.now().toString();
+              const closeRecvWindow = '5000';
+              
+              // Format quantity according to step size
+              const { stepSize } = this.getSymbolSteps(symbol);
+              let formattedCloseSize = closePositionSize;
+              if (stepSize > 0) {
+                const factor = 1 / stepSize;
+                formattedCloseSize = Math.floor(closePositionSize * factor) / factor;
+              }
+              const stepDecimals = stepSize < 1 ? stepSize.toString().split('.')[1]?.length || 0 : 0;
+              const formattedQty = Number(formattedCloseSize.toFixed(stepDecimals)).toString();
+              
+              console.log(`📊 Closing ${symbol} position: size=${closePositionSize}, formatted=${formattedQty}, stepSize=${stepSize}`);
+              
+              // Use reduceOnly=true to ensure we're closing, not opening
+              const closeOrderBody = {
+                category: 'linear',
+                symbol: symbol,
+                side: closeSide, // Opposite side to close
+                orderType: 'Market',
+                qty: formattedQty,
+                reduceOnly: true, // CRITICAL: This ensures we're closing, not opening
+                positionIdx: 0 // 0 for one-way mode
+              };
+              
+              const closeSigPayload = closeTimestamp + apiKey + closeRecvWindow + JSON.stringify(closeOrderBody);
+              const closeSig = await this.createBybitSignature(closeSigPayload, apiSecret);
+              
+              console.log(`🛡️ Placing reduceOnly market order to close position: ${symbol} ${closeSide} ${formattedQty}`);
+              
+              const closeOrderResponse = await fetch(`${baseUrl}/v5/order/create`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-BAPI-API-KEY': apiKey,
+                  'X-BAPI-TIMESTAMP': closeTimestamp,
+                  'X-BAPI-RECV-WINDOW': closeRecvWindow,
+                  'X-BAPI-SIGN': closeSig,
+                },
+                body: JSON.stringify(closeOrderBody),
+              });
+              
+              const closeOrderData = await closeOrderResponse.json();
+              
+              if (closeOrderData.retCode !== 0) {
+                console.error(`❌ Failed to close position via reduceOnly order:`, closeOrderData);
+                throw new Error(`Bybit API error: ${closeOrderData.retMsg} (Code: ${closeOrderData.retCode})`);
+              }
+              
+              console.log(`✅ Position closed successfully via reduceOnly order: ${symbol} (Order ID: ${closeOrderData.result?.orderId})`);
+              
+              if (bot) {
+                await this.addBotLog(bot.id, {
+                  level: 'warning',
+                  category: 'trade',
+                  message: `🛡️ Unprotected position closed: ${symbol} ${actualPositionSide} (safety protocol)`,
+                  details: {
+                    symbol,
+                    originalSide: actualPositionSide,
+                    closeSide,
+                    positionSize: closePositionSize,
+                    closeOrderId: closeOrderData.result?.orderId,
+                    reason: 'SL/TP setup failed - position closed for safety',
+                    method: 'reduceOnly market order'
+                  }
+                });
+              }
+            } else {
+              // For spot, use regular order placement
+              const closeOrderResult = await this.placeBybitOrder(
+                apiKey,
+                apiSecret,
+                isTestnet,
+                symbol,
+                closeSide,
+                closePositionSize,
+                0, // Market order - use 0 for price
+                'spot',
+                bot
+              );
+              
+              console.log(`✅ Position closed successfully: ${symbol} (Order ID: ${closeOrderResult?.orderId})`);
+              
+              if (bot) {
+                await this.addBotLog(bot.id, {
+                  level: 'warning',
+                  category: 'trade',
+                  message: `🛡️ Unprotected position closed: ${symbol} ${actualPositionSide} (safety protocol)`,
+                  details: {
+                    symbol,
+                    originalSide: actualPositionSide,
+                    closeSide,
+                    positionSize: closePositionSize,
+                    closeOrderId: closeOrderResult?.orderId,
+                    reason: 'SL/TP setup failed - position closed for safety'
+                  }
+                });
+              }
             }
-            
-            const closeOrderResult = await this.placeBybitOrder(
-              apiKey,
-              apiSecret,
-              isTestnet,
-              symbol,
-              closeSide,
-              closePositionSize,
-              0, // Market order - use 0 for price
-              closeCategory, // Use correct category based on bot's trading type
-              bot
-            );
-            
-            console.log(`✅ Position closed successfully: ${symbol} (Order ID: ${closeOrderResult?.orderId})`);
             
             if (bot) {
               await this.addBotLog(bot.id, {
