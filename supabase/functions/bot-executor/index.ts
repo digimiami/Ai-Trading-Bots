@@ -1962,10 +1962,25 @@ class BotExecutor {
       const data = await response.json();
       
       if (data.retCode !== 0) {
-        console.error('SL/TP Response:', data);
+        console.error('SL/TP Response:', JSON.stringify(data, null, 2));
+        console.error(`❌ SL/TP setting failed for ${symbol} (non-critical): ${data.retMsg}`);
+        console.error(`📊 SL/TP Request Details:`);
+        console.error(`   Symbol: ${symbol}`);
+        console.error(`   Position Side: ${actualPositionSide}`);
+        console.error(`   Entry Price: ${entryPrice}`);
+        console.error(`   Stop Loss: ${formattedStopLoss} (parsed: ${slNum})`);
+        console.error(`   Take Profit: ${formattedTakeProfit} (parsed: ${tpNum})`);
+        console.error(`   Request Body:`, JSON.stringify(requestBody, null, 2));
+        
+        // If error mentions wrong position side, log additional debugging info
+        if (data.retMsg && (data.retMsg.includes('Sell position') || data.retMsg.includes('Buy position'))) {
+          console.error(`⚠️ Position side mismatch detected in error message`);
+          console.error(`   Our detected side: ${actualPositionSide}`);
+          console.error(`   Error suggests: ${data.retMsg.includes('Sell position') ? 'Sell' : 'Buy'}`);
+          console.error(`   This may indicate a timing issue where position hasn't updated yet`);
+        }
         
         // CRITICAL SAFETY: If SL/TP fails, position has NO PROTECTION - must close immediately
-        console.error(`❌ SL/TP setting FAILED for ${symbol}: ${data.retMsg}`);
         console.error(`   🚨 CRITICAL: Position is OPEN but WITHOUT protection!`);
         console.error(`   🛡️ SAFETY PROTOCOL: Attempting to close unprotected position immediately...`);
         
@@ -1974,15 +1989,19 @@ class BotExecutor {
           await this.addBotLog(bot.id, {
             level: 'error',
             category: 'trade',
-            message: `🚨 CRITICAL: SL/TP failed for ${symbol}. Closing unprotected position immediately!`,
+            message: `⚠️ CRITICAL: SL/TP API failed for ${symbol} ${actualPositionSide} position. Position is OPEN without protection!`,
             details: {
               symbol,
               side: actualPositionSide,
               entryPrice,
+              stopLoss: formattedStopLoss,
+              takeProfit: formattedTakeProfit,
               error: data.retMsg,
               bybitErrorCode: data.retCode,
-              action: 'Attempting to close position immediately',
-              reason: 'Position opened without SL/TP protection - safety protocol activated'
+              requestBody: requestBody,
+              recommendation: 'Manually set SL/TP on exchange or close position',
+              manualSL: `${bot?.stop_loss || 2.0}%`,
+              manualTP: `${bot?.take_profit || 4.0}%`
             }
           });
         }
