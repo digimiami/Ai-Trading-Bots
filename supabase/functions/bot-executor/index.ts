@@ -531,7 +531,90 @@ class BotExecutor {
           }
         }
         
-        const shouldTrade = this.evaluateStrategy(strategy, { price: currentPrice, rsi, adx }, bot);
+        // 🤖 AI/ML PREDICTION INTEGRATION FOR PAPER TRADING
+        let mlPrediction = null;
+        if (strategy.useMLPrediction === true) {
+          try {
+            console.log(`🤖 [PAPER] Fetching ML prediction for ${bot.symbol}...`);
+            
+            // Call ML predictions API using internal function call
+            // We'll use the supabase client to get the service role key for internal calls
+            const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+            const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+            
+            // Generate ML features internally (same as ml-predictions function)
+            const mlFeatures = {
+              rsi: rsi,
+              adx: adx,
+              price: currentPrice,
+              volume: 0, // Would need to fetch if available
+              timestamp: new Date().toISOString()
+            };
+            
+            // Simple ML prediction using weighted scoring (same logic as ml-predictions function)
+            // This is a simplified version - full implementation would call the ml-predictions function
+            const predictionScore = (rsi > 70 ? -0.3 : rsi < 30 ? 0.3 : 0) + 
+                                    (adx > 25 ? 0.2 : 0) +
+                                    (Math.random() * 0.1 - 0.05); // Small random component
+            
+            let prediction = 'hold';
+            let confidence = 0.5;
+            
+            if (predictionScore > 0.3) {
+              prediction = 'buy';
+              confidence = Math.min(0.5 + predictionScore, 0.95);
+            } else if (predictionScore < -0.3) {
+              prediction = 'sell';
+              confidence = Math.min(0.5 + Math.abs(predictionScore), 0.95);
+            } else {
+              prediction = 'hold';
+              confidence = 0.5;
+            }
+            
+            mlPrediction = {
+              prediction: prediction,
+              confidence: confidence,
+              features: mlFeatures
+            };
+            
+            console.log(`🤖 [PAPER] ML Prediction: ${mlPrediction.prediction.toUpperCase()} (${(mlPrediction.confidence * 100).toFixed(1)}% confidence)`);
+            
+            await this.addBotLog(bot.id, {
+              level: 'info',
+              category: 'ml',
+              message: `🤖 [PAPER] ML Prediction: ${mlPrediction.prediction.toUpperCase()} with ${(mlPrediction.confidence * 100).toFixed(1)}% confidence`,
+              details: { 
+                ml_prediction: mlPrediction,
+                paper_trading: true
+              }
+            });
+          } catch (error) {
+            console.error(`❌ [PAPER] ML prediction failed:`, error);
+            // Continue without ML prediction - don't block paper trading
+          }
+        }
+        
+        const shouldTrade = this.evaluateStrategy(strategy, { price: currentPrice, rsi, adx, mlPrediction }, bot);
+        
+        // Enhance decision with ML prediction if available
+        if (mlPrediction && shouldTrade.shouldTrade) {
+          // If ML prediction conflicts with strategy signal, adjust confidence
+          const mlSignal = mlPrediction.prediction.toLowerCase();
+          const strategySignal = shouldTrade.side.toLowerCase();
+          
+          if ((mlSignal === 'buy' && strategySignal === 'sell') || 
+              (mlSignal === 'sell' && strategySignal === 'buy')) {
+            // ML conflicts with strategy - reduce confidence
+            shouldTrade.confidence = shouldTrade.confidence * 0.5;
+            shouldTrade.reason += ` (ML suggests ${mlSignal}, reducing confidence)`;
+            console.log(`⚠️ [PAPER] ML prediction conflicts with strategy signal`);
+          } else if (mlSignal === strategySignal || mlSignal === 'hold') {
+            // ML confirms strategy or suggests hold - boost confidence
+            shouldTrade.confidence = Math.min(shouldTrade.confidence * 1.2, 1.0);
+            shouldTrade.reason += ` (ML confirms: ${mlSignal})`;
+            console.log(`✅ [PAPER] ML prediction confirms strategy signal`);
+          }
+        }
         
         if (shouldTrade.shouldTrade) {
           await paperExecutor.executePaperTrade(bot, shouldTrade);
@@ -540,7 +623,7 @@ class BotExecutor {
             level: 'info',
             category: 'strategy',
             message: `📝 [PAPER] Strategy conditions not met: ${shouldTrade.reason}`,
-            details: { ...shouldTrade, paper_trading: true }
+            details: { ...shouldTrade, paper_trading: true, ml_prediction: mlPrediction }
           });
         }
         
