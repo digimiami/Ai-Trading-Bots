@@ -14,6 +14,7 @@ const Trades = lazy(() => import('../pages/trades/page'));
 const Reports = lazy(() => import('../pages/reports/page'));
 const Performance = lazy(() => import('../pages/performance/page'));
 const Settings = lazy(() => import('../pages/settings/page'));
+const PaperTrading = lazy(() => import('../pages/paper-trading/page'));
 const Admin = lazy(() => import('../pages/admin/page'));
 const Onboarding = lazy(() => import('../pages/onboarding/page'));
 const Help = lazy(() => import('../pages/help/page'));
@@ -70,6 +71,10 @@ const routes: RouteObject[] = [
   {
     path: '/settings',
     element: <Settings />
+  },
+  {
+    path: '/paper-trading',
+    element: <PaperTrading />
   },
   {
     path: '/help',

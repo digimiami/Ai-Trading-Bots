@@ -19,6 +19,7 @@ export default function Navigation() {
     { path: '/bot-activity', icon: 'ri-file-list-line', label: 'Activity' },
     { path: '/trades', icon: 'ri-exchange-line', label: 'Trades' },
     { path: '/performance', icon: 'ri-line-chart-line', label: 'Performance' },
+    { path: '/paper-trading', icon: 'ri-edit-box-line', label: 'Paper' },
     { path: '/settings', icon: 'ri-settings-line', label: 'Settings' }
   ];
 

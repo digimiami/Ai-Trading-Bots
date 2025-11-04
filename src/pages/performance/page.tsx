@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import Header from '../../components/feature/Header';
 import Navigation from '../../components/feature/Navigation';
 import Card from '../../components/base/Card';
+import PaperTradingPerformance from '../../components/paper/PaperTradingPerformance';
 import { usePerformance } from '../../hooks/usePerformance';
 
 export default function Performance() {
@@ -102,6 +103,9 @@ export default function Performance() {
       <Header title="Performance & P&L Analysis" />
       
       <div className="pt-20 pb-20 px-4 space-y-6">
+        {/* Paper Trading Performance */}
+        <PaperTradingPerformance />
+
         {/* Asset Type Tabs */}
         <Card className="p-4">
           <div className="flex space-x-2 mb-4">
