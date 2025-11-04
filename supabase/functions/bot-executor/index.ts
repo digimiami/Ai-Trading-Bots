@@ -1912,18 +1912,40 @@ class BotExecutor {
         }
       }
       
+      // CRITICAL: Ensure prices are properly formatted as strings with correct decimal places
+      // Bybit requires prices as strings, not numbers, and they must match the tick size
+      const formattedStopLoss = parseFloat(stopLossPrice).toFixed(tickDecimals);
+      const formattedTakeProfit = parseFloat(takeProfitPrice).toFixed(tickDecimals);
+      
+      // Double-check that we're not sending scientific notation or incorrectly formatted numbers
+      const slNum = parseFloat(formattedStopLoss);
+      const tpNum = parseFloat(formattedTakeProfit);
+      
+      // Validate that prices are reasonable (not in the millions/thousands incorrectly)
+      if (slNum > entryPrice * 10 || tpNum > entryPrice * 10) {
+        console.error(`❌ CRITICAL: SL/TP prices appear to be incorrectly formatted!`);
+        console.error(`   Entry: ${entryPrice}, SL: ${slNum}, TP: ${tpNum}`);
+        console.error(`   This suggests a formatting error. Skipping SL/TP to avoid API error.`);
+        throw new Error(`SL/TP price formatting error: prices appear to be multiplied incorrectly`);
+      }
+      
       const requestBody = {
         category: 'linear',
         symbol: symbol,
-        stopLoss: stopLossPrice,
-        takeProfit: takeProfitPrice,
+        stopLoss: formattedStopLoss,
+        takeProfit: formattedTakeProfit,
         positionIdx: 0  // 0 for one-way mode, 1 for Buy side in hedge mode, 2 for Sell side
       };
       
       const signaturePayload = timestamp + apiKey + recvWindow + JSON.stringify(requestBody);
       const signature = await this.createBybitSignature(signaturePayload, apiSecret);
       
-      console.log(`🛡️ Setting SL/TP for ${symbol}: SL=${stopLossPrice}, TP=${takeProfitPrice}`);
+      console.log(`🛡️ Setting SL/TP for ${symbol} ${actualPositionSide} position:`);
+      console.log(`   Entry: ${entryPrice}`);
+      console.log(`   Stop Loss: ${formattedStopLoss} (formatted from ${stopLossPrice})`);
+      console.log(`   Take Profit: ${formattedTakeProfit} (formatted from ${takeProfitPrice})`);
+      console.log(`   Position Side: ${actualPositionSide}`);
+      console.log(`   Position Index: 0 (one-way mode)`);
       
       const response = await fetch(`${baseUrl}/v5/position/trading-stop`, {
         method: 'POST',
