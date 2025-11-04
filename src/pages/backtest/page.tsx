@@ -582,6 +582,97 @@ export default function BacktestPage() {
               </div>
             </div>
 
+            {/* Timeframe, Leverage, Trade Amount */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Timeframe
+                </label>
+                <select
+                  value={config.timeframe}
+                  onChange={(e) => setConfig(prev => ({ ...prev, timeframe: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="1m">1 Minute</option>
+                  <option value="3m">3 Minutes</option>
+                  <option value="5m">5 Minutes</option>
+                  <option value="15m">15 Minutes</option>
+                  <option value="30m">30 Minutes</option>
+                  <option value="1h">1 Hour</option>
+                  <option value="2h">2 Hours</option>
+                  <option value="4h">4 Hours</option>
+                  <option value="6h">6 Hours</option>
+                  <option value="12h">12 Hours</option>
+                  <option value="1d">1 Day</option>
+                  <option value="1w">1 Week</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Leverage
+                </label>
+                <input
+                  type="number"
+                  value={config.leverage}
+                  onChange={(e) => setConfig(prev => ({ ...prev, leverage: parseInt(e.target.value) || 1 }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  min="1"
+                  max="100"
+                  step="1"
+                  disabled={config.tradingType === 'spot'}
+                />
+                {config.tradingType === 'spot' && (
+                  <p className="text-xs text-gray-500 mt-1">Leverage not available for spot trading</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Trade Amount ($)
+                </label>
+                <input
+                  type="number"
+                  value={config.tradeAmount}
+                  onChange={(e) => setConfig(prev => ({ ...prev, tradeAmount: parseFloat(e.target.value) || 100 }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  min="10"
+                  max="10000"
+                  step="10"
+                />
+              </div>
+            </div>
+
+            {/* Stop Loss & Take Profit */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Stop Loss (%)
+                </label>
+                <input
+                  type="number"
+                  value={config.stopLoss}
+                  onChange={(e) => setConfig(prev => ({ ...prev, stopLoss: parseFloat(e.target.value) || 2.0 }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  min="0.5"
+                  max="10"
+                  step="0.5"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Take Profit (%)
+                </label>
+                <input
+                  type="number"
+                  value={config.takeProfit}
+                  onChange={(e) => setConfig(prev => ({ ...prev, takeProfit: parseFloat(e.target.value) || 4.0 }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  min="1"
+                  max="20"
+                  step="0.5"
+                />
+              </div>
+            </div>
+
             {/* Strategy Parameters Section */}
             <Card className="p-6 mt-6">
               <h2 className="text-lg font-semibold mb-4 text-gray-900">Strategy Parameters</h2>
