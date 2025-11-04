@@ -7,6 +7,7 @@ import Navigation from '../../components/feature/Navigation';
 import Button from '../../components/base/Button';
 import Card from '../../components/base/Card';
 import TelegramSettings from '../../components/settings/TelegramSettings';
+import PaperTradingBalance from '../../components/paper/PaperTradingBalance';
 import { useAuth } from '../../hooks/useAuth';
 import { useApiKeys } from '../../hooks/useApiKeys';
 import type { ApiKeyFormData } from '../../hooks/useApiKeys';
@@ -1180,6 +1181,9 @@ export default function Settings() {
 
         {/* Telegram Notifications */}
         <TelegramSettings />
+
+        {/* Paper Trading Balance */}
+        <PaperTradingBalance />
 
         {/* App Info */}
         <Card className="p-6">

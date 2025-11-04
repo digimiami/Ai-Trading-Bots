@@ -877,8 +877,9 @@ export default function BotsPage() {
                     <button
                       onClick={async () => {
                         try {
-                          await updateBot(bot.id, { paperTrading: !bot.paperTrading });
-                          alert(`✅ Bot switched to ${bot.paperTrading ? 'Real Trading' : 'Paper Trading'} mode`);
+                          const newPaperTrading = !(bot.paperTrading || false);
+                          await updateBot(bot.id, { paperTrading: newPaperTrading });
+                          alert(`✅ Bot switched to ${newPaperTrading ? 'Paper Trading' : 'Real Trading'} mode`);
                         } catch (error: any) {
                           alert(`Failed to toggle: ${error.message}`);
                         }
