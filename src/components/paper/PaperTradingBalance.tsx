@@ -51,14 +51,23 @@ export default function PaperTradingBalance() {
     try {
       setLoadingLogs(true);
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        setLogs([]);
+        return;
+      }
 
       // Get user's paper trading bots
-      const { data: paperBots } = await supabase
+      const { data: paperBots, error: botsError } = await supabase
         .from('trading_bots')
         .select('id, name')
         .eq('user_id', user.id)
         .eq('paper_trading', true);
+
+      if (botsError) {
+        console.error('Error fetching paper bots:', botsError);
+        setLogs([]);
+        return;
+      }
 
       if (!paperBots || paperBots.length === 0) {
         setLogs([]);
@@ -68,29 +77,47 @@ export default function PaperTradingBalance() {
       const botIds = paperBots.map(b => b.id);
       const botNameMap = new Map(paperBots.map(b => [b.id, b.name]));
 
-      // Get recent logs for paper trading bots
-      const { data: logData } = await supabase
+      // Get recent logs for paper trading bots - get all logs, filter by message in JS
+      const { data: logData, error: logsError } = await supabase
         .from('bot_activity_logs')
         .select('*')
         .in('bot_id', botIds)
-        .or('message.ilike.%[PAPER]%,message.ilike.%📝%')
         .order('timestamp', { ascending: false })
-        .limit(20);
+        .limit(50);
 
-      if (logData) {
-        const enrichedLogs = logData.map(log => ({
+      if (logsError) {
+        console.error('Error fetching logs:', logsError);
+        setLogs([]);
+        return;
+      }
+
+      if (logData && logData.length > 0) {
+        // Filter for paper trading logs (messages containing [PAPER] or 📝)
+        const paperLogs = logData.filter(log => {
+          const message = log.message || '';
+          return message.includes('[PAPER]') || 
+                 message.includes('📝') || 
+                 message.includes('PAPER') ||
+                 log.details?.paper_trading === true;
+        });
+
+        const enrichedLogs = paperLogs.slice(0, 20).map(log => ({
           id: log.id,
           timestamp: log.timestamp,
           level: log.level,
           category: log.category,
           message: log.message,
           bot_name: botNameMap.get(log.bot_id),
-          symbol: log.details?.symbol || log.details?.paper_trading?.symbol
+          symbol: log.details?.symbol || log.details?.paper_trading?.symbol || log.details?.paper_trading?.side
         }));
+        
         setLogs(enrichedLogs);
+      } else {
+        setLogs([]);
       }
     } catch (error) {
       console.error('Error fetching paper trading logs:', error);
+      setLogs([]);
     } finally {
       setLoadingLogs(false);
     }
@@ -217,30 +244,36 @@ export default function PaperTradingBalance() {
             </Button>
           </div>
           
-          {logs.length === 0 ? (
+          {loadingLogs && logs.length === 0 ? (
+            <div className="text-center py-4 text-gray-500 text-sm">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
+              <p>Loading activity...</p>
+            </div>
+          ) : logs.length === 0 ? (
             <div className="text-center py-4 text-gray-500 text-sm">
               <i className="ri-file-list-line text-2xl mb-2 block"></i>
               <p>No paper trading activity yet</p>
               <p className="text-xs mt-1">Activity will appear here when bots execute trades</p>
+              <p className="text-xs mt-1 text-gray-400">Make sure you have paper trading bots running</p>
             </div>
           ) : (
             <div className="space-y-2 max-h-64 overflow-y-auto">
               {logs.map((log) => (
                 <div
                   key={log.id}
-                  className="p-2 bg-gray-50 rounded-lg border border-gray-200 text-sm"
+                  className="p-2 bg-gray-50 rounded-lg border border-gray-200 text-sm hover:bg-gray-100 transition-colors"
                 >
                   <div className="flex items-start gap-2">
-                    <i className={`${getLevelIcon(log.level)} mt-0.5`}></i>
+                    <i className={`${getLevelIcon(log.level)} mt-0.5 flex-shrink-0`}></i>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
                         {log.bot_name && (
                           <span className="font-medium text-gray-900 text-xs">
                             {log.bot_name}
                           </span>
                         )}
                         {log.symbol && (
-                          <span className="text-xs text-gray-500">
+                          <span className="text-xs text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded">
                             {log.symbol}
                           </span>
                         )}

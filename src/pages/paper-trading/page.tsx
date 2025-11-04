@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
-import Card from '../base/Card';
-import Button from '../base/Button';
-import Header from '../feature/Header';
-import Navigation from '../feature/Navigation';
-import PaperTradingPerformance from './PaperTradingPerformance';
-import PaperTradingBalance from './PaperTradingBalance';
+import Card from '../../components/base/Card';
+import Button from '../../components/base/Button';
+import Header from '../../components/feature/Header';
+import Navigation from '../../components/feature/Navigation';
+import PaperTradingPerformance from '../../components/paper/PaperTradingPerformance';
+import PaperTradingBalance from '../../components/paper/PaperTradingBalance';
 
 export default function PaperTradingDashboard() {
   return (
