@@ -300,17 +300,24 @@ serve(async (req) => {
         
         // For fees: calculate from ALL trades (including open positions)
         // Every trade that executes has a fee, even if it's an opening position
+        // CRITICAL: Always calculate fee even if stored fee is 0 (trades are inserted with fee: 0)
         const botFees = allBotTrades.reduce((sum, t) => {
-          let fee = t.fee || 0
-          // Calculate fee if not stored
-          if (fee === 0 && t.amount && t.price) {
+          let fee = 0
+          // Always calculate fee from amount and price (trades are stored with fee: 0)
+          if (t.amount && t.price) {
+            const tradeValue = parseFloat(t.amount) * parseFloat(t.price)
             if (bot.exchange === 'bybit') {
-              fee = bot.trading_type === 'futures' ? t.amount * t.price * 0.00055 : t.amount * t.price * 0.001
+              fee = bot.trading_type === 'futures' ? tradeValue * 0.00055 : tradeValue * 0.001
             } else if (bot.exchange === 'okx') {
-              fee = bot.trading_type === 'futures' ? t.amount * t.price * 0.0005 : t.amount * t.price * 0.0008
+              fee = bot.trading_type === 'futures' ? tradeValue * 0.0005 : tradeValue * 0.0008
             } else {
-              fee = t.amount * t.price * 0.001
+              fee = tradeValue * 0.001 // Default 0.1%
             }
+          }
+          // Use stored fee only if it's greater than calculated (shouldn't happen, but safety)
+          const storedFee = parseFloat(t.fee || 0)
+          if (storedFee > fee) {
+            fee = storedFee
           }
           return sum + fee
         }, 0)
@@ -340,19 +347,34 @@ serve(async (req) => {
           return { ...t, calculatedPnL }
         })
         
-        // For win/loss: only count CLOSED trades (those with exit_price or non-zero PnL)
-        // Open positions shouldn't be counted as wins/losses yet
+        // For win/loss: count trades that have been closed (have exit_price) OR have non-zero PnL
+        // Also check if bot has PnL but no closed trades - this might indicate positions were closed
+        // but trades weren't updated with exit_price
         const closedTrades = processedTrades.filter(t => {
-          // Include trades that have:
-          // 1. Non-zero calculated PnL (definitely closed)
-          // 2. exit_price (position was closed)
-          // 3. status is 'closed' or 'completed' (explicitly closed)
-          return (t as any).calculatedPnL !== 0 || (t as any).exit_price || ['closed', 'completed'].includes((t.status || '').toLowerCase())
+          const hasExitPrice = !!(t as any).exit_price
+          const hasNonZeroPnL = (t as any).calculatedPnL !== 0 && (t as any).calculatedPnL !== null && (t as any).calculatedPnL !== undefined
+          const isClosedStatus = ['closed', 'completed'].includes((t.status || '').toLowerCase())
+          
+          // Include if any of these conditions are true
+          return hasExitPrice || hasNonZeroPnL || isClosedStatus
         })
         
-        const winTrades = closedTrades.filter(t => (t as any).calculatedPnL > 0).length
-        const lossTrades = closedTrades.filter(t => (t as any).calculatedPnL < 0).length
-        const totalClosedTrades = closedTrades.length
+        // If no closed trades but bot has PnL, try to infer from bot PnL
+        // This handles cases where positions were closed but trades weren't updated
+        let winTrades = closedTrades.filter(t => (t as any).calculatedPnL > 0).length
+        let lossTrades = closedTrades.filter(t => (t as any).calculatedPnL < 0).length
+        let totalClosedTrades = closedTrades.length
+        
+        // Fallback: If bot has PnL but no closed trades, try to estimate from bot performance
+        // This is a heuristic - if bot has positive PnL, assume at least some wins
+        if (totalClosedTrades === 0 && bot.pnl !== 0 && bot.pnl !== null && bot.win_rate !== null && bot.win_rate !== undefined && bot.win_rate > 0) {
+          // Use bot's stored win_rate if available
+          const estimatedTotalTrades = Math.max(1, Math.round(bot.total_trades || allBotTrades.length))
+          winTrades = Math.round((bot.win_rate / 100) * estimatedTotalTrades)
+          lossTrades = estimatedTotalTrades - winTrades
+          totalClosedTrades = estimatedTotalTrades
+        }
+        
         const winRate = totalClosedTrades > 0 ? (winTrades / totalClosedTrades) * 100 : (bot.win_rate || 0)
         
         // Calculate drawdown
@@ -372,7 +394,8 @@ serve(async (req) => {
           
           let runningPnL = 0
           for (const t of sortedTrades) {
-            runningPnL += ((t as any).calculatedPnL || 0)
+            const tradePnL = (t as any).calculatedPnL || 0
+            runningPnL += tradePnL
             if (runningPnL > peakPnL) {
               peakPnL = runningPnL
             }
@@ -386,9 +409,14 @@ serve(async (req) => {
         } else if (bot.pnl !== 0 && bot.pnl !== null) {
           // Fallback: if no closed trades but bot has PnL, use bot PnL for peak/current
           // This handles cases where positions are still open (no exit_price yet)
+          // For drawdown, if bot has negative PnL, that's the current drawdown
           peakPnL = bot.pnl > 0 ? bot.pnl : 0
           currentPnL = bot.pnl
-          // Can't calculate drawdown without closed trade history, but at least show current P&L
+          if (bot.pnl < 0) {
+            // If current PnL is negative, drawdown is the absolute value
+            drawdown = Math.abs(bot.pnl)
+            drawdownPercentage = 100 // 100% drawdown if we went negative from 0
+          }
         }
         
         const botPnL = bot.pnl || 0
