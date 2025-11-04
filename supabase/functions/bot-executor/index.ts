@@ -1716,8 +1716,18 @@ class BotExecutor {
         // Short position: SL above entry, TP below entry
         // SL = entryPrice * (1 + stopLossPercent/100)
         // TP = entryPrice * (1 - takeProfitPercent/100)
+        // CRITICAL: Ensure TP is ALWAYS below entry for shorts
         const slValue = roundToTick(entryPrice * (1 + stopLossPercent / 100));
-        const tpValue = roundToTick(entryPrice * (1 - takeProfitPercent / 100));
+        // For shorts, TP must be BELOW entry - use subtraction to ensure it's always lower
+        let tpValue = roundToTick(entryPrice * (1 - takeProfitPercent / 100));
+        
+        // DOUBLE-CHECK: If TP is still >= entry (shouldn't happen but safety check), force it below
+        if (tpValue >= entryPrice) {
+          console.error(`❌ CRITICAL: Short TP calculation resulted in TP >= Entry (${tpValue} >= ${entryPrice})`);
+          console.error(`   Forcing TP to be at least 0.1% below entry`);
+          tpValue = roundToTick(entryPrice * 0.999); // Force 0.1% below entry
+        }
+        
         // Format prices as strings with proper precision, ensuring no scientific notation
         stopLossPrice = Number(slValue.toFixed(tickDecimals)).toString();
         takeProfitPrice = Number(tpValue.toFixed(tickDecimals)).toString();
@@ -1726,25 +1736,27 @@ class BotExecutor {
         console.log(`   Entry: ${entryPrice}, SL%: ${stopLossPercent}%, TP%: ${takeProfitPercent}%`);
         console.log(`   SL: ${entryPrice} * (1 + ${stopLossPercent}/100) = ${slValue} → ${stopLossPrice}`);
         console.log(`   TP: ${entryPrice} * (1 - ${takeProfitPercent}/100) = ${tpValue} → ${takeProfitPrice}`);
+        console.log(`   ✅ Validation: TP (${tpValue}) < Entry (${entryPrice}): ${tpValue < entryPrice}`);
+        console.log(`   ✅ Validation: SL (${slValue}) > Entry (${entryPrice}): ${slValue > entryPrice}`);
         
         // CRITICAL VALIDATION: For short, TP MUST be < Entry, SL MUST be > Entry
         const tpNum = parseFloat(takeProfitPrice);
         const slNum = parseFloat(stopLossPrice);
         if (tpNum >= entryPrice) {
           console.error(`❌ CRITICAL ERROR: Short position TP (${tpNum}) >= Entry (${entryPrice}) - INVALID!`);
-          console.error(`   This will cause Bybit API error. Recalculating...`);
-          // Force correct calculation: TP must be below entry
-          const correctedTp = roundToTick(entryPrice * (1 - Math.max(takeProfitPercent, 0.1) / 100));
+          console.error(`   This will cause Bybit API error. Force correcting...`);
+          // Force correct calculation: TP must be below entry (at least 0.1% below)
+          const correctedTp = roundToTick(entryPrice * 0.999); // 0.1% below entry as minimum
           takeProfitPrice = Number(correctedTp.toFixed(tickDecimals)).toString();
-          console.log(`   ✅ Corrected TP: ${takeProfitPrice}`);
+          console.log(`   ✅ Force corrected TP: ${takeProfitPrice} (was ${tpNum})`);
         }
         if (slNum <= entryPrice) {
           console.error(`❌ CRITICAL ERROR: Short position SL (${slNum}) <= Entry (${entryPrice}) - INVALID!`);
-          console.error(`   This will cause Bybit API error. Recalculating...`);
-          // Force correct calculation: SL must be above entry
-          const correctedSl = roundToTick(entryPrice * (1 + Math.max(stopLossPercent, 0.1) / 100));
+          console.error(`   This will cause Bybit API error. Force correcting...`);
+          // Force correct calculation: SL must be above entry (at least 0.1% above)
+          const correctedSl = roundToTick(entryPrice * 1.001); // 0.1% above entry as minimum
           stopLossPrice = Number(correctedSl.toFixed(tickDecimals)).toString();
-          console.log(`   ✅ Corrected SL: ${stopLossPrice}`);
+          console.log(`   ✅ Force corrected SL: ${stopLossPrice} (was ${slNum})`);
         }
       }
       
@@ -1977,6 +1989,19 @@ class BotExecutor {
             console.log(`🛡️ Closing position: ${symbol} ${actualPositionSide}, Size: ${closePositionSize}`);
             
             // Close position by placing opposite order
+            // CRITICAL: Use bot's actual trading type, not hardcoded 'linear'
+            // If bot is spot, we can't close a futures position - this is a critical error
+            const botTradingType = bot?.tradingType || bot?.trading_type || 'futures';
+            const closeCategory = botTradingType === 'spot' ? 'spot' : 'linear';
+            
+            console.log(`🛡️ Closing position with category: ${closeCategory} (bot trading type: ${botTradingType})`);
+            
+            // Validate: If position exists in linear but bot is spot, this is a configuration error
+            if (closeCategory === 'spot' && botTradingType === 'spot') {
+              console.error(`❌ CRITICAL: Cannot close linear position with spot order. Bot is configured as spot but position is linear.`);
+              throw new Error(`Configuration error: Bot ${bot?.name || 'unknown'} is spot but trying to close linear position. Check bot configuration.`);
+            }
+            
             const closeOrderResult = await this.placeBybitOrder(
               apiKey,
               apiSecret,
@@ -1985,7 +2010,7 @@ class BotExecutor {
               closeSide,
               closePositionSize,
               0, // Market order - use 0 for price
-              'linear', // Assuming futures
+              closeCategory, // Use correct category based on bot's trading type
               bot
             );
             
