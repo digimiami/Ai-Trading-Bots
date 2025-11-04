@@ -1767,7 +1767,27 @@ class BotExecutor {
       
       if (validationError) {
         console.error(`❌ SL/TP Validation FAILED: ${validationError}`);
-        console.error(`   Skipping SL/TP to avoid Bybit API error`);
+        console.error(`   ⚠️ WARNING: Position is OPEN but WITHOUT automatic SL/TP protection!`);
+        console.error(`   ⚠️ ACTION REQUIRED: You must manually set SL/TP on the exchange or close the position`);
+        console.error(`   📊 Position details: ${symbol}, Side: ${actualPositionSide}, Entry: ${entryPrice}`);
+        console.error(`   💡 Manual SL/TP: Set SL=${bot?.stop_loss || 2.0}%, TP=${bot?.take_profit || 4.0}% on Bybit`);
+        
+        // Log critical warning to bot activity logs
+        await this.addBotLog(bot.id, {
+          level: 'error',
+          category: 'trade',
+          message: `⚠️ CRITICAL: SL/TP could not be set for ${symbol} ${actualPositionSide} position. Position is OPEN without protection!`,
+          details: {
+            symbol,
+            side: actualPositionSide,
+            entryPrice,
+            error: validationError,
+            recommendation: 'Manually set SL/TP on exchange or close position',
+            manualSL: `${bot?.stop_loss || 2.0}%`,
+            manualTP: `${bot?.take_profit || 4.0}%`
+          }
+        });
+        
         return; // Non-critical; order already placed
       }
       
@@ -1884,8 +1904,33 @@ class BotExecutor {
         
         // If SL/TP fails, it's non-critical - the trade was successful
         // Log the error but don't throw - we don't want to fail the entire trade
-        console.warn(`⚠️ SL/TP setting failed for ${symbol} (non-critical): ${data.retMsg}`);
-        console.warn(`   Trade was successful, but SL/TP could not be set. You may need to set it manually.`);
+        console.error(`❌ SL/TP setting failed for ${symbol} (non-critical): ${data.retMsg}`);
+        console.error(`   ⚠️ WARNING: Position is OPEN but WITHOUT automatic SL/TP protection!`);
+        console.error(`   ⚠️ ACTION REQUIRED: You must manually set SL/TP on the exchange or close the position`);
+        console.error(`   📊 Position details: ${symbol}, Side: ${actualPositionSide}, Entry: ${entryPrice}`);
+        console.error(`   💡 Manual SL/TP: Set SL=${bot?.stop_loss || 2.0}%, TP=${bot?.take_profit || 4.0}% on Bybit`);
+        console.error(`   📝 How to close: Use 'Close Position' button in UI or risk-management API`);
+        
+        // Log critical warning to bot activity logs
+        if (bot) {
+          await this.addBotLog(bot.id, {
+            level: 'error',
+            category: 'trade',
+            message: `⚠️ CRITICAL: SL/TP API failed for ${symbol} ${actualPositionSide} position. Position is OPEN without protection!`,
+            details: {
+              symbol,
+              side: actualPositionSide,
+              entryPrice,
+              error: data.retMsg,
+              bybitErrorCode: data.retCode,
+              recommendation: 'Manually set SL/TP on exchange or close position via UI',
+              manualSL: `${bot?.stop_loss || 2.0}%`,
+              manualTP: `${bot?.take_profit || 4.0}%`,
+              howToClose: 'Use "Close Position" button in Trades page or call risk-management API'
+            }
+          });
+        }
+        
         return; // Return gracefully instead of throwing
       }
       
