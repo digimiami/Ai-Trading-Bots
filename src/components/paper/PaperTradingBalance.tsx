@@ -91,15 +91,25 @@ export default function PaperTradingBalance() {
         return;
       }
 
+      console.log(`📝 [Paper Logs] Found ${logData?.length || 0} total logs for ${botIds.length} paper bots`);
+
       if (logData && logData.length > 0) {
         // Filter for paper trading logs (messages containing [PAPER] or 📝)
         const paperLogs = logData.filter(log => {
           const message = log.message || '';
-          return message.includes('[PAPER]') || 
+          const isPaperLog = message.includes('[PAPER]') || 
                  message.includes('📝') || 
                  message.includes('PAPER') ||
                  log.details?.paper_trading === true;
+          
+          if (isPaperLog) {
+            console.log(`📝 [Paper Logs] Found paper log:`, log.message);
+          }
+          
+          return isPaperLog;
         });
+
+        console.log(`📝 [Paper Logs] Filtered to ${paperLogs.length} paper trading logs`);
 
         const enrichedLogs = paperLogs.slice(0, 20).map(log => ({
           id: log.id,
@@ -113,6 +123,7 @@ export default function PaperTradingBalance() {
         
         setLogs(enrichedLogs);
       } else {
+        console.log('📝 [Paper Logs] No logs found');
         setLogs([]);
       }
     } catch (error) {
@@ -187,8 +198,86 @@ export default function PaperTradingBalance() {
   };
   
   if (!balance) {
-    // Return null if no balance yet (will be created on first trade)
-    return null;
+    // Still show logs even if balance doesn't exist yet
+    return (
+      <Card className="p-4">
+        <h3 className="text-lg font-semibold mb-3">📝 Paper Trading Balance</h3>
+        <div className="space-y-3">
+          <div className="text-center py-4 text-gray-500 text-sm">
+            <i className="ri-wallet-line text-2xl mb-2 block"></i>
+            <p>Account will be created on first trade</p>
+            <p className="text-xs mt-1">Default balance: $10,000</p>
+          </div>
+          
+          {/* Paper Trading Logs */}
+          <div className="border-t pt-4 mt-4">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-semibold text-gray-700">Recent Activity</h4>
+              <Button
+                onClick={fetchLogs}
+                variant="secondary"
+                size="sm"
+                loading={loadingLogs}
+              >
+                <i className="ri-refresh-line"></i>
+              </Button>
+            </div>
+            
+            {loadingLogs && logs.length === 0 ? (
+              <div className="text-center py-4 text-gray-500 text-sm">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                <p>Loading activity...</p>
+              </div>
+            ) : logs.length === 0 ? (
+              <div className="text-center py-4 text-gray-500 text-sm">
+                <i className="ri-file-list-line text-2xl mb-2 block"></i>
+                <p>No paper trading activity yet</p>
+                <p className="text-xs mt-1">Activity will appear here when bots execute trades</p>
+                <p className="text-xs mt-1 text-gray-400">Make sure you have paper trading bots running</p>
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {logs.map((log) => (
+                  <div
+                    key={log.id}
+                    className="p-2 bg-gray-50 rounded-lg border border-gray-200 text-sm hover:bg-gray-100 transition-colors"
+                  >
+                    <div className="flex items-start gap-2">
+                      <i className={`${getLevelIcon(log.level)} mt-0.5 flex-shrink-0`}></i>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          {log.bot_name && (
+                            <span className="font-medium text-gray-900 text-xs">
+                              {log.bot_name}
+                            </span>
+                          )}
+                          {log.symbol && (
+                            <span className="text-xs text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded">
+                              {log.symbol}
+                            </span>
+                          )}
+                          <span className="text-xs text-gray-400 ml-auto">
+                            {formatTime(log.timestamp)}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-700 break-words">
+                          {log.message}
+                        </p>
+                        {log.category && (
+                          <span className="inline-block mt-1 px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">
+                            {log.category}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </Card>
+    );
   }
   
   return (
