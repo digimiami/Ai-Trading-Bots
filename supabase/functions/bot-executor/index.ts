@@ -2146,10 +2146,12 @@ class BotExecutor {
               message: `🚨 CRITICAL: Unprotected position ${symbol} cannot be closed automatically! MANUAL ACTION REQUIRED!`,
               details: {
                 symbol,
-                side: actualPositionSide,
+                side: actualClosePositionSide || actualPositionSide,
                 entryPrice,
                 slTpError: data.retMsg,
                 closeError: closeError instanceof Error ? closeError.message : String(closeError),
+                closeSide: closeSide || 'unknown',
+                positionSize: closePositionSize || 0,
                 urgentAction: 'CLOSE POSITION MANUALLY IMMEDIATELY',
                 instructions: 'Go to Bybit exchange → Positions → Close position manually',
                 riskLevel: 'CRITICAL - Position has no stop loss protection'
