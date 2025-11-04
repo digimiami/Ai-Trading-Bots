@@ -464,10 +464,21 @@ serve(async (req) => {
         
         console.log(`📊 Bot ${bot.name}: Total trades=${allBotTrades.length}, Processed=${processedTrades.length}, WithPnL=${tradesWithPnL.length}`)
         
-        const winTrades = tradesWithPnL.filter(t => (t as any).calculatedPnL > 0).length
-        const lossTrades = tradesWithPnL.filter(t => (t as any).calculatedPnL < 0).length
-        const totalTradesWithPnL = tradesWithPnL.length
-        const winRate = totalTradesWithPnL > 0 ? (winTrades / totalTradesWithPnL) * 100 : (bot.win_rate || 0)
+        let winTrades = tradesWithPnL.filter(t => (t as any).calculatedPnL > 0).length
+        let lossTrades = tradesWithPnL.filter(t => (t as any).calculatedPnL < 0).length
+        let totalTradesWithPnL = tradesWithPnL.length
+        let winRate = totalTradesWithPnL > 0 ? (winTrades / totalTradesWithPnL) * 100 : (bot.win_rate || 0)
+        
+        // FALLBACK: If no trades with PnL but bot has win_rate and total_trades, estimate from bot data
+        // This handles cases where bot has PnL but individual trades don't have exit_price yet
+        if (totalTradesWithPnL === 0 && bot.total_trades > 0 && bot.win_rate !== null && bot.win_rate !== undefined && bot.win_rate > 0) {
+          console.log(`📊 Bot ${bot.name}: Using bot-level data as fallback: total_trades=${bot.total_trades}, win_rate=${bot.win_rate}%`)
+          const estimatedTotalTrades = Math.max(1, Math.round(bot.total_trades || allBotTrades.length))
+          winTrades = Math.round((bot.win_rate / 100) * estimatedTotalTrades)
+          lossTrades = estimatedTotalTrades - winTrades
+          totalTradesWithPnL = estimatedTotalTrades
+          winRate = bot.win_rate
+        }
         
         console.log(`📊 Bot ${bot.name}: Win=${winTrades}, Loss=${lossTrades}, WinRate=${winRate.toFixed(1)}%, Fees=$${botFees.toFixed(2)}`)
         
@@ -502,14 +513,22 @@ serve(async (req) => {
           drawdownPercentage = peakPnL > 0 ? (drawdown / peakPnL) * 100 : 0
         } else if (bot.pnl !== 0 && bot.pnl !== null) {
           // Fallback: if no trades with PnL but bot has PnL, use bot PnL for peak/current
+          // This handles cases where positions are still open (no exit_price yet)
+          console.log(`📊 Bot ${bot.name}: Using bot PnL for drawdown: bot.pnl=${bot.pnl}`)
           peakPnL = bot.pnl > 0 ? bot.pnl : 0
           currentPnL = bot.pnl
           if (bot.pnl < 0) {
             // If current PnL is negative, drawdown is the absolute value
             drawdown = Math.abs(bot.pnl)
             drawdownPercentage = 100 // 100% drawdown if we went negative from 0
+          } else {
+            // If bot has positive PnL, set peak to current
+            peakPnL = bot.pnl
+            currentPnL = bot.pnl
           }
         }
+        
+        console.log(`📊 Bot ${bot.name}: Drawdown=$${drawdown.toFixed(2)} (${drawdownPercentage.toFixed(1)}%), Peak=$${peakPnL.toFixed(2)}, Current=$${currentPnL.toFixed(2)}`)
         
         const botPnL = bot.pnl || 0
         const netProfitLoss = botPnL - botFees
