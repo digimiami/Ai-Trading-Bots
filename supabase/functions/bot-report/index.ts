@@ -342,11 +342,12 @@ serve(async (req) => {
         const processedTrades = allBotTrades.map(t => {
           let calculatedPnL = parseFloat(t.pnl) || 0
           
-          // If PnL is 0 or null but we have entry/exit prices, calculate it
+          // CRITICAL: If PnL is 0 or null, try to calculate from entry/exit prices
+          // This handles cases where trades were recorded but PnL wasn't calculated
           if ((calculatedPnL === 0 || t.pnl === null || t.pnl === undefined) && (t as any).entry_price && (t as any).exit_price) {
             const entryPrice = parseFloat((t as any).entry_price || 0)
             const exitPrice = parseFloat((t as any).exit_price || 0)
-            const size = parseFloat(t.amount || 0)
+            const size = parseFloat(t.amount || t.size || 0)
             const side = ((t as any).side || 'long').toLowerCase()
             const tradeFee = parseFloat(t.fee || 0)
             
@@ -359,8 +360,24 @@ serve(async (req) => {
             }
           }
           
+          // Also check if trade has stored PnL that's non-zero
+          if (calculatedPnL === 0 && t.pnl !== null && t.pnl !== undefined) {
+            const storedPnL = parseFloat(t.pnl)
+            if (!isNaN(storedPnL) && storedPnL !== 0) {
+              calculatedPnL = storedPnL
+            }
+          }
+          
           return { ...t, calculatedPnL }
         })
+        
+        console.log(`📊 Bot ${bot.name}: Processing ${allBotTrades.length} trades, checking for PnL...`)
+        const tradesWithStoredPnL = allBotTrades.filter(t => {
+          const pnl = parseFloat(t.pnl || 0)
+          return !isNaN(pnl) && pnl !== 0
+        })
+        const tradesWithExitPrice = allBotTrades.filter(t => !!(t as any).exit_price)
+        console.log(`📊 Bot ${bot.name}: Trades with stored PnL=${tradesWithStoredPnL.length}, With exit_price=${tradesWithExitPrice.length}`)
         
         // For spot trading, match buy/sell pairs to calculate PnL (FIFO matching)
         // This is the same logic as usePerformance hook
