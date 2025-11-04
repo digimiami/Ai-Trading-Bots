@@ -306,7 +306,9 @@ serve(async (req) => {
         total_pnl_from_bots: totalPnLFromBots,
         total_fees: totalFees,
         net_profit_loss: totalPnL - totalFees,
-        total_trades: tradesData?.length || 0
+        // CRITICAL FIX: Sum total trades from all active bots, not just tradesData
+        // tradesData might be empty or filtered, but bots have accurate total_trades
+        total_trades: botPerformanceData?.reduce((sum, b) => sum + (b.total_trades || 0), 0) || tradesData?.length || 0
       },
       active_bots: activeBotsData?.map(bot => {
         // Get ALL trades for this bot (including pending/open positions for total count)
@@ -318,8 +320,11 @@ serve(async (req) => {
         const botFees = allBotTrades.reduce((sum, t) => {
           let fee = 0
           // Always calculate fee from amount and price (trades are stored with fee: 0)
-          if (t.amount && t.price) {
-            const tradeValue = parseFloat(t.amount) * parseFloat(t.price)
+          const amount = parseFloat(t.amount || t.size || 0)
+          const price = parseFloat(t.price || t.entry_price || 0)
+          
+          if (amount > 0 && price > 0) {
+            const tradeValue = amount * price
             if (bot.exchange === 'bybit') {
               fee = bot.trading_type === 'futures' ? tradeValue * 0.00055 : tradeValue * 0.001
             } else if (bot.exchange === 'okx') {
@@ -328,13 +333,17 @@ serve(async (req) => {
               fee = tradeValue * 0.001 // Default 0.1%
             }
           }
+          
           // Use stored fee only if it's greater than calculated (shouldn't happen, but safety)
           const storedFee = parseFloat(t.fee || 0)
           if (storedFee > fee) {
             fee = storedFee
           }
+          
           return sum + fee
         }, 0)
+        
+        console.log(`📊 Bot ${bot.name}: Fee calculation - Total trades=${allBotTrades.length}, Calculated fees=$${botFees.toFixed(2)}`)
         
         // Calculate win/loss trades and drawdown
         // Process ALL trades and calculate PnL where possible (same logic as Performance page)
@@ -469,15 +478,35 @@ serve(async (req) => {
         let totalTradesWithPnL = tradesWithPnL.length
         let winRate = totalTradesWithPnL > 0 ? (winTrades / totalTradesWithPnL) * 100 : (bot.win_rate || 0)
         
-        // FALLBACK: If no trades with PnL but bot has win_rate and total_trades, estimate from bot data
+        // FALLBACK: If no trades with PnL but bot has total_trades, estimate from bot data
         // This handles cases where bot has PnL but individual trades don't have exit_price yet
-        if (totalTradesWithPnL === 0 && bot.total_trades > 0 && bot.win_rate !== null && bot.win_rate !== undefined && bot.win_rate > 0) {
-          console.log(`📊 Bot ${bot.name}: Using bot-level data as fallback: total_trades=${bot.total_trades}, win_rate=${bot.win_rate}%`)
+        // Use bot.total_trades even if win_rate is 0 or null - we can still estimate
+        if (totalTradesWithPnL === 0 && bot.total_trades > 0) {
+          console.log(`📊 Bot ${bot.name}: Using bot-level data as fallback: total_trades=${bot.total_trades}, win_rate=${bot.win_rate || 0}%`)
           const estimatedTotalTrades = Math.max(1, Math.round(bot.total_trades || allBotTrades.length))
-          winTrades = Math.round((bot.win_rate / 100) * estimatedTotalTrades)
-          lossTrades = estimatedTotalTrades - winTrades
+          
+          // If bot has win_rate, use it; otherwise estimate based on PnL
+          if (bot.win_rate !== null && bot.win_rate !== undefined && bot.win_rate > 0) {
+            winTrades = Math.round((bot.win_rate / 100) * estimatedTotalTrades)
+            lossTrades = estimatedTotalTrades - winTrades
+            winRate = bot.win_rate
+          } else {
+            // If no win_rate but bot has PnL, estimate: positive PnL = mostly wins
+            // Use a conservative estimate: if PnL > 0, assume 60% win rate; if PnL < 0, assume 40% win rate
+            if (bot.pnl > 0) {
+              winRate = 60 // Conservative estimate for positive PnL
+              winTrades = Math.round(0.6 * estimatedTotalTrades)
+            } else if (bot.pnl < 0) {
+              winRate = 40 // Conservative estimate for negative PnL
+              winTrades = Math.round(0.4 * estimatedTotalTrades)
+            } else {
+              winRate = 50 // Neutral if PnL is 0
+              winTrades = Math.round(0.5 * estimatedTotalTrades)
+            }
+            lossTrades = estimatedTotalTrades - winTrades
+          }
+          
           totalTradesWithPnL = estimatedTotalTrades
-          winRate = bot.win_rate
         }
         
         console.log(`📊 Bot ${bot.name}: Win=${winTrades}, Loss=${lossTrades}, WinRate=${winRate.toFixed(1)}%, Fees=$${botFees.toFixed(2)}`)
@@ -511,7 +540,7 @@ serve(async (req) => {
           }
           currentPnL = runningPnL
           drawdownPercentage = peakPnL > 0 ? (drawdown / peakPnL) * 100 : 0
-        } else if (bot.pnl !== 0 && bot.pnl !== null) {
+        } else if (bot.pnl !== null && bot.pnl !== undefined) {
           // Fallback: if no trades with PnL but bot has PnL, use bot PnL for peak/current
           // This handles cases where positions are still open (no exit_price yet)
           console.log(`📊 Bot ${bot.name}: Using bot PnL for drawdown: bot.pnl=${bot.pnl}`)
@@ -525,6 +554,8 @@ serve(async (req) => {
             // If bot has positive PnL, set peak to current
             peakPnL = bot.pnl
             currentPnL = bot.pnl
+            drawdown = 0 // No drawdown if we're at or above peak
+            drawdownPercentage = 0
           }
         }
         
