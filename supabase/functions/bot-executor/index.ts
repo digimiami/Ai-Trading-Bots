@@ -2113,22 +2113,6 @@ class BotExecutor {
                 });
               }
             }
-            
-            if (bot) {
-              await this.addBotLog(bot.id, {
-                level: 'warning',
-                category: 'trade',
-                message: `🛡️ Unprotected position closed: ${symbol} ${actualPositionSide} (safety protocol)`,
-                details: {
-                  symbol,
-                  originalSide: actualPositionSide,
-                  closeSide,
-                  positionSize: closePositionSize,
-                  closeOrderId: closeOrderResult?.orderId,
-                  reason: 'SL/TP setup failed - position closed for safety'
-                }
-              });
-            }
           } else {
             console.warn(`⚠️ Could not determine position size to close - position may already be closed`);
           }
