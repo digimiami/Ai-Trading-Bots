@@ -1216,8 +1216,20 @@ class BotExecutor {
             console.warn('⚠️ Could not fetch position entry price, skipping SL/TP (position may have been closed)');
           }
         } catch (slTpError) {
+          // CRITICAL: If SL/TP fails and position couldn't be closed, this is a critical error
+          const errorMessage = slTpError instanceof Error ? slTpError.message : String(slTpError);
+          
+          if (errorMessage.includes('CRITICAL') || errorMessage.includes('safety protocol')) {
+            // Position was closed for safety OR position is unprotected - this is critical
+            console.error('🚨 CRITICAL: SL/TP failure - position protection failed');
+            console.error(`   Error: ${errorMessage}`);
+            
+            // Re-throw to prevent trade from being recorded as successful
+            throw new Error(`Trade aborted: ${errorMessage}`);
+          }
+          
+          // For other SL/TP errors (non-critical), log but don't fail
           console.warn('⚠️ Failed to set SL/TP (non-critical):', slTpError);
-          // Don't fail the whole trade if SL/TP fails - order was already placed
         }
       }
       
@@ -1507,11 +1519,11 @@ class BotExecutor {
   
   private async setBybitSLTP(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string, side: string, entryPrice: number, bot: any): Promise<void> {
     const baseUrl = isTestnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com';
+    const recvWindow = '5000';
     
     try {
       // First, check actual position to determine correct side
       const timestamp = Date.now().toString();
-      const recvWindow = '5000';
       const positionQuery = `category=linear&symbol=${symbol}`;
       const positionSigPayload = timestamp + apiKey + recvWindow + positionQuery;
       const positionSig = await this.createBybitSignature(positionSigPayload, apiSecret);
@@ -1902,43 +1914,162 @@ class BotExecutor {
       if (data.retCode !== 0) {
         console.error('SL/TP Response:', data);
         
-        // If SL/TP fails, it's non-critical - the trade was successful
-        // Log the error but don't throw - we don't want to fail the entire trade
-        console.error(`❌ SL/TP setting failed for ${symbol} (non-critical): ${data.retMsg}`);
-        console.error(`   ⚠️ WARNING: Position is OPEN but WITHOUT automatic SL/TP protection!`);
-        console.error(`   ⚠️ ACTION REQUIRED: You must manually set SL/TP on the exchange or close the position`);
-        console.error(`   📊 Position details: ${symbol}, Side: ${actualPositionSide}, Entry: ${entryPrice}`);
-        console.error(`   💡 Manual SL/TP: Set SL=${bot?.stop_loss || 2.0}%, TP=${bot?.take_profit || 4.0}% on Bybit`);
-        console.error(`   📝 How to close: Use 'Close Position' button in UI or risk-management API`);
+        // CRITICAL SAFETY: If SL/TP fails, position has NO PROTECTION - must close immediately
+        console.error(`❌ SL/TP setting FAILED for ${symbol}: ${data.retMsg}`);
+        console.error(`   🚨 CRITICAL: Position is OPEN but WITHOUT protection!`);
+        console.error(`   🛡️ SAFETY PROTOCOL: Attempting to close unprotected position immediately...`);
         
-        // Log critical warning to bot activity logs
+        // Log critical error to bot activity logs
         if (bot) {
           await this.addBotLog(bot.id, {
             level: 'error',
             category: 'trade',
-            message: `⚠️ CRITICAL: SL/TP API failed for ${symbol} ${actualPositionSide} position. Position is OPEN without protection!`,
+            message: `🚨 CRITICAL: SL/TP failed for ${symbol}. Closing unprotected position immediately!`,
             details: {
               symbol,
               side: actualPositionSide,
               entryPrice,
               error: data.retMsg,
               bybitErrorCode: data.retCode,
-              recommendation: 'Manually set SL/TP on exchange or close position via UI',
-              manualSL: `${bot?.stop_loss || 2.0}%`,
-              manualTP: `${bot?.take_profit || 4.0}%`,
-              howToClose: 'Use "Close Position" button in Trades page or call risk-management API'
+              action: 'Attempting to close position immediately',
+              reason: 'Position opened without SL/TP protection - safety protocol activated'
             }
           });
         }
         
-        return; // Return gracefully instead of throwing
+        // Attempt to close the position immediately for safety
+        try {
+          console.log(`🛡️ Attempting to close unprotected position: ${symbol} ${actualPositionSide}`);
+          
+          // Get opposite side to close position
+          const closeSide = actualPositionSide === 'Buy' ? 'Sell' : 'Buy';
+          
+          // Re-fetch position to get current size
+          const closeCheckTimestamp = Date.now().toString();
+          const closeCheckQuery = `category=linear&symbol=${symbol}`;
+          const closeCheckSigPayload = closeCheckTimestamp + apiKey + recvWindow + closeCheckQuery;
+          const closeCheckSig = await this.createBybitSignature(closeCheckSigPayload, apiSecret);
+          
+          const closeCheckResponse = await fetch(`${baseUrl}/v5/position/list?${closeCheckQuery}`, {
+            method: 'GET',
+            headers: {
+              'X-BAPI-API-KEY': apiKey,
+              'X-BAPI-TIMESTAMP': closeCheckTimestamp,
+              'X-BAPI-RECV-WINDOW': recvWindow,
+              'X-BAPI-SIGN': closeCheckSig,
+            },
+          });
+          
+          const closeCheckData = await closeCheckResponse.json();
+          let closePositionSize = 0;
+          
+          if (closeCheckData.retCode === 0 && closeCheckData.result?.list) {
+            const closePosition = closeCheckData.result.list.find((p: any) => {
+              const size = parseFloat(p.size || '0');
+              return size !== 0;
+            });
+            if (closePosition) {
+              closePositionSize = Math.abs(parseFloat(closePosition.size || '0'));
+            }
+          }
+          
+          if (closePositionSize > 0) {
+            console.log(`🛡️ Closing position: ${symbol} ${actualPositionSide}, Size: ${closePositionSize}`);
+            
+            // Close position by placing opposite order
+            const closeOrderResult = await this.placeBybitOrder(
+              apiKey,
+              apiSecret,
+              isTestnet,
+              symbol,
+              closeSide,
+              closePositionSize,
+              0, // Market order - use 0 for price
+              'linear', // Assuming futures
+              bot
+            );
+            
+            console.log(`✅ Position closed successfully: ${symbol} (Order ID: ${closeOrderResult?.orderId})`);
+            
+            if (bot) {
+              await this.addBotLog(bot.id, {
+                level: 'warning',
+                category: 'trade',
+                message: `🛡️ Unprotected position closed: ${symbol} ${actualPositionSide} (safety protocol)`,
+                details: {
+                  symbol,
+                  originalSide: actualPositionSide,
+                  closeSide,
+                  positionSize: closePositionSize,
+                  closeOrderId: closeOrderResult?.orderId,
+                  reason: 'SL/TP setup failed - position closed for safety'
+                }
+              });
+            }
+          } else {
+            console.warn(`⚠️ Could not determine position size to close - position may already be closed`);
+          }
+        } catch (closeError) {
+          // If closing fails, this is CRITICAL - position is unprotected and we can't close it
+          console.error(`❌ CRITICAL ERROR: Failed to close unprotected position: ${symbol}`);
+          console.error(`   Error: ${closeError instanceof Error ? closeError.message : String(closeError)}`);
+          console.error(`   🚨 MANUAL ACTION REQUIRED: Position ${symbol} is OPEN without protection!`);
+          console.error(`   💡 IMMEDIATE ACTION: Close position manually on Bybit exchange or via UI`);
+          
+          if (bot) {
+            await this.addBotLog(bot.id, {
+              level: 'error',
+              category: 'trade',
+              message: `🚨 CRITICAL: Unprotected position ${symbol} cannot be closed automatically! MANUAL ACTION REQUIRED!`,
+              details: {
+                symbol,
+                side: actualPositionSide,
+                entryPrice,
+                slTpError: data.retMsg,
+                closeError: closeError instanceof Error ? closeError.message : String(closeError),
+                urgentAction: 'CLOSE POSITION MANUALLY IMMEDIATELY',
+                instructions: 'Go to Bybit exchange → Positions → Close position manually',
+                riskLevel: 'CRITICAL - Position has no stop loss protection'
+              }
+            });
+          }
+          
+          // Throw error to alert caller that position is unprotected
+          throw new Error(`CRITICAL: Position ${symbol} opened but SL/TP failed and position could not be closed. MANUAL ACTION REQUIRED!`);
+        }
+        
+        // If we successfully closed the position, throw error to alert caller
+        // This will cause the trade to be marked as failed
+        throw new Error(`Position ${symbol} was closed due to SL/TP setup failure (safety protocol)`);
       }
       
       console.log('✅ SL/TP set successfully');
     } catch (error) {
-      // SL/TP errors are non-critical - the trade was already placed
-      console.error('⚠️ SL/TP setting error (non-critical, trade successful):', error);
-      // Don't throw - allow the trade to complete successfully
+      // CRITICAL: If SL/TP fails and position couldn't be closed, this is a critical error
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      
+      if (errorMessage.includes('CRITICAL') || errorMessage.includes('safety protocol')) {
+        // This is a critical safety error - re-throw to prevent trade completion
+        console.error('🚨 CRITICAL: SL/TP failure resulted in unprotected position - trade cannot proceed');
+        throw error;
+      }
+      
+      // For other SL/TP errors, log but don't fail the trade
+      console.error('⚠️ SL/TP setting error:', error);
+      
+      // Log to bot activity
+      if (bot) {
+        await this.addBotLog(bot.id, {
+          level: 'error',
+          category: 'trade',
+          message: `⚠️ SL/TP setting error for ${symbol}: ${errorMessage}`,
+          details: {
+            symbol,
+            error: errorMessage,
+            note: 'Trade completed but SL/TP may not be set. Check position manually.'
+          }
+        });
+      }
     }
   }
   
