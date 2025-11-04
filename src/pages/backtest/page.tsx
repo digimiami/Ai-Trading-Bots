@@ -3,7 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import Card from '../../components/base/Card';
 import Button from '../../components/base/Button';
 import Header from '../../components/feature/Header';
+import { createClient } from '@supabase/supabase-js';
 import type { TradingStrategy, AdvancedStrategyConfig } from '../../types/trading';
+
+const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 interface BacktestConfig {
   name: string;
@@ -100,9 +104,169 @@ export default function BacktestPage() {
   const [results, setResults] = useState<any>(null);
   const [showCreateBot, setShowCreateBot] = useState(false);
   const [botName, setBotName] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleStrategyChange = (field: keyof TradingStrategy, value: any) => {
     setStrategy(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleSaveBacktest = async () => {
+    if (!results || !config.name.trim()) {
+      alert('Please complete a backtest first');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const supabase = createClient(supabaseUrl!, supabaseAnonKey!);
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('Not authenticated');
+      }
+
+      // Get the symbols used in the backtest
+      const symbols = config.useCustomPairs && config.customPairs.trim()
+        ? config.customPairs
+            .split(/[\n,]/)
+            .map(pair => pair.trim().toUpperCase())
+            .filter(pair => pair.length > 0)
+        : config.symbols;
+
+      const { data, error } = await supabase
+        .from('backtests')
+        .insert({
+          user_id: session.user.id,
+          name: config.name,
+          symbols: symbols,
+          custom_pairs: config.useCustomPairs ? config.customPairs : null,
+          exchange: config.exchange,
+          trading_type: config.tradingType,
+          timeframe: config.timeframe,
+          leverage: config.leverage,
+          risk_level: config.riskLevel,
+          trade_amount: config.tradeAmount,
+          stop_loss: config.stopLoss,
+          take_profit: config.takeProfit,
+          strategy: strategy,
+          strategy_config: advancedConfig,
+          start_date: config.startDate,
+          end_date: config.endDate,
+          status: 'completed',
+          progress: 100,
+          total_trades: results.total_trades || 0,
+          winning_trades: results.winning_trades || 0,
+          losing_trades: results.losing_trades || 0,
+          win_rate: results.win_rate || 0,
+          total_pnl: results.total_pnl || 0,
+          total_pnl_percentage: results.total_pnl_percentage || 0,
+          max_drawdown: results.max_drawdown || 0,
+          sharpe_ratio: results.sharpe_ratio || 0,
+          profit_factor: results.profit_factor || 0,
+          results_per_pair: results.results_per_pair || {},
+          completed_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (error) {
+        throw error;
+      }
+
+      alert('✅ Backtest saved successfully!');
+      setBacktestId(data.id);
+    } catch (error: any) {
+      console.error('Error saving backtest:', error);
+      alert(`Failed to save backtest: ${error.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleExportCSV = () => {
+    if (!results) return;
+
+    let csv = 'Backtest Results\n';
+    csv += `Backtest Name: ${config.name}\n`;
+    csv += `Date Range: ${config.startDate} to ${config.endDate}\n`;
+    csv += `Exchange: ${config.exchange.toUpperCase()}\n`;
+    csv += `Trading Type: ${config.tradingType}\n`;
+    csv += `Generated: ${new Date().toISOString()}\n\n`;
+
+    // Overview Summary
+    csv += 'OVERVIEW SUMMARY\n';
+    csv += `Total Trades,${results.total_trades || 0}\n`;
+    csv += `Winning Trades,${results.winning_trades || 0}\n`;
+    csv += `Losing Trades,${results.losing_trades || 0}\n`;
+    csv += `Win Rate,${(results.win_rate || 0).toFixed(2)}%\n`;
+    csv += `Total P&L,$${(results.total_pnl || 0).toFixed(2)}\n`;
+    csv += `Total P&L %,${(results.total_pnl_percentage || 0).toFixed(2)}%\n`;
+    csv += `Max Drawdown,${(results.max_drawdown || 0).toFixed(2)}%\n`;
+    csv += `Sharpe Ratio,${(results.sharpe_ratio || 0).toFixed(2)}\n`;
+    csv += `Profit Factor,${(results.profit_factor || 0).toFixed(2)}\n\n`;
+
+    // Per-Pair Results
+    if (results.results_per_pair && Object.keys(results.results_per_pair).length > 0) {
+      csv += 'PER-PAIR PERFORMANCE\n';
+      csv += 'Pair,Trades,Win Rate,Total P&L\n';
+      Object.entries(results.results_per_pair).forEach(([pair, data]: [string, any]) => {
+        csv += `${pair},${data.trades || 0},${(data.win_rate || 0).toFixed(2)}%,$${(data.pnl || 0).toFixed(2)}\n`;
+      });
+    }
+
+    // Download CSV
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `backtest-${config.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleExportJSON = () => {
+    if (!results) return;
+
+    const exportData = {
+      backtest_name: config.name,
+      date_range: {
+        start: config.startDate,
+        end: config.endDate
+      },
+      configuration: {
+        exchange: config.exchange,
+        trading_type: config.tradingType,
+        timeframe: config.timeframe,
+        leverage: config.leverage,
+        risk_level: config.riskLevel,
+        trade_amount: config.tradeAmount,
+        stop_loss: config.stopLoss,
+        take_profit: config.takeProfit,
+        symbols: config.useCustomPairs && config.customPairs.trim()
+          ? config.customPairs
+              .split(/[\n,]/)
+              .map(pair => pair.trim().toUpperCase())
+              .filter(pair => pair.length > 0)
+          : config.symbols
+      },
+      strategy: strategy,
+      strategy_config: advancedConfig,
+      results: results,
+      generated_at: new Date().toISOString()
+    };
+
+    const jsonStr = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `backtest-${config.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const handleCreateBotFromResults = async () => {
@@ -603,8 +767,50 @@ export default function BacktestPage() {
                   </div>
                 )}
 
-                {/* Create Bot from Results Button */}
-                <div className="mt-6 pt-6 border-t border-green-300">
+                {/* Action Buttons Row */}
+                <div className="mt-6 pt-6 border-t border-green-300 space-y-3">
+                  {/* Export/Save Buttons */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={handleSaveBacktest}
+                      disabled={isSaving}
+                      className="w-full"
+                    >
+                      {isSaving ? (
+                        <>
+                          <i className="ri-loader-4-line animate-spin mr-2"></i>
+                          Saving...
+                        </>
+                      ) : (
+                        <>
+                          <i className="ri-save-line mr-2"></i>
+                          Save to Database
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={handleExportCSV}
+                      className="w-full"
+                    >
+                      <i className="ri-file-download-line mr-2"></i>
+                      Export CSV
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={handleExportJSON}
+                      className="w-full"
+                    >
+                      <i className="ri-file-code-line mr-2"></i>
+                      Export JSON
+                    </Button>
+                  </div>
+
+                  {/* Create Bot Button */}
                   <Button
                     type="button"
                     variant="primary"
