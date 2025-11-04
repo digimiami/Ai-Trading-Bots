@@ -520,7 +520,11 @@ export default function BotsPage() {
                                       }
                                       
                                       // Update max_trades_per_day
+                                      // Ensure required fields have defaults if missing
                                       const updatedConfig = {
+                                        bias_mode: currentConfig.bias_mode || 'auto',
+                                        regime_mode: currentConfig.regime_mode || 'auto',
+                                        htf_timeframe: currentConfig.htf_timeframe || '4h',
                                         ...currentConfig,
                                         max_trades_per_day: editingLimitValue
                                       };

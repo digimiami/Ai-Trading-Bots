@@ -191,12 +191,27 @@ serve(async (req) => {
               : botData.strategy_config
           }
           
+          // Parse new config
+          const newConfig = typeof updates.strategyConfig === 'string' 
+            ? JSON.parse(updates.strategyConfig)
+            : updates.strategyConfig;
+          
           // Merge existing config with new updates
           const mergedConfig = {
             ...existingConfig,
-            ...(typeof updates.strategyConfig === 'string' 
-              ? JSON.parse(updates.strategyConfig)
-              : updates.strategyConfig)
+            ...newConfig
+          };
+          
+          // Ensure required fields have defaults if missing (for validation)
+          // This prevents validation errors when updating partial configs
+          if (!mergedConfig.bias_mode) {
+            mergedConfig.bias_mode = 'auto';
+          }
+          if (!mergedConfig.regime_mode) {
+            mergedConfig.regime_mode = 'auto';
+          }
+          if (!mergedConfig.htf_timeframe) {
+            mergedConfig.htf_timeframe = '4h';
           }
           
           // Store as JSONB (Supabase will handle it automatically)
