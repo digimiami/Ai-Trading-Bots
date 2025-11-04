@@ -1550,13 +1550,29 @@ class BotExecutor {
         
         if (position) {
           positionSize = parseFloat(position.size || '0');
-          actualPositionSide = positionSize > 0 ? 'Buy' : 'Sell'; // Positive = Long (Buy), Negative = Short (Sell)
-          console.log(`📊 Actual position side for ${symbol}: ${actualPositionSide} (size: ${positionSize})`);
+          // Bybit: Positive size = Long (Buy), Negative size = Short (Sell)
+          // But Bybit API might report side as "Buy" or "Sell" in different fields
+          // Use size to determine: positive = Buy (Long), negative = Sell (Short)
+          actualPositionSide = positionSize > 0 ? 'Buy' : 'Sell';
+          
+          // Also check position.side if available (some Bybit responses include this)
+          const bybitPositionSide = position.side;
+          if (bybitPositionSide && bybitPositionSide !== actualPositionSide) {
+            console.warn(`⚠️ Position side mismatch: size indicates ${actualPositionSide} but Bybit reports ${bybitPositionSide}`);
+            // Trust Bybit's reported side over our calculation
+            actualPositionSide = bybitPositionSide === 'Buy' ? 'Buy' : 'Sell';
+            console.log(`   Using Bybit reported side: ${actualPositionSide}`);
+          }
+          
+          console.log(`📊 Actual position side for ${symbol}: ${actualPositionSide} (size: ${positionSize}, Bybit side: ${bybitPositionSide || 'not reported'})`);
           
           // Update entry price from actual position if available
           if (position.avgPrice && parseFloat(position.avgPrice) > 0) {
             entryPrice = parseFloat(position.avgPrice);
             console.log(`📊 Using actual position entry price: ${entryPrice}`);
+          } else if (position.entryPrice && parseFloat(position.entryPrice) > 0) {
+            entryPrice = parseFloat(position.entryPrice);
+            console.log(`📊 Using position entryPrice field: ${entryPrice}`);
           }
         } else {
           console.log(`📊 No open position found for ${symbol} - position may have been closed`);
