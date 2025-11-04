@@ -325,15 +325,16 @@ serve(async (req) => {
         // For fees: calculate from ALL trades (including open positions)
         // Every trade that executes has a fee, even if it's an opening position
         // CRITICAL: Always calculate fee even if stored fee is 0 (trades are inserted with fee: 0)
+        let tradesWithValidAmountPrice = 0
+        let tradesWithoutAmountPrice = 0
         const botFees = allBotTrades.reduce((sum, t) => {
           let fee = 0
           // Always calculate fee from amount and price (trades are stored with fee: 0)
           const amount = parseFloat(t.amount || (t as any).size || 0)
           const price = parseFloat(t.price || (t as any).entry_price || 0)
           
-          console.log(`📊 Bot ${bot.name} trade fee calc: amount=${amount}, price=${price}, amount*price=${amount * price}`)
-          
           if (amount > 0 && price > 0) {
+            tradesWithValidAmountPrice++
             const tradeValue = amount * price
             if (bot.exchange === 'bybit') {
               fee = bot.trading_type === 'futures' ? tradeValue * 0.00055 : tradeValue * 0.001
@@ -342,22 +343,24 @@ serve(async (req) => {
             } else {
               fee = tradeValue * 0.001 // Default 0.1%
             }
-            console.log(`📊 Bot ${bot.name} calculated fee: $${fee.toFixed(4)} (tradeValue=$${tradeValue.toFixed(2)}, exchange=${bot.exchange}, type=${bot.trading_type})`)
           } else {
-            console.log(`⚠️ Bot ${bot.name} trade skipped fee calc: amount=${amount}, price=${price} (both must be > 0)`)
+            tradesWithoutAmountPrice++
+            // Log first few trades without amount/price for debugging
+            if (tradesWithoutAmountPrice <= 3) {
+              console.log(`⚠️ Bot ${bot.name} trade ${tradesWithoutAmountPrice}: amount=${t.amount || (t as any).size || 'null'}, price=${t.price || (t as any).entry_price || 'null'}`)
+            }
           }
           
           // Use stored fee only if it's greater than calculated (shouldn't happen, but safety)
           const storedFee = parseFloat(t.fee || 0)
           if (storedFee > fee) {
             fee = storedFee
-            console.log(`📊 Bot ${bot.name} using stored fee: $${fee.toFixed(4)}`)
           }
           
           return sum + fee
         }, 0)
         
-        console.log(`📊 Bot ${bot.name}: Fee calculation - Total trades=${allBotTrades.length}, Calculated fees=$${botFees.toFixed(2)}`)
+        console.log(`📊 Bot ${bot.name}: Fee calculation - Total trades=${allBotTrades.length}, With valid amount/price=${tradesWithValidAmountPrice}, Without=${tradesWithoutAmountPrice}, Calculated fees=$${botFees.toFixed(2)}`)
         
         // Calculate win/loss trades and drawdown
         // Process ALL trades and calculate PnL where possible (same logic as Performance page)
