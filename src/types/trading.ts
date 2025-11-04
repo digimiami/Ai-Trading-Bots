@@ -20,6 +20,7 @@ export interface TradingBot {
   tradeAmount?: number;
   stopLoss?: number;
   takeProfit?: number;
+  paperTrading?: boolean; // Paper trading mode toggle
 }
 
 export interface TradingStrategy {

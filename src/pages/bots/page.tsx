@@ -866,6 +866,35 @@ export default function BotsPage() {
                     </button>
                   </div>
                   
+                  {/* Paper Trading Toggle */}
+                  <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+                    <div className="flex items-center space-x-2">
+                      <i className={`ri-${bot.paperTrading ? 'edit-box-line' : 'money-dollar-circle-line'} text-yellow-600`}></i>
+                      <span className="text-sm font-medium text-gray-700">
+                        {bot.paperTrading ? '📝 Paper Trading' : '💰 Real Trading'}
+                      </span>
+                    </div>
+                    <button
+                      onClick={async () => {
+                        try {
+                          await updateBot(bot.id, { paperTrading: !bot.paperTrading });
+                          alert(`✅ Bot switched to ${bot.paperTrading ? 'Real Trading' : 'Paper Trading'} mode`);
+                        } catch (error: any) {
+                          alert(`Failed to toggle: ${error.message}`);
+                        }
+                      }}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        bot.paperTrading ? 'bg-yellow-600' : 'bg-gray-300'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          bot.paperTrading ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                  
                   {/* Management Actions Row */}
                   <div className="flex space-x-2">
                     <Button 

@@ -65,7 +65,8 @@ serve(async (req) => {
           lastTradeAt: bot.last_trade_at,
           riskLevel: bot.risk_level,
           strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy,
-          aiMlEnabled: bot.ai_ml_enabled || false
+          aiMlEnabled: bot.ai_ml_enabled || false,
+          paperTrading: bot.paper_trading || false
         }))
 
         return new Response(
@@ -79,7 +80,7 @@ serve(async (req) => {
       const body = await req.json()
 
       if (action === 'create') {
-        const { name, exchange, tradingType, symbol, timeframe, leverage, riskLevel, tradeAmount, stopLoss, takeProfit, strategy, strategyConfig, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt } = body
+        const { name, exchange, tradingType, symbol, timeframe, leverage, riskLevel, tradeAmount, stopLoss, takeProfit, strategy, strategyConfig, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt, paperTrading } = body
 
         // Debug logging
         console.log('Received bot data:', { name, exchange, symbol, timeframe, leverage, riskLevel, tradeAmount, stopLoss, takeProfit, strategy, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt })
@@ -124,6 +125,7 @@ serve(async (req) => {
             take_profit: takeProfit || 4.0,
             strategy: JSON.stringify(strategy),
             strategy_config: strategyConfig ? JSON.stringify(strategyConfig) : null,
+            paper_trading: paperTrading || false,
             status: status || 'running', // Auto-start bots instead of 'stopped'
             pnl: pnl || 0,
             pnl_percentage: pnlPercentage || 0,
@@ -221,6 +223,11 @@ serve(async (req) => {
         // Handle AI/ML field
         if (updates.aiMlEnabled !== undefined) {
           dbUpdates.ai_ml_enabled = updates.aiMlEnabled
+        }
+        
+        // Handle paper trading toggle
+        if (updates.paperTrading !== undefined) {
+          dbUpdates.paper_trading = updates.paperTrading
         }
 
         // First check if bot exists and belongs to user

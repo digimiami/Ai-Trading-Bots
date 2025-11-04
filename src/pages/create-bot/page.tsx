@@ -23,7 +23,8 @@ export default function CreateBotPage() {
     riskLevel: 'medium' as 'low' | 'medium' | 'high',
     tradeAmount: 100, // Amount in USD per trade
     stopLoss: 2.0,
-    takeProfit: 4.0
+    takeProfit: 4.0,
+    paperTrading: false // Paper trading mode toggle
   });
 
   const [customSymbol, setCustomSymbol] = useState<string>('');
@@ -136,6 +137,7 @@ export default function CreateBotPage() {
         tradeAmount: formData.tradeAmount,
         stopLoss: formData.stopLoss,
         takeProfit: formData.takeProfit,
+        paperTrading: formData.paperTrading,
         strategy: strategy,
         strategyConfig: advancedConfig,  // Include advanced configuration
         // Initialize with default values
@@ -545,6 +547,41 @@ All settings have been applied to your bot configuration.`;
                   <p className="text-xs text-gray-500 mt-1">
                     Select hours when bot is allowed to trade (stored in UTC, displayed in EST)
                   </p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Paper Trading Toggle */}
+            <Card className="p-6 bg-yellow-50 border-2 border-yellow-200">
+              <div className="flex items-start mb-2">
+                <input
+                  type="checkbox"
+                  id="paperTrading"
+                  checked={formData.paperTrading}
+                  onChange={(e) => setFormData(prev => ({ ...prev, paperTrading: e.target.checked }))}
+                  className="mr-3 h-5 w-5 text-yellow-600 focus:ring-yellow-500 border-gray-300 rounded mt-1"
+                />
+                <div className="flex-1">
+                  <label htmlFor="paperTrading" className="text-lg font-semibold text-gray-900 cursor-pointer">
+                    📝 Enable Paper Trading (Simulation Mode)
+                  </label>
+                  <p className="text-sm text-gray-700 mt-1">
+                    Uses REAL mainnet market data but simulates all trades. Perfect for testing strategies risk-free.
+                    No real orders will be placed when this is enabled.
+                  </p>
+                  {formData.paperTrading && (
+                    <div className="mt-3 p-3 bg-white rounded border border-yellow-300">
+                      <p className="text-xs text-green-600 font-medium mb-2">
+                        ✅ Paper Trading Enabled - All trades will be simulated
+                      </p>
+                      <p className="text-xs text-gray-600">
+                        • Uses real mainnet market data for accuracy<br/>
+                        • Virtual balance: $10,000 (can be adjusted in settings)<br/>
+                        • No real API orders will be placed<br/>
+                        • Perfect for strategy testing
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             </Card>

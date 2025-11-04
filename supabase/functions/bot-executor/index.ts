@@ -482,6 +482,78 @@ class BotExecutor {
     try {
       console.log(`🤖 Executing bot: ${bot.name} (${bot.id}) - Status: ${bot.status}`);
       
+      // ⚠️ CRITICAL: Check paper trading mode FIRST before any real API calls
+      const isPaperTrading = bot.paper_trading === true;
+      
+      if (isPaperTrading) {
+        // PAPER TRADING MODE - Use real market data but simulate trades
+        console.log(`📝 [PAPER TRADING MODE] Bot: ${bot.name}`);
+        
+        const paperExecutor = new PaperTradingExecutor(this.supabaseClient, this.user);
+        
+        // Get REAL market data from MAINNET (same functions as real trading)
+        const tradingType = bot.tradingType || bot.trading_type || 'futures';
+        const timeframe = bot.timeframe || bot.timeFrame || '1h';
+        console.log(`📊 [PAPER] Using timeframe: ${timeframe} for ${bot.symbol}`);
+        
+        const currentPrice = await MarketDataFetcher.fetchPrice(bot.symbol, bot.exchange, tradingType);
+        const rsi = await MarketDataFetcher.fetchRSI(bot.symbol, bot.exchange, timeframe);
+        const adx = await MarketDataFetcher.fetchADX(bot.symbol, bot.exchange, timeframe);
+        
+        await this.addBotLog(bot.id, {
+          level: 'info',
+          category: 'market',
+          message: `📝 [PAPER] Market data: Price=${currentPrice}, RSI=${rsi.toFixed(2)}, ADX=${adx.toFixed(2)}`,
+          details: { price: currentPrice, rsi, adx, paper_trading: true }
+        });
+        
+        // Same strategy evaluation as real trading
+        let strategy = bot.strategy;
+        if (typeof strategy === 'string') {
+          try {
+            strategy = JSON.parse(strategy);
+            if (typeof strategy === 'string') {
+              strategy = JSON.parse(strategy);
+            }
+          } catch (error) {
+            console.error('Error parsing strategy:', error);
+            strategy = {
+              rsiThreshold: 70,
+              adxThreshold: 25,
+              bbWidthThreshold: 0.02,
+              emaSlope: 0.5,
+              atrPercentage: 2.5,
+              vwapDistance: 1.2,
+              momentumThreshold: 0.8,
+              useMLPrediction: false,
+              minSamplesForML: 100
+            };
+          }
+        }
+        
+        const shouldTrade = this.evaluateStrategy(strategy, { price: currentPrice, rsi, adx }, bot);
+        
+        if (shouldTrade.shouldTrade) {
+          await paperExecutor.executePaperTrade(bot, shouldTrade);
+        } else {
+          await this.addBotLog(bot.id, {
+            level: 'info',
+            category: 'strategy',
+            message: `📝 [PAPER] Strategy conditions not met: ${shouldTrade.reason}`,
+            details: { ...shouldTrade, paper_trading: true }
+          });
+        }
+        
+        // Update existing paper positions
+        await paperExecutor.updatePaperPositions(bot.id);
+        
+        // ⚠️ CRITICAL: RETURN HERE - Don't execute real trades
+        return;
+      }
+      
+      // ⚠️ REAL TRADING MODE - Existing code continues unchanged
+      console.log(`💰 [REAL TRADING MODE] Bot: ${bot.name}`);
+      
       // COMPREHENSIVE SETTINGS VALIDATION & LOGGING
       console.log(`\n📋 Bot Settings Validation:`);
       console.log(`   Timeframe: ${bot.timeframe || bot.timeFrame || '1h (default)'}`);
@@ -3085,6 +3157,358 @@ class BotExecutor {
       console.error(`❌ Exception saving bot log for bot ${botId}:`, error);
       // Continue execution even if logging fails
     }
+  }
+}
+
+// Paper Trading Executor - Simulates trades using real market data
+class PaperTradingExecutor {
+  private supabaseClient: any;
+  private user: any;
+  
+  constructor(supabaseClient: any, user: any) {
+    this.supabaseClient = supabaseClient;
+    this.user = user;
+  }
+  
+  // Get or create paper trading account
+  private async getPaperAccount(): Promise<any> {
+    let { data: account } = await this.supabaseClient
+      .from('paper_trading_accounts')
+      .select('*')
+      .eq('user_id', this.user.id)
+      .single();
+    
+    if (!account) {
+      // Create default account with $10,000
+      const { data: newAccount } = await this.supabaseClient
+        .from('paper_trading_accounts')
+        .insert({
+          user_id: this.user.id,
+          balance: 10000,
+          initial_balance: 10000
+        })
+        .select()
+        .single();
+      return newAccount;
+    }
+    
+    return account;
+  }
+  
+  // Add funds to paper trading account
+  async addFunds(amount: number): Promise<any> {
+    const account = await this.getPaperAccount();
+    const newBalance = parseFloat(account.balance) + amount;
+    const newTotalDeposited = parseFloat(account.total_deposited || 0) + amount;
+    
+    const { data, error } = await this.supabaseClient
+      .from('paper_trading_accounts')
+      .update({
+        balance: newBalance,
+        total_deposited: newTotalDeposited,
+        updated_at: TimeSync.getCurrentTimeISO()
+      })
+      .eq('id', account.id)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  }
+  
+  // Execute paper trade (simulate order)
+  async executePaperTrade(bot: any, tradeSignal: any): Promise<void> {
+    try {
+      console.log(`📝 [PAPER TRADING] Executing simulated trade for ${bot.name}`);
+      
+      // Get account balance
+      const account = await this.getPaperAccount();
+      const availableBalance = parseFloat(account.balance);
+      
+      // Get REAL market data from MAINNET (same as real trading)
+      const currentPrice = await MarketDataFetcher.fetchPrice(
+        bot.symbol, 
+        bot.exchange, 
+        bot.tradingType || bot.trading_type || 'futures'
+      );
+      
+      if (!currentPrice || currentPrice === 0) {
+        throw new Error(`Invalid price for ${bot.symbol} - market data unavailable`);
+      }
+      
+      // Calculate trade size (same logic as real trading)
+      const leverage = bot.leverage || 1;
+      const riskMultiplier = bot.risk_level === 'high' ? 2 : bot.risk_level === 'medium' ? 1.5 : 1;
+      const baseAmount = bot.trade_amount || 100;
+      const totalOrderValue = baseAmount * leverage * riskMultiplier;
+      const quantity = totalOrderValue / currentPrice;
+      
+      // Calculate margin required (for futures)
+      const marginRequired = bot.tradingType === 'futures' || bot.trading_type === 'futures'
+        ? totalOrderValue / leverage 
+        : totalOrderValue;
+      
+      // Check if sufficient balance
+      if (marginRequired > availableBalance) {
+        throw new Error(`Insufficient paper balance: Need $${marginRequired.toFixed(2)}, Have $${availableBalance.toFixed(2)}`);
+      }
+      
+      // Determine position side
+      const side = tradeSignal.side === 'buy' || tradeSignal.side === 'long' ? 'long' : 'short';
+      
+      // Calculate SL/TP prices (use bot settings)
+      const stopLossPct = bot.stop_loss || bot.stopLoss || 2.0;
+      const takeProfitPct = bot.take_profit || bot.takeProfit || 4.0;
+      
+      let stopLossPrice: number;
+      let takeProfitPrice: number;
+      
+      if (side === 'long') {
+        stopLossPrice = currentPrice * (1 - stopLossPct / 100);
+        takeProfitPrice = currentPrice * (1 + takeProfitPct / 100);
+      } else {
+        stopLossPrice = currentPrice * (1 + stopLossPct / 100);
+        takeProfitPrice = currentPrice * (1 - takeProfitPct / 100);
+      }
+      
+      // Deduct margin from account
+      const newBalance = availableBalance - marginRequired;
+      await this.supabaseClient
+        .from('paper_trading_accounts')
+        .update({
+          balance: newBalance,
+          updated_at: TimeSync.getCurrentTimeISO()
+        })
+        .eq('user_id', this.user.id);
+      
+      // Create virtual position
+      const { data: position, error: posError } = await this.supabaseClient
+        .from('paper_trading_positions')
+        .insert({
+          bot_id: bot.id,
+          user_id: this.user.id,
+          symbol: bot.symbol,
+          exchange: bot.exchange,
+          trading_type: bot.tradingType || bot.trading_type || 'futures',
+          side: side,
+          entry_price: currentPrice,
+          quantity: quantity,
+          leverage: leverage,
+          stop_loss_price: stopLossPrice,
+          take_profit_price: takeProfitPrice,
+          current_price: currentPrice,
+          margin_used: marginRequired,
+          status: 'open'
+        })
+        .select()
+        .single();
+      
+      if (posError) throw posError;
+      
+      // Record trade
+      const { data: trade, error: tradeError } = await this.supabaseClient
+        .from('paper_trading_trades')
+        .insert({
+          bot_id: bot.id,
+          user_id: this.user.id,
+          position_id: position.id,
+          symbol: bot.symbol,
+          exchange: bot.exchange,
+          side: side,
+          entry_price: currentPrice,
+          quantity: quantity,
+          leverage: leverage,
+          margin_used: marginRequired,
+          fees: totalOrderValue * 0.001, // 0.1% fee
+          status: 'filled',
+          executed_at: TimeSync.getCurrentTimeISO()
+        })
+        .select()
+        .single();
+      
+      if (tradeError) console.error('Failed to record paper trade:', tradeError);
+      
+      // Log activity
+      const botExecutor = new BotExecutor(this.supabaseClient, this.user);
+      await botExecutor.addBotLog(bot.id, {
+        level: 'info',
+        category: 'trade',
+        message: `📝 [PAPER] ${side.toUpperCase()} simulated: ${quantity.toFixed(6)} ${bot.symbol} @ $${currentPrice.toFixed(2)}`,
+        details: {
+          paper_trading: true,
+          side: side,
+          entry_price: currentPrice,
+          quantity: quantity,
+          margin_used: marginRequired,
+          remaining_balance: newBalance
+        }
+      });
+      
+      console.log(`✅ [PAPER TRADING] Position opened: ${side} ${quantity.toFixed(6)} ${bot.symbol} @ $${currentPrice}`);
+      
+    } catch (error) {
+      console.error(`❌ [PAPER TRADING] Error:`, error);
+      throw error;
+    }
+  }
+  
+  // Update paper positions with REAL market prices
+  async updatePaperPositions(botId?: string): Promise<void> {
+    try {
+      let query = this.supabaseClient
+        .from('paper_trading_positions')
+        .select('*')
+        .eq('user_id', this.user.id)
+        .eq('status', 'open');
+      
+      if (botId) {
+        query = query.eq('bot_id', botId);
+      }
+      
+      const { data: positions, error } = await query;
+      
+      if (error || !positions || positions.length === 0) return;
+      
+      for (const position of positions) {
+        // Get REAL current market price from MAINNET
+        const currentPrice = await MarketDataFetcher.fetchPrice(
+          position.symbol,
+          position.exchange,
+          position.trading_type
+        );
+        
+        if (!currentPrice || currentPrice === 0) continue;
+        
+        // Calculate unrealized PnL
+        let unrealizedPnL = 0;
+        if (position.side === 'long') {
+          unrealizedPnL = (currentPrice - parseFloat(position.entry_price)) * parseFloat(position.quantity) * position.leverage;
+        } else {
+          unrealizedPnL = (parseFloat(position.entry_price) - currentPrice) * parseFloat(position.quantity) * position.leverage;
+        }
+        
+        // Check SL/TP triggers
+        let newStatus = position.status;
+        let exitPrice = currentPrice;
+        let shouldClose = false;
+        
+        if (position.side === 'long') {
+          if (currentPrice <= parseFloat(position.stop_loss_price)) {
+            newStatus = 'stopped';
+            exitPrice = parseFloat(position.stop_loss_price);
+            shouldClose = true;
+          } else if (currentPrice >= parseFloat(position.take_profit_price)) {
+            newStatus = 'taken_profit';
+            exitPrice = parseFloat(position.take_profit_price);
+            shouldClose = true;
+          }
+        } else {
+          if (currentPrice >= parseFloat(position.stop_loss_price)) {
+            newStatus = 'stopped';
+            exitPrice = parseFloat(position.stop_loss_price);
+            shouldClose = true;
+          } else if (currentPrice <= parseFloat(position.take_profit_price)) {
+            newStatus = 'taken_profit';
+            exitPrice = parseFloat(position.take_profit_price);
+            shouldClose = true;
+          }
+        }
+        
+        // Update position
+        const updateData: any = {
+          current_price: currentPrice,
+          unrealized_pnl: unrealizedPnL,
+          updated_at: TimeSync.getCurrentTimeISO()
+        };
+        
+        if (shouldClose) {
+          updateData.status = newStatus;
+          updateData.closed_at = TimeSync.getCurrentTimeISO();
+          
+          // Calculate final PnL
+          let finalPnL = 0;
+          if (position.side === 'long') {
+            finalPnL = (exitPrice - parseFloat(position.entry_price)) * parseFloat(position.quantity) * position.leverage;
+          } else {
+            finalPnL = (parseFloat(position.entry_price) - exitPrice) * parseFloat(position.quantity) * position.leverage;
+          }
+          
+          // Deduct fees
+          const fees = parseFloat(position.margin_used) * 0.001;
+          finalPnL -= fees;
+          
+          // Return margin + PnL to account
+          const account = await this.getPaperAccount();
+          const marginReturn = parseFloat(position.margin_used);
+          const newBalance = parseFloat(account.balance) + marginReturn + finalPnL;
+          
+          await this.supabaseClient
+            .from('paper_trading_accounts')
+            .update({
+              balance: newBalance,
+              updated_at: TimeSync.getCurrentTimeISO()
+            })
+            .eq('user_id', this.user.id);
+          
+          // Update trade record
+          await this.supabaseClient
+            .from('paper_trading_trades')
+            .update({
+              exit_price: exitPrice,
+              pnl: finalPnL,
+              pnl_percentage: (finalPnL / parseFloat(position.margin_used)) * 100,
+              fees: fees,
+              status: 'closed',
+              closed_at: TimeSync.getCurrentTimeISO()
+            })
+            .eq('position_id', position.id)
+            .eq('status', 'filled');
+          
+          // Update bot performance
+          await this.updateBotPerformance(position.bot_id, finalPnL);
+        }
+        
+        await this.supabaseClient
+          .from('paper_trading_positions')
+          .update(updateData)
+          .eq('id', position.id);
+      }
+    } catch (error) {
+      console.error('Error updating paper positions:', error);
+    }
+  }
+  
+  private async updateBotPerformance(botId: string, pnl: number): Promise<void> {
+    const { data: bot } = await this.supabaseClient
+      .from('trading_bots')
+      .select('total_trades, pnl, win_rate')
+      .eq('id', botId)
+      .single();
+    
+    const newTotalTrades = (bot?.total_trades || 0) + 1;
+    const newPnL = (bot?.pnl || 0) + pnl;
+    
+    const { data: trades } = await this.supabaseClient
+      .from('paper_trading_trades')
+      .select('pnl')
+      .eq('bot_id', botId)
+      .eq('status', 'closed');
+    
+    const winningTrades = trades?.filter(t => (t.pnl || 0) > 0) || [];
+    const newWinRate = trades && trades.length > 0 
+      ? (winningTrades.length / trades.length) * 100 
+      : 0;
+    
+    await this.supabaseClient
+      .from('trading_bots')
+      .update({
+        total_trades: newTotalTrades,
+        pnl: newPnL,
+        pnl_percentage: (newPnL / 10000) * 100,
+        win_rate: newWinRate,
+        updated_at: TimeSync.getCurrentTimeISO()
+      })
+      .eq('id', botId);
   }
 }
 
