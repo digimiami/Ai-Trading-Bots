@@ -139,18 +139,36 @@ export default function BacktestPage() {
     setError(null);
     
     try {
+      // Validate backtest name
+      if (!config.name.trim()) {
+        throw new Error('Please enter a backtest name');
+      }
+
       // Parse custom pairs if enabled
       let symbols: string[] = [];
-      if (config.useCustomPairs && config.customPairs.trim()) {
+      if (config.useCustomPairs) {
+        if (!config.customPairs.trim()) {
+          throw new Error('Please enter at least one trading pair when using custom pairs');
+        }
+        
         symbols = config.customPairs
           .split(/[\n,]/)
           .map(pair => pair.trim().toUpperCase())
           .filter(pair => pair.length > 0);
         
         if (symbols.length === 0) {
-          throw new Error('Please enter at least one trading pair');
+          throw new Error('Please enter at least one valid trading pair (e.g., BTCUSDT, ETHUSDT)');
+        }
+
+        // Validate pair format (should be like BTCUSDT, ETHUSDT, etc.)
+        const invalidPairs = symbols.filter(pair => !/^[A-Z]{2,10}USDT$/i.test(pair));
+        if (invalidPairs.length > 0) {
+          throw new Error(`Invalid pair format: ${invalidPairs.join(', ')}. Pairs should be in format like BTCUSDT, ETHUSDT`);
         }
       } else {
+        if (config.symbols.length === 0) {
+          throw new Error('Please select at least one trading pair');
+        }
         symbols = config.symbols;
       }
 
@@ -173,6 +191,7 @@ export default function BacktestPage() {
       };
 
       console.log('Starting backtest with data:', backtestData);
+      console.log(`Parsed ${symbols.length} symbols:`, symbols);
       
       // Simulate backtest execution with delay
       setIsRunning(true);
@@ -195,23 +214,36 @@ export default function BacktestPage() {
         setProgress(100);
         
         // Demo results - replace with actual API call later
+        // Generate results based on actual symbols used
+        const resultsPerPair: { [key: string]: any } = {};
+        symbols.forEach((symbol, index) => {
+          // Generate realistic demo data for each symbol
+          const trades = Math.floor(Math.random() * 30) + 15;
+          const winRate = Math.random() * 20 + 50; // 50-70%
+          const pnl = (Math.random() * 2000) - 500; // -500 to 1500
+          
+          resultsPerPair[symbol] = {
+            trades,
+            win_rate: winRate,
+            pnl: pnl
+          };
+        });
+
         const demoResults = {
-          total_trades: 127,
-          winning_trades: 78,
-          losing_trades: 49,
-          win_rate: 61.4,
-          total_pnl: 3428.75,
-          total_pnl_percentage: 34.3,
+          total_trades: Object.values(resultsPerPair).reduce((sum: number, data: any) => sum + (data.trades || 0), 0),
+          winning_trades: Math.floor(Object.values(resultsPerPair).reduce((sum: number, data: any) => sum + (data.trades || 0) * (data.win_rate || 0) / 100, 0)),
+          losing_trades: 0,
+          win_rate: Object.values(resultsPerPair).reduce((sum: number, data: any) => sum + (data.win_rate || 0), 0) / symbols.length,
+          total_pnl: Object.values(resultsPerPair).reduce((sum: number, data: any) => sum + (data.pnl || 0), 0),
+          total_pnl_percentage: 0,
           max_drawdown: -12.5,
           sharpe_ratio: 1.85,
           profit_factor: 1.92,
-          results_per_pair: {
-            'BTCUSDT': { trades: 45, win_rate: 68.9, pnl: 1520.30 },
-            'ETHUSDT': { trades: 38, win_rate: 57.9, pnl: 980.15 },
-            'SOLUSDT': { trades: 29, win_rate: 62.1, pnl: 678.50 },
-            'ADAUSDT': { trades: 15, win_rate: 53.3, pnl: 249.80 }
-          }
+          results_per_pair: resultsPerPair
         };
+        
+        demoResults.losing_trades = demoResults.total_trades - demoResults.winning_trades;
+        demoResults.total_pnl_percentage = (demoResults.total_pnl / (config.tradeAmount * symbols.length * 10)) * 100;
         
         setResults(demoResults);
         setIsRunning(false);
@@ -220,6 +252,7 @@ export default function BacktestPage() {
     } catch (err: any) {
       setError(err.message || 'Failed to start backtest');
       setIsRunning(false);
+      setProgress(0);
     }
   };
 
@@ -307,13 +340,23 @@ export default function BacktestPage() {
                   <label className="text-sm text-gray-700">Use custom pairs</label>
                 </div>
 
-                {config.symbols.length > 0 && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                    <p className="text-sm text-blue-700">
-                      ✅ Selected {config.symbols.length} pair{config.symbols.length !== 1 ? 's' : ''}: {config.symbols.join(', ')}
-                    </p>
-                  </div>
-                )}
+                {(() => {
+                  // Get the actual selected symbols (either from config.symbols or parsed custom pairs)
+                  const displaySymbols = config.useCustomPairs && config.customPairs.trim()
+                    ? config.customPairs
+                        .split(/[\n,]/)
+                        .map(pair => pair.trim().toUpperCase())
+                        .filter(pair => pair.length > 0)
+                    : config.symbols;
+                  
+                  return displaySymbols.length > 0 && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                      <p className="text-sm text-blue-700">
+                        ✅ Selected {displaySymbols.length} pair{displaySymbols.length !== 1 ? 's' : ''}: {displaySymbols.join(', ')}
+                      </p>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
@@ -667,7 +710,16 @@ export default function BacktestPage() {
                   ></div>
                 </div>
                 <p className="text-sm text-gray-500 mt-2">
-                  Simulating trades across {config.symbols.length} pairs...
+                  {(() => {
+                    // Get the actual symbol count being used in the backtest
+                    const symbolCount = config.useCustomPairs && config.customPairs.trim()
+                      ? config.customPairs
+                          .split(/[\n,]/)
+                          .map(pair => pair.trim().toUpperCase())
+                          .filter(pair => pair.length > 0).length
+                      : config.symbols.length;
+                    return `Simulating trades across ${symbolCount} pair${symbolCount !== 1 ? 's' : ''}...`;
+                  })()}
                 </p>
               </Card>
             )}
