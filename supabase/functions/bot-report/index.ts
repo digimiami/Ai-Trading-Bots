@@ -295,11 +295,12 @@ serve(async (req) => {
         total_trades: tradesData?.length || 0
       },
       active_bots: activeBotsData?.map(bot => {
-        // Calculate fees for this bot from trades
-        // Include all trades for fee calculation, but filter for filled/closed/completed for PnL
-        const botTrades = tradesData?.filter(t => t.bot_id === bot.id && ['filled', 'closed', 'completed'].includes((t as any).status || '')) || []
+        // Get ALL trades for this bot (including pending/open positions for total count)
         const allBotTrades = tradesData?.filter(t => t.bot_id === bot.id) || []
-        const botFees = botTrades.reduce((sum, t) => {
+        
+        // For fees: calculate from ALL trades (including open positions)
+        // Every trade that executes has a fee, even if it's an opening position
+        const botFees = allBotTrades.reduce((sum, t) => {
           let fee = t.fee || 0
           // Calculate fee if not stored
           if (fee === 0 && t.amount && t.price) {
@@ -315,12 +316,12 @@ serve(async (req) => {
         }, 0)
         
         // Calculate win/loss trades and drawdown
-        // Get trades with calculated PnL (either has pnl or has exit_price for calculation)
-        const filledTrades = botTrades.map(t => {
+        // Process ALL trades and calculate PnL where possible
+        const processedTrades = allBotTrades.map(t => {
           let calculatedPnL = parseFloat(t.pnl) || 0
           
           // If PnL is 0 or null but we have entry/exit prices, calculate it
-          if ((calculatedPnL === 0 || t.pnl === null) && (t as any).entry_price && (t as any).exit_price) {
+          if ((calculatedPnL === 0 || t.pnl === null || t.pnl === undefined) && (t as any).entry_price && (t as any).exit_price) {
             const entryPrice = parseFloat((t as any).entry_price || 0)
             const exitPrice = parseFloat((t as any).exit_price || 0)
             const size = parseFloat(t.amount || 0)
@@ -337,22 +338,22 @@ serve(async (req) => {
           }
           
           return { ...t, calculatedPnL }
-        }).filter(t => {
-          // Include ALL trades with status filled/closed/completed
-          // Even if PnL is 0, we want to include them for fee calculation
-          // But for win/loss, we only count trades with actual PnL
-          return true
         })
         
-        // For win/loss, only count trades with actual PnL (non-zero or has exit_price)
-        const tradesWithPnL = filledTrades.filter(t => {
-          return (t as any).calculatedPnL !== 0 || (t as any).exit_price || (t.pnl !== null && t.pnl !== undefined)
+        // For win/loss: only count CLOSED trades (those with exit_price or non-zero PnL)
+        // Open positions shouldn't be counted as wins/losses yet
+        const closedTrades = processedTrades.filter(t => {
+          // Include trades that have:
+          // 1. Non-zero calculated PnL (definitely closed)
+          // 2. exit_price (position was closed)
+          // 3. status is 'closed' or 'completed' (explicitly closed)
+          return (t as any).calculatedPnL !== 0 || (t as any).exit_price || ['closed', 'completed'].includes((t.status || '').toLowerCase())
         })
         
-        const winTrades = tradesWithPnL.filter(t => (t as any).calculatedPnL > 0).length
-        const lossTrades = tradesWithPnL.filter(t => (t as any).calculatedPnL < 0).length
-        const totalFilledTrades = tradesWithPnL.length
-        const winRate = totalFilledTrades > 0 ? (winTrades / totalFilledTrades) * 100 : (bot.win_rate || 0)
+        const winTrades = closedTrades.filter(t => (t as any).calculatedPnL > 0).length
+        const lossTrades = closedTrades.filter(t => (t as any).calculatedPnL < 0).length
+        const totalClosedTrades = closedTrades.length
+        const winRate = totalClosedTrades > 0 ? (winTrades / totalClosedTrades) * 100 : (bot.win_rate || 0)
         
         // Calculate drawdown
         let drawdown = 0
@@ -360,10 +361,10 @@ serve(async (req) => {
         let peakPnL = 0
         let currentPnL = 0
         
-        // Use tradesWithPnL for drawdown calculation (only closed trades)
-        if (tradesWithPnL.length > 0) {
+        // Use closedTrades for drawdown calculation (only closed trades have realized PnL)
+        if (closedTrades.length > 0) {
           // Sort trades by execution time (oldest first)
-          const sortedTrades = [...tradesWithPnL].sort((a, b) => {
+          const sortedTrades = [...closedTrades].sort((a, b) => {
             const dateA = new Date((a as any).executed_at || a.created_at || 0).getTime()
             const dateB = new Date((b as any).executed_at || b.created_at || 0).getTime()
             return dateA - dateB
@@ -383,10 +384,11 @@ serve(async (req) => {
           currentPnL = runningPnL
           drawdownPercentage = peakPnL > 0 ? (drawdown / peakPnL) * 100 : 0
         } else if (bot.pnl !== 0 && bot.pnl !== null) {
-          // Fallback: if no trades with PnL but bot has PnL, use bot PnL for peak/current
+          // Fallback: if no closed trades but bot has PnL, use bot PnL for peak/current
+          // This handles cases where positions are still open (no exit_price yet)
           peakPnL = bot.pnl > 0 ? bot.pnl : 0
           currentPnL = bot.pnl
-          // Can't calculate drawdown without trade history, but at least show current P&L
+          // Can't calculate drawdown without closed trade history, but at least show current P&L
         }
         
         const botPnL = bot.pnl || 0
@@ -404,8 +406,8 @@ serve(async (req) => {
           net_profit_loss: Math.round(netProfitLoss * 100) / 100,
           total_trades: allBotTrades.length || bot.total_trades || 0,
           win_rate: Math.round(winRate * 10) / 10,
-          win_trades: winTrades,
-          loss_trades: lossTrades,
+          win_trades: winTrades || 0,
+          loss_trades: lossTrades || 0,
           drawdown: Math.round(drawdown * 100) / 100,
           drawdown_percentage: Math.round(drawdownPercentage * 10) / 10,
           peak_pnl: Math.round(peakPnL * 100) / 100,
