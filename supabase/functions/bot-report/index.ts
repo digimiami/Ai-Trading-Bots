@@ -44,14 +44,28 @@ serve(async (req) => {
       .in('status', ['running', 'active'])
       .order('pnl', { ascending: false })
 
-    // Total P&L from trades (more accurate) - filter by user_id
+    // Get ALL trades (not just filled/closed) to show accurate total counts
     // Get ALL trades (not just filled/closed) to show accurate total counts
     const { data: tradesData } = await supabaseClient
       .from('trades')
-      .select('pnl, fee, amount, price, bot_id, symbol, exchange, created_at, executed_at, status, entry_price, exit_price, side')
+      .select('pnl, fee, amount, price, bot_id, symbol, exchange, created_at, executed_at, status, entry_price, exit_price, side, size')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(10000) // Limit to prevent excessive data
+    
+    console.log(`📊 Bot Report: Found ${tradesData?.length || 0} total trades for user`)
+    
+    // Debug: Log sample trade data
+    if (tradesData && tradesData.length > 0) {
+      const sampleTrade = tradesData[0]
+      console.log(`📊 Sample trade: ID=${sampleTrade.id?.substring(0, 8)}, Symbol=${sampleTrade.symbol}, Status=${sampleTrade.status}, Side=${sampleTrade.side}, Entry=${sampleTrade.entry_price || sampleTrade.price}, Exit=${sampleTrade.exit_price || 'none'}, PnL=${sampleTrade.pnl || 0}`)
+      const tradesWithPnL = tradesData.filter((t: any) => {
+        const pnl = parseFloat(t.pnl || 0)
+        return !isNaN(pnl) && pnl !== 0
+      })
+      const tradesWithExitPrice = tradesData.filter((t: any) => !!(t as any).exit_price)
+      console.log(`📊 Trade stats: Total=${tradesData.length}, WithPnL=${tradesWithPnL.length}, WithExitPrice=${tradesWithExitPrice.length}`)
+    }
 
     // Calculate total PnL from trades
     const totalPnLFromTrades = tradesData?.reduce((sum, t) => sum + (t.pnl || 0), 0) || 0
@@ -431,10 +445,14 @@ serve(async (req) => {
           return !isNaN(pnl) && pnl !== 0
         })
         
+        console.log(`📊 Bot ${bot.name}: Total trades=${allBotTrades.length}, Processed=${processedTrades.length}, WithPnL=${tradesWithPnL.length}`)
+        
         const winTrades = tradesWithPnL.filter(t => (t as any).calculatedPnL > 0).length
         const lossTrades = tradesWithPnL.filter(t => (t as any).calculatedPnL < 0).length
         const totalTradesWithPnL = tradesWithPnL.length
         const winRate = totalTradesWithPnL > 0 ? (winTrades / totalTradesWithPnL) * 100 : (bot.win_rate || 0)
+        
+        console.log(`📊 Bot ${bot.name}: Win=${winTrades}, Loss=${lossTrades}, WinRate=${winRate.toFixed(1)}%, Fees=$${botFees.toFixed(2)}`)
         
         // Calculate drawdown from trades with PnL (same as Performance page)
         let drawdown = 0
