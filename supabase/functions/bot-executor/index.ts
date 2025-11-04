@@ -2413,6 +2413,7 @@ class BotExecutor {
       'DOTUSDT': { stepSize: 0.1,   tickSize: 0.01 },
       'BNBUSDT': { stepSize: 0.01,  tickSize: 0.01 },
       'MATICUSDT':{stepSize: 1,     tickSize: 0.0001 },
+      'HBARUSDT': { stepSize: 1,    tickSize: 0.0001 }, // HBAR requires whole number quantities
       // Meme coins and low-value tokens
       'PEPEUSDT': { stepSize: 1000, tickSize: 0.00000001 }, // Very low-value token
       'DOGEUSDT': { stepSize: 1,    tickSize: 0.0001 },
