@@ -70,8 +70,57 @@ export default function PaperTradingPerformance() {
         .eq('status', 'open')
         .order('opened_at', { ascending: false });
 
-      if (openPositions) {
-        setPositions(openPositions as PaperPosition[]);
+      // Fetch current prices for open positions
+      if (openPositions && openPositions.length > 0) {
+        const positionsWithPrices = await Promise.all(
+          openPositions.map(async (position: any) => {
+            try {
+              // Fetch current price from market data
+              const symbol = position.symbol;
+              const tradingType = position.trading_type || 'futures';
+              
+              // Use Bybit API to get current price
+              const category = tradingType === 'spot' ? 'spot' : 'linear';
+              const response = await fetch(
+                `https://api.bybit.com/v5/market/tickers?category=${category}&symbol=${symbol}`
+              );
+              
+              if (response.ok) {
+                const data = await response.json();
+                const currentPrice = parseFloat(data.result?.list?.[0]?.lastPrice || '0');
+                
+                if (currentPrice > 0) {
+                  // Calculate unrealized PnL
+                  const entryPrice = parseFloat(position.entry_price);
+                  const quantity = parseFloat(position.quantity);
+                  const leverage = parseFloat(position.leverage || 1);
+                  const marginUsed = parseFloat(position.margin_used || 0);
+                  
+                  let unrealizedPnL = 0;
+                  if (position.side === 'long') {
+                    unrealizedPnL = ((currentPrice - entryPrice) / entryPrice) * marginUsed * leverage;
+                  } else {
+                    unrealizedPnL = ((entryPrice - currentPrice) / entryPrice) * marginUsed * leverage;
+                  }
+                  
+                  return {
+                    ...position,
+                    current_price: currentPrice,
+                    unrealized_pnl: unrealizedPnL
+                  };
+                }
+              }
+            } catch (error) {
+              console.error(`Error fetching price for ${position.symbol}:`, error);
+            }
+            
+            return position;
+          })
+        );
+        
+        setPositions(positionsWithPrices as PaperPosition[]);
+      } else {
+        setPositions([]);
       }
 
       // Calculate performance metrics
