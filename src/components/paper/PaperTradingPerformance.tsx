@@ -23,6 +23,8 @@ interface PaperPerformance {
   losingTrades: number;
   winRate: number;
   totalPnL: number;
+  totalPnLBeforeFees: number;
+  totalFees: number;
   totalPnLPercentage: number;
   averageWin: number;
   averageLoss: number;
@@ -31,6 +33,7 @@ interface PaperPerformance {
   currentBalance: number;
   initialBalance: number;
   openPositions: number;
+  totalVolume: number;
 }
 
 export default function PaperTradingPerformance() {
@@ -75,7 +78,19 @@ export default function PaperTradingPerformance() {
       if (trades && trades.length > 0) {
         const winningTrades = trades.filter(t => (t.pnl || 0) > 0);
         const losingTrades = trades.filter(t => (t.pnl || 0) < 0);
+        
+        // Calculate fees (fees are already deducted from PnL in paper trading)
+        const totalFees = trades.reduce((sum, t) => sum + (t.fees || 0), 0);
         const totalPnL = trades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+        // PnL before fees (PnL already includes fees deduction, so we add fees back)
+        const totalPnLBeforeFees = totalPnL + totalFees;
+        
+        // Calculate total volume
+        const totalVolume = trades.reduce((sum, t) => {
+          const orderValue = parseFloat(t.quantity || 0) * parseFloat(t.price || 0);
+          return sum + orderValue;
+        }, 0);
+        
         const totalWins = winningTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
         const totalLosses = Math.abs(losingTrades.reduce((sum, t) => sum + (t.pnl || 0), 0));
         
@@ -110,6 +125,8 @@ export default function PaperTradingPerformance() {
           losingTrades: losingTrades.length,
           winRate: winRate,
           totalPnL: totalPnL,
+          totalPnLBeforeFees: totalPnLBeforeFees,
+          totalFees: totalFees,
           totalPnLPercentage: (totalPnL / initialBalance) * 100,
           averageWin: averageWin,
           averageLoss: averageLoss,
@@ -117,7 +134,8 @@ export default function PaperTradingPerformance() {
           maxDrawdown: maxDrawdown,
           currentBalance: account?.balance || initialBalance,
           initialBalance: initialBalance,
-          openPositions: openPositions?.length || 0
+          openPositions: openPositions?.length || 0,
+          totalVolume: totalVolume
         });
       } else {
         // No trades yet
@@ -127,6 +145,8 @@ export default function PaperTradingPerformance() {
           losingTrades: 0,
           winRate: 0,
           totalPnL: 0,
+          totalPnLBeforeFees: 0,
+          totalFees: 0,
           totalPnLPercentage: 0,
           averageWin: 0,
           averageLoss: 0,
@@ -134,7 +154,8 @@ export default function PaperTradingPerformance() {
           maxDrawdown: 0,
           currentBalance: account?.balance || 10000,
           initialBalance: account?.initial_balance || 10000,
-          openPositions: openPositions?.length || 0
+          openPositions: openPositions?.length || 0,
+          totalVolume: 0
         });
       }
     } catch (error) {
@@ -203,6 +224,11 @@ export default function PaperTradingPerformance() {
             <div className="text-xs text-gray-500 mt-1">
               {performance.totalPnLPercentage >= 0 ? '+' : ''}{performance.totalPnLPercentage.toFixed(2)}%
             </div>
+            {performance.totalFees > 0 && (
+              <div className="text-xs text-gray-400 mt-1">
+                Fees: ${performance.totalFees.toFixed(2)}
+              </div>
+            )}
           </div>
 
           <div className="p-4 bg-green-50 rounded-lg">
@@ -237,7 +263,7 @@ export default function PaperTradingPerformance() {
         </div>
 
         {/* Advanced Metrics */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 pt-4 border-t">
           <div>
             <div className="text-sm text-gray-600 mb-1">Average Win</div>
             <div className="text-lg font-semibold text-green-600">
@@ -262,61 +288,107 @@ export default function PaperTradingPerformance() {
               {performance.maxDrawdown.toFixed(2)}%
             </div>
           </div>
+          <div>
+            <div className="text-sm text-gray-600 mb-1">Total Fees</div>
+            <div className="text-lg font-semibold text-red-600">
+              ${performance.totalFees.toFixed(2)}
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              {performance.totalVolume > 0 ? ((performance.totalFees / performance.totalVolume) * 100).toFixed(3) + '%' : '0%'} of volume
+            </div>
+          </div>
+          <div>
+            <div className="text-sm text-gray-600 mb-1">Total Volume</div>
+            <div className="text-lg font-semibold text-blue-600">
+              ${performance.totalVolume.toFixed(2)}
+            </div>
+            <div className="text-xs text-gray-500 mt-1">
+              {performance.totalTrades} trades
+            </div>
+          </div>
         </div>
       </Card>
 
       {/* Open Positions */}
-      {positions.length > 0 && (
-        <Card className="p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">📈 Open Positions</h3>
-          <div className="space-y-3">
-            {positions.map((position) => (
-              <div
-                key={position.id}
-                className="p-4 bg-gray-50 rounded-lg border border-gray-200"
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center space-x-3">
-                    <div className={`px-3 py-1 rounded-full text-xs font-bold ${
-                      position.side === 'long' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                    }`}>
-                      {position.side.toUpperCase()}
-                    </div>
-                    <span className="font-semibold text-gray-900">{position.symbol}</span>
-                    <span className="text-sm text-gray-500">{position.leverage}x</span>
-                  </div>
-                  <div className={`text-lg font-bold ${
-                    position.unrealized_pnl >= 0 ? 'text-green-600' : 'text-red-600'
-                  }`}>
-                    {position.unrealized_pnl >= 0 ? '+' : ''}${position.unrealized_pnl.toFixed(2)}
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-                  <div>
-                    <span className="text-gray-500">Entry:</span>
-                    <span className="ml-2 font-medium">${position.entry_price.toFixed(2)}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Current:</span>
-                    <span className="ml-2 font-medium">${position.current_price?.toFixed(2) || 'N/A'}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Qty:</span>
-                    <span className="ml-2 font-medium">{position.quantity.toFixed(6)}</span>
-                  </div>
-                  <div>
-                    <span className="text-gray-500">Margin:</span>
-                    <span className="ml-2 font-medium">${position.margin_used.toFixed(2)}</span>
-                  </div>
-                </div>
-                <div className="mt-2 text-xs text-gray-400">
-                  Opened: {new Date(position.opened_at).toLocaleString()}
-                </div>
-              </div>
-            ))}
+      <Card className="p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+          📈 Open Positions 
+          <span className="ml-2 text-sm font-normal text-gray-500">
+            ({positions.length} {positions.length === 1 ? 'position' : 'positions'})
+          </span>
+        </h3>
+        {positions.length === 0 ? (
+          <div className="text-center py-8 text-gray-500">
+            <i className="ri-inbox-line text-4xl mb-3 block"></i>
+            <p>No open positions</p>
+            <p className="text-sm mt-1">Positions will appear here when bots open trades</p>
           </div>
-        </Card>
-      )}
+        ) : (
+          <div className="space-y-3">
+            {positions.map((position) => {
+              // Calculate PnL percentage
+              const pnlPercentage = position.entry_price > 0 
+                ? ((position.unrealized_pnl / parseFloat(position.margin_used || '1')) * 100)
+                : 0;
+              
+              return (
+                <div
+                  key={position.id}
+                  className="p-4 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center space-x-3">
+                      <div className={`px-3 py-1 rounded-full text-xs font-bold ${
+                        position.side === 'long' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                      }`}>
+                        {position.side.toUpperCase()}
+                      </div>
+                      <span className="font-semibold text-gray-900">{position.symbol}</span>
+                      <span className="text-sm text-gray-500 bg-gray-200 px-2 py-0.5 rounded">{position.leverage}x</span>
+                    </div>
+                    <div className="text-right">
+                      <div className={`text-xl font-bold ${
+                        position.unrealized_pnl >= 0 ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {position.unrealized_pnl >= 0 ? '+' : ''}${position.unrealized_pnl.toFixed(2)}
+                      </div>
+                      <div className={`text-xs mt-1 ${
+                        pnlPercentage >= 0 ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {pnlPercentage >= 0 ? '+' : ''}{pnlPercentage.toFixed(2)}%
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mb-2">
+                    <div>
+                      <span className="text-gray-500 block text-xs mb-1">Entry Price</span>
+                      <span className="font-medium text-gray-900">${position.entry_price.toFixed(2)}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 block text-xs mb-1">Current Price</span>
+                      <span className="font-medium text-gray-900">
+                        ${position.current_price?.toFixed(2) || 'Loading...'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 block text-xs mb-1">Quantity</span>
+                      <span className="font-medium text-gray-900">{position.quantity.toFixed(6)}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 block text-xs mb-1">Margin Used</span>
+                      <span className="font-medium text-gray-900">${parseFloat(position.margin_used || '0').toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <div className="mt-2 pt-2 border-t border-gray-200 flex items-center justify-between text-xs text-gray-400">
+                    <span>Opened: {new Date(position.opened_at).toLocaleString()}</span>
+                    <span className="capitalize">{position.status}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
