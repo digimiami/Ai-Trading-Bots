@@ -22,6 +22,16 @@ interface FuturesPair {
   performanceScore: number;
 }
 
+interface SuggestedBotSettings {
+  leverage: number;
+  riskLevel: 'low' | 'medium' | 'high';
+  tradeAmount: number;
+  stopLoss: number;
+  takeProfit: number;
+  timeframe: string;
+  reasoning: string;
+}
+
 export default function FuturesPairsFinderPage() {
   const navigate = useNavigate();
   const [pairs, setPairs] = useState<FuturesPair[]>([]);
@@ -30,6 +40,7 @@ export default function FuturesPairsFinderPage() {
   const [selectedExchange, setSelectedExchange] = useState<'all' | 'bybit' | 'okx'>('all');
   const [sortBy, setSortBy] = useState<'performance' | 'volume' | 'change24h' | 'change30d'>('performance');
   const [minVolume, setMinVolume] = useState<number>(1000000); // Minimum 24h volume filter
+  const [expandedPair, setExpandedPair] = useState<string | null>(null);
 
   const fetchFuturesPairs = async () => {
     setLoading(true);
@@ -281,8 +292,102 @@ export default function FuturesPairsFinderPage() {
     fetchFuturesPairs();
   }, [selectedExchange, sortBy, minVolume]);
 
-  const handleCreateBot = (pair: FuturesPair) => {
-    navigate(`/create-bot?symbol=${pair.symbol}&exchange=${pair.exchange}&tradingType=futures`);
+  // Calculate suggested bot settings based on pair characteristics
+  const calculateSuggestedSettings = (pair: FuturesPair): SuggestedBotSettings => {
+    const volatility = pair.volatility;
+    const volume24h = pair.volume24h;
+    const priceChange30d = pair.priceChange30d;
+    const priceChange24h = pair.priceChange24h;
+    
+    // Determine risk level based on volatility and performance
+    let riskLevel: 'low' | 'medium' | 'high' = 'medium';
+    if (volatility < 1.5 && priceChange30d > 0 && priceChange24h > -5) {
+      riskLevel = 'low';
+    } else if (volatility > 3 || Math.abs(priceChange24h) > 15 || Math.abs(priceChange30d) > 50) {
+      riskLevel = 'high';
+    }
+
+    // Calculate leverage based on volatility (lower volatility = higher safe leverage)
+    // High volatility pairs should use lower leverage
+    let leverage = 5;
+    if (volatility < 1.0) {
+      leverage = 7; // Low volatility - can use higher leverage
+    } else if (volatility < 2.0) {
+      leverage = 5; // Medium volatility - moderate leverage
+    } else if (volatility < 3.5) {
+      leverage = 3; // High volatility - lower leverage
+    } else {
+      leverage = 2; // Very high volatility - conservative leverage
+    }
+
+    // Calculate stop loss based on volatility (higher volatility = wider stops)
+    let stopLoss = 2.0;
+    if (volatility < 1.0) {
+      stopLoss = 1.5; // Tight stops for low volatility
+    } else if (volatility < 2.0) {
+      stopLoss = 2.0; // Standard stops
+    } else if (volatility < 3.5) {
+      stopLoss = 3.0; // Wider stops for high volatility
+    } else {
+      stopLoss = 4.0; // Very wide stops for extreme volatility
+    }
+
+    // Calculate take profit (typically 2-3x stop loss for good risk/reward)
+    const takeProfit = stopLoss * 2.5;
+
+    // Calculate trade amount based on volume (higher volume = can trade larger amounts)
+    let tradeAmount = 100;
+    if (volume24h > 100000000) { // > $100M volume
+      tradeAmount = 200; // Large volume pairs can handle bigger trades
+    } else if (volume24h > 50000000) { // > $50M volume
+      tradeAmount = 150;
+    } else if (volume24h > 10000000) { // > $10M volume
+      tradeAmount = 100;
+    } else {
+      tradeAmount = 50; // Lower volume - smaller trades
+    }
+
+    // Determine timeframe based on volatility (lower volatility = longer timeframes)
+    let timeframe = '1h';
+    if (volatility < 1.0) {
+      timeframe = '4h'; // Lower volatility - can use longer timeframes
+    } else if (volatility < 2.0) {
+      timeframe = '1h'; // Standard timeframe
+    } else {
+      timeframe = '15m'; // High volatility - use shorter timeframes for better entry
+    }
+
+    // Generate reasoning
+    const reasoning = `Based on ${pair.symbol}'s ${volatility.toFixed(2)}% volatility, ${(volume24h / 1000000).toFixed(1)}M 24h volume, and ${priceChange30d >= 0 ? '+' : ''}${priceChange30d.toFixed(2)}% 30d performance, we recommend ${riskLevel} risk settings with ${leverage}x leverage.`;
+
+    return {
+      leverage,
+      riskLevel,
+      tradeAmount,
+      stopLoss,
+      takeProfit,
+      timeframe,
+      reasoning
+    };
+  };
+
+  const handleCreateBot = (pair: FuturesPair, suggestedSettings?: SuggestedBotSettings) => {
+    const params = new URLSearchParams({
+      symbol: pair.symbol,
+      exchange: pair.exchange,
+      tradingType: 'futures'
+    });
+
+    if (suggestedSettings) {
+      params.append('leverage', suggestedSettings.leverage.toString());
+      params.append('riskLevel', suggestedSettings.riskLevel);
+      params.append('tradeAmount', suggestedSettings.tradeAmount.toString());
+      params.append('stopLoss', suggestedSettings.stopLoss.toString());
+      params.append('takeProfit', suggestedSettings.takeProfit.toString());
+      params.append('timeframe', suggestedSettings.timeframe);
+    }
+
+    navigate(`/create-bot?${params.toString()}`);
   };
 
   return (
@@ -392,86 +497,186 @@ export default function FuturesPairsFinderPage() {
 
           {!loading && pairs.length > 0 && (
             <div className="space-y-3">
-              {pairs.map((pair) => (
-                <Card key={`${pair.exchange}-${pair.symbol}`} className="p-4 hover:shadow-md transition-shadow">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-3 mb-2">
-                        <h3 className="text-lg font-semibold text-gray-900">{pair.symbol}</h3>
-                        <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded">
-                          {pair.exchange.toUpperCase()}
-                        </span>
-                        <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded">
-                          Performance: {pair.performanceScore.toFixed(1)}
-                        </span>
+              {pairs.map((pair) => {
+                const suggestedSettings = calculateSuggestedSettings(pair);
+                const pairKey = `${pair.exchange}-${pair.symbol}`;
+                const isExpanded = expandedPair === pairKey;
+
+                return (
+                  <Card key={pairKey} className="p-4 hover:shadow-md transition-shadow">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-3 mb-2">
+                          <h3 className="text-lg font-semibold text-gray-900">{pair.symbol}</h3>
+                          <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded">
+                            {pair.exchange.toUpperCase()}
+                          </span>
+                          <span className="px-2 py-1 bg-green-100 text-green-800 text-xs font-medium rounded">
+                            Performance: {pair.performanceScore.toFixed(1)}
+                          </span>
+                          <span className={`px-2 py-1 text-xs font-medium rounded ${
+                            suggestedSettings.riskLevel === 'low' ? 'bg-green-100 text-green-800' :
+                            suggestedSettings.riskLevel === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-red-100 text-red-800'
+                          }`}>
+                            {suggestedSettings.riskLevel.toUpperCase()} Risk
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                          <div>
+                            <span className="text-gray-500">Current Price:</span>
+                            <p className="font-semibold text-gray-900">${pair.currentPrice.toFixed(4)}</p>
+                          </div>
+                          <div>
+                            <span className="text-gray-500">24h Change:</span>
+                            <p className={`font-semibold ${pair.priceChange24h >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {pair.priceChange24h >= 0 ? '+' : ''}{pair.priceChange24h.toFixed(2)}%
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-gray-500">30d Change:</span>
+                            <p className={`font-semibold ${pair.priceChange30d >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {pair.priceChange30d >= 0 ? '+' : ''}{pair.priceChange30d.toFixed(2)}%
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-gray-500">24h Volume:</span>
+                            <p className="font-semibold text-gray-900">
+                              ${(pair.volume24h / 1000000).toFixed(2)}M
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mt-2">
+                          <div>
+                            <span className="text-gray-500">24h Range:</span>
+                            <p className="text-xs text-gray-600">
+                              ${pair.low24h.toFixed(4)} - ${pair.high24h.toFixed(4)}
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-gray-500">30d Range:</span>
+                            <p className="text-xs text-gray-600">
+                              ${pair.low30d.toFixed(4)} - ${pair.high30d.toFixed(4)}
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-gray-500">30d Volume:</span>
+                            <p className="text-xs text-gray-600">
+                              ${(pair.volume30d / 1000000000).toFixed(2)}B
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-gray-500">Volatility:</span>
+                            <p className="text-xs text-gray-600">
+                              {pair.volatility.toFixed(2)}%
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Suggested Bot Settings */}
+                        <div className="mt-4 pt-4 border-t border-gray-200">
+                          <button
+                            onClick={() => setExpandedPair(isExpanded ? null : pairKey)}
+                            className="flex items-center justify-between w-full text-left"
+                          >
+                            <div className="flex items-center space-x-2">
+                              <i className="ri-lightbulb-line text-yellow-600"></i>
+                              <span className="text-sm font-medium text-gray-700">Suggested Bot Settings</span>
+                            </div>
+                            <i className={`ri-arrow-${isExpanded ? 'up' : 'down'}-s-line text-gray-400`}></i>
+                          </button>
+
+                          {isExpanded && (
+                            <div className="mt-3 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                              <p className="text-xs text-gray-600 mb-3">{suggestedSettings.reasoning}</p>
+                              
+                              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-3">
+                                <div>
+                                  <span className="text-xs text-gray-500 block mb-1">Leverage</span>
+                                  <span className="text-sm font-semibold text-gray-900">
+                                    {suggestedSettings.leverage}x
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-xs text-gray-500 block mb-1">Risk Level</span>
+                                  <span className={`text-sm font-semibold ${
+                                    suggestedSettings.riskLevel === 'low' ? 'text-green-600' :
+                                    suggestedSettings.riskLevel === 'medium' ? 'text-yellow-600' :
+                                    'text-red-600'
+                                  }`}>
+                                    {suggestedSettings.riskLevel.toUpperCase()}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-xs text-gray-500 block mb-1">Trade Amount</span>
+                                  <span className="text-sm font-semibold text-gray-900">
+                                    ${suggestedSettings.tradeAmount}
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-xs text-gray-500 block mb-1">Stop Loss</span>
+                                  <span className="text-sm font-semibold text-red-600">
+                                    {suggestedSettings.stopLoss}%
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-xs text-gray-500 block mb-1">Take Profit</span>
+                                  <span className="text-sm font-semibold text-green-600">
+                                    {suggestedSettings.takeProfit}%
+                                  </span>
+                                </div>
+                                <div>
+                                  <span className="text-xs text-gray-500 block mb-1">Timeframe</span>
+                                  <span className="text-sm font-semibold text-gray-900">
+                                    {suggestedSettings.timeframe}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center justify-between pt-3 border-t border-blue-200">
+                                <div className="text-xs text-gray-600">
+                                  <i className="ri-information-line mr-1"></i>
+                                  Settings are optimized based on pair characteristics
+                                </div>
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  onClick={() => handleCreateBot(pair, suggestedSettings)}
+                                >
+                                  <i className="ri-magic-line mr-1"></i>
+                                  Use Suggested Settings
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
 
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                        <div>
-                          <span className="text-gray-500">Current Price:</span>
-                          <p className="font-semibold text-gray-900">${pair.currentPrice.toFixed(4)}</p>
-                        </div>
-                        <div>
-                          <span className="text-gray-500">24h Change:</span>
-                          <p className={`font-semibold ${pair.priceChange24h >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {pair.priceChange24h >= 0 ? '+' : ''}{pair.priceChange24h.toFixed(2)}%
-                          </p>
-                        </div>
-                        <div>
-                          <span className="text-gray-500">30d Change:</span>
-                          <p className={`font-semibold ${pair.priceChange30d >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                            {pair.priceChange30d >= 0 ? '+' : ''}{pair.priceChange30d.toFixed(2)}%
-                          </p>
-                        </div>
-                        <div>
-                          <span className="text-gray-500">24h Volume:</span>
-                          <p className="font-semibold text-gray-900">
-                            ${(pair.volume24h / 1000000).toFixed(2)}M
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mt-2">
-                        <div>
-                          <span className="text-gray-500">24h Range:</span>
-                          <p className="text-xs text-gray-600">
-                            ${pair.low24h.toFixed(4)} - ${pair.high24h.toFixed(4)}
-                          </p>
-                        </div>
-                        <div>
-                          <span className="text-gray-500">30d Range:</span>
-                          <p className="text-xs text-gray-600">
-                            ${pair.low30d.toFixed(4)} - ${pair.high30d.toFixed(4)}
-                          </p>
-                        </div>
-                        <div>
-                          <span className="text-gray-500">30d Volume:</span>
-                          <p className="text-xs text-gray-600">
-                            ${(pair.volume30d / 1000000000).toFixed(2)}B
-                          </p>
-                        </div>
-                        <div>
-                          <span className="text-gray-500">Volatility:</span>
-                          <p className="text-xs text-gray-600">
-                            {pair.volatility.toFixed(2)}%
-                          </p>
-                        </div>
+                      <div className="ml-4 flex flex-col space-y-2">
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          onClick={() => handleCreateBot(pair)}
+                        >
+                          <i className="ri-add-line mr-1"></i>
+                          Create Bot
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleCreateBot(pair, suggestedSettings)}
+                          title="Create bot with suggested settings"
+                        >
+                          <i className="ri-magic-line mr-1"></i>
+                          Smart Create
+                        </Button>
                       </div>
                     </div>
-
-                    <div className="ml-4">
-                      <Button
-                        variant="primary"
-                        size="sm"
-                        onClick={() => handleCreateBot(pair)}
-                      >
-                        <i className="ri-add-line mr-1"></i>
-                        Create Bot
-                      </Button>
-                    </div>
-                  </div>
-                </Card>
-              ))}
+                  </Card>
+                );
+              })}
             </div>
           )}
         </div>

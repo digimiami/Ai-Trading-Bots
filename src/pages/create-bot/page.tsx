@@ -19,18 +19,24 @@ export default function CreateBotPage() {
   const urlSymbol = searchParams.get('symbol') || 'BTCUSDT';
   const urlExchange = (searchParams.get('exchange') || 'bybit') as 'bybit' | 'okx';
   const urlTradingType = (searchParams.get('tradingType') || 'spot') as 'spot' | 'futures';
+  const urlLeverage = searchParams.get('leverage') ? parseInt(searchParams.get('leverage')!) : 5;
+  const urlRiskLevel = (searchParams.get('riskLevel') || 'medium') as 'low' | 'medium' | 'high';
+  const urlTradeAmount = searchParams.get('tradeAmount') ? parseFloat(searchParams.get('tradeAmount')!) : 100;
+  const urlStopLoss = searchParams.get('stopLoss') ? parseFloat(searchParams.get('stopLoss')!) : 2.0;
+  const urlTakeProfit = searchParams.get('takeProfit') ? parseFloat(searchParams.get('takeProfit')!) : 4.0;
+  const urlTimeframe = (searchParams.get('timeframe') || '1h') as '1m' | '5m' | '15m' | '1h' | '2h' | '3h' | '4h' | '1d' | '1w';
   
   const [formData, setFormData] = useState({
     name: '',
     exchange: urlExchange,
     tradingType: urlTradingType,
     symbol: urlSymbol,
-    timeframe: '1h' as '1m' | '5m' | '15m' | '1h' | '2h' | '3h' | '4h' | '1d' | '1w',
-    leverage: 5,
-    riskLevel: 'medium' as 'low' | 'medium' | 'high',
-    tradeAmount: 100, // Amount in USD per trade
-    stopLoss: 2.0,
-    takeProfit: 4.0,
+    timeframe: urlTimeframe,
+    leverage: urlLeverage,
+    riskLevel: urlRiskLevel,
+    tradeAmount: urlTradeAmount,
+    stopLoss: urlStopLoss,
+    takeProfit: urlTakeProfit,
     paperTrading: false // Paper trading mode toggle
   });
 
@@ -41,10 +47,16 @@ export default function CreateBotPage() {
         ...prev,
         symbol: urlSymbol,
         exchange: urlExchange,
-        tradingType: urlTradingType
+        tradingType: urlTradingType,
+        timeframe: urlTimeframe,
+        leverage: urlLeverage,
+        riskLevel: urlRiskLevel,
+        tradeAmount: urlTradeAmount,
+        stopLoss: urlStopLoss,
+        takeProfit: urlTakeProfit
       }));
     }
-  }, [urlSymbol, urlExchange, urlTradingType]);
+  }, [urlSymbol, urlExchange, urlTradingType, urlTimeframe, urlLeverage, urlRiskLevel, urlTradeAmount, urlStopLoss, urlTakeProfit]);
 
   const [customSymbol, setCustomSymbol] = useState<string>('');
   const [customSymbolError, setCustomSymbolError] = useState<string>('');
