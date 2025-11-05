@@ -53,6 +53,7 @@ export default function PaperTradingDashboard() {
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
           >
             <option value="">-- Select a Pair --</option>
+            <option value="all">Select All</option>
             {availablePairs.map((pair) => (
               <option key={pair} value={pair}>
                 {pair}
@@ -61,7 +62,14 @@ export default function PaperTradingDashboard() {
           </select>
           {selectedPair && (
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-              Showing report for <span className="font-semibold">{selectedPair}</span>
+              {selectedPair === 'all' 
+                ? `Showing report for all pairs (${availablePairs.length} pairs)`
+                : (
+                  <>
+                    Showing report for <span className="font-semibold">{selectedPair}</span>
+                  </>
+                )
+              }
             </p>
           )}
         </Card>
@@ -69,9 +77,9 @@ export default function PaperTradingDashboard() {
         {/* Paper Trading Balance */}
         <PaperTradingBalance />
         
-        {/* Paper Trading Performance - Only show when a specific pair is selected */}
+        {/* Paper Trading Performance - Show when a pair is selected or "all" is selected */}
         {selectedPair ? (
-          <PaperTradingPerformance selectedPair={selectedPair} />
+          <PaperTradingPerformance selectedPair={selectedPair === 'all' ? '' : selectedPair} />
         ) : (
           <Card className="p-6 text-center">
             <i className="ri-search-line text-4xl text-gray-300 dark:text-gray-600 mb-4"></i>
