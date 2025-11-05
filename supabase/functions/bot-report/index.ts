@@ -53,7 +53,27 @@ serve(async (req) => {
       .order('created_at', { ascending: false })
       .limit(10000) // Limit to prevent excessive data
     
-    console.log(`📊 Bot Report: Found ${tradesData?.length || 0} total trades for user`)
+    // Get paper trading trades and merge with real trades
+    const { data: paperTradesData } = await supabaseClient
+      .from('paper_trading_trades')
+      .select('pnl, fees, quantity, entry_price, exit_price, bot_id, symbol, exchange, created_at, executed_at, status, side')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(10000)
+    
+    // Merge paper trading trades with real trades (map paper_trading_trades fields to trades format)
+    const mergedTradesData = [
+      ...(tradesData || []),
+      ...(paperTradesData || []).map((pt: any) => ({
+        ...pt,
+        amount: pt.quantity || pt.amount || 0,
+        price: pt.entry_price || pt.price || 0,
+        size: pt.quantity || pt.amount || 0,
+        fee: pt.fees || pt.fee || 0
+      }))
+    ]
+    
+    console.log(`📊 Bot Report: Found ${tradesData?.length || 0} real trades and ${paperTradesData?.length || 0} paper trades (${mergedTradesData.length} total)`)
     
     // Debug: Log sample trade data AND check fee calculation
     if (tradesData && tradesData.length > 0) {
@@ -91,28 +111,33 @@ serve(async (req) => {
     
     // Calculate total fees (for overview - use same logic as per-bot calculation)
     // This should match the per-bot fee calculation logic
-    const totalFees = tradesData?.reduce((sum, t) => {
+    // CRITICAL FIX: Use mergedTradesData (includes paper trades) instead of tradesData
+    const totalFees = mergedTradesData?.reduce((sum, t) => {
       let fee = 0
-      const amount = parseFloat(t.amount || (t as any).size || 0)
-      const price = parseFloat(t.price || (t as any).entry_price || 0)
+      // First, try to use stored fee if it exists and is greater than 0
+      const storedFee = parseFloat(t.fee || (t as any).fees || 0)
       
-      if (amount > 0 && price > 0) {
-        const tradeValue = amount * price
-        // Default to 0.1% if we can't determine exchange/trading_type from trade
-        // Per-bot calculation will use correct rates based on bot.exchange and bot.trading_type
-        fee = tradeValue * 0.001 // Default 0.1%
-      }
-      
-      // Use stored fee if greater
-      const storedFee = parseFloat(t.fee || 0)
-      if (storedFee > fee) {
+      // If stored fee is valid and > 0, use it
+      if (!isNaN(storedFee) && storedFee > 0) {
         fee = storedFee
+      } else {
+        // Otherwise, calculate fee from amount and price
+        // Try multiple field names to handle both real trades and paper trading trades
+        const amount = parseFloat(t.amount || (t as any).size || (t as any).quantity || 0)
+        const price = parseFloat(t.price || (t as any).entry_price || 0)
+        
+        if (amount > 0 && price > 0) {
+          const tradeValue = amount * price
+          // Default to 0.1% if we can't determine exchange/trading_type from trade
+          // Per-bot calculation will use correct rates based on bot.exchange and bot.trading_type
+          fee = tradeValue * 0.001 // Default 0.1%
+        }
       }
       
       return sum + fee
     }, 0) || 0
     
-    console.log(`📊 Overview total fees calculated: $${totalFees.toFixed(2)} from ${tradesData?.length || 0} trades`)
+    console.log(`📊 Overview total fees calculated: $${totalFees.toFixed(2)} from ${mergedTradesData?.length || 0} trades (${tradesData?.length || 0} real + ${paperTradesData?.length || 0} paper)`)
 
     // Contract summary - get trades with bot info
     // First get ALL user's bots (active and inactive) to show historical data
@@ -126,24 +151,59 @@ serve(async (req) => {
     
     // Get ALL trades for contract summary (from all bots, all statuses)
     // This ensures we show historical pairs even if bots are inactive
+    // Also include paper trading trades for complete contract summary
     let allTradesForContract: any[] = []
     if (botIds.length > 0) {
-      const { data } = await supabaseClient
+      const { data: realTrades } = await supabaseClient
         .from('trades')
         .select('symbol, exchange, pnl, fee, amount, price, bot_id, executed_at, status, entry_price, exit_price, side, created_at')
         .eq('user_id', user.id)
         .in('bot_id', botIds)
         .limit(10000)
-      allTradesForContract = data || []
+      allTradesForContract = realTrades || []
+      
+      // Get paper trading trades for contract summary
+      const { data: paperTradesForContract } = await supabaseClient
+        .from('paper_trading_trades')
+        .select('symbol, exchange, pnl, fees, quantity, entry_price, exit_price, bot_id, executed_at, status, side, created_at')
+        .eq('user_id', user.id)
+        .in('bot_id', botIds)
+        .limit(10000)
+      
+      // Map paper trading trades to match real trades format
+      const mappedPaperTrades = (paperTradesForContract || []).map((pt: any) => ({
+        ...pt,
+        amount: pt.quantity || 0,
+        price: pt.entry_price || 0,
+        fee: pt.fees || 0
+      }))
+      
+      allTradesForContract = [...allTradesForContract, ...mappedPaperTrades]
     }
     // If no bots exist but trades might exist, get all trades for user
     if (allTradesForContract.length === 0) {
-      const { data } = await supabaseClient
+      const { data: realTrades } = await supabaseClient
         .from('trades')
         .select('symbol, exchange, pnl, fee, amount, price, bot_id, executed_at, status, entry_price, exit_price, side, created_at')
         .eq('user_id', user.id)
         .limit(10000)
-      allTradesForContract = data || []
+      allTradesForContract = realTrades || []
+      
+      // Also get paper trading trades
+      const { data: paperTradesForContract } = await supabaseClient
+        .from('paper_trading_trades')
+        .select('symbol, exchange, pnl, fees, quantity, entry_price, exit_price, bot_id, executed_at, status, side, created_at')
+        .eq('user_id', user.id)
+        .limit(10000)
+      
+      const mappedPaperTrades = (paperTradesForContract || []).map((pt: any) => ({
+        ...pt,
+        amount: pt.quantity || 0,
+        price: pt.entry_price || 0,
+        fee: pt.fees || 0
+      }))
+      
+      allTradesForContract = [...allTradesForContract, ...mappedPaperTrades]
     }
     
     // Create bot P&L by contract map for fallback
@@ -188,15 +248,23 @@ serve(async (req) => {
           }
         }
         
-        // Calculate fee if not stored
-        let fee = trade.fee || 0
-        if (fee === 0 && trade.amount && trade.price) {
-          if (trade.exchange === 'bybit') {
-            fee = tradingType === 'futures' ? trade.amount * trade.price * 0.00055 : trade.amount * trade.price * 0.001
-          } else if (trade.exchange === 'okx') {
-            fee = tradingType === 'futures' ? trade.amount * trade.price * 0.0005 : trade.amount * trade.price * 0.0008
-          } else {
-            fee = trade.amount * trade.price * 0.001 // Default 0.1%
+        // Calculate fee - prioritize stored fee, otherwise calculate
+        let fee = parseFloat(trade.fee || (trade as any).fees || 0)
+        
+        // If stored fee is 0 or missing, calculate it
+        if ((fee === 0 || isNaN(fee)) && trade.amount && trade.price) {
+          const amount = parseFloat(trade.amount || (trade as any).size || (trade as any).quantity || 0)
+          const price = parseFloat(trade.price || (trade as any).entry_price || 0)
+          
+          if (amount > 0 && price > 0) {
+            const tradeValue = amount * price
+            if (trade.exchange === 'bybit') {
+              fee = tradingType === 'futures' ? tradeValue * 0.00055 : tradeValue * 0.001
+            } else if (trade.exchange === 'okx') {
+              fee = tradingType === 'futures' ? tradeValue * 0.0005 : tradeValue * 0.0008
+            } else {
+              fee = tradeValue * 0.001 // Default 0.1%
+            }
           }
         }
         
@@ -339,7 +407,8 @@ serve(async (req) => {
       },
       active_bots: activeBotsData?.map(bot => {
         // Get ALL trades for this bot (including pending/open positions for total count)
-        const allBotTrades = tradesData?.filter(t => t.bot_id === bot.id) || []
+        // CRITICAL FIX: Use mergedTradesData (includes paper trades) instead of tradesData
+        const allBotTrades = mergedTradesData?.filter(t => t.bot_id === bot.id) || []
         
         console.log(`📊 Bot ${bot.name} (${bot.id.substring(0, 8)}): Found ${allBotTrades.length} trades`)
         
@@ -356,32 +425,35 @@ serve(async (req) => {
         let tradesWithoutAmountPrice = 0
         const botFees = allBotTrades.reduce((sum, t) => {
           let fee = 0
-          // Always calculate fee from amount and price (trades are stored with fee: 0)
-          const amount = parseFloat(t.amount || (t as any).size || 0)
-          const price = parseFloat(t.price || (t as any).entry_price || 0)
+          // First, try to use stored fee if it exists and is greater than 0
+          const storedFee = parseFloat(t.fee || (t as any).fees || 0)
           
-          if (amount > 0 && price > 0) {
-            tradesWithValidAmountPrice++
-            const tradeValue = amount * price
-            if (bot.exchange === 'bybit') {
-              fee = bot.trading_type === 'futures' ? tradeValue * 0.00055 : tradeValue * 0.001
-            } else if (bot.exchange === 'okx') {
-              fee = bot.trading_type === 'futures' ? tradeValue * 0.0005 : tradeValue * 0.0008
-            } else {
-              fee = tradeValue * 0.001 // Default 0.1%
-            }
-          } else {
-            tradesWithoutAmountPrice++
-            // Log first few trades without amount/price for debugging
-            if (tradesWithoutAmountPrice <= 3) {
-              console.log(`⚠️ Bot ${bot.name} trade ${tradesWithoutAmountPrice}: amount=${t.amount || (t as any).size || 'null'}, price=${t.price || (t as any).entry_price || 'null'}`)
-            }
-          }
-          
-          // Use stored fee only if it's greater than calculated (shouldn't happen, but safety)
-          const storedFee = parseFloat(t.fee || 0)
-          if (storedFee > fee) {
+          // If stored fee is valid and > 0, use it
+          if (!isNaN(storedFee) && storedFee > 0) {
             fee = storedFee
+          } else {
+            // Otherwise, calculate fee from amount and price
+            // Try multiple field names to handle both real trades and paper trading trades
+            const amount = parseFloat(t.amount || (t as any).size || (t as any).quantity || 0)
+            const price = parseFloat(t.price || (t as any).entry_price || 0)
+            
+            if (amount > 0 && price > 0) {
+              tradesWithValidAmountPrice++
+              const tradeValue = amount * price
+              if (bot.exchange === 'bybit') {
+                fee = bot.trading_type === 'futures' ? tradeValue * 0.00055 : tradeValue * 0.001
+              } else if (bot.exchange === 'okx') {
+                fee = bot.trading_type === 'futures' ? tradeValue * 0.0005 : tradeValue * 0.0008
+              } else {
+                fee = tradeValue * 0.001 // Default 0.1%
+              }
+            } else {
+              tradesWithoutAmountPrice++
+              // Log first few trades without amount/price for debugging
+              if (tradesWithoutAmountPrice <= 3) {
+                console.log(`⚠️ Bot ${bot.name} trade ${tradesWithoutAmountPrice}: amount=${t.amount || (t as any).size || (t as any).quantity || 'null'}, price=${t.price || (t as any).entry_price || 'null'}, storedFee=${storedFee}`)
+              }
+            }
           }
           
           return sum + fee

@@ -13,7 +13,7 @@ import { useBotTradeLimits } from '../../hooks/useBotTradeLimits';
 
 export default function BotsPage() {
   const navigate = useNavigate();
-  const { bots, loading, startBot, stopBot, updateBot, deleteBot } = useBots();
+  const { bots, loading, startBot, stopBot, updateBot, deleteBot, createBot } = useBots();
   const { activities, addLog } = useBotActivity(bots);
   const { isExecuting, lastExecution, timeSync, executeBot, executeAllBots } = useBotExecutor();
   const [filter, setFilter] = useState<'all' | 'running' | 'paused' | 'stopped'>('all');
@@ -224,6 +224,82 @@ export default function BotsPage() {
       console.log(`Bot "${botName}" deleted successfully`);
     } catch (error) {
       console.error(`Failed to delete bot "${botName}":`, error);
+    }
+  };
+
+  const handleCloneBot = async (bot: TradingBot) => {
+    try {
+      // Generate a unique name for the cloned bot
+      const baseName = bot.name.replace(/\s*\(Copy(?: \d+)?\)\s*$/, ''); // Remove existing (Copy) suffix
+      let newName = `${baseName} (Copy)`;
+      
+      // Check if a bot with this name already exists
+      let copyNumber = 1;
+      while (bots.some(b => b.name === newName)) {
+        copyNumber++;
+        newName = `${baseName} (Copy ${copyNumber})`;
+      }
+
+      // Parse strategy and strategyConfig if they're strings
+      let strategy = bot.strategy || {};
+      if (typeof strategy === 'string') {
+        try {
+          strategy = JSON.parse(strategy);
+        } catch (e) {
+          console.warn('Failed to parse strategy, using empty object:', e);
+          strategy = {};
+        }
+      }
+
+      let strategyConfig = bot.strategyConfig || bot.strategy_config || {};
+      if (typeof strategyConfig === 'string') {
+        try {
+          strategyConfig = JSON.parse(strategyConfig);
+        } catch (e) {
+          console.warn('Failed to parse strategyConfig, using empty object:', e);
+          strategyConfig = {};
+        }
+      }
+
+      // Prepare bot data for cloning
+      const clonedBotData: any = {
+        name: newName,
+        exchange: bot.exchange,
+        tradingType: bot.tradingType || bot.trading_type || 'spot',
+        symbol: bot.symbol,
+        timeframe: bot.timeframe || '1h',
+        leverage: bot.leverage || 1,
+        riskLevel: bot.riskLevel || bot.risk_level || 'medium',
+        tradeAmount: bot.tradeAmount || bot.trade_amount || 100,
+        stopLoss: bot.stopLoss || bot.stop_loss || 2.0,
+        takeProfit: bot.takeProfit || bot.take_profit || 4.0,
+        strategy: strategy,
+        strategyConfig: strategyConfig,
+        paperTrading: bot.paperTrading || bot.paper_trading || false,
+        status: 'stopped', // Cloned bots start as stopped
+        pnl: 0,
+        pnlPercentage: 0,
+        totalTrades: 0,
+        winRate: 0,
+        lastTradeAt: null,
+        aiMlEnabled: bot.aiMlEnabled || bot.ai_ml_enabled || false,
+      };
+
+      // Create the cloned bot
+      const clonedBot = await createBot(clonedBotData);
+      
+      alert(`✅ Bot "${newName}" cloned successfully!`);
+      
+      // Add a log entry for the original bot
+      await addLog(bot.id, {
+        level: 'info',
+        category: 'system',
+        message: `Bot cloned as "${newName}"`,
+        details: { clonedBotId: clonedBot.id }
+      });
+    } catch (error: any) {
+      console.error('Failed to clone bot:', error);
+      alert(`❌ Failed to clone bot: ${error.message || 'Unknown error'}`);
     }
   };
 
@@ -906,6 +982,16 @@ export default function BotsPage() {
                     >
                       <i className="ri-edit-line mr-1"></i>
                       Edit
+                    </Button>
+                    <Button 
+                      variant="secondary" 
+                      size="sm" 
+                      className="flex-1"
+                      onClick={() => handleCloneBot(bot)}
+                      title="Clone this bot with all settings"
+                    >
+                      <i className="ri-file-copy-line mr-1"></i>
+                      Clone
                     </Button>
                     <Button 
                       variant="warning" 

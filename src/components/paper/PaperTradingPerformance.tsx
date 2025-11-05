@@ -186,6 +186,25 @@ export default function PaperTradingPerformance() {
           }
         }
 
+        // Calculate total unrealized PnL from open positions
+        let totalUnrealizedPnL = 0;
+        let totalMarginUsed = 0;
+        if (positionsWithPrices && positionsWithPrices.length > 0) {
+          positionsWithPrices.forEach((position: any) => {
+            totalUnrealizedPnL += parseFloat(position.unrealized_pnl || 0);
+            totalMarginUsed += parseFloat(position.margin_used || 0);
+          });
+        }
+        
+        // Calculate current balance correctly:
+        // Initial Balance + Total Deposited + Total Realized PnL + Total Unrealized PnL
+        // Note: Margin is already deducted from balance when position opens, so we only add unrealized PnL
+        const realizedPnL = totalPnL; // Total PnL from closed trades
+        const calculatedCurrentBalance = initialBalance + 
+          parseFloat(account?.total_deposited || 0) + 
+          realizedPnL + 
+          totalUnrealizedPnL;
+        
         // Calculate performance by pair
         const pairsMap = new Map<string, PairPerformance>();
         
@@ -294,14 +313,25 @@ export default function PaperTradingPerformance() {
           averageLoss: averageLoss,
           profitFactor: profitFactor,
           maxDrawdown: maxDrawdown,
-          currentBalance: account?.balance || initialBalance,
+          currentBalance: calculatedCurrentBalance, // Use calculated balance that includes unrealized PnL
           initialBalance: initialBalance,
           openPositions: openPositions?.length || 0,
           totalVolume: totalVolume,
           pairsPerformance: pairsPerformance
         });
       } else {
-        // No trades yet
+        // No trades yet - calculate balance including unrealized PnL from open positions
+        const initialBalance = account?.initial_balance || 10000;
+        let totalUnrealizedPnL = 0;
+        if (positionsWithPrices && positionsWithPrices.length > 0) {
+          positionsWithPrices.forEach((position: any) => {
+            totalUnrealizedPnL += parseFloat(position.unrealized_pnl || 0);
+          });
+        }
+        const calculatedCurrentBalance = initialBalance + 
+          parseFloat(account?.total_deposited || 0) + 
+          totalUnrealizedPnL;
+        
         setPerformance({
           totalTrades: 0,
           winningTrades: 0,
@@ -315,8 +345,8 @@ export default function PaperTradingPerformance() {
           averageLoss: 0,
           profitFactor: 0,
           maxDrawdown: 0,
-          currentBalance: account?.balance || 10000,
-          initialBalance: account?.initial_balance || 10000,
+          currentBalance: calculatedCurrentBalance,
+          initialBalance: initialBalance,
           openPositions: openPositions?.length || 0,
           totalVolume: 0,
           pairsPerformance: []
