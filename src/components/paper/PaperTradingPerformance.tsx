@@ -31,6 +31,7 @@ interface PairPerformance {
   profitFactor: number;
   openPositions: number;
   unrealizedPnL: number;
+  runningHours: number;
 }
 
 interface PaperPerformance {
@@ -241,7 +242,8 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
               averageLoss: 0,
               profitFactor: 0,
               openPositions: 0,
-              unrealizedPnL: 0
+              unrealizedPnL: 0,
+              runningHours: 0
             });
           }
           
@@ -263,21 +265,22 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
           openPositions.forEach((position: any) => {
             const symbol = position.symbol || 'UNKNOWN';
             if (!pairsMap.has(symbol)) {
-              pairsMap.set(symbol, {
-                symbol: symbol,
-                totalTrades: 0,
-                winningTrades: 0,
-                losingTrades: 0,
-                winRate: 0,
-                totalPnL: 0,
-                totalFees: 0,
-                totalVolume: 0,
-                averageWin: 0,
-                averageLoss: 0,
-                profitFactor: 0,
-                openPositions: 0,
-                unrealizedPnL: 0
-              });
+            pairsMap.set(symbol, {
+              symbol: symbol,
+              totalTrades: 0,
+              winningTrades: 0,
+              losingTrades: 0,
+              winRate: 0,
+              totalPnL: 0,
+              totalFees: 0,
+              totalVolume: 0,
+              averageWin: 0,
+              averageLoss: 0,
+              profitFactor: 0,
+              openPositions: 0,
+              unrealizedPnL: 0,
+              runningHours: 0
+            });
             }
             
             const pairPerf = pairsMap.get(symbol)!;
@@ -302,12 +305,50 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
           const pairTotalWins = pairWinningTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
           const pairTotalLosses = Math.abs(pairLosingTrades.reduce((sum, t) => sum + (t.pnl || 0), 0));
           
+          // Calculate running hours for this pair
+          // Find earliest trade or position date
+          const pairOpenPositions = openPositions?.filter((p: any) => (p.symbol || 'UNKNOWN') === pair.symbol) || [];
+          const pairPositionsWithPrices = positionsWithPrices.filter((p: any) => (p.symbol || 'UNKNOWN') === pair.symbol);
+          
+          let earliestDate: Date | null = null;
+          let latestDate: Date | null = null;
+          
+          // Check trades
+          if (pairTrades.length > 0) {
+            const tradeDates = pairTrades.map((t: any) => new Date(t.executed_at || t.closed_at || t.created_at)).filter(d => !isNaN(d.getTime()));
+            if (tradeDates.length > 0) {
+              const earliestTrade = new Date(Math.min(...tradeDates.map(d => d.getTime())));
+              const latestTrade = new Date(Math.max(...tradeDates.map(d => d.getTime())));
+              if (!earliestDate || earliestTrade < earliestDate) earliestDate = earliestTrade;
+              if (!latestDate || latestTrade > latestDate) latestDate = latestTrade;
+            }
+          }
+          
+          // Check open positions
+          if (pairOpenPositions.length > 0) {
+            const positionDates = pairOpenPositions.map((p: any) => new Date(p.opened_at || p.created_at)).filter(d => !isNaN(d.getTime()));
+            if (positionDates.length > 0) {
+              const earliestPosition = new Date(Math.min(...positionDates.map(d => d.getTime())));
+              if (!earliestDate || earliestPosition < earliestDate) earliestDate = earliestPosition;
+              // For open positions, use current time as latest
+              latestDate = new Date();
+            }
+          }
+          
+          // Calculate running hours
+          let runningHours = 0;
+          if (earliestDate && latestDate) {
+            const diffMs = latestDate.getTime() - earliestDate.getTime();
+            runningHours = diffMs / (1000 * 60 * 60); // Convert to hours
+          }
+          
           return {
             ...pair,
             winRate: pair.totalTrades > 0 ? (pair.winningTrades / pair.totalTrades) * 100 : 0,
             averageWin: pair.winningTrades > 0 ? pairTotalWins / pair.winningTrades : 0,
             averageLoss: pair.losingTrades > 0 ? pairTotalLosses / pair.losingTrades : 0,
-            profitFactor: pairTotalLosses > 0 ? pairTotalWins / pairTotalLosses : pairTotalWins > 0 ? 999 : 0
+            profitFactor: pairTotalLosses > 0 ? pairTotalWins / pairTotalLosses : pairTotalWins > 0 ? 999 : 0,
+            runningHours: runningHours
           };
         }).sort((a, b) => {
           // Sort by total PnL (realized + unrealized) descending
@@ -690,6 +731,15 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
                         <span className="text-gray-500">Fees:</span>
                         <span className="ml-1 font-medium text-red-600">
                           ${pair.totalFees.toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-gray-500">Running Hours:</span>
+                        <span className="ml-1 font-medium text-blue-600">
+                          {pair.runningHours >= 24 
+                            ? `${Math.floor(pair.runningHours / 24)}d ${Math.floor(pair.runningHours % 24)}h`
+                            : `${pair.runningHours.toFixed(1)}h`
+                          }
                         </span>
                       </div>
                     </div>
