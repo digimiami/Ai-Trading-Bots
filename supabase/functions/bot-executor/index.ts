@@ -372,6 +372,31 @@ function normalizeOrderParams(qty: number, price: number, c: Constraints) {
 
 // Market data fetcher
 class MarketDataFetcher {
+  // Helper function to normalize symbol formats (e.g., 1000PEPEUSDT <-> PEPEUSDT)
+  static normalizeSymbol(symbol: string, exchange: string, tradingType: string): string[] {
+    const variants: string[] = [symbol]; // Always try original first
+    
+    // Handle 1000PEPEUSDT -> PEPEUSDT and vice versa
+    if (symbol.startsWith('1000')) {
+      const withoutPrefix = symbol.replace(/^1000/, '');
+      variants.push(withoutPrefix);
+    } else if (symbol.match(/^[A-Z]+USDT$/)) {
+      // If it's a standard format like PEPEUSDT, try 1000PEPEUSDT for futures
+      if (tradingType === 'futures' || tradingType === 'linear') {
+        variants.push(`1000${symbol}`);
+      }
+    }
+    
+    // Try uppercase variants
+    variants.push(symbol.toUpperCase());
+    if (symbol !== symbol.toUpperCase()) {
+      variants.push(symbol.toLowerCase());
+    }
+    
+    // Remove duplicates
+    return [...new Set(variants)];
+  }
+  
   static async fetchPrice(symbol: string, exchange: string, tradingType: string = 'spot'): Promise<number> {
     try {
       if (exchange === 'bybit') {
@@ -385,54 +410,87 @@ class MarketDataFetcher {
         };
         const bybitCategory = categoryMap[tradingType?.toLowerCase()] || 'spot';
         
-        const response = await fetch(`https://api.bybit.com/v5/market/tickers?category=${bybitCategory}&symbol=${symbol}`);
-        const data = await response.json();
+        // Try different symbol variants
+        const symbolVariants = this.normalizeSymbol(symbol, exchange, tradingType);
         
-        // Better error handling for API response
-        if (!data.result) {
-          console.warn(`⚠️ Bybit API error for ${symbol}: No result field`, data);
-          return 0;
+        for (const symbolVariant of symbolVariants) {
+          try {
+            const response = await fetch(`https://api.bybit.com/v5/market/tickers?category=${bybitCategory}&symbol=${symbolVariant}`);
+            const data = await response.json();
+            
+            // Better error handling for API response
+            if (!data.result) {
+              continue; // Try next variant
+            }
+            
+            if (!data.result.list || !Array.isArray(data.result.list) || data.result.list.length === 0) {
+              continue; // Try next variant
+            }
+            
+            const price = parseFloat(data.result.list[0]?.lastPrice || '0');
+            
+            if (price > 0 && isFinite(price)) {
+              if (symbolVariant !== symbol) {
+                console.log(`✅ Found price using symbol variant: ${symbolVariant} (original: ${symbol})`);
+              }
+              return price;
+            }
+          } catch (err) {
+            console.warn(`⚠️ Error trying symbol variant ${symbolVariant}:`, err);
+            continue; // Try next variant
+          }
         }
         
-        if (!data.result.list || !Array.isArray(data.result.list) || data.result.list.length === 0) {
-          console.warn(`⚠️ Bybit API error for ${symbol} (category=${bybitCategory}): Empty or invalid list`, data.result);
-          // Try without symbol filter to get all tickers
+        // If all variants failed, try fetching all tickers and searching
+        try {
           const allTickersResponse = await fetch(`https://api.bybit.com/v5/market/tickers?category=${bybitCategory}`);
           const allTickersData = await allTickersResponse.json();
-          const ticker = allTickersData.result?.list?.find((t: any) => t.symbol === symbol);
-          if (ticker) {
-            return parseFloat(ticker.lastPrice || '0');
+          
+          if (allTickersData.result?.list) {
+            for (const symbolVariant of symbolVariants) {
+              const ticker = allTickersData.result.list.find((t: any) => t.symbol === symbolVariant);
+              if (ticker && ticker.lastPrice) {
+                const price = parseFloat(ticker.lastPrice);
+                if (price > 0 && isFinite(price)) {
+                  console.log(`✅ Found price using symbol variant from all tickers: ${symbolVariant} (original: ${symbol})`);
+                  return price;
+                }
+              }
+            }
           }
-          return 0;
+        } catch (err) {
+          console.warn(`⚠️ Error fetching all tickers for ${symbol}:`, err);
         }
         
-        const price = parseFloat(data.result.list[0]?.lastPrice || '0');
-        if (price === 0) {
-          // Try to get more info about why price is 0
-          if (data.result.list && data.result.list.length === 0) {
-            console.warn(`⚠️ Symbol ${symbol} not found in ${bybitCategory} category on Bybit. The symbol may not exist or may not be available for this trading type.`);
-          } else {
-            console.warn(`⚠️ Price is 0 for ${symbol} in ${bybitCategory} category. Symbol may be suspended or invalid.`);
-          }
-          return 0;
-        }
-        
-        if (!isFinite(price) || price < 0) {
-          console.warn(`⚠️ Invalid price format for ${symbol}: ${price}`);
-          return 0;
-        }
-        
-        return price;
+        console.warn(`⚠️ Symbol ${symbol} not found in ${bybitCategory} category on Bybit. Tried variants: ${symbolVariants.join(', ')}`);
+        return 0;
       } else if (exchange === 'okx') {
-        const response = await fetch(`https://www.okx.com/api/v5/market/ticker?instId=${symbol}`);
-        const data = await response.json();
+        // Try different symbol variants for OKX
+        const symbolVariants = this.normalizeSymbol(symbol, exchange, tradingType);
         
-        if (!data.data || !Array.isArray(data.data) || data.data.length === 0) {
-          console.warn(`⚠️ OKX API error for ${symbol}: Empty or invalid data`, data);
-          return 0;
+        for (const symbolVariant of symbolVariants) {
+          try {
+            const instType = tradingType === 'futures' || tradingType === 'linear' ? 'SWAP' : 'SPOT';
+            const response = await fetch(`https://www.okx.com/api/v5/market/ticker?instId=${symbolVariant}&instType=${instType}`);
+            const data = await response.json();
+            
+            if (data.code === '0' && data.data && Array.isArray(data.data) && data.data.length > 0) {
+              const price = parseFloat(data.data[0]?.last || '0');
+              if (price > 0 && isFinite(price)) {
+                if (symbolVariant !== symbol) {
+                  console.log(`✅ Found price using symbol variant: ${symbolVariant} (original: ${symbol})`);
+                }
+                return price;
+              }
+            }
+          } catch (err) {
+            console.warn(`⚠️ Error trying symbol variant ${symbolVariant}:`, err);
+            continue; // Try next variant
+          }
         }
         
-        return parseFloat(data.data[0]?.last || '0');
+        console.warn(`⚠️ OKX API error for ${symbol}: Symbol not found. Tried variants: ${symbolVariants.join(', ')}`);
+        return 0;
       }
       return 0;
     } catch (error) {
