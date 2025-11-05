@@ -53,7 +53,11 @@ interface PaperPerformance {
   pairsPerformance: PairPerformance[];
 }
 
-export default function PaperTradingPerformance() {
+interface PaperTradingPerformanceProps {
+  selectedPair?: string;
+}
+
+export default function PaperTradingPerformance({ selectedPair = '' }: PaperTradingPerformanceProps) {
   const [performance, setPerformance] = useState<PaperPerformance | null>(null);
   const [positions, setPositions] = useState<PaperPosition[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,21 +75,33 @@ export default function PaperTradingPerformance() {
         .eq('user_id', user.id)
         .single();
 
-      // Get all closed trades
-      const { data: trades } = await supabase
+      // Get all closed trades - filter by selected pair if provided
+      let tradesQuery = supabase
         .from('paper_trading_trades')
         .select('*')
         .eq('user_id', user.id)
         .eq('status', 'closed')
         .order('closed_at', { ascending: false });
+      
+      if (selectedPair) {
+        tradesQuery = tradesQuery.eq('symbol', selectedPair);
+      }
+      
+      const { data: trades } = await tradesQuery;
 
-      // Get open positions
-      const { data: openPositions } = await supabase
+      // Get open positions - filter by selected pair if provided
+      let openPositionsQuery = supabase
         .from('paper_trading_positions')
         .select('*')
         .eq('user_id', user.id)
         .eq('status', 'open')
         .order('opened_at', { ascending: false });
+      
+      if (selectedPair) {
+        openPositionsQuery = openPositionsQuery.eq('symbol', selectedPair);
+      }
+      
+      const { data: openPositions } = await openPositionsQuery;
 
       // Fetch current prices for open positions
       let positionsWithPrices: any[] = [];
@@ -369,7 +385,7 @@ export default function PaperTradingPerformance() {
     }, 30000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [selectedPair]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
