@@ -1,7 +1,7 @@
 
 
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Button from '../../components/base/Button';
 import Card from '../../components/base/Card';
 import Header from '../../components/feature/Header';
@@ -12,12 +12,19 @@ import type { PairRecommendation } from '../../services/pairRecommendations';
 
 export default function CreateBotPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { createBot } = useBots();
+  
+  // Get initial values from URL params (for navigation from Futures Pairs Finder)
+  const urlSymbol = searchParams.get('symbol') || 'BTCUSDT';
+  const urlExchange = (searchParams.get('exchange') || 'bybit') as 'bybit' | 'okx';
+  const urlTradingType = (searchParams.get('tradingType') || 'spot') as 'spot' | 'futures';
+  
   const [formData, setFormData] = useState({
     name: '',
-    exchange: 'bybit' as 'bybit' | 'okx',
-    tradingType: 'spot' as 'spot' | 'futures',
-    symbol: 'BTCUSDT',
+    exchange: urlExchange,
+    tradingType: urlTradingType,
+    symbol: urlSymbol,
     timeframe: '1h' as '1m' | '5m' | '15m' | '1h' | '2h' | '3h' | '4h' | '1d' | '1w',
     leverage: 5,
     riskLevel: 'medium' as 'low' | 'medium' | 'high',
@@ -26,6 +33,18 @@ export default function CreateBotPage() {
     takeProfit: 4.0,
     paperTrading: false // Paper trading mode toggle
   });
+
+  // Update form data when URL params change
+  useEffect(() => {
+    if (urlSymbol) {
+      setFormData(prev => ({
+        ...prev,
+        symbol: urlSymbol,
+        exchange: urlExchange,
+        tradingType: urlTradingType
+      }));
+    }
+  }, [urlSymbol, urlExchange, urlTradingType]);
 
   const [customSymbol, setCustomSymbol] = useState<string>('');
   const [customSymbolError, setCustomSymbolError] = useState<string>('');

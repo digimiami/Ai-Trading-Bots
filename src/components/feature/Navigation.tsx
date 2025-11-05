@@ -20,6 +20,7 @@ export default function Navigation() {
     { path: '/trades', icon: 'ri-exchange-line', label: 'Trades' },
     { path: '/performance', icon: 'ri-line-chart-line', label: 'Performance' },
     { path: '/paper-trading', icon: 'ri-edit-box-line', label: 'Paper' },
+    { path: '/futures-pairs-finder', icon: 'ri-search-line', label: 'Futures' },
     { path: '/settings', icon: 'ri-settings-line', label: 'Settings' }
   ];
 
