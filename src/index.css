@@ -130,3 +130,103 @@ html.dark {
 .dark .text-gray-400 {
   color: #9ca3af !important;
 }
+
+/* Theme-aware primary color classes */
+.theme-primary {
+  background-color: var(--theme-primary) !important;
+  border-color: var(--theme-primary) !important;
+}
+
+.theme-primary-text {
+  color: var(--theme-primary) !important;
+}
+
+.theme-primary-border {
+  border-color: var(--theme-primary) !important;
+}
+
+.theme-primary-ring {
+  --tw-ring-color: var(--theme-primary) !important;
+}
+
+/* Theme color overrides for common Tailwind classes */
+/* Blue theme */
+.theme-blue .bg-blue-600 { background-color: #3b82f6 !important; }
+.theme-blue .hover\:bg-blue-700:hover { background-color: #2563eb !important; }
+.theme-blue .text-blue-600 { color: #3b82f6 !important; }
+.theme-blue .text-blue-700 { color: #1d4ed8 !important; }
+.theme-blue .text-blue-400 { color: #60a5fa !important; }
+.theme-blue .border-blue-600 { border-color: #3b82f6 !important; }
+.theme-blue .border-blue-200 { border-color: #bfdbfe !important; }
+.theme-blue .focus\:ring-blue-500:focus { --tw-ring-color: #3b82f6 !important; }
+.theme-blue .bg-blue-50 { background-color: #eff6ff !important; }
+.theme-blue .border-b-2.border-blue-600 { border-bottom-color: #3b82f6 !important; }
+
+/* Green theme */
+.theme-green .bg-blue-600 { background-color: #10b981 !important; }
+.theme-green .hover\:bg-blue-700:hover { background-color: #059669 !important; }
+.theme-green .text-blue-600 { color: #10b981 !important; }
+.theme-green .text-blue-700 { color: #047857 !important; }
+.theme-green .text-blue-400 { color: #34d399 !important; }
+.theme-green .border-blue-600 { border-color: #10b981 !important; }
+.theme-green .border-blue-200 { border-color: #a7f3d0 !important; }
+.theme-green .focus\:ring-blue-500:focus { --tw-ring-color: #10b981 !important; }
+.theme-green .bg-blue-50 { background-color: #d1fae5 !important; }
+.theme-green .border-b-2.border-blue-600 { border-bottom-color: #10b981 !important; }
+
+/* Purple theme */
+.theme-purple .bg-blue-600 { background-color: #8b5cf6 !important; }
+.theme-purple .hover\:bg-blue-700:hover { background-color: #7c3aed !important; }
+.theme-purple .text-blue-600 { color: #8b5cf6 !important; }
+.theme-purple .text-blue-700 { color: #6d28d9 !important; }
+.theme-purple .text-blue-400 { color: #a78bfa !important; }
+.theme-purple .border-blue-600 { border-color: #8b5cf6 !important; }
+.theme-purple .border-blue-200 { border-color: #c4b5fd !important; }
+.theme-purple .focus\:ring-blue-500:focus { --tw-ring-color: #8b5cf6 !important; }
+.theme-purple .bg-blue-50 { background-color: #ede9fe !important; }
+.theme-purple .border-b-2.border-blue-600 { border-bottom-color: #8b5cf6 !important; }
+
+/* Orange theme */
+.theme-orange .bg-blue-600 { background-color: #f97316 !important; }
+.theme-orange .hover\:bg-blue-700:hover { background-color: #ea580c !important; }
+.theme-orange .text-blue-600 { color: #f97316 !important; }
+.theme-orange .text-blue-700 { color: #c2410c !important; }
+.theme-orange .text-blue-400 { color: #fb923c !important; }
+.theme-orange .border-blue-600 { border-color: #f97316 !important; }
+.theme-orange .border-blue-200 { border-color: #fed7aa !important; }
+.theme-orange .focus\:ring-blue-500:focus { --tw-ring-color: #f97316 !important; }
+.theme-orange .bg-blue-50 { background-color: #ffedd5 !important; }
+.theme-orange .border-b-2.border-blue-600 { border-bottom-color: #f97316 !important; }
+
+/* Focus ring overrides for all themes */
+.theme-blue .focus\:ring-blue-500:focus { --tw-ring-color: #3b82f6 !important; }
+.theme-green .focus\:ring-blue-500:focus { --tw-ring-color: #10b981 !important; }
+.theme-purple .focus\:ring-blue-500:focus { --tw-ring-color: #8b5cf6 !important; }
+.theme-orange .focus\:ring-blue-500:focus { --tw-ring-color: #f97316 !important; }
+
+/* Dark mode theme overrides */
+.dark.theme-blue .text-blue-400 { color: #60a5fa !important; }
+.dark.theme-green .text-blue-400 { color: #34d399 !important; }
+.dark.theme-purple .text-blue-400 { color: #a78bfa !important; }
+.dark.theme-orange .text-blue-400 { color: #fb923c !important; }
+
+/* Dark mode background overrides for theme colors */
+.dark.theme-blue .bg-blue-50 { background-color: #1e3a8a !important; }
+.dark.theme-blue .bg-blue-900\/30 { background-color: rgba(30, 58, 138, 0.3) !important; }
+.dark.theme-blue .text-blue-700 { color: #93c5fd !important; }
+.dark.theme-blue .text-blue-200 { color: #bfdbfe !important; }
+
+.dark.theme-green .bg-blue-50 { background-color: #064e3b !important; }
+.dark.theme-green .bg-blue-900\/30 { background-color: rgba(6, 78, 59, 0.3) !important; }
+.dark.theme-green .text-blue-700 { color: #6ee7b7 !important; }
+.dark.theme-green .text-blue-200 { color: #a7f3d0 !important; }
+
+.dark.theme-purple .bg-blue-50 { background-color: #4c1d95 !important; }
+.dark.theme-purple .bg-blue-900\/30 { background-color: rgba(76, 29, 149, 0.3) !important; }
+.dark.theme-purple .text-blue-700 { color: #c4b5fd !important; }
+.dark.theme-purple .text-blue-200 { color: #ddd6fe !important; }
+
+.dark.theme-orange .bg-blue-50 { background-color: #7c2d12 !important; }
+.dark.theme-orange .bg-blue-900\/30 { background-color: rgba(124, 45, 18, 0.3) !important; }
+.dark.theme-orange .text-blue-700 { color: #fdba74 !important; }
+.dark.theme-orange .text-blue-200 { color: #fed7aa !important; }

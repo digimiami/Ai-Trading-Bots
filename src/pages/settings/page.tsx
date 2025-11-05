@@ -147,14 +147,25 @@ export default function Settings() {
     const isColorTheme = ['blue', 'green', 'purple', 'orange'].includes(appearance.theme);
     
     if (appearance.theme === 'dark') {
+      // Dark theme without color accent
       document.documentElement.classList.add('dark');
       document.body.classList.add('dark');
     } else if (isColorTheme) {
-      // Color themes are light themes with accent colors
-      // They don't automatically add dark mode
+      // Color themes can work with or without dark mode
+      // Check if user prefers dark mode (system preference or explicit setting)
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const savedDarkMode = localStorage.getItem('darkMode');
+      const useDarkMode = savedDarkMode === 'true' || (savedDarkMode === null && prefersDark);
+      
       document.documentElement.classList.add(`theme-${appearance.theme}`);
       document.body.classList.add(`theme-${appearance.theme}`);
+      
+      if (useDarkMode) {
+        document.documentElement.classList.add('dark');
+        document.body.classList.add('dark');
+      }
     }
+    // Light theme (default) - no classes needed
     
     console.log(`🎨 Theme applied: ${appearance.theme}`);
   }, [appearance.theme]); // Watch for theme changes
@@ -315,27 +326,12 @@ export default function Settings() {
     localStorage.setItem('appearance_settings', JSON.stringify(newAppearance));
     console.log(`💾 Saved to localStorage:`, newAppearance);
     
-    // Apply theme immediately (useEffect will handle the actual application)
-    if (key === 'theme') {
-      console.log(`🎨 Theme will change to: ${value}`);
-      // Remove all theme classes first
-      document.documentElement.classList.remove('dark', 'theme-blue', 'theme-green', 'theme-purple', 'theme-orange');
-      document.body.classList.remove('dark', 'theme-blue', 'theme-green', 'theme-purple', 'theme-orange');
-      
-      // Apply new theme
-      const isColorTheme = ['blue', 'green', 'purple', 'orange'].includes(value);
-      
-      if (value === 'dark') {
-        document.documentElement.classList.add('dark');
-        document.body.classList.add('dark');
-      } else if (isColorTheme) {
-        // Color themes are light themes with accent colors
-        document.documentElement.classList.add(`theme-${value}`);
-        document.body.classList.add(`theme-${value}`);
+      // Apply theme immediately (useEffect will handle the actual application)
+      if (key === 'theme') {
+        console.log(`🎨 Theme will change to: ${value}`);
+        // The useEffect hook will handle theme application
+        alert(`✅ ${value.charAt(0).toUpperCase() + value.slice(1)} theme enabled!`);
       }
-      
-      alert(`✅ ${value.charAt(0).toUpperCase() + value.slice(1)} theme enabled!`);
-    }
     
     // Apply language immediately
     if (key === 'language') {
