@@ -43,10 +43,24 @@ export default function Settings() {
   });
 
   const [appearance, setAppearance] = useState(() => {
-    // Load from localStorage
-    const saved = localStorage.getItem('appearance_settings');
-    if (saved) {
-      return JSON.parse(saved);
+    // Load from localStorage with error handling
+    try {
+      const saved = localStorage.getItem('appearance_settings');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Ensure theme is valid
+        if (parsed && typeof parsed === 'object') {
+          return {
+            theme: parsed.theme || 'light',
+            currency: parsed.currency || 'USD',
+            language: parsed.language || 'English'
+          };
+        }
+      }
+    } catch (error) {
+      console.error('Error loading appearance settings:', error);
+      // Clear invalid data
+      localStorage.removeItem('appearance_settings');
     }
     return {
       theme: 'light',
@@ -139,36 +153,35 @@ export default function Settings() {
   // Load profile data on component mount
   // Apply theme whenever it changes
   useEffect(() => {
-    // Remove all theme classes first
-    document.documentElement.classList.remove('dark', 'theme-blue', 'theme-green', 'theme-purple', 'theme-orange');
-    document.body.classList.remove('dark', 'theme-blue', 'theme-green', 'theme-purple', 'theme-orange');
+    // Ensure appearance.theme exists
+    if (!appearance || !appearance.theme) {
+      return;
+    }
     
-    // Apply new theme
-    const isColorTheme = ['blue', 'green', 'purple', 'orange'].includes(appearance.theme);
-    
-    if (appearance.theme === 'dark') {
-      // Dark theme without color accent
-      document.documentElement.classList.add('dark');
-      document.body.classList.add('dark');
-    } else if (isColorTheme) {
-      // Color themes can work with or without dark mode
-      // Check if user prefers dark mode (system preference or explicit setting)
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      const savedDarkMode = localStorage.getItem('darkMode');
-      const useDarkMode = savedDarkMode === 'true' || (savedDarkMode === null && prefersDark);
+    try {
+      // Remove all theme classes first
+      document.documentElement.classList.remove('dark', 'theme-blue', 'theme-green', 'theme-purple', 'theme-orange');
+      document.body.classList.remove('dark', 'theme-blue', 'theme-green', 'theme-purple', 'theme-orange');
       
-      document.documentElement.classList.add(`theme-${appearance.theme}`);
-      document.body.classList.add(`theme-${appearance.theme}`);
+      // Apply new theme
+      const isColorTheme = ['blue', 'green', 'purple', 'orange'].includes(appearance.theme);
       
-      if (useDarkMode) {
+      if (appearance.theme === 'dark') {
+        // Dark theme without color accent
         document.documentElement.classList.add('dark');
         document.body.classList.add('dark');
+      } else if (isColorTheme) {
+        // Color themes are light themes with accent colors
+        document.documentElement.classList.add(`theme-${appearance.theme}`);
+        document.body.classList.add(`theme-${appearance.theme}`);
       }
+      // Light theme (default) - no classes needed
+      
+      console.log(`🎨 Theme applied: ${appearance.theme}`);
+    } catch (error) {
+      console.error('Error applying theme:', error);
     }
-    // Light theme (default) - no classes needed
-    
-    console.log(`🎨 Theme applied: ${appearance.theme}`);
-  }, [appearance.theme]); // Watch for theme changes
+  }, [appearance?.theme]); // Watch for theme changes
 
   useEffect(() => {
     // Check AI keys from Edge Function secrets on mount only

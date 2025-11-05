@@ -16,23 +16,29 @@ function AppRoutes() {
 
   // Load theme from localStorage on mount
   useEffect(() => {
-    const savedSettings = localStorage.getItem('appearance_settings');
-    if (savedSettings) {
-      const appearance = JSON.parse(savedSettings);
-      const theme = appearance.theme || 'light';
-      
-      // Remove all theme classes first
-      document.documentElement.classList.remove('dark', 'theme-blue', 'theme-green', 'theme-purple', 'theme-orange');
-      document.body.classList.remove('dark', 'theme-blue', 'theme-green', 'theme-purple', 'theme-orange');
-      
-      // Apply theme
-      if (theme === 'dark') {
-        document.documentElement.classList.add('dark');
-        document.body.classList.add('dark');
-      } else if (theme !== 'light') {
-        document.documentElement.classList.add(`theme-${theme}`);
-        document.body.classList.add(`theme-${theme}`);
+    try {
+      const savedSettings = localStorage.getItem('appearance_settings');
+      if (savedSettings) {
+        const appearance = JSON.parse(savedSettings);
+        const theme = appearance?.theme || 'light';
+        
+        // Remove all theme classes first
+        document.documentElement.classList.remove('dark', 'theme-blue', 'theme-green', 'theme-purple', 'theme-orange');
+        document.body.classList.remove('dark', 'theme-blue', 'theme-green', 'theme-purple', 'theme-orange');
+        
+        // Apply theme
+        if (theme === 'dark') {
+          document.documentElement.classList.add('dark');
+          document.body.classList.add('dark');
+        } else if (theme !== 'light' && ['blue', 'green', 'purple', 'orange'].includes(theme)) {
+          document.documentElement.classList.add(`theme-${theme}`);
+          document.body.classList.add(`theme-${theme}`);
+        }
       }
+    } catch (error) {
+      console.error('Error loading theme from localStorage:', error);
+      // Clear invalid data
+      localStorage.removeItem('appearance_settings');
     }
   }, []);
 

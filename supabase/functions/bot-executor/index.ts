@@ -499,29 +499,243 @@ class MarketDataFetcher {
     }
   }
   
-  static async fetchRSI(symbol: string, exchange: string, timeframe: string = '1h'): Promise<number> {
-    // Generate RSI values that will trigger trades more often
-    // Strategy: RSI > 70 (sell) or RSI < 30 (buy)
-    const random = Math.random();
-    if (random < 0.5) {
-      // 50% chance of extreme values that trigger trades
-      return random < 0.25 ? 15 + Math.random() * 15 : 70 + Math.random() * 15; // 15-30 or 70-85
-    } else {
-      // 50% chance of normal values
-      return 30 + Math.random() * 40; // 30-70
+  // Fetch historical klines/candlestick data from Bybit mainnet
+  static async fetchKlines(symbol: string, exchange: string, timeframe: string = '1h', limit: number = 200): Promise<number[][]> {
+    try {
+      if (exchange === 'bybit') {
+        // Map timeframe to Bybit interval
+        const intervalMap: { [key: string]: string } = {
+          '1m': '1',
+          '3m': '3',
+          '5m': '5',
+          '15m': '15',
+          '30m': '30',
+          '1h': '60',
+          '2h': '120',
+          '4h': '240',
+          '6h': '360',
+          '12h': '720',
+          '1d': 'D',
+          '1w': 'W',
+          '1M': 'M'
+        };
+        
+        const interval = intervalMap[timeframe] || '60';
+        
+        // Determine category based on trading type
+        // For now, try both spot and linear, but prefer linear for futures
+        const categories = ['linear', 'spot', 'inverse'];
+        
+        for (const category of categories) {
+          try {
+            // Normalize symbol for Bybit API
+            const symbolVariants = this.normalizeSymbol(symbol, exchange, category === 'linear' ? 'futures' : 'spot');
+            
+            for (const symbolVariant of symbolVariants) {
+              const url = `https://api.bybit.com/v5/market/kline?category=${category}&symbol=${symbolVariant}&interval=${interval}&limit=${limit}`;
+              const response = await fetch(url);
+              const data = await response.json();
+              
+              if (data.retCode === 0 && data.result && data.result.list && data.result.list.length > 0) {
+                // Bybit returns klines in reverse chronological order (newest first)
+                // Format: [startTime, open, high, low, close, volume, turnover]
+                const klines = data.result.list.reverse().map((k: any[]) => [
+                  parseFloat(k[0]), // timestamp
+                  parseFloat(k[1]), // open
+                  parseFloat(k[2]), // high
+                  parseFloat(k[3]), // low
+                  parseFloat(k[4]), // close
+                  parseFloat(k[5])  // volume
+                ]);
+                
+                if (klines.length > 0) {
+                  console.log(`✅ Fetched ${klines.length} klines for ${symbolVariant} (${category})`);
+                  return klines;
+                }
+              }
+            }
+          } catch (err) {
+            continue; // Try next category
+          }
+        }
+        
+        console.warn(`⚠️ Could not fetch klines for ${symbol} from Bybit`);
+        return [];
+      } else if (exchange === 'okx') {
+        // OKX klines implementation
+        const instType = timeframe.includes('m') || timeframe.includes('h') ? 'SWAP' : 'SPOT';
+        const symbolVariants = this.normalizeSymbol(symbol, exchange, instType === 'SWAP' ? 'futures' : 'spot');
+        
+        for (const symbolVariant of symbolVariants) {
+          try {
+            const url = `https://www.okx.com/api/v5/market/candles?instId=${symbolVariant}&instType=${instType}&bar=${timeframe}&limit=${limit}`;
+            const response = await fetch(url);
+            const data = await response.json();
+            
+            if (data.code === '0' && data.data && Array.isArray(data.data) && data.data.length > 0) {
+              // OKX returns: [timestamp, open, high, low, close, volume, volCcy, volCcyQuote, confirm]
+              const klines = data.data.reverse().map((k: any[]) => [
+                parseFloat(k[0]), // timestamp
+                parseFloat(k[1]), // open
+                parseFloat(k[2]), // high
+                parseFloat(k[3]), // low
+                parseFloat(k[4]), // close
+                parseFloat(k[5])  // volume
+              ]);
+              
+              if (klines.length > 0) {
+                console.log(`✅ Fetched ${klines.length} klines for ${symbolVariant} from OKX`);
+                return klines;
+              }
+            }
+          } catch (err) {
+            continue; // Try next variant
+          }
+        }
+        
+        console.warn(`⚠️ Could not fetch klines for ${symbol} from OKX`);
+        return [];
+      }
+      
+      return [];
+    } catch (error) {
+      console.error(`❌ Error fetching klines for ${symbol}:`, error);
+      return [];
     }
   }
   
+  // Calculate RSI (Relative Strength Index) from real market data
+  static async fetchRSI(symbol: string, exchange: string, timeframe: string = '1h'): Promise<number> {
+    try {
+      // Fetch historical klines (need at least 14 periods for RSI, but get more for accuracy)
+      const klines = await this.fetchKlines(symbol, exchange, timeframe, 100);
+      
+      if (klines.length < 14) {
+        console.warn(`⚠️ Insufficient klines for RSI calculation (need 14, got ${klines.length}), using fallback`);
+        return 50; // Neutral RSI
+      }
+      
+      // Extract close prices
+      const closes = klines.map(k => k[4]); // close price is index 4
+      
+      // Calculate RSI using standard 14-period formula
+      const period = 14;
+      const gains: number[] = [];
+      const losses: number[] = [];
+      
+      // Calculate price changes
+      for (let i = 1; i < closes.length; i++) {
+        const change = closes[i] - closes[i - 1];
+        gains.push(change > 0 ? change : 0);
+        losses.push(change < 0 ? Math.abs(change) : 0);
+      }
+      
+      // Calculate average gain and loss over the period
+      let avgGain = gains.slice(0, period).reduce((a, b) => a + b, 0) / period;
+      let avgLoss = losses.slice(0, period).reduce((a, b) => a + b, 0) / period;
+      
+      // Use Wilder's smoothing method for subsequent periods
+      for (let i = period; i < gains.length; i++) {
+        avgGain = (avgGain * (period - 1) + gains[i]) / period;
+        avgLoss = (avgLoss * (period - 1) + losses[i]) / period;
+      }
+      
+      // Calculate RSI
+      if (avgLoss === 0) {
+        return 100; // Perfect bullish momentum
+      }
+      
+      const rs = avgGain / avgLoss;
+      const rsi = 100 - (100 / (1 + rs));
+      
+      console.log(`📊 RSI calculated for ${symbol}: ${rsi.toFixed(2)} (avgGain: ${avgGain.toFixed(4)}, avgLoss: ${avgLoss.toFixed(4)})`);
+      
+      return Math.max(0, Math.min(100, rsi)); // Clamp between 0 and 100
+    } catch (error) {
+      console.error(`❌ Error calculating RSI for ${symbol}:`, error);
+      return 50; // Return neutral RSI on error
+    }
+  }
+  
+  // Calculate ADX (Average Directional Index) from real market data
   static async fetchADX(symbol: string, exchange: string, timeframe: string = '1h'): Promise<number> {
-    // Generate ADX values that will trigger trades more often
-    // Strategy: ADX > 25 (strong trend)
-    const random = Math.random();
-    if (random < 0.6) {
-      // 60% chance of strong trend (ADX > 25)
-      return 25 + Math.random() * 25; // 25-50
-    } else {
-      // 40% chance of weak trend
-      return 10 + Math.random() * 15; // 10-25
+    try {
+      // Fetch historical klines (need at least 14 periods for ADX)
+      const klines = await this.fetchKlines(symbol, exchange, timeframe, 100);
+      
+      if (klines.length < 14) {
+        console.warn(`⚠️ Insufficient klines for ADX calculation (need 14, got ${klines.length}), using fallback`);
+        return 20; // Weak trend
+      }
+      
+      const period = 14;
+      
+      // Calculate True Range (TR) and Directional Movement (+DM and -DM)
+      const trs: number[] = [];
+      const plusDMs: number[] = [];
+      const minusDMs: number[] = [];
+      
+      for (let i = 1; i < klines.length; i++) {
+        const [prevTimestamp, prevOpen, prevHigh, prevLow, prevClose] = klines[i - 1];
+        const [currTimestamp, currOpen, currHigh, currLow, currClose] = klines[i];
+        
+        // True Range = max of:
+        //   1. Current High - Current Low
+        //   2. Current High - Previous Close (absolute)
+        //   3. Current Low - Previous Close (absolute)
+        const tr = Math.max(
+          currHigh - currLow,
+          Math.abs(currHigh - prevClose),
+          Math.abs(currLow - prevClose)
+        );
+        trs.push(tr);
+        
+        // Directional Movement
+        const upMove = currHigh - prevHigh;
+        const downMove = prevLow - currLow;
+        
+        if (upMove > downMove && upMove > 0) {
+          plusDMs.push(upMove);
+          minusDMs.push(0);
+        } else if (downMove > upMove && downMove > 0) {
+          plusDMs.push(0);
+          minusDMs.push(downMove);
+        } else {
+          plusDMs.push(0);
+          minusDMs.push(0);
+        }
+      }
+      
+      // Calculate smoothed averages using Wilder's smoothing
+      let avgTR = trs.slice(0, period).reduce((a, b) => a + b, 0) / period;
+      let avgPlusDM = plusDMs.slice(0, period).reduce((a, b) => a + b, 0) / period;
+      let avgMinusDM = minusDMs.slice(0, period).reduce((a, b) => a + b, 0) / period;
+      
+      // Smooth subsequent values
+      for (let i = period; i < trs.length; i++) {
+        avgTR = (avgTR * (period - 1) + trs[i]) / period;
+        avgPlusDM = (avgPlusDM * (period - 1) + plusDMs[i]) / period;
+        avgMinusDM = (avgMinusDM * (period - 1) + minusDMs[i]) / period;
+      }
+      
+      // Calculate +DI and -DI
+      const plusDI = avgTR === 0 ? 0 : (avgPlusDM / avgTR) * 100;
+      const minusDI = avgTR === 0 ? 0 : (avgMinusDM / avgTR) * 100;
+      
+      // Calculate DX (Directional Index)
+      const diSum = plusDI + minusDI;
+      const dx = diSum === 0 ? 0 : (Math.abs(plusDI - minusDI) / diSum) * 100;
+      
+      // Calculate ADX (smoothed DX)
+      // For simplicity, we'll use the DX value as ADX (full ADX would smooth DX over multiple periods)
+      const adx = dx;
+      
+      console.log(`📊 ADX calculated for ${symbol}: ${adx.toFixed(2)} (+DI: ${plusDI.toFixed(2)}, -DI: ${minusDI.toFixed(2)})`);
+      
+      return Math.max(0, Math.min(100, adx)); // Clamp between 0 and 100
+    } catch (error) {
+      console.error(`❌ Error calculating ADX for ${symbol}:`, error);
+      return 20; // Return weak trend on error
     }
   }
 }
