@@ -139,13 +139,23 @@ export default function Settings() {
   // Load profile data on component mount
   // Apply theme whenever it changes
   useEffect(() => {
+    // Remove all theme classes first
+    document.documentElement.classList.remove('dark', 'theme-blue', 'theme-green', 'theme-purple', 'theme-orange');
+    document.body.classList.remove('dark', 'theme-blue', 'theme-green', 'theme-purple', 'theme-orange');
+    
+    // Apply new theme
+    const isColorTheme = ['blue', 'green', 'purple', 'orange'].includes(appearance.theme);
+    
     if (appearance.theme === 'dark') {
       document.documentElement.classList.add('dark');
       document.body.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-      document.body.classList.remove('dark');
+    } else if (isColorTheme) {
+      // Color themes are light themes with accent colors
+      // They don't automatically add dark mode
+      document.documentElement.classList.add(`theme-${appearance.theme}`);
+      document.body.classList.add(`theme-${appearance.theme}`);
     }
+    
     console.log(`🎨 Theme applied: ${appearance.theme}`);
   }, [appearance.theme]); // Watch for theme changes
 
@@ -308,16 +318,23 @@ export default function Settings() {
     // Apply theme immediately (useEffect will handle the actual application)
     if (key === 'theme') {
       console.log(`🎨 Theme will change to: ${value}`);
-      // Force immediate application
+      // Remove all theme classes first
+      document.documentElement.classList.remove('dark', 'theme-blue', 'theme-green', 'theme-purple', 'theme-orange');
+      document.body.classList.remove('dark', 'theme-blue', 'theme-green', 'theme-purple', 'theme-orange');
+      
+      // Apply new theme
+      const isColorTheme = ['blue', 'green', 'purple', 'orange'].includes(value);
+      
       if (value === 'dark') {
         document.documentElement.classList.add('dark');
         document.body.classList.add('dark');
-        alert('✅ Dark mode enabled!');
-      } else {
-        document.documentElement.classList.remove('dark');
-        document.body.classList.remove('dark');
-        alert('✅ Light mode enabled!');
+      } else if (isColorTheme) {
+        // Color themes are light themes with accent colors
+        document.documentElement.classList.add(`theme-${value}`);
+        document.body.classList.add(`theme-${value}`);
       }
+      
+      alert(`✅ ${value.charAt(0).toUpperCase() + value.slice(1)} theme enabled!`);
     }
     
     // Apply language immediately
@@ -1071,34 +1088,78 @@ export default function Settings() {
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Appearance</h3>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">
                 Theme
               </label>
-              <div className="flex space-x-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                 <button
                   onClick={() => handleAppearanceChange('theme', 'light')}
-                  className={`flex-1 flex items-center justify-center px-4 py-3 rounded-lg border-2 transition-all ${
+                  className={`flex flex-col items-center justify-center px-4 py-3 rounded-lg border-2 transition-all ${
                     appearance.theme === 'light'
-                      ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-                      : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+                      ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200'
+                      : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600'
                   }`}
                 >
-                  <i className="ri-sun-line text-xl mr-2"></i>
-                  <span className="font-medium">Light</span>
+                  <i className="ri-sun-line text-2xl mb-1"></i>
+                  <span className="font-medium text-sm">Light</span>
                 </button>
                 <button
                   onClick={() => handleAppearanceChange('theme', 'dark')}
-                  className={`flex-1 flex items-center justify-center px-4 py-3 rounded-lg border-2 transition-all ${
+                  className={`flex flex-col items-center justify-center px-4 py-3 rounded-lg border-2 transition-all ${
                     appearance.theme === 'dark'
-                      ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
-                      : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:border-gray-300 dark:hover:border-gray-600'
+                      ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200'
+                      : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600'
                   }`}
                 >
-                  <i className="ri-moon-line text-xl mr-2"></i>
-                  <span className="font-medium">Dark</span>
+                  <i className="ri-moon-line text-2xl mb-1"></i>
+                  <span className="font-medium text-sm">Dark</span>
+                </button>
+                <button
+                  onClick={() => handleAppearanceChange('theme', 'blue')}
+                  className={`flex flex-col items-center justify-center px-4 py-3 rounded-lg border-2 transition-all ${
+                    appearance.theme === 'blue'
+                      ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200'
+                      : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600'
+                  }`}
+                >
+                  <i className="ri-drop-line text-2xl mb-1"></i>
+                  <span className="font-medium text-sm">Blue</span>
+                </button>
+                <button
+                  onClick={() => handleAppearanceChange('theme', 'green')}
+                  className={`flex flex-col items-center justify-center px-4 py-3 rounded-lg border-2 transition-all ${
+                    appearance.theme === 'green'
+                      ? 'border-green-600 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-200'
+                      : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600'
+                  }`}
+                >
+                  <i className="ri-leaf-line text-2xl mb-1"></i>
+                  <span className="font-medium text-sm">Green</span>
+                </button>
+                <button
+                  onClick={() => handleAppearanceChange('theme', 'purple')}
+                  className={`flex flex-col items-center justify-center px-4 py-3 rounded-lg border-2 transition-all ${
+                    appearance.theme === 'purple'
+                      ? 'border-purple-600 bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-200'
+                      : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600'
+                  }`}
+                >
+                  <i className="ri-magic-line text-2xl mb-1"></i>
+                  <span className="font-medium text-sm">Purple</span>
+                </button>
+                <button
+                  onClick={() => handleAppearanceChange('theme', 'orange')}
+                  className={`flex flex-col items-center justify-center px-4 py-3 rounded-lg border-2 transition-all ${
+                    appearance.theme === 'orange'
+                      ? 'border-orange-600 bg-orange-50 dark:bg-orange-900/30 text-orange-700 dark:text-orange-200'
+                      : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600'
+                  }`}
+                >
+                  <i className="ri-fire-line text-2xl mb-1"></i>
+                  <span className="font-medium text-sm">Orange</span>
                 </button>
               </div>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+              <p className="text-xs text-gray-500 dark:text-gray-300 mt-2">
                 Current theme: <strong className="capitalize">{appearance.theme}</strong> mode
               </p>
             </div>

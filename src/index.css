@@ -1,3 +1,132 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Theme-specific color variables */
+:root {
+  --theme-primary: #3b82f6;
+  --theme-bg: #ffffff;
+  --theme-text: #111827;
+  --theme-text-secondary: #6b7280;
+}
+
+/* Dark theme - ensure white text */
+.dark {
+  --theme-primary: #60a5fa;
+  --theme-bg: #111827;
+  --theme-text: #ffffff;
+  --theme-text-secondary: #d1d5db;
+}
+
+/* Blue theme */
+.theme-blue {
+  --theme-primary: #3b82f6;
+  --theme-bg: #ffffff;
+  --theme-text: #111827;
+  --theme-text-secondary: #6b7280;
+}
+
+.theme-blue.dark,
+.dark.theme-blue {
+  --theme-primary: #60a5fa;
+  --theme-bg: #1e3a8a;
+  --theme-text: #ffffff;
+  --theme-text-secondary: #d1d5db;
+  color: #ffffff;
+}
+
+/* Green theme */
+.theme-green {
+  --theme-primary: #10b981;
+  --theme-bg: #ffffff;
+  --theme-text: #111827;
+  --theme-text-secondary: #6b7280;
+}
+
+.theme-green.dark,
+.dark.theme-green {
+  --theme-primary: #34d399;
+  --theme-bg: #064e3b;
+  --theme-text: #ffffff;
+  --theme-text-secondary: #d1d5db;
+  color: #ffffff;
+}
+
+/* Purple theme */
+.theme-purple {
+  --theme-primary: #8b5cf6;
+  --theme-bg: #ffffff;
+  --theme-text: #111827;
+  --theme-text-secondary: #6b7280;
+}
+
+.theme-purple.dark,
+.dark.theme-purple {
+  --theme-primary: #a78bfa;
+  --theme-bg: #4c1d95;
+  --theme-text: #ffffff;
+  --theme-text-secondary: #d1d5db;
+  color: #ffffff;
+}
+
+/* Orange theme */
+.theme-orange {
+  --theme-primary: #f97316;
+  --theme-bg: #ffffff;
+  --theme-text: #111827;
+  --theme-text-secondary: #6b7280;
+}
+
+.theme-orange.dark,
+.dark.theme-orange {
+  --theme-primary: #fb923c;
+  --theme-bg: #7c2d12;
+  --theme-text: #ffffff;
+  --theme-text-secondary: #d1d5db;
+  color: #ffffff;
+}
+
+/* Global dark mode text color fixes - ensure white text */
+.dark {
+  color: #ffffff;
+}
+
+.dark p:not([class*="text-"]),
+.dark span:not([class*="text-"]),
+.dark div:not([class*="text-"]),
+.dark h1:not([class*="text-"]),
+.dark h2:not([class*="text-"]),
+.dark h3:not([class*="text-"]),
+.dark h4:not([class*="text-"]),
+.dark h5:not([class*="text-"]),
+.dark h6:not([class*="text-"]),
+.dark label:not([class*="text-"]),
+.dark button:not([class*="text-"]),
+.dark input:not([class*="text-"]),
+.dark select:not([class*="text-"]),
+.dark textarea:not([class*="text-"]) {
+  color: #ffffff;
+}
+
+/* Ensure body and root elements have white text in dark mode */
+body.dark,
+html.dark {
+  color: #ffffff;
+}
+
+/* Override for elements that should have white text in dark mode */
+.dark .text-gray-900,
+.dark .text-gray-800,
+.dark .text-gray-700,
+.dark .text-gray-600 {
+  color: #ffffff !important;
+}
+
+/* Keep secondary text lighter but still visible */
+.dark .text-gray-500 {
+  color: #d1d5db !important;
+}
+
+.dark .text-gray-400 {
+  color: #9ca3af !important;
+}

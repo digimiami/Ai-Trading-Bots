@@ -453,7 +453,7 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
       {/* Performance Overview */}
       <Card className="p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">📊 Paper Trading Performance</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">📊 Paper Trading Performance</h3>
           <Button
             onClick={handleRefresh}
             variant="secondary"
@@ -562,7 +562,7 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
 
       {/* Open Positions */}
       <Card className="p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           📈 Open Positions 
           <span className="ml-2 text-sm font-normal text-gray-500">
             ({positions.length} {positions.length === 1 ? 'position' : 'positions'})
@@ -594,7 +594,7 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
                       }`}>
                         {position.side.toUpperCase()}
                       </div>
-                      <span className="font-semibold text-gray-900">{position.symbol}</span>
+                      <span className="font-semibold text-gray-900 dark:text-white">{position.symbol}</span>
                       <span className="text-sm text-gray-500 bg-gray-200 px-2 py-0.5 rounded">{position.leverage}x</span>
                     </div>
                     <div className="text-right">
@@ -613,21 +613,21 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mb-2">
                     <div>
                       <span className="text-gray-500 block text-xs mb-1">Entry Price</span>
-                      <span className="font-medium text-gray-900">${position.entry_price.toFixed(2)}</span>
+                      <span className="font-medium text-gray-900 dark:text-white">${position.entry_price.toFixed(2)}</span>
                     </div>
                     <div>
-                      <span className="text-gray-500 block text-xs mb-1">Current Price</span>
-                      <span className="font-medium text-gray-900">
+                      <span className="text-gray-500 dark:text-gray-400 block text-xs mb-1">Current Price</span>
+                      <span className="font-medium text-gray-900 dark:text-white">
                         ${position.current_price?.toFixed(2) || 'Loading...'}
                       </span>
                     </div>
                     <div>
-                      <span className="text-gray-500 block text-xs mb-1">Quantity</span>
-                      <span className="font-medium text-gray-900">{position.quantity.toFixed(6)}</span>
+                      <span className="text-gray-500 dark:text-gray-400 block text-xs mb-1">Quantity</span>
+                      <span className="font-medium text-gray-900 dark:text-white">{position.quantity.toFixed(6)}</span>
                     </div>
                     <div>
-                      <span className="text-gray-500 block text-xs mb-1">Margin Used</span>
-                      <span className="font-medium text-gray-900">${parseFloat(position.margin_used || '0').toFixed(2)}</span>
+                      <span className="text-gray-500 dark:text-gray-400 block text-xs mb-1">Margin Used</span>
+                      <span className="font-medium text-gray-900 dark:text-white">${parseFloat(position.margin_used || '0').toFixed(2)}</span>
                     </div>
                   </div>
                   <div className="mt-2 pt-2 border-t border-gray-200 flex items-center justify-between text-xs text-gray-400">
@@ -644,7 +644,7 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
       {/* Performance by Pair */}
       {performance.pairsPerformance && performance.pairsPerformance.length > 0 && (
         <Card className="p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
             📊 Performance by Trading Pair
             <span className="ml-2 text-sm font-normal text-gray-500">
               ({performance.pairsPerformance.length} {performance.pairsPerformance.length === 1 ? 'pair' : 'pairs'})
@@ -660,7 +660,7 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
                   className="p-4 bg-gray-50 rounded-lg border border-gray-200 hover:shadow-md transition-shadow"
                 >
                   <div className="flex items-center justify-between mb-3">
-                    <h4 className="font-semibold text-gray-900 text-lg">{pair.symbol}</h4>
+                    <h4 className="font-semibold text-gray-900 dark:text-white text-lg">{pair.symbol}</h4>
                     <div className={`text-right ${totalPnLWithUnrealized >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                       <div className="text-xl font-bold">
                         {totalPnLWithUnrealized >= 0 ? '+' : ''}${totalPnLWithUnrealized.toFixed(2)}
@@ -689,19 +689,19 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
                     </div>
                     <div>
                       <span className="text-gray-500 block text-xs mb-1">Trades</span>
-                      <span className="font-semibold text-gray-900">
+                      <span className="font-semibold text-gray-900 dark:text-white">
                         {pair.totalTrades} ({pair.winningTrades}W / {pair.losingTrades}L)
                       </span>
                     </div>
                     <div>
-                      <span className="text-gray-500 block text-xs mb-1">Profit Factor</span>
-                      <span className={`font-semibold ${pair.profitFactor >= 1 ? 'text-green-600' : 'text-red-600'}`}>
+                      <span className="text-gray-500 dark:text-gray-400 block text-xs mb-1">Profit Factor</span>
+                      <span className={`font-semibold ${pair.profitFactor >= 1 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                         {pair.profitFactor.toFixed(2)}x
                       </span>
                     </div>
                     <div>
-                      <span className="text-gray-500 block text-xs mb-1">Open Positions</span>
-                      <span className="font-semibold text-gray-900">
+                      <span className="text-gray-500 dark:text-gray-400 block text-xs mb-1">Open Positions</span>
+                      <span className="font-semibold text-gray-900 dark:text-white">
                         {pair.openPositions}
                       </span>
                     </div>
@@ -723,7 +723,7 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
                       </div>
                       <div>
                         <span className="text-gray-500">Volume:</span>
-                        <span className="ml-1 font-medium text-gray-900">
+                        <span className="ml-1 font-medium text-gray-900 dark:text-white">
                           ${pair.totalVolume.toFixed(2)}
                         </span>
                       </div>
