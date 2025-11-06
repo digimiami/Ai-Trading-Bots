@@ -372,9 +372,20 @@ function normalizeOrderParams(qty: number, price: number, c: Constraints) {
 
 // Market data fetcher
 class MarketDataFetcher {
-  // Helper function to normalize symbol formats (e.g., 1000PEPEUSDT <-> PEPEUSDT)
+  // Helper function to normalize symbol formats (e.g., 1000PEPEUSDT <-> PEPEUSDT, 10000SATSUSDT <-> SATSUSDT)
   static normalizeSymbol(symbol: string, exchange: string, tradingType: string): string[] {
     const variants: string[] = [symbol]; // Always try original first
+    
+    // Handle 10000SATSUSDT -> SATSUSDT and vice versa (check longer prefix first)
+    if (symbol.startsWith('10000')) {
+      const withoutPrefix = symbol.replace(/^10000/, '');
+      variants.push(withoutPrefix);
+    } else if (symbol.match(/^[A-Z]+USDT$/)) {
+      // If it's a standard format like SATSUSDT, try 10000SATSUSDT for futures
+      if (tradingType === 'futures' || tradingType === 'linear') {
+        variants.push(`10000${symbol}`);
+      }
+    }
     
     // Handle 1000PEPEUSDT -> PEPEUSDT and vice versa
     if (symbol.startsWith('1000')) {
@@ -1229,11 +1240,14 @@ class BotExecutor {
   
   private async executeTrade(bot: any, tradeSignal: any): Promise<void> {
     try {
-      const currentPrice = await MarketDataFetcher.fetchPrice(bot.symbol, bot.exchange, bot.tradingType);
+      // Get trading type with fallback (handle both camelCase and snake_case)
+      const tradingType = bot.tradingType || bot.trading_type || 'futures';
+      
+      const currentPrice = await MarketDataFetcher.fetchPrice(bot.symbol, bot.exchange, tradingType);
       
       // Validate price before proceeding
       if (!currentPrice || currentPrice === 0 || !isFinite(currentPrice)) {
-        throw new Error(`Invalid or unavailable price for ${bot.symbol} (${bot.tradingType}). The symbol may not exist on ${bot.exchange} or may not be available for ${bot.tradingType} trading. Please verify the symbol name and trading type.`);
+        throw new Error(`Invalid or unavailable price for ${bot.symbol} (${tradingType}). The symbol may not exist on ${bot.exchange} or may not be available for ${tradingType} trading. Please verify the symbol name and trading type.`);
       }
       
       console.log(`💰 Current price for ${bot.symbol}: $${currentPrice}`);
