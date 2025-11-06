@@ -74,7 +74,67 @@ serve(async (req) => {
           .order('created_at', { ascending: false })
 
         if (usersError) throw usersError
-        return new Response(JSON.stringify({ users }), {
+        
+        // Fetch trading stats for each user
+        const usersWithStats = await Promise.all(
+          users.map(async (user: any) => {
+            // Get user's bots and their PnL
+            const { data: bots } = await supabaseClient
+              .from('trading_bots')
+              .select('id, pnl, total_trades, win_rate, status')
+              .eq('user_id', user.id)
+            
+            const totalPnL = bots?.reduce((sum, bot) => sum + (parseFloat(bot.pnl || 0)), 0) || 0
+            const totalTrades = bots?.reduce((sum, bot) => sum + (bot.total_trades || 0), 0) || 0
+            const activeBots = bots?.filter(bot => bot.status === 'running').length || 0
+            const avgWinRate = bots && bots.length > 0 
+              ? bots.reduce((sum, bot) => sum + (parseFloat(bot.win_rate || 0)), 0) / bots.length 
+              : 0
+            
+            // Get user's trading volume (from trades table)
+            const { data: trades } = await supabaseClient
+              .from('trades')
+              .select('size, entry_price, fees')
+              .eq('user_id', user.id)
+            
+            const totalVolume = trades?.reduce((sum, trade) => {
+              const size = parseFloat(trade.size || 0)
+              const entryPrice = parseFloat(trade.entry_price || 0)
+              return sum + (size * entryPrice)
+            }, 0) || 0
+            
+            // Get paper trading stats
+            const { data: paperTrades } = await supabaseClient
+              .from('paper_trading_trades')
+              .select('pnl, quantity, price')
+              .eq('user_id', user.id)
+              .eq('status', 'closed')
+            
+            const paperPnL = paperTrades?.reduce((sum, trade) => sum + (parseFloat(trade.pnl || 0)), 0) || 0
+            const paperTradesCount = paperTrades?.length || 0
+            
+            // Determine if user is active (signed in within last 30 days)
+            const isActive = user.last_sign_in_at 
+              ? (new Date(user.last_sign_in_at).getTime() > Date.now() - (30 * 24 * 60 * 60 * 1000))
+              : false
+            
+            return {
+              ...user,
+              stats: {
+                totalPnL,
+                totalTrades,
+                activeBots,
+                avgWinRate,
+                totalVolume,
+                paperPnL,
+                paperTradesCount,
+                isActive
+              }
+            }
+          })
+        )
+        
+        return new Response(JSON.stringify({ users: usersWithStats }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
 

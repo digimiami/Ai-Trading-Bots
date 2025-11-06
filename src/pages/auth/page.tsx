@@ -133,14 +133,38 @@ export default function AuthPage() {
           }
         }
       } else {
+        // REQUIRE invitation code for signup
+        if (!inviteCode || !inviteCode.trim()) {
+          setError('Invitation code is required to create an account. Please contact an admin for an invitation code.')
+          setLoading(false)
+          return
+        }
+
+        // Validate invitation code before signup
+        if (inviteValid === false) {
+          setError('Invalid or expired invitation code. Please check your invitation code and try again.')
+          setLoading(false)
+          return
+        }
+
+        if (inviteValid === null) {
+          // Still validating, wait a moment
+          await new Promise(resolve => setTimeout(resolve, 500))
+          if (inviteValid === false) {
+            setError('Invalid or expired invitation code. Please check your invitation code and try again.')
+            setLoading(false)
+            return
+          }
+        }
+
         result = await signUp(email, password)
         
-        // If signup successful and there's an invite code, mark it as used
-        if (!result.error && inviteCode) {
+        // If signup successful, mark invitation code as used
+        if (!result.error && result.data?.user && inviteCode) {
           try {
             const { data: { session } } = await supabase.auth.getSession()
             const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL
-            await fetch(`${supabaseUrl}/functions/v1/invitation-management?action=use`, {
+            const useResponse = await fetch(`${supabaseUrl}/functions/v1/invitation-management?action=use`, {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -151,6 +175,10 @@ export default function AuthPage() {
                 userId: result.data?.user?.id 
               })
             })
+            
+            if (!useResponse.ok) {
+              console.error('Failed to mark invitation as used:', await useResponse.text())
+            }
           } catch (inviteError) {
             console.error('Failed to mark invitation as used:', inviteError)
           }
@@ -197,20 +225,42 @@ export default function AuthPage() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          {!isLogin && inviteCode && (
+          {!isLogin && (
             <div>
               <label htmlFor="inviteCode" className="block text-sm font-medium text-gray-700 mb-2">
-                Invitation Code
+                Invitation Code <span className="text-red-500">*</span>
               </label>
               <input
                 id="inviteCode"
                 type="text"
                 value={inviteCode}
-                onChange={(e) => setInviteCode(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50"
-                placeholder="Enter invitation code"
-                readOnly
+                onChange={async (e) => {
+                  const code = e.target.value
+                  setInviteCode(code)
+                  if (code.trim()) {
+                    await validateInviteCode(code)
+                  } else {
+                    setInviteValid(null)
+                  }
+                }}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Enter admin invitation code"
+                required
               />
+              {inviteCode && (
+                <div className={`mt-2 text-xs ${
+                  inviteValid === true ? 'text-green-600' : 
+                  inviteValid === false ? 'text-red-600' : 
+                  'text-gray-500'
+                }`}>
+                  {inviteValid === true ? '✓ Valid invitation code' : 
+                   inviteValid === false ? '✗ Invalid or expired invitation code' : 
+                   'Validating...'}
+                </div>
+              )}
+              <p className="mt-1 text-xs text-gray-500">
+                An invitation code from an admin is required to create an account.
+              </p>
             </div>
           )}
 
@@ -278,7 +328,7 @@ export default function AuthPage() {
           <Button
             type="submit"
             className="w-full"
-            disabled={!!(loading || (!isLogin && inviteCode && inviteValid === false))}
+            disabled={!!(loading || (!isLogin && (!inviteCode || inviteCode.trim() === '' || inviteValid === false)))}
           >
             {loading ? 'Processing...' : (isLogin ? 'Sign In' : 'Create Account')}
           </Button>

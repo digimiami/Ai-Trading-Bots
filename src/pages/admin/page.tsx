@@ -14,6 +14,16 @@ interface User {
   role: string;
   created_at: string;
   last_sign_in_at: string;
+  stats?: {
+    totalPnL: number;
+    totalTrades: number;
+    activeBots: number;
+    avgWinRate: number;
+    totalVolume: number;
+    paperPnL: number;
+    paperTradesCount: number;
+    isActive: boolean;
+  };
 }
 
 interface InvitationCode {
@@ -438,23 +448,80 @@ export default function AdminPage() {
               ) : (
                 <div className="space-y-3">
                   {users.map((user) => (
-                    <div key={user.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div>
-                        <div className="font-medium">{user.email}</div>
-                        <div className="text-sm text-gray-500">
-                          Role: {user.role} • Created: {new Date(user.created_at).toLocaleDateString()}
+                    <div key={user.id} className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-medium text-gray-900 dark:text-white">{user.email}</span>
+                            <span className={`px-2 py-1 rounded-full text-xs ${
+                              user.role === 'admin' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' : 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
+                            }`}>
+                              {user.role}
+                            </span>
+                            <span className={`px-2 py-1 rounded-full text-xs flex items-center gap-1 ${
+                              user.stats?.isActive 
+                                ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
+                                : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                            }`}>
+                              <span className={`w-2 h-2 rounded-full ${
+                                user.stats?.isActive ? 'bg-green-500' : 'bg-gray-400'
+                              }`}></span>
+                              {user.stats?.isActive ? 'Active' : 'Inactive'}
+                            </span>
+                          </div>
+                          <div className="text-sm text-gray-500 dark:text-gray-400">
+                            Created: {new Date(user.created_at).toLocaleDateString()}
+                            {user.last_sign_in_at && (
+                              <> • Last active: {new Date(user.last_sign_in_at).toLocaleDateString()}</>
+                            )}
+                          </div>
                         </div>
                       </div>
-                      <div className="flex items-center space-x-2">
-                        <span className={`px-2 py-1 rounded-full text-xs ${
-                          user.role === 'admin' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'
-                        }`}>
-                          {user.role}
-                        </span>
-                        <div className={`w-2 h-2 rounded-full ${
-                          user.last_sign_in_at ? 'bg-green-500' : 'bg-gray-400'
-                        }`}></div>
-                      </div>
+                      
+                      {/* Trading Stats */}
+                      {user.stats && (
+                        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div>
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Total PnL</p>
+                              <p className={`text-sm font-semibold ${
+                                (user.stats.totalPnL + user.stats.paperPnL) >= 0 
+                                  ? 'text-green-600 dark:text-green-400' 
+                                  : 'text-red-600 dark:text-red-400'
+                              }`}>
+                                ${((user.stats.totalPnL + user.stats.paperPnL) || 0).toFixed(2)}
+                              </p>
+                              <p className="text-xs text-gray-400 dark:text-gray-500">
+                                Real: ${user.stats.totalPnL.toFixed(2)} • Paper: ${user.stats.paperPnL.toFixed(2)}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Total Trades</p>
+                              <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                                {user.stats.totalTrades + user.stats.paperTradesCount}
+                              </p>
+                              <p className="text-xs text-gray-400 dark:text-gray-500">
+                                Real: {user.stats.totalTrades} • Paper: {user.stats.paperTradesCount}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Active Bots</p>
+                              <p className="text-sm font-semibold text-blue-600 dark:text-blue-400">
+                                {user.stats.activeBots}
+                              </p>
+                              <p className="text-xs text-gray-400 dark:text-gray-500">
+                                Win Rate: {user.stats.avgWinRate.toFixed(1)}%
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Trading Volume</p>
+                              <p className="text-sm font-semibold text-purple-600 dark:text-purple-400">
+                                ${(user.stats.totalVolume || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
