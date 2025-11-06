@@ -695,7 +695,7 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
       </Card>
 
       {/* Performance by Pair - Always show if there are pairs or open positions */}
-      {performance.pairsPerformance && performance.pairsPerformance.length > 0 ? (
+      {performance.pairsPerformance && performance.pairsPerformance.length > 0 && (
         <Card className="p-6">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
             📊 Performance by Trading Pair
