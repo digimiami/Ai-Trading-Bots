@@ -765,38 +765,38 @@ export default function BotsPage() {
                 </div>
 
                 {/* Bot Stats */}
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-4 border-t border-gray-100">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-4 border-t border-gray-100 dark:border-gray-700">
                   <div className="text-center">
-                    <p className="text-sm text-gray-500">Trades</p>
-                    <p className="font-semibold text-gray-900">{bot.totalTrades ?? 0}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Trades</p>
+                    <p className="font-semibold text-gray-900 dark:text-white">{bot.totalTrades ?? 0}</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-sm text-gray-500">Win Rate</p>
-                    <p className="font-semibold text-gray-900">{(bot.winRate ?? 0).toFixed(1)}%</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Win Rate</p>
+                    <p className="font-semibold text-gray-900 dark:text-white">{(bot.winRate ?? 0).toFixed(1)}%</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-sm text-gray-500">Win/Loss</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Win/Loss</p>
                     {(() => {
                       const totalTrades = bot.totalTrades ?? 0;
                       const winRate = bot.winRate ?? 0;
                       const wins = totalTrades > 0 ? Math.round((totalTrades * winRate) / 100) : 0;
                       const losses = totalTrades - wins;
                       return (
-                        <p className="font-semibold text-gray-900">
-                          <span className="text-green-600">{wins}</span>
-                          <span className="text-gray-400 mx-1">/</span>
-                          <span className="text-red-600">{losses}</span>
+                        <p className="font-semibold text-gray-900 dark:text-white">
+                          <span className="text-green-600 dark:text-green-400">{wins}</span>
+                          <span className="text-gray-400 dark:text-gray-500 mx-1">/</span>
+                          <span className="text-red-600 dark:text-red-400">{losses}</span>
                         </p>
                       );
                     })()}
                   </div>
                   <div className="text-center">
-                    <p className="text-sm text-gray-500">Leverage</p>
-                    <p className="font-semibold text-gray-900">{bot.leverage ?? 1}x</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Leverage</p>
+                    <p className="font-semibold text-gray-900 dark:text-white">{bot.leverage ?? 1}x</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-sm text-gray-500">PnL</p>
-                    <p className={`font-semibold ${(bot.pnl ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">PnL</p>
+                    <p className={`font-semibold ${(bot.pnl ?? 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                       {(bot.pnl ?? 0) >= 0 ? '+' : ''}${(bot.pnl ?? 0).toFixed(2)}
                     </p>
                   </div>

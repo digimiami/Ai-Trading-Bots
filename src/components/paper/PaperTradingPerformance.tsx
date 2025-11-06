@@ -389,6 +389,59 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
           parseFloat(account?.total_deposited || 0) + 
           totalUnrealizedPnL;
         
+        // Calculate pairsPerformance even when there are no closed trades (only open positions)
+        const pairsMap = new Map<string, PairPerformance>();
+        
+        // Process open positions by symbol
+        if (openPositions && positionsWithPrices) {
+          openPositions.forEach((position: any) => {
+            const symbol = position.symbol || 'UNKNOWN';
+            if (!pairsMap.has(symbol)) {
+              pairsMap.set(symbol, {
+                symbol: symbol,
+                totalTrades: 0,
+                winningTrades: 0,
+                losingTrades: 0,
+                winRate: 0,
+                totalPnL: 0,
+                totalFees: 0,
+                totalVolume: 0,
+                averageWin: 0,
+                averageLoss: 0,
+                profitFactor: 0,
+                openPositions: 0,
+                unrealizedPnL: 0,
+                runningHours: 0
+              });
+            }
+            
+            const pairPerf = pairsMap.get(symbol)!;
+            pairPerf.openPositions++;
+            const positionWithPrice = positionsWithPrices.find((p: any) => p.id === position.id);
+            if (positionWithPrice) {
+              pairPerf.unrealizedPnL += positionWithPrice.unrealized_pnl || 0;
+            } else {
+              pairPerf.unrealizedPnL += parseFloat(position.unrealized_pnl || 0);
+            }
+            
+            // Calculate running hours
+            const openedAt = new Date(position.opened_at || position.created_at);
+            if (!isNaN(openedAt.getTime())) {
+              const diffMs = new Date().getTime() - openedAt.getTime();
+              const hours = diffMs / (1000 * 60 * 60);
+              if (pairPerf.runningHours === 0 || hours > pairPerf.runningHours) {
+                pairPerf.runningHours = hours;
+              }
+            }
+          });
+        }
+        
+        const pairsPerformance: PairPerformance[] = Array.from(pairsMap.values()).sort((a, b) => {
+          const aTotal = a.totalPnL + a.unrealizedPnL;
+          const bTotal = b.totalPnL + b.unrealizedPnL;
+          return bTotal - aTotal;
+        });
+        
         setPerformance({
           totalTrades: 0,
           winningTrades: 0,
@@ -406,7 +459,7 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
           initialBalance: initialBalance,
           openPositions: openPositions?.length || 0,
           totalVolume: 0,
-          pairsPerformance: []
+          pairsPerformance: pairsPerformance
         });
       }
     } catch (error) {
@@ -641,12 +694,12 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
         )}
       </Card>
 
-      {/* Performance by Pair */}
-      {performance.pairsPerformance && performance.pairsPerformance.length > 0 && (
+      {/* Performance by Pair - Always show if there are pairs or open positions */}
+      {performance.pairsPerformance && performance.pairsPerformance.length > 0 ? (
         <Card className="p-6">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
             📊 Performance by Trading Pair
-            <span className="ml-2 text-sm font-normal text-gray-500">
+            <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
               ({performance.pairsPerformance.length} {performance.pairsPerformance.length === 1 ? 'pair' : 'pairs'})
             </span>
           </h3>
