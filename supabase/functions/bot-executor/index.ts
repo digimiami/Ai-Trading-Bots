@@ -3988,11 +3988,17 @@ serve(async (req) => {
       isCron ? undefined : { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
     )
 
-    const { data: { user } } = isCron
+    // Get user for authenticated endpoints (time and market-data don't require auth)
+    const url = req.method === 'GET' ? new URL(req.url) : null
+    const action = url?.searchParams.get('action')
+    const isPublicEndpoint = action === 'time' || action === 'market-data'
+    
+    const { data: { user } } = isCron || isPublicEndpoint
       ? { data: { user: null } as any }
       : await supabaseClient.auth.getUser()
 
-    if (!isCron && !user) {
+    // Only require authentication for non-public endpoints
+    if (!isCron && !isPublicEndpoint && !user) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -4014,8 +4020,7 @@ serve(async (req) => {
 
     // Handle GET requests
     if (req.method === 'GET') {
-      const url = new URL(req.url)
-      const action = url.searchParams.get('action')
+      const action = url?.searchParams.get('action')
       
       if (action === 'time') {
         const syncStatus = TimeSync.getSyncStatus();
@@ -4100,13 +4105,14 @@ serve(async (req) => {
       if (action === 'market-data') {
         const symbol = url.searchParams.get('symbol') || 'BTCUSDT';
         const exchange = url.searchParams.get('exchange') || 'bybit';
+        const tradingType = url.searchParams.get('tradingType') || url.searchParams.get('trading_type') || 'futures';
         
-        const price = await MarketDataFetcher.fetchPrice(symbol, exchange);
+        const price = await MarketDataFetcher.fetchPrice(symbol, exchange, tradingType);
         const rsi = await MarketDataFetcher.fetchRSI(symbol, exchange);
         const adx = await MarketDataFetcher.fetchADX(symbol, exchange);
         
         return new Response(JSON.stringify({ 
-          symbol, exchange, price, rsi, adx,
+          symbol, exchange, tradingType, price, rsi, adx,
           timestamp: TimeSync.getCurrentTimeISO()
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }

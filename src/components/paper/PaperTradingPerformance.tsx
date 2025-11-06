@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
+import { supabase, API_ENDPOINTS, apiCall } from '../../lib/supabase';
 import Card from '../base/Card';
 import Button from '../base/Button';
 
@@ -110,19 +110,17 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
         positionsWithPrices = await Promise.all(
           openPositions.map(async (position: any) => {
             try {
-              // Fetch current price from market data
+              // Fetch current price from market data via Supabase Edge Function
               const symbol = position.symbol;
               const tradingType = position.trading_type || 'futures';
               
-              // Use Bybit API to get current price
-              const category = tradingType === 'spot' ? 'spot' : 'linear';
-              const response = await fetch(
-                `https://api.bybit.com/v5/market/tickers?category=${category}&symbol=${symbol}`
-              );
-              
-              if (response.ok) {
-                const data = await response.json();
-                const currentPrice = parseFloat(data.result?.list?.[0]?.lastPrice || '0');
+              // Use bot-executor edge function to get current price (avoids CORS)
+              try {
+                const marketData = await apiCall(
+                  `${API_ENDPOINTS.BOT_EXECUTOR}?action=market-data&symbol=${symbol}&exchange=bybit`
+                );
+                
+                const currentPrice = marketData?.price || 0;
                 
                 if (currentPrice > 0) {
                   // Calculate unrealized PnL
@@ -144,6 +142,14 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
                     unrealized_pnl: unrealizedPnL
                   };
                 }
+              } catch (apiError) {
+                console.error(`Error fetching price for ${position.symbol} via API:`, apiError);
+                // Fallback: use stored unrealized_pnl if API call fails
+                return {
+                  ...position,
+                  current_price: parseFloat(position.entry_price || 0),
+                  unrealized_pnl: parseFloat(position.unrealized_pnl || 0)
+                };
               }
             } catch (error) {
               console.error(`Error fetching price for ${position.symbol}:`, error);

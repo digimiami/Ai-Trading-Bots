@@ -4,7 +4,7 @@ import Header from '../../components/feature/Header';
 import Navigation from '../../components/feature/Navigation';
 import Card from '../../components/base/Card';
 import Button from '../../components/base/Button';
-import { supabase } from '../../lib/supabase';
+import { supabase, API_ENDPOINTS, apiCall } from '../../lib/supabase';
 
 interface FuturesPair {
   symbol: string;
@@ -113,9 +113,9 @@ export default function FuturesPairsFinderPage() {
     const pairs: FuturesPair[] = [];
     
     try {
-      // Fetch all futures tickers from Bybit
-      const response = await fetch('https://api.bybit.com/v5/market/tickers?category=linear');
-      const data = await response.json();
+      // Fetch all futures tickers from Bybit via Supabase Edge Function (avoids CORS)
+      const response = await apiCall(`${API_ENDPOINTS.FUTURES_PAIRS}?action=tickers&exchange=bybit`);
+      const data = response;
 
       if (data.retCode === 0 && data.result?.list) {
         const tickers = data.result.list;
@@ -134,12 +134,11 @@ export default function FuturesPairsFinderPage() {
             const high24h = parseFloat(ticker.highPrice24h || 0);
             const low24h = parseFloat(ticker.lowPrice24h || 0);
 
-            // Fetch 30-day price change (using klines)
+            // Fetch 30-day price change (using klines) via Edge Function
             const thirtyDaysAgo = Math.floor(Date.now() / 1000) - (30 * 24 * 60 * 60);
-            const klinesResponse = await fetch(
-              `https://api.bybit.com/v5/market/kline?category=linear&symbol=${symbol}&interval=D&start=${thirtyDaysAgo}&limit=30`
+            const klinesData = await apiCall(
+              `${API_ENDPOINTS.FUTURES_PAIRS}?action=klines&exchange=bybit&symbol=${symbol}&interval=D&start=${thirtyDaysAgo}&limit=30`
             );
-            const klinesData = await klinesResponse.json();
 
             let priceChange30d = 0;
             let high30d = currentPrice;
@@ -204,9 +203,9 @@ export default function FuturesPairsFinderPage() {
     const pairs: FuturesPair[] = [];
     
     try {
-      // Fetch all futures tickers from OKX
-      const response = await fetch('https://www.okx.com/api/v5/market/tickers?instType=SWAP');
-      const data = await response.json();
+      // Fetch all futures tickers from OKX via Supabase Edge Function (avoids CORS)
+      const response = await apiCall(`${API_ENDPOINTS.FUTURES_PAIRS}?action=tickers&exchange=okx`);
+      const data = response;
 
       if (data.code === '0' && data.data) {
         const tickers = data.data
@@ -222,12 +221,11 @@ export default function FuturesPairsFinderPage() {
             const high24h = parseFloat(ticker.high24h || 0);
             const low24h = parseFloat(ticker.low24h || 0);
 
-            // Fetch 30-day price change (using klines)
+            // Fetch 30-day price change (using klines) via Edge Function
             const thirtyDaysAgo = Math.floor(Date.now() / 1000) - (30 * 24 * 60 * 60);
-            const klinesResponse = await fetch(
-              `https://www.okx.com/api/v5/market/candles?instId=${symbol}&bar=1D&after=${thirtyDaysAgo}&limit=30`
+            const klinesData = await apiCall(
+              `${API_ENDPOINTS.FUTURES_PAIRS}?action=klines&exchange=okx&symbol=${symbol}&interval=1D&start=${thirtyDaysAgo}&limit=30`
             );
-            const klinesData = await klinesResponse.json();
 
             let priceChange30d = 0;
             let high30d = currentPrice;

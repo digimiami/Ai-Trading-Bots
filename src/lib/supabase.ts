@@ -114,6 +114,7 @@ export const API_ENDPOINTS = {
   TRADING_ENGINE: `${supabaseUrl}/functions/v1/trading-engine`,
   BOT_EXECUTOR: `${supabaseUrl}/functions/v1/bot-executor`,
   MARKET_DATA: `${supabaseUrl}/functions/v1/market-data`,
+  FUTURES_PAIRS: `${supabaseUrl}/functions/v1/futures-pairs`,
   ALERTS_SYSTEM: `${supabaseUrl}/functions/v1/alerts-system`,
   API_KEYS: `${supabaseUrl}/functions/v1/api-keys`,
   AUTH_FIX: `${supabaseUrl}/functions/v1/auth-fix-ultimate`,
