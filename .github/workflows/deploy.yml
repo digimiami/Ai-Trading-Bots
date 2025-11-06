@@ -96,32 +96,69 @@ jobs:
             set -e
             
             # Navigate to project directory
-            cd "/var/www/Ai-Trading-Bots"
+            echo "📂 Navigating to project directory..."
+            cd "/var/www/Ai-Trading-Bots" || {
+              echo "❌ Failed to navigate to project directory"
+              exit 1
+            }
             
             # Pull latest changes
             echo "📥 Pulling latest changes..."
-            git fetch origin master
-            git reset --hard origin/master
+            git fetch origin master || {
+              echo "⚠️ Git fetch failed, continuing..."
+            }
+            git reset --hard origin/master || {
+              echo "❌ Git reset failed"
+              exit 1
+            }
             
             # Install dependencies
             echo "📦 Installing dependencies..."
-            npm install
+            npm install || {
+              echo "❌ npm install failed"
+              exit 1
+            }
             
             # Build the application
             echo "🔨 Building application..."
-            npm run build
+            npm run build || {
+              echo "❌ npm run build failed"
+              echo "📋 Checking for build errors..."
+              npm run build 2>&1 | tail -50
+              exit 1
+            }
             
             # Restart PM2 process
             echo "🔄 Restarting application..."
-            pm2 restart pablobots || pm2 start --name pablobots npm -- run preview
+            if pm2 list | grep -q "pablobots"; then
+              pm2 restart pablobots || {
+                echo "⚠️ PM2 restart failed, trying to start..."
+                pm2 start --name pablobots npm -- run preview || {
+                  echo "❌ PM2 start failed"
+                  exit 1
+                }
+              }
+            else
+              echo "📌 Starting new PM2 process..."
+              pm2 start --name pablobots npm -- run preview || {
+                echo "❌ PM2 start failed"
+                exit 1
+              }
+            fi
             
             # Save PM2 process
             echo "💾 Saving PM2 process..."
-            pm2 save
+            pm2 save || {
+              echo "⚠️ PM2 save failed, but continuing..."
+            }
             
             # Show recent logs
             echo "📋 Recent logs:"
-            pm2 logs pablobots --lines 10 --nostream
+            pm2 logs pablobots --lines 10 --nostream || {
+              echo "⚠️ Could not retrieve logs"
+            }
+            
+            echo "✅ Deployment completed successfully!"
           EOF
       
       - name: 📊 Deployment Summary
