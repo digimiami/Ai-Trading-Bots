@@ -60,6 +60,8 @@ export default function CreateBotPage() {
 
   const [customSymbol, setCustomSymbol] = useState<string>('');
   const [customSymbolError, setCustomSymbolError] = useState<string>('');
+  const [useMultiplePairs, setUseMultiplePairs] = useState<boolean>(false);
+  const [customPairs, setCustomPairs] = useState<string>('');
 
   const [strategy, setStrategy] = useState<TradingStrategy>({
     rsiThreshold: 70,
@@ -143,25 +145,66 @@ export default function CreateBotPage() {
     setError(null);
     
     try {
-      // If custom symbol provided, validate and apply
+      // Handle multiple pairs or single pair
       let finalSymbol = formData.symbol;
-      if (customSymbol.trim()) {
-        const raw = customSymbol.trim().toUpperCase();
-        const isValid = /^[A-Z0-9]{2,20}USDT$/.test(raw);
-        if (!isValid) {
-          setCustomSymbolError('Symbol must be uppercase and end with USDT (e.g., DOGEUSDT)');
+      let symbols: string[] = [];
+      let customPairsInput = '';
+      
+      if (useMultiplePairs) {
+        // Multiple pairs mode
+        if (!customPairs.trim()) {
+          setError('Please enter at least one trading pair');
           setIsCreating(false);
           return;
         }
-        setCustomSymbolError('');
-        finalSymbol = raw;
+        
+        // Parse pairs (comma or newline separated)
+        const parsedPairs = customPairs
+          .split(/[\n,]/)
+          .map(pair => pair.trim().toUpperCase())
+          .filter(pair => pair.length > 0);
+        
+        if (parsedPairs.length === 0) {
+          setError('Please enter at least one valid trading pair');
+          setIsCreating(false);
+          return;
+        }
+        
+        // Validate each pair
+        const invalidPairs = parsedPairs.filter(pair => !/^[A-Z0-9]{2,20}USDT$/.test(pair));
+        if (invalidPairs.length > 0) {
+          setError(`Invalid pair format: ${invalidPairs.join(', ')}. Must be uppercase and end with USDT`);
+          setIsCreating(false);
+          return;
+        }
+        
+        symbols = parsedPairs;
+        finalSymbol = parsedPairs[0]; // Use first pair as primary symbol
+        customPairsInput = customPairs.trim();
+      } else {
+        // Single pair mode (existing logic)
+        if (customSymbol.trim()) {
+          const raw = customSymbol.trim().toUpperCase();
+          const isValid = /^[A-Z0-9]{2,20}USDT$/.test(raw);
+          if (!isValid) {
+            setCustomSymbolError('Symbol must be uppercase and end with USDT (e.g., DOGEUSDT)');
+            setIsCreating(false);
+            return;
+          }
+          setCustomSymbolError('');
+          finalSymbol = raw;
+        }
+        symbols = [finalSymbol];
       }
+      
       // Debug: Log the form data being sent
       const botData = {
         name: formData.name,
         exchange: formData.exchange,
         tradingType: formData.tradingType,
         symbol: finalSymbol,
+        symbols: symbols.length > 1 ? symbols : undefined, // Only include if multiple pairs
+        customPairs: customPairsInput || undefined,
         timeframe: formData.timeframe,
         leverage: formData.leverage,
         riskLevel: formData.riskLevel,
@@ -257,7 +300,9 @@ All settings have been applied to your bot configuration.`;
   };
 
   // Get the effective symbol (dropdown or custom)
-  const effectiveSymbol = customSymbol.trim() ? customSymbol.trim().toUpperCase() : formData.symbol;
+  const effectiveSymbol = useMultiplePairs 
+    ? (customPairs.trim() ? customPairs.split(/[\n,]/).map(p => p.trim().toUpperCase()).filter(p => p.length > 0)[0] : formData.symbol)
+    : (customSymbol.trim() ? customSymbol.trim().toUpperCase() : formData.symbol);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -346,20 +391,83 @@ All settings have been applied to your bot configuration.`;
                     ))}
                   </select>
                   <div className="mt-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Or enter a custom pair (e.g., DOGEUSDT)
-                    </label>
-                    <input
-                      type="text"
-                      value={customSymbol}
-                      onChange={(e) => setCustomSymbol(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
-                      placeholder="e.g., PEPEUSDT"
-                    />
-                    {customSymbolError && (
-                      <p className="text-xs text-red-600 mt-1">{customSymbolError}</p>
+                    <div className="flex items-center space-x-4 mb-3">
+                      <label className="flex items-center">
+                        <input
+                          type="radio"
+                          name="pairMode"
+                          checked={!useMultiplePairs}
+                          onChange={() => setUseMultiplePairs(false)}
+                          className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                        />
+                        <span className="text-sm text-gray-700">Single Pair</span>
+                      </label>
+                      <label className="flex items-center">
+                        <input
+                          type="radio"
+                          name="pairMode"
+                          checked={useMultiplePairs}
+                          onChange={() => setUseMultiplePairs(true)}
+                          className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300"
+                        />
+                        <span className="text-sm text-gray-700">Multiple Pairs</span>
+                      </label>
+                    </div>
+                    
+                    {!useMultiplePairs ? (
+                      <>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Or enter a custom pair (e.g., DOGEUSDT)
+                        </label>
+                        <input
+                          type="text"
+                          value={customSymbol}
+                          onChange={(e) => setCustomSymbol(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase"
+                          placeholder="e.g., PEPEUSDT"
+                        />
+                        {customSymbolError && (
+                          <p className="text-xs text-red-600 mt-1">{customSymbolError}</p>
+                        )}
+                        <p className="text-xs text-gray-500 mt-1">Uppercase; must end with USDT. If provided, overrides dropdown.</p>
+                      </>
+                    ) : (
+                      <>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Enter multiple trading pairs
+                        </label>
+                        <textarea
+                          value={customPairs}
+                          onChange={(e) => setCustomPairs(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent uppercase font-mono text-sm"
+                          placeholder="BTCUSDT&#10;ETHUSDT&#10;SOLUSDT&#10;&#10;Or comma-separated: BTCUSDT, ETHUSDT, SOLUSDT"
+                          rows={6}
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Enter pairs separated by commas or new lines. Each pair must be uppercase and end with USDT.
+                          <br />
+                          Example: <code className="bg-gray-100 px-1 rounded">BTCUSDT, ETHUSDT, SOLUSDT</code> or one per line
+                        </p>
+                        {customPairs.trim() && (
+                          <div className="mt-2 p-2 bg-blue-50 rounded border border-blue-200">
+                            <p className="text-xs font-medium text-blue-900 mb-1">
+                              {customPairs.split(/[\n,]/).filter(p => p.trim().length > 0).length} pair(s) detected:
+                            </p>
+                            <div className="flex flex-wrap gap-1">
+                              {customPairs
+                                .split(/[\n,]/)
+                                .map(p => p.trim().toUpperCase())
+                                .filter(p => p.length > 0)
+                                .map((pair, idx) => (
+                                  <span key={idx} className="text-xs bg-white px-2 py-1 rounded border border-blue-300 text-blue-700">
+                                    {pair}
+                                  </span>
+                                ))}
+                            </div>
+                          </div>
+                        )}
+                      </>
                     )}
-                    <p className="text-xs text-gray-500 mt-1">Uppercase; must end with USDT. If provided, overrides dropdown.</p>
                   </div>
 
                   {/* AI Recommendations */}

@@ -80,10 +80,10 @@ serve(async (req) => {
       const body = await req.json()
 
       if (action === 'create') {
-        const { name, exchange, tradingType, symbol, timeframe, leverage, riskLevel, tradeAmount, stopLoss, takeProfit, strategy, strategyConfig, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt, paperTrading } = body
+        const { name, exchange, tradingType, symbol, symbols, customPairs, timeframe, leverage, riskLevel, tradeAmount, stopLoss, takeProfit, strategy, strategyConfig, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt, paperTrading } = body
 
         // Debug logging
-        console.log('Received bot data:', { name, exchange, symbol, timeframe, leverage, riskLevel, tradeAmount, stopLoss, takeProfit, strategy, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt })
+        console.log('Received bot data:', { name, exchange, symbol, symbols, customPairs, timeframe, leverage, riskLevel, tradeAmount, stopLoss, takeProfit, strategy, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt })
         console.log('Exchange value:', exchange, 'Type:', typeof exchange, 'Is null:', exchange === null, 'Is undefined:', exchange === undefined)
 
         // Validate required fields
@@ -109,31 +109,49 @@ serve(async (req) => {
 
         console.log('Table exists, proceeding with insert...')
 
+        // Prepare insert data
+        const insertData: any = {
+          user_id: user.id,
+          name,
+          exchange,
+          trading_type: tradingType || 'spot',
+          symbol,
+          timeframe: timeframe || '1h',
+          leverage,
+          risk_level: riskLevel,
+          trade_amount: tradeAmount || 100,
+          stop_loss: stopLoss || 2.0,
+          take_profit: takeProfit || 4.0,
+          strategy: JSON.stringify(strategy),
+          strategy_config: strategyConfig ? JSON.stringify(strategyConfig) : null,
+          paper_trading: paperTrading || false,
+          status: status || 'running', // Auto-start bots instead of 'stopped'
+          pnl: pnl || 0,
+          pnl_percentage: pnlPercentage || 0,
+          total_trades: totalTrades || 0,
+          win_rate: winRate || 0,
+          last_trade_at: lastTradeAt,
+          created_at: new Date().toISOString()
+        }
+
+        // Add symbols array if multiple pairs provided
+        if (symbols && Array.isArray(symbols) && symbols.length > 0) {
+          insertData.symbols = JSON.stringify(symbols)
+          console.log('Adding multiple symbols:', symbols)
+        } else {
+          // Default to single symbol array
+          insertData.symbols = JSON.stringify([symbol])
+        }
+
+        // Add custom pairs if provided
+        if (customPairs) {
+          insertData.custom_pairs = customPairs
+          console.log('Adding custom pairs:', customPairs)
+        }
+
         const { data: bot, error } = await supabaseClient
           .from('trading_bots')
-          .insert({
-            user_id: user.id,
-            name,
-            exchange,
-            trading_type: tradingType || 'spot',
-            symbol,
-            timeframe: timeframe || '1h',
-            leverage,
-            risk_level: riskLevel,
-            trade_amount: tradeAmount || 100,
-            stop_loss: stopLoss || 2.0,
-            take_profit: takeProfit || 4.0,
-            strategy: JSON.stringify(strategy),
-            strategy_config: strategyConfig ? JSON.stringify(strategyConfig) : null,
-            paper_trading: paperTrading || false,
-            status: status || 'running', // Auto-start bots instead of 'stopped'
-            pnl: pnl || 0,
-            pnl_percentage: pnlPercentage || 0,
-            total_trades: totalTrades || 0,
-            win_rate: winRate || 0,
-            last_trade_at: lastTradeAt,
-            created_at: new Date().toISOString()
-          })
+          .insert(insertData)
           .select()
           .single()
 
