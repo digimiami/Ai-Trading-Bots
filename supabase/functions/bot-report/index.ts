@@ -677,6 +677,57 @@ serve(async (req) => {
         
         console.log(`📊 Bot ${bot.name}: Drawdown=$${drawdown.toFixed(2)} (${drawdownPercentage.toFixed(1)}%), Peak=$${peakPnL.toFixed(2)}, Current=$${currentPnL.toFixed(2)}`)
         
+        // Calculate profit factor, avg win, avg loss from trades with PnL
+        let profitFactor = 0
+        let avgWin = 0
+        let avgLoss = 0
+        let totalVolume = 0
+        
+        if (tradesWithPnL.length > 0) {
+          const winningTrades = tradesWithPnL.filter(t => (t as any).calculatedPnL > 0)
+          const losingTrades = tradesWithPnL.filter(t => (t as any).calculatedPnL < 0)
+          
+          const totalWins = winningTrades.reduce((sum, t) => sum + ((t as any).calculatedPnL || 0), 0)
+          const totalLosses = Math.abs(losingTrades.reduce((sum, t) => sum + ((t as any).calculatedPnL || 0), 0))
+          
+          profitFactor = totalLosses > 0 ? totalWins / totalLosses : (totalWins > 0 ? 999 : 0)
+          avgWin = winningTrades.length > 0 ? totalWins / winningTrades.length : 0
+          avgLoss = losingTrades.length > 0 ? totalLosses / losingTrades.length : 0
+          
+          // Calculate total volume from all trades
+          totalVolume = allBotTrades.reduce((sum, t) => {
+            const amount = parseFloat(t.amount || (t as any).size || (t as any).quantity || 0)
+            const price = parseFloat(t.price || (t as any).entry_price || 0)
+            return sum + (amount * price)
+          }, 0)
+        } else {
+          // Fallback: estimate from bot PnL if available
+          if (bot.pnl !== null && bot.pnl !== undefined && bot.pnl !== 0) {
+            // Very rough estimates when we don't have trade-level data
+            const estimatedTrades = Math.max(1, bot.total_trades || 1)
+            if (bot.pnl > 0) {
+              // Positive PnL: assume 60% win rate
+              avgWin = (bot.pnl / estimatedTrades) * 1.5 // Rough estimate
+              avgLoss = (bot.pnl / estimatedTrades) * 0.5 // Rough estimate
+              profitFactor = 2.0 // Conservative estimate
+            } else {
+              // Negative PnL: assume 40% win rate
+              avgWin = Math.abs(bot.pnl / estimatedTrades) * 0.5
+              avgLoss = Math.abs(bot.pnl / estimatedTrades) * 1.5
+              profitFactor = 0.5 // Conservative estimate
+            }
+          }
+          
+          // Estimate volume from trade amount if available
+          totalVolume = allBotTrades.reduce((sum, t) => {
+            const amount = parseFloat(t.amount || (t as any).size || (t as any).quantity || 0)
+            const price = parseFloat(t.price || (t as any).entry_price || 0)
+            return sum + (amount * price)
+          }, 0)
+        }
+        
+        console.log(`📊 Bot ${bot.name}: ProfitFactor=${profitFactor.toFixed(2)}, AvgWin=$${avgWin.toFixed(2)}, AvgLoss=$${avgLoss.toFixed(2)}, Volume=$${totalVolume.toFixed(2)}`)
+        
         const botPnL = bot.pnl || 0
         const netProfitLoss = botPnL - botFees
         
@@ -694,6 +745,10 @@ serve(async (req) => {
           win_rate: Math.round(winRate * 10) / 10,
           win_trades: winTrades || 0,
           loss_trades: lossTrades || 0,
+          profit_factor: Math.round(profitFactor * 100) / 100,
+          avg_win: Math.round(avgWin * 100) / 100,
+          avg_loss: Math.round(avgLoss * 100) / 100,
+          total_volume: Math.round(totalVolume * 100) / 100,
           drawdown: Math.round(drawdown * 100) / 100,
           drawdown_percentage: Math.round(drawdownPercentage * 10) / 10,
           peak_pnl: Math.round(peakPnL * 100) / 100,

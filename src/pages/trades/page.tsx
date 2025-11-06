@@ -125,24 +125,103 @@ export default function Trades() {
         </Card>
 
         {/* Trade Statistics */}
-        <div className="grid grid-cols-2 gap-4">
-          <Card className="p-4">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-gray-900">
-                {filteredTrades.length}
-              </div>
-              <div className="text-sm text-gray-500">Total Trades</div>
+        {(() => {
+          const closedTrades = filteredTrades.filter(t => t.status === 'closed' || t.status === 'filled');
+          const tradesWithPnL = closedTrades.filter(t => t.pnl !== null && t.pnl !== undefined && t.pnl !== 0);
+          const winningTrades = tradesWithPnL.filter(t => (t.pnl || 0) > 0);
+          const losingTrades = tradesWithPnL.filter(t => (t.pnl || 0) < 0);
+          
+          const totalPnL = tradesWithPnL.reduce((sum, t) => sum + (t.pnl || 0), 0);
+          const totalWins = winningTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+          const totalLosses = Math.abs(losingTrades.reduce((sum, t) => sum + (t.pnl || 0), 0));
+          
+          const winRate = tradesWithPnL.length > 0 ? (winningTrades.length / tradesWithPnL.length) * 100 : 0;
+          const profitFactor = totalLosses > 0 ? totalWins / totalLosses : (totalWins > 0 ? 999 : 0);
+          const avgWin = winningTrades.length > 0 ? totalWins / winningTrades.length : 0;
+          const avgLoss = losingTrades.length > 0 ? totalLosses / losingTrades.length : 0;
+          
+          // Calculate total volume (estimate from trade size and entry price)
+          const totalVolume = filteredTrades.reduce((sum, t) => {
+            const size = parseFloat(t.size?.toString() || '0');
+            const entryPrice = parseFloat(t.entryPrice?.toString() || '0');
+            return sum + (size * entryPrice);
+          }, 0);
+          
+          // Calculate total fees (estimate 0.1% of volume)
+          const totalFees = totalVolume * 0.001;
+          
+          return (
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
+              <Card className="p-4">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                    {filteredTrades.length}
+                  </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">Total Trades</div>
+                </div>
+              </Card>
+              <Card className="p-4">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+                    {filteredTrades.filter(t => t.status === 'open').length}
+                  </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">Active Trades</div>
+                </div>
+              </Card>
+              <Card className="p-4">
+                <div className="text-center">
+                  <div className={`text-2xl font-bold ${winRate >= 50 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                    {winRate.toFixed(1)}%
+                  </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">Win Rate</div>
+                </div>
+              </Card>
+              <Card className="p-4">
+                <div className="text-center">
+                  <div className={`text-2xl font-bold ${profitFactor >= 1 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                    {profitFactor.toFixed(2)}x
+                  </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">Profit Factor</div>
+                </div>
+              </Card>
+              <Card className="p-4">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+                    ${avgWin.toFixed(2)}
+                  </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">Avg Win</div>
+                </div>
+              </Card>
+              <Card className="p-4">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-red-600 dark:text-red-400">
+                    ${avgLoss.toFixed(2)}
+                  </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">Avg Loss</div>
+                </div>
+              </Card>
+              <Card className="p-4">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                    ${totalVolume.toFixed(2)}
+                  </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">Volume</div>
+                </div>
+              </Card>
+              <Card className="p-4">
+                <div className="text-center">
+                  <div className={`text-2xl font-bold ${totalPnL >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                    {totalPnL >= 0 ? '+' : ''}${totalPnL.toFixed(2)}
+                  </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">Total PnL</div>
+                  <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                    Fees: ${totalFees.toFixed(2)}
+                  </div>
+                </div>
+              </Card>
             </div>
-          </Card>
-          <Card className="p-4">
-            <div className="text-center">
-              <div className="text-2xl font-bold text-green-600">
-                {filteredTrades.filter(t => t.status === 'open').length}
-              </div>
-              <div className="text-sm text-gray-500">Active Trades</div>
-            </div>
-          </Card>
-        </div>
+          );
+        })()}
 
         {/* Trades List */}
         <div className="space-y-3">
