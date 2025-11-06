@@ -495,11 +495,11 @@ export default function BotsPage() {
                   </div>
                   
                   <div className="text-right">
-                    <p className={`text-lg font-bold ${bot.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {bot.pnl >= 0 ? '+' : ''}${bot.pnl.toFixed(2)}
+                    <p className={`text-lg font-bold ${(bot.pnl ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {(bot.pnl ?? 0) >= 0 ? '+' : ''}${(bot.pnl ?? 0).toFixed(2)}
                     </p>
-                    <p className={`text-sm ${bot.pnlPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {bot.pnlPercentage >= 0 ? '+' : ''}{bot.pnlPercentage.toFixed(2)}%
+                    <p className={`text-sm ${(bot.pnlPercentage ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {(bot.pnlPercentage ?? 0) >= 0 ? '+' : ''}{(bot.pnlPercentage ?? 0).toFixed(2)}%
                     </p>
                   </div>
                 </div>
@@ -765,18 +765,40 @@ export default function BotsPage() {
                 </div>
 
                 {/* Bot Stats */}
-                <div className="grid grid-cols-3 gap-4 pt-4 border-t border-gray-100">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-4 border-t border-gray-100">
                   <div className="text-center">
                     <p className="text-sm text-gray-500">Trades</p>
-                    <p className="font-semibold text-gray-900">{bot.totalTrades}</p>
+                    <p className="font-semibold text-gray-900">{bot.totalTrades ?? 0}</p>
                   </div>
                   <div className="text-center">
                     <p className="text-sm text-gray-500">Win Rate</p>
-                    <p className="font-semibold text-gray-900">{bot.winRate}%</p>
+                    <p className="font-semibold text-gray-900">{(bot.winRate ?? 0).toFixed(1)}%</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm text-gray-500">Win/Loss</p>
+                    {(() => {
+                      const totalTrades = bot.totalTrades ?? 0;
+                      const winRate = bot.winRate ?? 0;
+                      const wins = totalTrades > 0 ? Math.round((totalTrades * winRate) / 100) : 0;
+                      const losses = totalTrades - wins;
+                      return (
+                        <p className="font-semibold text-gray-900">
+                          <span className="text-green-600">{wins}</span>
+                          <span className="text-gray-400 mx-1">/</span>
+                          <span className="text-red-600">{losses}</span>
+                        </p>
+                      );
+                    })()}
                   </div>
                   <div className="text-center">
                     <p className="text-sm text-gray-500">Leverage</p>
-                    <p className="font-semibold text-gray-900">{bot.leverage}x</p>
+                    <p className="font-semibold text-gray-900">{bot.leverage ?? 1}x</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm text-gray-500">PnL</p>
+                    <p className={`font-semibold ${(bot.pnl ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {(bot.pnl ?? 0) >= 0 ? '+' : ''}${(bot.pnl ?? 0).toFixed(2)}
+                    </p>
                   </div>
                 </div>
 
