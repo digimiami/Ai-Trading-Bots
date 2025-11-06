@@ -795,8 +795,8 @@ export default function BacktestPage() {
                         value={advancedConfig.max_trades_per_day}
                         onChange={(e) => setAdvancedConfig(prev => ({ ...prev, max_trades_per_day: parseInt(e.target.value) }))}
                         className="w-full"
-                        min="2"
-                        max="20"
+                        min="1"
+                        max="200"
                         step="1"
                       />
                       <p className="text-xs text-gray-500">{advancedConfig.max_trades_per_day}</p>

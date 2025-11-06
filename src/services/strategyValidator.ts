@@ -17,7 +17,7 @@ const VALIDATION_RANGES: Record<string, ValidationRange> = {
   risk_per_trade_pct: { min: 0.1, max: 5.0 },
   daily_loss_limit_pct: { min: 0.5, max: 10.0 },
   weekly_loss_limit_pct: { min: 1.0, max: 20.0 },
-  max_trades_per_day: { min: 1, max: 50 },
+  max_trades_per_day: { min: 1, max: 200 },
   max_concurrent: { min: 1, max: 10 },
   sl_atr_mult: { min: 0.5, max: 5.0 },
   tp1_r: { min: 0.5, max: 10.0 },

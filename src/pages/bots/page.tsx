@@ -566,7 +566,7 @@ export default function BotsPage() {
                               <input
                                 type="number"
                                 min="1"
-                                max="100"
+                                max="200"
                                 value={editingLimitValue || limit.maxTradesPerDay}
                                 onChange={(e) => setEditingLimitValue(parseInt(e.target.value) || 1)}
                                 className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
