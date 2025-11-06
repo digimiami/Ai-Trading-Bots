@@ -86,6 +86,7 @@ export function useAdmin() {
       });
 
       if (invokeError) {
+        console.error('Edge function invoke error:', invokeError);
         const errorMessage = invokeError.message || 'Unknown error occurred';
         setError(errorMessage);
         throw new Error(errorMessage);
@@ -93,14 +94,16 @@ export function useAdmin() {
       
       // Check if response contains an error
       if (data?.error) {
-        const errorMessage = data.error || 'Unknown error occurred';
+        console.error('Edge function returned error:', data);
+        const errorMessage = data.details ? `${data.error}: ${data.details}` : (data.error || 'Unknown error occurred');
         setError(errorMessage);
         throw new Error(errorMessage);
       }
       
       return data;
     } catch (err: any) {
-      const errorMessage = err.message || err.error || 'Unknown error occurred';
+      console.error('Admin function error:', err);
+      const errorMessage = err.message || err.error || err.details || 'Unknown error occurred';
       setError(errorMessage);
       throw new Error(errorMessage);
     } finally {

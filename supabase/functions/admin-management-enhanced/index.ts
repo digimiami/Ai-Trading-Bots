@@ -53,17 +53,39 @@ serve(async (req) => {
 
     // Parse request body safely
     let body: any = {}
+    let action: string | null = null
+    let params: any = {}
+    
     try {
-      const bodyText = await req.text()
-      if (bodyText) {
-        body = JSON.parse(bodyText)
+      if (req.method === 'POST') {
+        const bodyText = await req.text()
+        if (bodyText) {
+          body = JSON.parse(bodyText)
+          action = body.action
+          params = { ...body }
+          delete params.action
+        }
+      } else if (req.method === 'GET') {
+        const url = new URL(req.url)
+        action = url.searchParams.get('action')
       }
     } catch (e) {
-      // If body is empty or invalid, use empty object
-      body = {}
+      console.error('Error parsing request body:', e)
+      return new Response(JSON.stringify({ 
+        error: 'Invalid request body',
+        details: e.message 
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
     }
 
-    const { action, ...params } = body
+    if (!action) {
+      return new Response(JSON.stringify({ error: 'Action parameter required' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
 
     switch (action) {
       // Existing user management functions
@@ -173,9 +195,12 @@ serve(async (req) => {
           })
         } catch (error) {
           console.error('Error in getUsers:', error)
+          console.error('Error stack:', error.stack)
+          console.error('Error details:', JSON.stringify(error, Object.getOwnPropertyNames(error)))
           return new Response(JSON.stringify({ 
             error: 'Failed to fetch users',
-            details: error.message 
+            details: error?.message || String(error),
+            stack: error?.stack
           }), {
             status: 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -632,8 +657,12 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('Admin management error:', error)
+    console.error('Error stack:', error?.stack)
+    console.error('Error details:', JSON.stringify(error, Object.getOwnPropertyNames(error)))
     return new Response(JSON.stringify({ 
-      error: error.message || 'Internal server error' 
+      error: error?.message || 'Internal server error',
+      details: String(error),
+      stack: error?.stack
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
