@@ -4123,9 +4123,9 @@ serve(async (req) => {
 
     // Handle POST requests
     const body = await req.json()
-    const { action, botId } = body
+    const { action: bodyAction, botId } = body
 
-    switch (action) {
+    switch (bodyAction) {
       case 'execute_bot':
         const { data: bot } = await supabaseClient
           .from('trading_bots')
