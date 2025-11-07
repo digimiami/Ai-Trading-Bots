@@ -2933,16 +2933,32 @@ class BotExecutor {
   }
   
   private async updateBotPerformance(botId: string, trade: any): Promise<void> {
-    // Increment total_trades when trade is opened
-    const { data: bot } = await this.supabaseClient
+    // Fetch current bot stats (including trade amount for percentage calc)
+    const { data: bot, error: botError } = await this.supabaseClient
       .from('trading_bots')
-      .select('total_trades, pnl, pnl_percentage, win_rate')
+      .select('total_trades, trade_amount, win_rate')
       .eq('id', botId)
       .single();
-    
-    const newTotalTrades = (bot?.total_trades || 0) + 1;
-    
-    // Calculate win rate, win trades, loss trades from closed trades with PnL
+
+    if (botError) {
+      console.error('Failed to load bot stats for performance update:', botError);
+    }
+
+    const previousTotalTrades = bot?.total_trades || 0;
+
+    // Count total trades recorded for this bot (includes open + closed)
+    const { count: recordedTradesCount, error: countError } = await this.supabaseClient
+      .from('trades')
+      .select('id', { count: 'exact', head: true })
+      .eq('bot_id', botId);
+
+    if (countError) {
+      console.warn('Failed to count trades for bot:', countError.message);
+    }
+
+    const totalTrades = Math.max(previousTotalTrades + 1, recordedTradesCount ?? 0);
+
+    // Calculate win rate & PnL from CLOSED trades only (realized performance)
     const { data: closedTrades } = await this.supabaseClient
       .from('trades')
       .select('pnl, executed_at')
@@ -2950,29 +2966,27 @@ class BotExecutor {
       .in('status', ['closed', 'completed'])
       .not('pnl', 'is', null)
       .order('executed_at', { ascending: false });
-    
-    // Calculate total PnL from closed trades only
+
     const totalPnL = closedTrades?.reduce((sum, t) => sum + (parseFloat(t.pnl) || 0), 0) || 0;
-    
+
     const profitableTrades = closedTrades?.filter(t => parseFloat(t.pnl || 0) > 0) || [];
     const losingTrades = closedTrades?.filter(t => parseFloat(t.pnl || 0) < 0) || [];
     const winTrades = profitableTrades.length;
     const lossTrades = losingTrades.length;
     const totalClosedTrades = closedTrades?.length || 0;
-    const newWinRate = totalClosedTrades > 0 ? (winTrades / totalClosedTrades) * 100 : 0;
-    
-    // Calculate drawdown (max peak to trough decline) from closed trades
+    const newWinRate = totalClosedTrades > 0 ? (winTrades / totalClosedTrades) * 100 : (bot?.win_rate || 0);
+
+    // Drawdown calculation (based on realized trades)
     let maxDrawdown = 0;
     let peakPnL = 0;
     let runningPnL = 0;
     if (closedTrades && closedTrades.length > 0) {
-      // Sort trades by execution time (oldest first for drawdown calculation)
       const sortedTrades = [...closedTrades].sort((a, b) => {
         const dateA = new Date(a.executed_at || a.created_at || 0).getTime();
         const dateB = new Date(b.executed_at || b.created_at || 0).getTime();
         return dateA - dateB;
       });
-      
+
       for (const t of sortedTrades) {
         runningPnL += parseFloat(t.pnl || 0);
         if (runningPnL > peakPnL) {
@@ -2984,26 +2998,25 @@ class BotExecutor {
         }
       }
     }
-    
-    // Calculate drawdown percentage
+
     const drawdownPercentage = peakPnL > 0 ? (maxDrawdown / peakPnL) * 100 : 0;
-    
-    console.log(`📊 Win rate calculation: ${winTrades}/${totalClosedTrades} = ${newWinRate.toFixed(2)}%`);
-    console.log(`📊 Performance: Wins: ${winTrades}, Losses: ${lossTrades}, Drawdown: $${maxDrawdown.toFixed(2)} (${drawdownPercentage.toFixed(2)}%)`);
-    
+    const tradeAmount = bot?.trade_amount ? Number(bot.trade_amount) : null;
+
+    console.log(`📊 Win rate calculation (real): ${winTrades}/${totalClosedTrades} = ${newWinRate.toFixed(2)}%`);
+    console.log(`📊 Performance: Wins ${winTrades}, Losses ${lossTrades}, Trades ${totalTrades}, PnL $${totalPnL.toFixed(2)}`);
+
     await this.supabaseClient
       .from('trading_bots')
       .update({
-        total_trades: newTotalTrades,
+        total_trades: totalTrades,
         pnl: totalPnL,
-        pnl_percentage: bot?.trade_amount ? (totalPnL / bot.trade_amount) * 100 : 0,
+        pnl_percentage: tradeAmount ? (totalPnL / tradeAmount) * 100 : 0,
         win_rate: newWinRate,
         last_trade_at: TimeSync.getCurrentTimeISO(),
         updated_at: TimeSync.getCurrentTimeISO()
       })
       .eq('id', botId);
-    
-    // Log performance metrics to activity logs
+
     await this.addBotLog(botId, {
       level: 'info',
       category: 'trade',
@@ -3011,7 +3024,7 @@ class BotExecutor {
       details: {
         winTrades,
         lossTrades,
-        totalTrades: newTotalTrades,
+        totalTrades,
         closedTrades: totalClosedTrades,
         winRate: newWinRate,
         drawdown: maxDrawdown,
@@ -3751,8 +3764,22 @@ class PaperTradingExecutor {
       
       // Update bot stats - increment total_trades when trade opens
       if (trade) {
-        const botExecutor = new BotExecutor(this.supabaseClient, this.user);
-        await botExecutor.updateBotPerformance(bot.id, trade);
+        const { data: botStats } = await this.supabaseClient
+          .from('trading_bots')
+          .select('total_trades')
+          .eq('id', bot.id)
+          .single();
+
+        const newTotalTrades = (botStats?.total_trades || 0) + 1;
+
+        await this.supabaseClient
+          .from('trading_bots')
+          .update({
+            total_trades: newTotalTrades,
+            last_trade_at: TimeSync.getCurrentTimeISO(),
+            updated_at: TimeSync.getCurrentTimeISO()
+          })
+          .eq('id', bot.id);
       }
       
       // Log activity
@@ -3934,13 +3961,18 @@ class PaperTradingExecutor {
     const newWinRate = closedTrades && closedTrades.length > 0 
       ? (winningTrades.length / closedTrades.length) * 100 
       : (bot?.win_rate || 0);
+
+    const totalTrades = Math.max(bot?.total_trades || 0, closedTrades?.length || 0);
+    const tradeAmount = bot?.trade_amount ? Number(bot.trade_amount) : null;
     
     await this.supabaseClient
       .from('trading_bots')
       .update({
+        total_trades: totalTrades,
         pnl: totalPnL,
-        pnl_percentage: bot?.trade_amount ? (totalPnL / bot.trade_amount) * 100 : 0,
+        pnl_percentage: tradeAmount ? (totalPnL / tradeAmount) * 100 : 0,
         win_rate: newWinRate,
+        last_trade_at: TimeSync.getCurrentTimeISO(),
         updated_at: TimeSync.getCurrentTimeISO()
       })
       .eq('id', botId);
