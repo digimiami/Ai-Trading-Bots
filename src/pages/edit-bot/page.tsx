@@ -6,6 +6,7 @@ import Header from '../../components/feature/Header';
 import type { TradingStrategy, TradingBot, AdvancedStrategyConfig } from '../../types/trading';
 import { useBots } from '../../hooks/useBots';
 import AutoOptimizer from '../../components/bot/AutoOptimizer';
+import { STRATEGY_PRESETS, type StrategyPreset } from '../../constants/strategyPresets';
 
 export default function EditBotPage() {
   const navigate = useNavigate();
@@ -176,6 +177,23 @@ export default function EditBotPage() {
 
   const handleStrategyChange = (field: keyof TradingStrategy, value: any) => {
     setStrategy(prev => ({ ...prev, [field]: value }));
+  };
+
+  const applyStrategyPreset = (preset: StrategyPreset) => {
+    setStrategy({ ...preset.strategy });
+    setAdvancedConfig(prev => ({
+      ...prev,
+      ...preset.advanced,
+      allowed_hours_utc: [...preset.advanced.allowed_hours_utc]
+    }));
+    setFormData(prev => ({
+      ...prev,
+      tradeAmount: preset.recommendedTradeAmount ?? prev.tradeAmount,
+      stopLoss: preset.recommendedStopLoss ?? prev.stopLoss,
+      takeProfit: preset.recommendedTakeProfit ?? prev.takeProfit,
+      riskLevel: preset.recommendedRiskLevel ?? prev.riskLevel
+    }));
+    console.log('Applied strategy preset:', preset.key);
   };
 
   if (!botId) {
@@ -481,6 +499,35 @@ export default function EditBotPage() {
                 {/* Strategy Settings */}
                 <div className="border-t pt-6">
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">Strategy Settings</h3>
+                  <div className="mb-6">
+                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <h4 className="font-semibold text-purple-900 flex items-center gap-2 text-sm md:text-base">
+                          <i className="ri-brain-line"></i>
+                          AI Strategy Presets
+                        </h4>
+                        <span className="hidden md:block text-xs text-purple-700">
+                          Rapidly align this bot with proven AI templates
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {STRATEGY_PRESETS.map((preset) => (
+                          <button
+                            key={preset.key}
+                            type="button"
+                            onClick={() => applyStrategyPreset(preset)}
+                            className="px-3 py-2 rounded-lg border border-purple-300 bg-white text-purple-700 hover:bg-purple-100 text-sm font-medium flex items-center gap-2 transition-colors"
+                          >
+                            <i className="ri-flashlight-line"></i>
+                            {preset.label}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-xs text-purple-700 mt-3">
+                        Applying a preset updates strategy parameters, risk controls, and recommended trade sizing.
+                      </p>
+                    </div>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
