@@ -128,10 +128,13 @@ export async function apiCall(endpoint: string, options: RequestInit = {}) {
     // use the token from localStorage so authenticated calls don't fail.
     const fallbackToken = !session?.access_token ? getAccessTokenFromLocalStorage() : null
     
-    const headers = {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${session?.access_token || fallbackToken || ''}`,
-      ...options.headers,
+    const authToken = session?.access_token || fallbackToken || ''
+    const headers = new Headers(options.headers as HeadersInit)
+    headers.set('Content-Type', 'application/json')
+    if (authToken) {
+      headers.set('Authorization', `Bearer ${authToken}`)
+    } else {
+      headers.delete('Authorization')
     }
 
     const response = await fetch(endpoint, {

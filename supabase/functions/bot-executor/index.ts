@@ -3982,10 +3982,13 @@ serve(async (req) => {
       }
     }
 
+    const incomingAuthHeader = req.headers.get('Authorization') || req.headers.get('authorization') || undefined
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       isCron ? (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '') : (Deno.env.get('SUPABASE_ANON_KEY') ?? ''),
-      isCron ? undefined : { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
+      isCron || !incomingAuthHeader
+        ? undefined
+        : { global: { headers: { Authorization: incomingAuthHeader } } }
     )
 
     // Get user for authenticated endpoints (time and market-data don't require auth)
