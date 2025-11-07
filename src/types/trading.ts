@@ -21,6 +21,10 @@ export interface TradingBot {
   stopLoss?: number;
   takeProfit?: number;
   paperTrading?: boolean; // Paper trading mode toggle
+  winTrades?: number;
+  lossTrades?: number;
+  closedTrades?: number;
+  realizedPnl?: number;
 }
 
 export interface TradingStrategy {

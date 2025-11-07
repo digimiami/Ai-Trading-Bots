@@ -45,7 +45,123 @@ serve(async (req) => {
         if (error) throw error
 
         // Transform the data to match frontend expectations
-        const transformedBots = bots.map(bot => ({
+        const botIds = bots.map((bot: any) => bot.id);
+
+        const statsMap = new Map<string, {
+          totalTrades: number;
+          closedTrades: number;
+          winTrades: number;
+          lossTrades: number;
+          pnl: number;
+          hasClosed: boolean;
+        }>();
+
+        const ensureStats = (botId: string) => {
+          if (!statsMap.has(botId)) {
+            statsMap.set(botId, {
+              totalTrades: 0,
+              closedTrades: 0,
+              winTrades: 0,
+              lossTrades: 0,
+              pnl: 0,
+              hasClosed: false
+            });
+          }
+          return statsMap.get(botId)!;
+        };
+
+        if (botIds.length > 0) {
+          const executedStatuses = new Set(['filled', 'completed', 'closed', 'stopped', 'taken_profit']);
+          const closedStatuses = new Set(['completed', 'closed', 'stopped', 'taken_profit']);
+
+          const { data: realTrades, error: realTradesError } = await supabaseClient
+            .from('trades')
+            .select('bot_id, status, pnl')
+            .in('bot_id', botIds);
+
+          if (realTradesError) {
+            console.warn('Error fetching trades for stats:', realTradesError);
+          } else if (realTrades) {
+            for (const trade of realTrades) {
+              if (!trade || !trade.bot_id) continue;
+              const stats = ensureStats(trade.bot_id);
+              const status = (trade.status || '').toString().toLowerCase();
+              const pnlValue = trade.pnl !== null && trade.pnl !== undefined ? parseFloat(trade.pnl) : NaN;
+
+              if (executedStatuses.has(status)) {
+                stats.totalTrades += 1;
+              }
+
+              if (closedStatuses.has(status) && !Number.isNaN(pnlValue)) {
+                stats.closedTrades += 1;
+                stats.pnl += pnlValue;
+                stats.hasClosed = true;
+                if (pnlValue > 0) {
+                  stats.winTrades += 1;
+                } else if (pnlValue < 0) {
+                  stats.lossTrades += 1;
+                }
+              }
+            }
+          }
+
+          const { data: paperTrades, error: paperTradesError } = await supabaseClient
+            .from('paper_trading_trades')
+            .select('bot_id, status, pnl')
+            .in('bot_id', botIds);
+
+          if (paperTradesError) {
+            console.warn('Error fetching paper trades for stats:', paperTradesError);
+          } else if (paperTrades) {
+            for (const trade of paperTrades) {
+              if (!trade || !trade.bot_id) continue;
+              const stats = ensureStats(trade.bot_id);
+              const status = (trade.status || '').toString().toLowerCase();
+              const pnlValue = trade.pnl !== null && trade.pnl !== undefined ? parseFloat(trade.pnl) : NaN;
+
+              if (executedStatuses.has(status)) {
+                stats.totalTrades += 1;
+              }
+
+              if (closedStatuses.has(status) && !Number.isNaN(pnlValue)) {
+                stats.closedTrades += 1;
+                stats.pnl += pnlValue;
+                stats.hasClosed = true;
+                if (pnlValue > 0) {
+                  stats.winTrades += 1;
+                } else if (pnlValue < 0) {
+                  stats.lossTrades += 1;
+                }
+              }
+            }
+          }
+        }
+
+        const transformedBots = bots.map(bot => {
+          const stats = statsMap.get(bot.id) || {
+            totalTrades: 0,
+            closedTrades: 0,
+            winTrades: 0,
+            lossTrades: 0,
+            pnl: 0,
+            hasClosed: false
+          };
+
+          const totalTrades = Math.max(bot.total_trades ?? 0, stats.totalTrades);
+          const closedTrades = stats.closedTrades;
+          const winTrades = stats.winTrades;
+          const lossTrades = stats.lossTrades;
+          const realizedPnl = stats.hasClosed ? stats.pnl : (bot.pnl ?? 0);
+          const winRate = closedTrades > 0
+            ? (winTrades / closedTrades) * 100
+            : (bot.win_rate ?? 0);
+
+          const tradeAmount = bot.trade_amount || bot.tradeAmount;
+          const pnlPercentage = closedTrades > 0 && tradeAmount
+            ? (realizedPnl / (tradeAmount * closedTrades)) * 100
+            : (bot.pnl_percentage ?? 0);
+
+          return ({
           id: bot.id,
           name: bot.name,
           exchange: bot.exchange,
@@ -57,17 +173,22 @@ serve(async (req) => {
           tradeAmount: bot.trade_amount || 100,
           stopLoss: bot.stop_loss || 2.0,
           takeProfit: bot.take_profit || 4.0,
-          pnl: bot.pnl ?? 0,
-          pnlPercentage: bot.pnl_percentage ?? 0,
-          totalTrades: bot.total_trades ?? 0,
-          winRate: bot.win_rate ?? 0,
+          pnl: realizedPnl,
+          pnlPercentage,
+          totalTrades,
+          winRate,
+          winTrades,
+          lossTrades,
+          closedTrades,
+          realizedPnl,
           createdAt: bot.created_at,
           lastTradeAt: bot.last_trade_at,
           riskLevel: bot.risk_level || 'medium',
           strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy,
           aiMlEnabled: bot.ai_ml_enabled || false,
           paperTrading: bot.paper_trading || false
-        }))
+        });
+        })
 
         return new Response(
           JSON.stringify({ bots: transformedBots }),

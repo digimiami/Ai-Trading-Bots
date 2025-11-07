@@ -778,9 +778,9 @@ export default function BotsPage() {
                     <p className="text-sm text-gray-500 dark:text-gray-400">Win/Loss</p>
                     {(() => {
                       const totalTrades = bot.totalTrades ?? 0;
-                      const winRate = bot.winRate ?? 0;
-                      const wins = totalTrades > 0 ? Math.round((totalTrades * winRate) / 100) : 0;
-                      const losses = totalTrades - wins;
+                      const closedTrades = bot.closedTrades ?? totalTrades;
+                      const wins = bot.winTrades ?? (closedTrades > 0 ? Math.round((closedTrades * (bot.winRate ?? 0)) / 100) : 0);
+                      const losses = bot.lossTrades ?? Math.max(0, closedTrades - wins);
                       return (
                         <p className="font-semibold text-gray-900 dark:text-white">
                           <span className="text-green-600 dark:text-green-400">{wins}</span>
@@ -796,9 +796,14 @@ export default function BotsPage() {
                   </div>
                   <div className="text-center">
                     <p className="text-sm text-gray-500 dark:text-gray-400">PnL</p>
-                    <p className={`font-semibold ${(bot.pnl ?? 0) >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                      {(bot.pnl ?? 0) >= 0 ? '+' : ''}${(bot.pnl ?? 0).toFixed(2)}
-                    </p>
+                    {(() => {
+                      const pnlValue = bot.realizedPnl !== undefined ? bot.realizedPnl : (bot.pnl ?? 0);
+                      return (
+                        <p className={`font-semibold ${pnlValue >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                          {pnlValue >= 0 ? '+' : ''}${pnlValue.toFixed(2)}
+                        </p>
+                      );
+                    })()}
                   </div>
                 </div>
 
