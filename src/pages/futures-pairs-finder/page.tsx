@@ -4,7 +4,7 @@ import Header from '../../components/feature/Header';
 import Navigation from '../../components/feature/Navigation';
 import Card from '../../components/base/Card';
 import Button from '../../components/base/Button';
-import { supabase, API_ENDPOINTS, apiCall } from '../../lib/supabase';
+import { API_ENDPOINTS, apiCall } from '../../lib/supabase';
 
 interface FuturesPair {
   symbol: string;
@@ -47,25 +47,13 @@ export default function FuturesPairsFinderPage() {
     setError(null);
     
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        throw new Error('Not authenticated');
-      }
-
-      // Get connected exchanges
-      const { data: apiKeys } = await supabase
-        .from('api_keys')
-        .select('exchange')
-        .eq('user_id', user.id)
-        .eq('is_active', true);
-
-      const exchanges = apiKeys?.map(k => k.exchange) || ['bybit']; // Default to bybit if no API keys
-
       const allPairs: FuturesPair[] = [];
 
-      // Fetch futures pairs from each exchange
-      for (const exchange of exchanges) {
-        if (selectedExchange !== 'all' && selectedExchange !== exchange) continue;
+      const exchangesToFetch: Array<'bybit' | 'okx'> = [];
+      if (selectedExchange === 'all' || selectedExchange === 'bybit') exchangesToFetch.push('bybit');
+      if (selectedExchange === 'all' || selectedExchange === 'okx') exchangesToFetch.push('okx');
+
+      for (const exchange of exchangesToFetch) {
 
         try {
           let exchangePairs: FuturesPair[] = [];
@@ -118,36 +106,40 @@ export default function FuturesPairsFinderPage() {
       const data = response;
 
       if (data.retCode === 0 && data.result?.list) {
-        const tickers = data.result.list;
+        const tickers = data.result.list as any[];
 
-        // Fetch 30-day historical data for each pair (sample top pairs for performance)
-        const topPairs = tickers
-          .filter((t: any) => parseFloat(t.volume24h || 0) > minVol)
-          .slice(0, 50); // Limit to top 50 by volume for performance
+        const rankedTickers = tickers
+          .map(ticker => {
+            const volumeUsd = parseFloat(ticker.turnover24h || ticker.volume24h || '0');
+            return { ticker, volumeUsd };
+          })
+          .filter(item => item.volumeUsd >= minVol)
+          .sort((a, b) => b.volumeUsd - a.volumeUsd)
+          .slice(0, 50);
 
-        for (const ticker of topPairs) {
+        for (const { ticker, volumeUsd } of rankedTickers) {
           try {
             const symbol = ticker.symbol;
             const currentPrice = parseFloat(ticker.lastPrice || 0);
             const priceChange24h = parseFloat(ticker.price24hPcnt || 0) * 100;
-            const volume24h = parseFloat(ticker.volume24h || 0);
+            const volume24h = volumeUsd; // turnover24h is quoted in USD
             const high24h = parseFloat(ticker.highPrice24h || 0);
             const low24h = parseFloat(ticker.lowPrice24h || 0);
 
             // Fetch 30-day price change (using klines) via Edge Function
-            const thirtyDaysAgo = Math.floor(Date.now() / 1000) - (30 * 24 * 60 * 60);
+            const thirtyDaysAgoMs = Date.now() - (30 * 24 * 60 * 60 * 1000);
             const klinesData = await apiCall(
-              `${API_ENDPOINTS.FUTURES_PAIRS}?action=klines&exchange=bybit&symbol=${symbol}&interval=D&start=${thirtyDaysAgo}&limit=30`
+              `${API_ENDPOINTS.FUTURES_PAIRS}?action=klines&exchange=bybit&symbol=${symbol}&interval=D&start=${thirtyDaysAgoMs}&limit=30`
             );
 
             let priceChange30d = 0;
             let high30d = currentPrice;
             let low30d = currentPrice;
-            let volume30d = volume24h * 30; // Estimate
+            let volume30d = volume24h * 30; // Estimate fallback
 
             if (klinesData.retCode === 0 && klinesData.result?.list?.length > 0) {
               const klines = klinesData.result.list.reverse(); // Oldest first
-              const firstPrice = parseFloat(klines[0]?.[4] || currentPrice); // Close price
+              const firstPrice = parseFloat(klines[0]?.[4] || currentPrice); // Close
               priceChange30d = ((currentPrice - firstPrice) / firstPrice) * 100;
 
               // Calculate 30-day high/low
@@ -159,7 +151,10 @@ export default function FuturesPairsFinderPage() {
               }
 
               // Calculate 30-day volume
-              volume30d = klines.reduce((sum: number, k: any[]) => sum + parseFloat(k[5] || 0), 0);
+              volume30d = klines.reduce((sum: number, k: any[]) => {
+                const turnover = parseFloat(k[6] || k[5] || 0);
+                return sum + turnover;
+              }, 0);
             }
 
             // Calculate volatility (simplified)
@@ -169,7 +164,7 @@ export default function FuturesPairsFinderPage() {
             const performanceScore = 
               (priceChange30d * 0.4) + // 30-day performance (40%)
               (priceChange24h * 0.2) + // 24h momentum (20%)
-              (Math.log10(volume24h / 1000000) * 10) + // Volume score (20%)
+              (volume24h > 0 ? Math.log10(volume24h / 1000000) * 10 : 0) + // Volume score (20%)
               (100 - volatility * 10); // Low volatility bonus (20%)
 
             pairs.push({
@@ -208,29 +203,35 @@ export default function FuturesPairsFinderPage() {
       const data = response;
 
       if (data.code === '0' && data.data) {
-        const tickers = data.data
-          .filter((t: any) => parseFloat(t.vol24h || 0) > minVol)
-          .slice(0, 50); // Limit to top 50
+        const tickers = (data.data as any[])
+          .map(ticker => {
+            const volumeUsd = parseFloat(ticker.volUsd24h || ticker.volCcyQuote24h || ticker.volCcy24h || ticker.vol24h || '0');
+            return { ticker, volumeUsd };
+          })
+          .filter(item => item.volumeUsd >= minVol)
+          .sort((a, b) => b.volumeUsd - a.volumeUsd)
+          .slice(0, 50);
 
-        for (const ticker of tickers) {
+        for (const { ticker, volumeUsd } of tickers) {
           try {
             const symbol = ticker.instId;
             const currentPrice = parseFloat(ticker.last || 0);
-            const priceChange24h = parseFloat(ticker.sodUtc8 || 0) * 100;
-            const volume24h = parseFloat(ticker.vol24h || 0);
+            const open24h = parseFloat(ticker.open24h || 0);
+            const priceChange24h = open24h > 0 ? ((currentPrice - open24h) / open24h) * 100 : 0;
+            const volume24h = volumeUsd;
             const high24h = parseFloat(ticker.high24h || 0);
             const low24h = parseFloat(ticker.low24h || 0);
 
             // Fetch 30-day price change (using klines) via Edge Function
-            const thirtyDaysAgo = Math.floor(Date.now() / 1000) - (30 * 24 * 60 * 60);
+            const thirtyDaysAgoMs = Date.now() - (30 * 24 * 60 * 60 * 1000);
             const klinesData = await apiCall(
-              `${API_ENDPOINTS.FUTURES_PAIRS}?action=klines&exchange=okx&symbol=${symbol}&interval=1D&start=${thirtyDaysAgo}&limit=30`
+              `${API_ENDPOINTS.FUTURES_PAIRS}?action=klines&exchange=okx&symbol=${symbol}&interval=1D&start=${thirtyDaysAgoMs}&limit=30`
             );
 
             let priceChange30d = 0;
             let high30d = currentPrice;
             let low30d = currentPrice;
-            let volume30d = volume24h * 30; // Estimate
+            let volume30d = volume24h * 30; // Estimate fallback
 
             if (klinesData.code === '0' && klinesData.data?.length > 0) {
               const klines = klinesData.data.reverse(); // Oldest first
@@ -246,7 +247,10 @@ export default function FuturesPairsFinderPage() {
               }
 
               // Calculate 30-day volume
-              volume30d = klines.reduce((sum: number, k: any[]) => sum + parseFloat(k[5] || 0), 0);
+              volume30d = klines.reduce((sum: number, k: any[]) => {
+                const quoteVolume = parseFloat(k[6] || k[5] || 0);
+                return sum + quoteVolume;
+              }, 0);
             }
 
             // Calculate volatility
@@ -256,7 +260,7 @@ export default function FuturesPairsFinderPage() {
             const performanceScore = 
               (priceChange30d * 0.4) +
               (priceChange24h * 0.2) +
-              (Math.log10(volume24h / 1000000) * 10) +
+              (volume24h > 0 ? Math.log10(volume24h / 1000000) * 10 : 0) +
               (100 - volatility * 10);
 
             pairs.push({

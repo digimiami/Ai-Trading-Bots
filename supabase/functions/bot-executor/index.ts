@@ -4136,20 +4136,33 @@ serve(async (req) => {
       }
       
       if (action === 'market-data') {
-        const symbol = url.searchParams.get('symbol') || 'BTCUSDT';
-        const exchange = url.searchParams.get('exchange') || 'bybit';
-        const tradingType = url.searchParams.get('tradingType') || url.searchParams.get('trading_type') || 'futures';
-        
-        const price = await MarketDataFetcher.fetchPrice(symbol, exchange, tradingType);
-        const rsi = await MarketDataFetcher.fetchRSI(symbol, exchange);
-        const adx = await MarketDataFetcher.fetchADX(symbol, exchange);
-        
-        return new Response(JSON.stringify({ 
-          symbol, exchange, tradingType, price, rsi, adx,
-          timestamp: TimeSync.getCurrentTimeISO()
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
+        try {
+          const symbol = url.searchParams.get('symbol') || 'BTCUSDT';
+          const exchange = url.searchParams.get('exchange') || 'bybit';
+          const tradingType = url.searchParams.get('tradingType') || url.searchParams.get('trading_type') || 'futures';
+          
+          const price = await MarketDataFetcher.fetchPrice(symbol, exchange, tradingType);
+          const rsi = await MarketDataFetcher.fetchRSI(symbol, exchange);
+          const adx = await MarketDataFetcher.fetchADX(symbol, exchange);
+          
+          return new Response(JSON.stringify({ 
+            symbol, exchange, tradingType, price, rsi, adx,
+            timestamp: TimeSync.getCurrentTimeISO(),
+            success: true
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        } catch (marketError) {
+          console.error('❌ Market data fetch failed:', marketError);
+          return new Response(JSON.stringify({
+            success: false,
+            error: 'Failed to fetch market data',
+            details: marketError?.message || String(marketError),
+            timestamp: TimeSync.getCurrentTimeISO()
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
       }
     }
 

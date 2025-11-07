@@ -2,8 +2,9 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, sb-access-token',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Max-Age': '86400',
 }
 
 serve(async (req) => {
@@ -20,15 +21,33 @@ serve(async (req) => {
       // Fetch all futures tickers from Bybit
       if (exchange === 'bybit') {
         const response = await fetch('https://api.bybit.com/v5/market/tickers?category=linear')
+        if (!response.ok) {
+          const errorText = await response.text()
+          console.error('Bybit tickers fetch failed:', response.status, errorText)
+          return new Response(JSON.stringify({
+            error: 'Failed to fetch Bybit tickers',
+            status: response.status,
+            body: errorText
+          }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }
+
         const data = await response.json()
-        
         return new Response(JSON.stringify(data), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
       } else if (exchange === 'okx') {
         const response = await fetch('https://www.okx.com/api/v5/market/tickers?instType=SWAP')
+        if (!response.ok) {
+          const errorText = await response.text()
+          console.error('OKX tickers fetch failed:', response.status, errorText)
+          return new Response(JSON.stringify({
+            error: 'Failed to fetch OKX tickers',
+            status: response.status,
+            body: errorText
+          }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }
+
         const data = await response.json()
-        
         return new Response(JSON.stringify(data), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
@@ -49,20 +68,51 @@ serve(async (req) => {
       }
 
       if (exchange === 'bybit') {
-        const klinesUrl = `https://api.bybit.com/v5/market/kline?category=linear&symbol=${symbol}&interval=${interval}&start=${start}&limit=${limit}`
+        const params = new URLSearchParams({
+          category: 'linear',
+          symbol,
+          interval,
+          limit,
+        })
+        if (start) params.set('start', start)
+
+        const klinesUrl = `https://api.bybit.com/v5/market/kline?${params.toString()}`
         const response = await fetch(klinesUrl)
+        if (!response.ok) {
+          const errorText = await response.text()
+          console.error('Bybit klines fetch failed:', response.status, errorText)
+          return new Response(JSON.stringify({
+            error: 'Failed to fetch Bybit klines',
+            status: response.status,
+            body: errorText
+          }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }
+
         const data = await response.json()
-        
         return new Response(JSON.stringify(data), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
       } else if (exchange === 'okx') {
-        // OKX klines endpoint
-        const instId = symbol
-        const klinesUrl = `https://www.okx.com/api/v5/market/candles?instId=${instId}&bar=${interval}&after=${start}&limit=${limit}`
+        const params = new URLSearchParams({
+          instId: symbol,
+          bar: interval,
+          limit,
+        })
+        if (start) params.set('after', start)
+
+        const klinesUrl = `https://www.okx.com/api/v5/market/candles?${params.toString()}`
         const response = await fetch(klinesUrl)
+        if (!response.ok) {
+          const errorText = await response.text()
+          console.error('OKX klines fetch failed:', response.status, errorText)
+          return new Response(JSON.stringify({
+            error: 'Failed to fetch OKX klines',
+            status: response.status,
+            body: errorText
+          }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }
+
         const data = await response.json()
-        
         return new Response(JSON.stringify(data), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
