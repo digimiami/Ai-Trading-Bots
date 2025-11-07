@@ -49,6 +49,7 @@ jobs:
           supabase functions deploy trading-engine --no-verify-jwt || echo "⚠️ trading-engine deployment failed"
           supabase functions deploy telegram-notifier --no-verify-jwt || echo "⚠️ telegram-notifier deployment failed"
           supabase functions deploy market-data --no-verify-jwt || echo "⚠️ market-data deployment failed"
+          supabase functions deploy futures-pairs --no-verify-jwt || echo "⚠️ futures-pairs deployment failed"
           supabase functions deploy ml-predictions --no-verify-jwt || echo "⚠️ ml-predictions deployment failed"
           supabase functions deploy alerts-system --no-verify-jwt || echo "⚠️ alerts-system deployment failed"
           supabase functions deploy api-keys --no-verify-jwt || echo "⚠️ api-keys deployment failed"
