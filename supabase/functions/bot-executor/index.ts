@@ -4023,8 +4023,6 @@ serve(async (req) => {
 
     // Handle GET requests
     if (req.method === 'GET') {
-      const action = url?.searchParams.get('action')
-      
       if (action === 'time') {
         const syncStatus = TimeSync.getSyncStatus();
         return new Response(JSON.stringify({ 
