@@ -7,6 +7,12 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
 }
 
+const DEFAULT_BALANCE = (() => {
+  const envValue = Deno.env.get('PAPER_TRADING_DEFAULT_BALANCE')
+  const parsed = envValue ? Number(envValue) : NaN
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 10000
+})()
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -27,18 +33,17 @@ serve(async (req) => {
       })
     }
 
-    const body = await req.json()
+    let body: any = {}
+    if (req.method !== 'GET') {
+      try {
+        body = await req.json()
+      } catch (_err) {
+        body = {}
+      }
+    }
     const { action, amount } = body
 
-    if (action === 'add_funds') {
-      if (!amount || amount <= 0) {
-        return new Response(JSON.stringify({ error: 'Invalid amount' }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
-      }
-
-      // Get or create account
+    const getOrCreateAccount = async () => {
       let { data: account } = await supabaseClient
         .from('paper_trading_accounts')
         .select('*')
@@ -50,18 +55,34 @@ serve(async (req) => {
           .from('paper_trading_accounts')
           .insert({
             user_id: user.id,
-            balance: 10000,
-            initial_balance: 10000
+            balance: DEFAULT_BALANCE,
+            initial_balance: DEFAULT_BALANCE,
+            total_deposited: 0,
+            total_withdrawn: 0
           })
           .select()
           .single()
-        
+
         if (insertError) throw insertError
         account = newAccount
       }
 
-      const newBalance = parseFloat(account.balance) + amount
-      const newTotalDeposited = parseFloat(account.total_deposited || 0) + amount
+      return account
+    }
+
+    if (action === 'add_funds') {
+      const numericAmount = Number(amount)
+      if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+        return new Response(JSON.stringify({ error: 'Invalid amount' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      const account = await getOrCreateAccount()
+
+      const newBalance = parseFloat(account.balance) + numericAmount
+      const newTotalDeposited = parseFloat(account.total_deposited || 0) + numericAmount
 
       const { data, error } = await supabaseClient
         .from('paper_trading_accounts')
@@ -82,27 +103,74 @@ serve(async (req) => {
     }
 
     if (action === 'get_balance') {
-      let { data: account } = await supabaseClient
-        .from('paper_trading_accounts')
-        .select('*')
-        .eq('user_id', user.id)
-        .single()
-
-      if (!account) {
-        // Create default account
-        const { data: newAccount } = await supabaseClient
-          .from('paper_trading_accounts')
-          .insert({
-            user_id: user.id,
-            balance: 10000,
-            initial_balance: 10000
-          })
-          .select()
-          .single()
-        account = newAccount
-      }
+      const account = await getOrCreateAccount()
 
       return new Response(JSON.stringify({ success: true, account }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    if (action === 'set_balance') {
+      const numericAmount = Number(amount)
+      if (!Number.isFinite(numericAmount) || numericAmount < 0) {
+        return new Response(JSON.stringify({ error: 'Invalid amount' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      const account = await getOrCreateAccount()
+
+      const { data, error } = await supabaseClient
+        .from('paper_trading_accounts')
+        .update({
+          balance: numericAmount,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', account.id)
+        .select()
+        .single()
+
+      if (error) throw error
+
+      return new Response(JSON.stringify({ success: true, account: data }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    if (action === 'reset_balance') {
+      const account = await getOrCreateAccount()
+
+      const { error: positionsDeleteError } = await supabaseClient
+        .from('paper_trading_positions')
+        .delete()
+        .eq('user_id', user.id)
+
+      if (positionsDeleteError) throw positionsDeleteError
+
+      const { error: tradesDeleteError } = await supabaseClient
+        .from('paper_trading_trades')
+        .delete()
+        .eq('user_id', user.id)
+
+      if (tradesDeleteError) throw tradesDeleteError
+
+      const { data, error } = await supabaseClient
+        .from('paper_trading_accounts')
+        .update({
+          balance: DEFAULT_BALANCE,
+          initial_balance: DEFAULT_BALANCE,
+          total_deposited: 0,
+          total_withdrawn: 0,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', account.id)
+        .select()
+        .single()
+
+      if (error) throw error
+
+      return new Response(JSON.stringify({ success: true, account: data }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }

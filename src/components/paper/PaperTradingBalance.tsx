@@ -15,8 +15,11 @@ interface PaperLog {
 
 export default function PaperTradingBalance() {
   const [balance, setBalance] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
+  const [addLoading, setAddLoading] = useState(false);
   const [addAmount, setAddAmount] = useState('');
+  const [setBalanceAmount, setSetBalanceAmount] = useState('');
+  const [setLoading, setSetLoading] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
   const [logs, setLogs] = useState<PaperLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
   
@@ -141,10 +144,13 @@ export default function PaperTradingBalance() {
       return;
     }
     
-    setLoading(true);
+    setAddLoading(true);
     try {
       // Call edge function to add funds
       const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('Not authenticated');
+      }
       const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/paper-trading`, {
         method: 'POST',
         headers: {
@@ -170,7 +176,90 @@ export default function PaperTradingBalance() {
     } catch (error: any) {
       alert('Error adding funds: ' + error.message);
     } finally {
-      setLoading(false);
+      setAddLoading(false);
+    }
+  };
+
+  const handleSetBalance = async () => {
+    const amount = parseFloat(setBalanceAmount);
+    if (isNaN(amount) || amount < 0) {
+      alert('Please enter a valid amount (0 or greater)');
+      return;
+    }
+
+    setSetLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('Not authenticated');
+      }
+
+      const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/paper-trading`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session?.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'set_balance',
+          amount
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to set balance');
+      }
+
+      await fetchBalance();
+      setSetBalanceAmount('');
+      alert(`✅ Paper trading balance set to $${amount.toFixed(2)}`);
+      setTimeout(() => fetchLogs(), 1000);
+    } catch (error: any) {
+      alert('Error setting balance: ' + error.message);
+    } finally {
+      setSetLoading(false);
+    }
+  };
+
+  const handleResetBalance = async () => {
+    const confirmed = window.confirm('Resetting will restore your paper trading account to the default balance and clear open paper trades. Continue?');
+    if (!confirmed) {
+      return;
+    }
+
+    setResetLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('Not authenticated');
+      }
+
+      const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/paper-trading`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session?.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'reset_balance'
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to reset balance');
+      }
+
+      await fetchBalance();
+      setAddAmount('');
+      setSetBalanceAmount('');
+      alert('✅ Paper trading balance reset to default');
+      setTimeout(() => fetchLogs(), 1000);
+    } catch (error: any) {
+      alert('Error resetting balance: ' + error.message);
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -298,7 +387,7 @@ export default function PaperTradingBalance() {
           <span className="text-gray-500">Total Deposited:</span>
           <span className="text-green-600">${parseFloat(balance.total_deposited || 0).toFixed(2)}</span>
         </div>
-        <div className="border-t pt-3 mt-3">
+        <div className="border-t pt-3 mt-3 space-y-3">
           <div className="flex gap-2">
             <input
               type="number"
@@ -311,10 +400,41 @@ export default function PaperTradingBalance() {
             />
             <Button
               onClick={handleAddFunds}
-              loading={loading}
+              loading={addLoading}
               variant="primary"
             >
               Add Funds
+            </Button>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="number"
+              value={setBalanceAmount}
+              onChange={(e) => setSetBalanceAmount(e.target.value)}
+              placeholder={`Set balance${balance && typeof balance.balance !== 'undefined' ? ` (current $${parseFloat(balance.balance).toFixed(2)})` : ''}`}
+              className="flex-1 px-3 py-2 border rounded-lg"
+              min="0"
+              step="0.01"
+            />
+            <Button
+              onClick={handleSetBalance}
+              loading={setLoading}
+              variant="secondary"
+            >
+              Set Balance
+            </Button>
+          </div>
+          <div className="flex items-center justify-between bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+            <div className="text-sm text-red-700">
+              <p className="font-medium">Reset Paper Account</p>
+              <p className="text-xs text-red-600">Restores default balance and clears paper positions/trades.</p>
+            </div>
+            <Button
+              onClick={handleResetBalance}
+              loading={resetLoading}
+              variant="danger"
+            >
+              Reset Balance
             </Button>
           </div>
         </div>
