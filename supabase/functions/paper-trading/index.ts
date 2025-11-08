@@ -41,7 +41,7 @@ serve(async (req) => {
         body = {}
       }
     }
-    const { action, amount } = body
+    const { action, amount, applyToBalance } = body
 
     const getOrCreateAccount = async () => {
       let { data: account } = await supabaseClient
@@ -138,15 +138,44 @@ serve(async (req) => {
       })
     }
 
-    if (action === 'reset_balance') {
+    if (action === 'set_initial_balance') {
+      const numericAmount = Number(amount)
+      if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
+        return new Response(JSON.stringify({ error: 'Invalid amount' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
       const account = await getOrCreateAccount()
 
-      const { error: positionsDeleteError } = await supabaseClient
-        .from('paper_trading_positions')
-        .delete()
-        .eq('user_id', user.id)
+      const updates: Record<string, any> = {
+        initial_balance: numericAmount,
+        updated_at: new Date().toISOString()
+      }
 
-      if (positionsDeleteError) throw positionsDeleteError
+      if (applyToBalance === true) {
+        updates.balance = numericAmount
+        updates.total_deposited = 0
+        updates.total_withdrawn = 0
+      }
+
+      const { data, error } = await supabaseClient
+        .from('paper_trading_accounts')
+        .update(updates)
+        .eq('id', account.id)
+        .select()
+        .single()
+
+      if (error) throw error
+
+      return new Response(JSON.stringify({ success: true, account: data }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    if (action === 'reset_balance') {
+      const account = await getOrCreateAccount()
 
       const { error: tradesDeleteError } = await supabaseClient
         .from('paper_trading_trades')
@@ -155,11 +184,22 @@ serve(async (req) => {
 
       if (tradesDeleteError) throw tradesDeleteError
 
+      const { error: positionsDeleteError } = await supabaseClient
+        .from('paper_trading_positions')
+        .delete()
+        .eq('user_id', user.id)
+
+      if (positionsDeleteError) throw positionsDeleteError
+
+      const resetAmount = Number.isFinite(Number(account?.initial_balance))
+        ? Number(account.initial_balance)
+        : DEFAULT_BALANCE
+
       const { data, error } = await supabaseClient
         .from('paper_trading_accounts')
         .update({
-          balance: DEFAULT_BALANCE,
-          initial_balance: DEFAULT_BALANCE,
+          balance: resetAmount,
+          initial_balance: resetAmount,
           total_deposited: 0,
           total_withdrawn: 0,
           updated_at: new Date().toISOString()
