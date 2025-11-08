@@ -56,13 +56,15 @@ interface PaperPerformance {
 
 interface PaperTradingPerformanceProps {
   selectedPair?: string;
+  onReset?: () => Promise<void> | void;
 }
 
-export default function PaperTradingPerformance({ selectedPair = '' }: PaperTradingPerformanceProps) {
+export default function PaperTradingPerformance({ selectedPair = '', onReset }: PaperTradingPerformanceProps) {
   const [performance, setPerformance] = useState<PaperPerformance | null>(null);
   const [positions, setPositions] = useState<PaperPosition[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   const fetchPerformance = async () => {
     try {
@@ -112,8 +114,7 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
             try {
               // Fetch current price from market data via Supabase Edge Function
               const symbol = position.symbol;
-              const tradingType = position.trading_type || 'futures';
-              
+
               // Use bot-executor edge function to get current price (avoids CORS)
               try {
                 const marketData = await apiCall(
@@ -125,7 +126,6 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
                 if (currentPrice > 0) {
                   // Calculate unrealized PnL
                   const entryPrice = parseFloat(position.entry_price);
-                  const quantity = parseFloat(position.quantity);
                   const leverage = parseFloat(position.leverage || 1);
                   const marginUsed = parseFloat(position.margin_used || 0);
                   
@@ -314,19 +314,20 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
           // Calculate running hours for this pair
           // Find earliest trade or position date
           const pairOpenPositions = openPositions?.filter((p: any) => (p.symbol || 'UNKNOWN') === pair.symbol) || [];
-          const pairPositionsWithPrices = positionsWithPrices.filter((p: any) => (p.symbol || 'UNKNOWN') === pair.symbol);
           
-          let earliestDate: Date | null = null;
-          let latestDate: Date | null = null;
+          let earliestTimestamp: number | null = null;
+          let latestTimestamp: number | null = null;
           
           // Check trades
           if (pairTrades.length > 0) {
             const tradeDates = pairTrades.map((t: any) => new Date(t.executed_at || t.closed_at || t.created_at)).filter(d => !isNaN(d.getTime()));
             if (tradeDates.length > 0) {
-              const earliestTrade = new Date(Math.min(...tradeDates.map(d => d.getTime())));
-              const latestTrade = new Date(Math.max(...tradeDates.map(d => d.getTime())));
-              if (!earliestDate || earliestTrade < earliestDate) earliestDate = earliestTrade;
-              if (!latestDate || latestTrade > latestDate) latestDate = latestTrade;
+              const earliestTradeTime = Math.min(...tradeDates.map(d => d.getTime()));
+              const latestTradeTime = Math.max(...tradeDates.map(d => d.getTime()));
+              const earliestCurrent = earliestTimestamp ?? Number.POSITIVE_INFINITY;
+              const latestCurrent = latestTimestamp ?? Number.NEGATIVE_INFINITY;
+              if (earliestTradeTime < earliestCurrent) earliestTimestamp = earliestTradeTime;
+              if (latestTradeTime > latestCurrent) latestTimestamp = latestTradeTime;
             }
           }
           
@@ -334,17 +335,18 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
           if (pairOpenPositions.length > 0) {
             const positionDates = pairOpenPositions.map((p: any) => new Date(p.opened_at || p.created_at)).filter(d => !isNaN(d.getTime()));
             if (positionDates.length > 0) {
-              const earliestPosition = new Date(Math.min(...positionDates.map(d => d.getTime())));
-              if (!earliestDate || earliestPosition < earliestDate) earliestDate = earliestPosition;
+              const earliestPositionTime = Math.min(...positionDates.map(d => d.getTime()));
+              const earliestPositionCurrent = earliestTimestamp ?? Number.POSITIVE_INFINITY;
+              if (earliestPositionTime < earliestPositionCurrent) earliestTimestamp = earliestPositionTime;
               // For open positions, use current time as latest
-              latestDate = new Date();
+              latestTimestamp = Date.now();
             }
           }
           
           // Calculate running hours
           let runningHours = 0;
-          if (earliestDate && latestDate) {
-            const diffMs = latestDate.getTime() - earliestDate.getTime();
+          if (earliestTimestamp !== null && latestTimestamp !== null) {
+            const diffMs = latestTimestamp - earliestTimestamp;
             runningHours = diffMs / (1000 * 60 * 60); // Convert to hours
           }
           
@@ -492,6 +494,50 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
     await fetchPerformance();
   };
 
+  const handleResetPerformance = async () => {
+    const confirmed = window.confirm('Resetting will clear all paper trades, performance stats, and open positions. Continue?');
+    if (!confirmed) {
+      return;
+    }
+
+    setResetting(true);
+    setLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('Not authenticated');
+      }
+
+      const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/paper-trading`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'reset_performance',
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => null);
+        throw new Error(error?.error || 'Failed to reset paper performance');
+      }
+
+      await fetchPerformance();
+      if (onReset) {
+        await onReset();
+      }
+      alert('✅ Paper trading performance reset successfully');
+    } catch (error: any) {
+      console.error('Error resetting paper performance:', error);
+      alert('Error resetting paper performance: ' + (error?.message || 'Unknown error'));
+    } finally {
+      setResetting(false);
+      setLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <Card className="p-6">
@@ -511,17 +557,28 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
     <div className="space-y-4">
       {/* Performance Overview */}
       <Card className="p-6">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">📊 Paper Trading Performance</h3>
-          <Button
-            onClick={handleRefresh}
-            variant="secondary"
-            size="sm"
-            loading={refreshing}
-          >
-            <i className="ri-refresh-line mr-2"></i>
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={handleRefresh}
+              variant="secondary"
+              size="sm"
+              loading={refreshing}
+            >
+              <i className="ri-refresh-line mr-2"></i>
+              Refresh
+            </Button>
+            <Button
+              onClick={handleResetPerformance}
+              variant="danger"
+              size="sm"
+              loading={resetting}
+            >
+              <i className="ri-history-line mr-2"></i>
+              Reset
+            </Button>
+          </div>
         </div>
 
         {/* Key Metrics Grid */}
@@ -636,11 +693,11 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
         ) : (
           <div className="space-y-3">
             {positions.map((position) => {
-              // Calculate PnL percentage
-              const pnlPercentage = position.entry_price > 0 
-                ? ((position.unrealized_pnl / parseFloat(position.margin_used || '1')) * 100)
+              const marginUsed = Number(position.margin_used ?? 0);
+              const pnlPercentage = position.entry_price > 0 && marginUsed !== 0
+                ? (position.unrealized_pnl / marginUsed) * 100
                 : 0;
-              
+
               return (
                 <div
                   key={position.id}
@@ -686,7 +743,7 @@ export default function PaperTradingPerformance({ selectedPair = '' }: PaperTrad
                     </div>
                     <div>
                       <span className="text-gray-500 dark:text-gray-400 block text-xs mb-1">Margin Used</span>
-                      <span className="font-medium text-gray-900 dark:text-white">${parseFloat(position.margin_used || '0').toFixed(2)}</span>
+                      <span className="font-medium text-gray-900 dark:text-white">${marginUsed.toFixed(2)}</span>
                     </div>
                   </div>
                   <div className="mt-2 pt-2 border-t border-gray-200 flex items-center justify-between text-xs text-gray-400">

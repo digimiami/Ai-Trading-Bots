@@ -174,6 +174,58 @@ serve(async (req) => {
       })
     }
 
+    if (action === 'reset_performance') {
+      const account = await getOrCreateAccount()
+
+      const { data: openPositions } = await supabaseClient
+        .from('paper_trading_positions')
+        .select('margin_used, status')
+        .eq('user_id', user.id)
+
+      const releasedMargin = (openPositions || [])
+        .filter((position: any) => (position.status || 'open') === 'open')
+        .reduce((sum: number, position: any) => {
+          const margin = Number(position.margin_used) || 0
+          return sum + margin
+        }, 0)
+
+      const { error: tradesDeleteError } = await supabaseClient
+        .from('paper_trading_trades')
+        .delete()
+        .eq('user_id', user.id)
+
+      if (tradesDeleteError) throw tradesDeleteError
+
+      const { error: positionsDeleteError } = await supabaseClient
+        .from('paper_trading_positions')
+        .delete()
+        .eq('user_id', user.id)
+
+      if (positionsDeleteError) throw positionsDeleteError
+
+      const updates: Record<string, any> = {
+        updated_at: new Date().toISOString()
+      }
+
+      if (releasedMargin > 0) {
+        const currentBalance = Number(account.balance) || 0
+        updates.balance = currentBalance + releasedMargin
+      }
+
+      const { data, error } = await supabaseClient
+        .from('paper_trading_accounts')
+        .update(updates)
+        .eq('id', account.id)
+        .select()
+        .single()
+
+      if (error) throw error
+
+      return new Response(JSON.stringify({ success: true, account: data }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
     if (action === 'reset_balance') {
       const account = await getOrCreateAccount()
 

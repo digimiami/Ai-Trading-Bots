@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import Header from '../../components/feature/Header';
 import Navigation from '../../components/feature/Navigation';
@@ -12,31 +12,48 @@ export default function Performance() {
   const [selectedPair, setSelectedPair] = useState<string>('');
   const [availablePairs, setAvailablePairs] = useState<string[]>([]);
 
-  // Fetch available pairs from open positions
-  useEffect(() => {
-    const fetchPairs = async () => {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) return;
-
-        // Get all unique symbols from open positions
-        const { data: positions } = await supabase
-          .from('paper_trading_positions')
-          .select('symbol')
-          .eq('user_id', user.id)
-          .eq('status', 'open');
-
-        if (positions && positions.length > 0) {
-          const uniquePairs = [...new Set(positions.map(p => p.symbol))].sort();
-          setAvailablePairs(uniquePairs);
-        }
-      } catch (error) {
-        console.error('Error fetching pairs:', error);
+  const fetchPairs = useCallback(async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setAvailablePairs([]);
+        setSelectedPair('');
+        return;
       }
-    };
 
-    fetchPairs();
+      const { data: positions } = await supabase
+        .from('paper_trading_positions')
+        .select('symbol')
+        .eq('user_id', user.id)
+        .eq('status', 'open');
+
+      const uniquePairs = positions && positions.length > 0
+        ? [...new Set(positions.map(p => p.symbol))].sort()
+        : [];
+
+      setAvailablePairs(uniquePairs);
+      setSelectedPair(prev => {
+        if (uniquePairs.length === 0) {
+          return '';
+        }
+        if (prev === 'all') {
+          return 'all';
+        }
+        if (prev && uniquePairs.includes(prev)) {
+          return prev;
+        }
+        return '';
+      });
+    } catch (error) {
+      console.error('Error fetching pairs:', error);
+      setAvailablePairs([]);
+      setSelectedPair('');
+    }
   }, []);
+
+  useEffect(() => {
+    fetchPairs();
+  }, [fetchPairs]);
 
   // Calculate date range based on selected period - memoized to prevent infinite loops
   const dateRange = useMemo(() => {
@@ -168,7 +185,10 @@ export default function Performance() {
 
         {/* Paper Trading Performance - Show when a pair is selected or "all" is selected */}
         {selectedPair ? (
-          <PaperTradingPerformance selectedPair={selectedPair === 'all' ? '' : selectedPair} />
+          <PaperTradingPerformance
+            selectedPair={selectedPair === 'all' ? '' : selectedPair}
+            onReset={fetchPairs}
+          />
         ) : availablePairs.length > 0 ? (
           <Card className="p-6 text-center">
             <i className="ri-search-line text-4xl text-gray-300 dark:text-gray-600 mb-4"></i>
@@ -180,7 +200,10 @@ export default function Performance() {
             </p>
           </Card>
         ) : (
-          <PaperTradingPerformance selectedPair={selectedPair} />
+          <PaperTradingPerformance
+            selectedPair={selectedPair}
+            onReset={fetchPairs}
+          />
         )}
 
         {/* Asset Type Tabs */}
