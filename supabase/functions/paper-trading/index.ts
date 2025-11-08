@@ -19,11 +19,19 @@ serve(async (req) => {
   }
 
   try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+
     const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      supabaseUrl,
+      supabaseAnonKey,
       { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
     )
+
+    const supabaseAdminClient = supabaseServiceKey
+      ? createClient(supabaseUrl, supabaseServiceKey, { auth: { persistSession: false } })
+      : supabaseClient
 
     const { data: { user } } = await supabaseClient.auth.getUser()
     if (!user) {
@@ -177,26 +185,38 @@ serve(async (req) => {
     if (action === 'reset_performance') {
       const account = await getOrCreateAccount()
 
-      const { data: openPositions } = await supabaseClient
+      const { data: positions } = await supabaseClient
         .from('paper_trading_positions')
-        .select('margin_used, status')
+        .select('id, margin_used, status')
         .eq('user_id', user.id)
 
-      const releasedMargin = (openPositions || [])
+      const releasedMargin = (positions || [])
         .filter((position: any) => (position.status || 'open') === 'open')
         .reduce((sum: number, position: any) => {
           const margin = Number(position.margin_used) || 0
           return sum + margin
         }, 0)
 
-      const { error: tradesDeleteError } = await supabaseClient
+      const positionIds = (positions || []).map((position: any) => position.id).filter(Boolean)
+
+      if (positionIds.length > 0) {
+        const { error: tradesByPositionDeleteError } = await supabaseAdminClient
+          .from('paper_trading_trades')
+          .delete()
+          .in('position_id', positionIds)
+          .eq('user_id', user.id)
+
+        if (tradesByPositionDeleteError) throw tradesByPositionDeleteError
+      }
+
+      const { error: tradesDeleteError } = await supabaseAdminClient
         .from('paper_trading_trades')
         .delete()
         .eq('user_id', user.id)
 
       if (tradesDeleteError) throw tradesDeleteError
 
-      const { error: positionsDeleteError } = await supabaseClient
+      const { error: positionsDeleteError } = await supabaseAdminClient
         .from('paper_trading_positions')
         .delete()
         .eq('user_id', user.id)
