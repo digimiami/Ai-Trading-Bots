@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -5,6 +6,24 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+}
+
+const DEFAULT_SPOT_FEE_RATE = 0.001;      // 0.10%
+const DEFAULT_FUTURES_FEE_RATE = 0.0006;  // 0.06%
+
+function resolveFeeRate(exchange?: string, tradingType?: string): number {
+  const exch = (exchange || '').toLowerCase();
+  const type = (tradingType || '').toLowerCase();
+
+  if (type === 'futures' || type === 'linear' || type === 'perpetual') {
+    if (exch === 'okx') return 0.0005;
+    if (exch === 'binance') return 0.0007;
+    return DEFAULT_FUTURES_FEE_RATE;
+  }
+
+  if (exch === 'okx') return 0.0008;
+  if (exch === 'binance') return 0.001;
+  return DEFAULT_SPOT_FEE_RATE;
 }
 
 // Time synchronization utilities with multiple fallback methods
@@ -1283,6 +1302,10 @@ class BotExecutor {
       console.log('📝 Recording trade in database...');
       console.log('Order result:', JSON.stringify(orderResult, null, 2));
       
+      const feeRate = resolveFeeRate(bot.exchange, bot.tradingType || bot.trading_type || 'spot');
+      const orderNotional = tradeAmount * normalizedPrice;
+      const estimatedFees = orderNotional * feeRate * 2; // entry + exit estimate
+      
       // Record trade - using actual database schema columns
       const { data: trade, error } = await this.supabaseClient
         .from('trades')
@@ -1297,7 +1320,7 @@ class BotExecutor {
           status: orderResult.status || 'filled',
           exchange_order_id: orderResult.orderId || orderResult.exchangeResponse?.result?.orderId || null,
           executed_at: TimeSync.getCurrentTimeISO(),
-          fee: 0,
+          fee: estimatedFees,
           pnl: 0
         })
         .select()
@@ -3574,7 +3597,7 @@ class PaperTradingExecutor {
     this.supabaseClient = supabaseClient;
     this.user = user;
   }
-  
+
   // Get or create paper trading account
   private async getPaperAccount(): Promise<any> {
     try {
@@ -3753,7 +3776,7 @@ class PaperTradingExecutor {
           quantity: quantity,
           leverage: leverage,
           margin_used: marginRequired,
-          fees: totalOrderValue * 0.001, // 0.1% fee
+          fees: totalOrderValue * resolveFeeRate(bot.exchange, bot.tradingType || bot.trading_type || 'futures'),
           status: 'filled',
           executed_at: TimeSync.getCurrentTimeISO()
         })
@@ -3887,9 +3910,13 @@ class PaperTradingExecutor {
             finalPnL = (parseFloat(position.entry_price) - exitPrice) * parseFloat(position.quantity) * position.leverage;
           }
           
-          // Deduct fees
-          const fees = parseFloat(position.margin_used) * 0.001;
-          finalPnL -= fees;
+        // Deduct fees (entry + exit)
+        const feeRate = resolveFeeRate(position.exchange, position.trading_type);
+        const quantity = parseFloat(position.quantity);
+        const entryNotional = quantity * parseFloat(position.entry_price);
+        const exitNotional = quantity * exitPrice;
+        const fees = (entryNotional + exitNotional) * feeRate;
+        finalPnL -= fees;
           
           // Return margin + PnL to account
           const account = await this.getPaperAccount();
