@@ -120,6 +120,7 @@ export interface AdvancedStrategyConfig {
   bb_period?: number;
   bb_stddev?: number;
   atr_period?: number;
+  atr_tp_multiplier?: number;
   
   // ML/AI Settings
   use_ml_prediction?: boolean;

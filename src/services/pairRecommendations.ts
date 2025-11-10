@@ -345,6 +345,8 @@ class PairRecommendationsService {
       rsi_period: 14,
       rsi_oversold: 30,
       rsi_overbought: 70,
+      atr_period: 14,
+      atr_tp_multiplier: 3,
       
       // ML/AI Settings
       use_ml_prediction: true,

@@ -35,6 +35,8 @@ const VALIDATION_RANGES: Record<string, ValidationRange> = {
   bb_width_max: { min: 0, max: 0.2 },
   max_spread_bps: { min: 0, max: 100 },
   cooldown_bars: { min: 1, max: 100 },
+  atr_period: { min: 1, max: 200 },
+  atr_tp_multiplier: { min: 0.5, max: 10 },
 };
 
 const VALID_ENUMS: Record<string, string[]> = {

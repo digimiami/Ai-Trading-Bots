@@ -126,6 +126,8 @@ export default function CreateBotPage() {
     rsi_period: 14,
     rsi_oversold: 30,
     rsi_overbought: 70,
+    atr_period: 14,
+    atr_tp_multiplier: 3,
     
     // ML/AI Settings
     use_ml_prediction: true,
@@ -1011,6 +1013,147 @@ All settings have been applied to your bot configuration.`;
                           step="1"
                         />
                         <p className="text-xs text-gray-500">Minimum ADX for trend confirmation</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Indicator Settings */}
+                  <div className="border-l-4 border-indigo-500 pl-4">
+                    <h3 className="text-md font-semibold text-gray-800 mb-3">📐 Indicator Settings</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          EMA Length
+                        </label>
+                        <input
+                          type="number"
+                          value={advancedConfig.ema_fast_period ?? 50}
+                          onChange={(e) =>
+                            setAdvancedConfig(prev => ({
+                              ...prev,
+                              ema_fast_period: parseInt(e.target.value) || 50
+                            }))
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          min={1}
+                          max={500}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          ATR Length
+                        </label>
+                        <input
+                          type="number"
+                          value={advancedConfig.atr_period ?? 14}
+                          onChange={(e) =>
+                            setAdvancedConfig(prev => ({
+                              ...prev,
+                              atr_period: parseInt(e.target.value) || 14
+                            }))
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          min={1}
+                          max={200}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          ATR TP Multiplier
+                        </label>
+                        <input
+                          type="number"
+                          value={advancedConfig.atr_tp_multiplier ?? 3}
+                          onChange={(e) =>
+                            setAdvancedConfig(prev => ({
+                              ...prev,
+                              atr_tp_multiplier: parseFloat(e.target.value) || 3
+                            }))
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          min={0.5}
+                          max={10}
+                          step={0.1}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          ATR SL Multiplier
+                        </label>
+                        <input
+                          type="number"
+                          value={advancedConfig.sl_atr_mult}
+                          onChange={(e) =>
+                            setAdvancedConfig(prev => ({
+                              ...prev,
+                              sl_atr_mult: parseFloat(e.target.value) || prev.sl_atr_mult
+                            }))
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          min={0.5}
+                          max={5}
+                          step={0.1}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          RSI Length
+                        </label>
+                        <input
+                          type="number"
+                          value={advancedConfig.rsi_period ?? 14}
+                          onChange={(e) =>
+                            setAdvancedConfig(prev => ({
+                              ...prev,
+                              rsi_period: parseInt(e.target.value) || 14
+                            }))
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          min={5}
+                          max={50}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          RSI Overbought
+                        </label>
+                        <input
+                          type="number"
+                          value={advancedConfig.rsi_overbought ?? 70}
+                          onChange={(e) =>
+                            setAdvancedConfig(prev => ({
+                              ...prev,
+                              rsi_overbought: parseInt(e.target.value) || 70
+                            }))
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          min={50}
+                          max={100}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          RSI Oversold
+                        </label>
+                        <input
+                          type="number"
+                          value={advancedConfig.rsi_oversold ?? 30}
+                          onChange={(e) =>
+                            setAdvancedConfig(prev => ({
+                              ...prev,
+                              rsi_oversold: parseInt(e.target.value) || 30
+                            }))
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          min={0}
+                          max={50}
+                        />
                       </div>
                     </div>
                   </div>

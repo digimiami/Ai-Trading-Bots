@@ -83,6 +83,8 @@ export default function EditBotPage() {
     rsi_period: 14,
     rsi_oversold: 30,
     rsi_overbought: 70,
+    atr_period: 14,
+    atr_tp_multiplier: 3,
     
     // ML/AI Settings
     use_ml_prediction: true,
@@ -123,7 +125,17 @@ export default function EditBotPage() {
         
         // Load advanced config from strategyConfig
         if (bot.strategyConfig) {
-          setAdvancedConfig(bot.strategyConfig);
+          setAdvancedConfig(prev => ({
+            ...prev,
+            ...bot.strategyConfig,
+            atr_period: bot.strategyConfig.atr_period ?? prev.atr_period ?? 14,
+            atr_tp_multiplier: bot.strategyConfig.atr_tp_multiplier ?? prev.atr_tp_multiplier ?? 3,
+            ema_fast_period: bot.strategyConfig.ema_fast_period ?? prev.ema_fast_period,
+            rsi_period: bot.strategyConfig.rsi_period ?? prev.rsi_period ?? 14,
+            rsi_overbought: bot.strategyConfig.rsi_overbought ?? prev.rsi_overbought ?? 70,
+            rsi_oversold: bot.strategyConfig.rsi_oversold ?? prev.rsi_oversold ?? 30,
+            sl_atr_mult: bot.strategyConfig.sl_atr_mult ?? prev.sl_atr_mult
+          }));
         }
         
         console.log('Edit bot: Form data set:', formData);
@@ -494,6 +506,150 @@ export default function EditBotPage() {
                       Select hours when bot is allowed to trade (stored in UTC, displayed in EST)
                     </p>
                   </div>
+
+                {/* Indicator Settings */}
+                <div className="border border-indigo-200 rounded-lg p-4 bg-indigo-50">
+                  <h3 className="text-md font-semibold text-indigo-900 mb-3 flex items-center gap-2">
+                    <i className="ri-sliders-line"></i>
+                    Indicator Settings
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        EMA Length
+                      </label>
+                      <input
+                        type="number"
+                        value={advancedConfig.ema_fast_period ?? 50}
+                        onChange={(e) =>
+                          setAdvancedConfig(prev => ({
+                            ...prev,
+                            ema_fast_period: parseInt(e.target.value) || 50
+                          }))
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        min={1}
+                        max={500}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        ATR Length
+                      </label>
+                      <input
+                        type="number"
+                        value={advancedConfig.atr_period ?? 14}
+                        onChange={(e) =>
+                          setAdvancedConfig(prev => ({
+                            ...prev,
+                            atr_period: parseInt(e.target.value) || 14
+                          }))
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        min={1}
+                        max={200}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        ATR TP Multiplier
+                      </label>
+                      <input
+                        type="number"
+                        value={advancedConfig.atr_tp_multiplier ?? 3}
+                        onChange={(e) =>
+                          setAdvancedConfig(prev => ({
+                            ...prev,
+                            atr_tp_multiplier: parseFloat(e.target.value) || 3
+                          }))
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        min={0.5}
+                        max={10}
+                        step={0.1}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        ATR SL Multiplier
+                      </label>
+                      <input
+                        type="number"
+                        value={advancedConfig.sl_atr_mult}
+                        onChange={(e) =>
+                          setAdvancedConfig(prev => ({
+                            ...prev,
+                            sl_atr_mult: parseFloat(e.target.value) || prev.sl_atr_mult
+                          }))
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        min={0.5}
+                        max={5}
+                        step={0.1}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        RSI Length
+                      </label>
+                      <input
+                        type="number"
+                        value={advancedConfig.rsi_period ?? 14}
+                        onChange={(e) =>
+                          setAdvancedConfig(prev => ({
+                            ...prev,
+                            rsi_period: parseInt(e.target.value) || 14
+                          }))
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        min={5}
+                        max={50}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        RSI Overbought
+                      </label>
+                      <input
+                        type="number"
+                        value={advancedConfig.rsi_overbought ?? 70}
+                        onChange={(e) =>
+                          setAdvancedConfig(prev => ({
+                            ...prev,
+                            rsi_overbought: parseInt(e.target.value) || 70
+                          }))
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        min={50}
+                        max={100}
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        RSI Oversold
+                      </label>
+                      <input
+                        type="number"
+                        value={advancedConfig.rsi_oversold ?? 30}
+                        onChange={(e) =>
+                          setAdvancedConfig(prev => ({
+                            ...prev,
+                            rsi_oversold: parseInt(e.target.value) || 30
+                          }))
+                        }
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        min={0}
+                        max={50}
+                      />
+                    </div>
+                  </div>
+                </div>
                 </div>
 
                 {/* Strategy Settings */}

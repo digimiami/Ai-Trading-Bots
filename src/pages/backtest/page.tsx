@@ -91,6 +91,8 @@ export default function BacktestPage() {
     rsi_period: 14,
     rsi_oversold: 30,
     rsi_overbought: 70,
+  atr_period: 14,
+  atr_tp_multiplier: 3,
     use_ml_prediction: true,
     ml_confidence_threshold: 0.6,
     ml_min_samples: 100

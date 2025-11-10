@@ -67,6 +67,7 @@ export const AI_COMBO_ADVANCED: AdvancedStrategyConfig = {
   bb_period: 20,
   bb_stddev: 2,
   atr_period: 14,
+  atr_tp_multiplier: 3,
   use_ml_prediction: true,
   ml_confidence_threshold: 0.65,
   ml_min_samples: 120
