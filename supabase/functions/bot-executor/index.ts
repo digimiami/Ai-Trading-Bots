@@ -389,6 +389,193 @@ function normalizeOrderParams(qty: number, price: number, c: Constraints) {
   return { qty: q, price: p };
 }
 
+type QuantityConstraint = { min: number; max: number };
+type SymbolSteps = { stepSize: number; tickSize: number };
+
+const LOW_LIQUIDITY_SYMBOLS = ['PEPE', 'SHIB', 'FLOKI', 'BONK', 'SATS', 'MEME'];
+
+function isLowLiquiditySymbol(symbol: string): boolean {
+  const upper = symbol?.toUpperCase() || '';
+  return LOW_LIQUIDITY_SYMBOLS.some(token => upper.includes(token)) || upper.startsWith('1000') || upper.startsWith('10000');
+}
+
+function getQuantityConstraints(symbol: string): QuantityConstraint {
+  const constraints: Record<string, QuantityConstraint> = {
+    'BTCUSDT': { min: 0.001, max: 10 },
+    'ETHUSDT': { min: 0.01, max: 100 },
+    'XRPUSDT': { min: 10, max: 1000 },
+    'ADAUSDT': { min: 10, max: 10000 },
+    'DOTUSDT': { min: 0.1, max: 1000 },
+    'UNIUSDT': { min: 0.1, max: 1000 },
+    'AVAXUSDT': { min: 0.1, max: 1000 },
+    'SOLUSDT': { min: 0.1, max: 1000 },
+    'BNBUSDT': { min: 0.01, max: 100 },
+    'MATICUSDT': { min: 10, max: 10000 },
+    'LINKUSDT': { min: 0.1, max: 1000 },
+    'LTCUSDT': { min: 0.01, max: 100 },
+    'PEPEUSDT': { min: 1000, max: 1000000 },
+    'DOGEUSDT': { min: 1, max: 10000 },
+    'SHIBUSDT': { min: 1000, max: 1000000 },
+    'HBARUSDT': { min: 1, max: 10000 }
+  };
+
+  if (isLowLiquiditySymbol(symbol)) {
+    return { min: 1000, max: 1000000 };
+  }
+
+  return constraints[symbol] || { min: 0.001, max: 100 };
+}
+
+function getSymbolSteps(symbol: string): SymbolSteps {
+  const steps: Record<string, SymbolSteps> = {
+    'BTCUSDT': { stepSize: 0.001, tickSize: 0.5 },
+    'ETHUSDT': { stepSize: 0.01, tickSize: 0.05 },
+    'SOLUSDT': { stepSize: 0.1, tickSize: 0.01 },
+    'ADAUSDT': { stepSize: 1, tickSize: 0.0001 },
+    'UNIUSDT': { stepSize: 0.1, tickSize: 0.001 },
+    'LINKUSDT': { stepSize: 0.1, tickSize: 0.01 },
+    'AVAXUSDT': { stepSize: 0.1, tickSize: 0.01 },
+    'XRPUSDT': { stepSize: 1, tickSize: 0.0001 },
+    'DOTUSDT': { stepSize: 0.1, tickSize: 0.01 },
+    'BNBUSDT': { stepSize: 0.01, tickSize: 0.01 },
+    'MATICUSDT': { stepSize: 1, tickSize: 0.0001 },
+    'HBARUSDT': { stepSize: 1, tickSize: 0.0001 },
+    'PEPEUSDT': { stepSize: 1000, tickSize: 0.00000001 },
+    'DOGEUSDT': { stepSize: 1, tickSize: 0.0001 },
+    'SHIBUSDT': { stepSize: 1000, tickSize: 0.00000001 }
+  };
+
+  if (isLowLiquiditySymbol(symbol)) {
+    return { stepSize: 1000, tickSize: 0.00000001 };
+  }
+
+  return steps[symbol] || { stepSize: 0.001, tickSize: 0.01 };
+}
+
+function getRiskMultiplier(bot: any): number {
+  const risk = bot.risk_level || bot.riskLevel || 'medium';
+  if (risk === 'high') return 2;
+  if (risk === 'medium') return 1.5;
+  return 1;
+}
+
+type TradeSizingResult = {
+  quantity: number;
+  rawQuantity: number;
+  totalAmount: number;
+  effectiveBaseAmount: number;
+  minTradeAmount: number;
+  baseAmount: number;
+  leverageMultiplier: number;
+  riskMultiplier: number;
+  constraints: QuantityConstraint;
+  steps: SymbolSteps;
+  isFutures: boolean;
+};
+
+function calculateTradeSizing(bot: any, price: number): TradeSizingResult {
+  const leverageMultiplier = bot.leverage || 1;
+  const riskMultiplier = getRiskMultiplier(bot);
+  const tradingType = bot.tradingType || bot.trading_type;
+  const isFutures = (tradingType === 'futures' || tradingType === 'linear');
+
+  const baseAmount = bot.trade_amount || bot.tradeAmount || 100;
+  const minTradeAmount = isFutures ? 50 : 10;
+  const effectiveBaseAmount = Math.max(minTradeAmount, baseAmount);
+
+  const totalAmount = effectiveBaseAmount * leverageMultiplier * riskMultiplier;
+  const rawQuantity = totalAmount / price;
+
+  const quantityConstraints = getQuantityConstraints(bot.symbol);
+  const steps = getSymbolSteps(bot.symbol);
+
+  let clampedQuantity = Math.max(quantityConstraints.min, Math.min(quantityConstraints.max, rawQuantity));
+  if (steps.stepSize > 0) {
+    clampedQuantity = Math.floor(clampedQuantity / steps.stepSize) * steps.stepSize;
+  }
+
+  if (clampedQuantity < quantityConstraints.min) {
+    throw new Error(`Calculated quantity ${clampedQuantity} is below minimum ${quantityConstraints.min} after step rounding for ${bot.symbol}`);
+  }
+
+  return {
+    quantity: clampedQuantity,
+    rawQuantity,
+    totalAmount,
+    effectiveBaseAmount,
+    minTradeAmount,
+    baseAmount,
+    leverageMultiplier,
+    riskMultiplier,
+    constraints: quantityConstraints,
+    steps,
+    isFutures
+  };
+}
+
+function calculateTradeQuantity(bot: any, price: number): number {
+  return calculateTradeSizing(bot, price).quantity;
+}
+
+type SlippageOptions = {
+  isExit?: boolean;
+  severity?: number;
+};
+
+function estimateSlippageBps(symbol: string, tradeValue: number, options?: SlippageOptions): number {
+  const upperSymbol = symbol?.toUpperCase() || '';
+  let baseBps = 3; // 0.03% for majors
+
+  if (upperSymbol.includes('BTC') || upperSymbol.includes('ETH')) {
+    baseBps = 2.5;
+  } else if (upperSymbol.includes('SOL') || upperSymbol.includes('BNB') || upperSymbol.includes('XRP')) {
+    baseBps = 4;
+  } else if (isLowLiquiditySymbol(upperSymbol)) {
+    baseBps = 12;
+  } else {
+    baseBps = 6;
+  }
+
+  if (tradeValue > 2000) {
+    baseBps *= 1.35;
+  }
+  if (tradeValue > 5000) {
+    baseBps *= 1.75;
+  }
+
+  const randomMultiplier = 0.6 + Math.random() * 0.9; // 0.6 - 1.5
+  let slippageBps = baseBps * randomMultiplier;
+
+  if (options?.isExit) {
+    slippageBps *= 1.1;
+  }
+  if (options?.severity) {
+    slippageBps *= options.severity;
+  }
+
+  return Math.max(0.5, slippageBps); // Ensure non-zero slippage
+}
+
+function applySlippage(price: number, side: string, symbol: string, tradeValue: number, options?: SlippageOptions): { price: number; slippageBps: number } {
+  if (!Number.isFinite(price) || price <= 0) {
+    return { price, slippageBps: 0 };
+  }
+
+  const normalizedSide = (side || '').toLowerCase();
+  const effectiveSide = normalizedSide === 'sell' || normalizedSide === 'short' ? 'sell' : 'buy';
+
+  const slippageBps = estimateSlippageBps(symbol, tradeValue, options);
+  const slipDecimal = slippageBps / 10000; // convert bps to decimal
+
+  const direction = effectiveSide === 'buy' ? 1 : -1;
+  const adjustedPrice = price * (1 + direction * slipDecimal);
+
+  return {
+    price: Math.max(0, adjustedPrice),
+    slippageBps
+  };
+}
+
 // Market data fetcher
 class MarketDataFetcher {
   // Helper function to normalize symbol formats (e.g., 1000PEPEUSDT <-> PEPEUSDT, 10000SATSUSDT <-> SATSUSDT)
@@ -1279,8 +1466,8 @@ class BotExecutor {
       }
       
       // Normalize qty/price to reduce exchange rejections
-      const basicConstraints = this.getQuantityConstraints(bot.symbol);
-      const { stepSize, tickSize } = this.getSymbolSteps(bot.symbol);
+      const basicConstraints = getQuantityConstraints(bot.symbol);
+      const { stepSize, tickSize } = getSymbolSteps(bot.symbol);
       const normalized = normalizeOrderParams(
         tradeAmountRaw,
         currentPrice,
@@ -1497,8 +1684,8 @@ class BotExecutor {
       const bybitCategory = categoryMap[tradingType] || 'spot';
       
       // Round quantity to Bybit lot step and clamp to min/max
-      const { stepSize } = this.getSymbolSteps(symbol);
-      const constraints = this.getQuantityConstraints(symbol);
+      const { stepSize } = getSymbolSteps(symbol);
+      const constraints = getQuantityConstraints(symbol);
       let qty = Math.max(constraints.min, Math.min(constraints.max, amount));
       if (stepSize > 0) {
         // Use more precise rounding to avoid floating point errors
@@ -1628,7 +1815,7 @@ class BotExecutor {
         
         // Handle specific error codes with better messages
         if (data.retCode === 10001) {
-          const constraints = this.getQuantityConstraints(symbol);
+          const constraints = getQuantityConstraints(symbol);
           console.error(`❌ Bybit API error for ${symbol}:`, data.retMsg);
           
           // Check if it's a symbol validation error
@@ -2167,7 +2354,7 @@ class BotExecutor {
       let stopLossPrice: string;
       let takeProfitPrice: string;
       
-      const { tickSize } = this.getSymbolSteps(symbol);
+      const { tickSize } = getSymbolSteps(symbol);
       // Calculate proper decimal places for tick size
       let tickDecimals = 0;
       if (tickSize < 1) {
@@ -2558,7 +2745,7 @@ class BotExecutor {
               const closeRecvWindow = '5000';
               
               // Format quantity according to step size
-              const { stepSize } = this.getSymbolSteps(symbol);
+              const { stepSize } = getSymbolSteps(symbol);
               let formattedCloseSize = closePositionSize;
               if (stepSize > 0) {
                 const factor = 1 / stepSize;
@@ -2820,43 +3007,16 @@ class BotExecutor {
   }
   
   private calculateTradeAmount(bot: any, price: number): number {
-    // Position sizing based on bot's configured trade amount, leverage, and risk level
-    const baseAmount = bot.trade_amount || 100; // Use bot's trade amount or default to $100
-    const leverageMultiplier = bot.leverage || 1;
-    const riskMultiplier = bot.risk_level === 'high' ? 2 : bot.risk_level === 'medium' ? 1.5 : 1;
-    
-    // Ensure minimum trade amount for futures trading
-    const minTradeAmount = bot.tradingType === 'futures' ? 50 : 10; // Minimum $50 for futures, $10 for spot
-    const effectiveBaseAmount = Math.max(minTradeAmount, baseAmount);
-    
-    // Debug: Check if we're actually using the minimum
-    if (baseAmount < minTradeAmount) {
-      console.log(`⚠️ Trade amount $${baseAmount} below minimum $${minTradeAmount} for ${bot.tradingType} trading. Using $${effectiveBaseAmount}.`);
+    const sizing = calculateTradeSizing(bot, price);
+
+    if (sizing.baseAmount < sizing.minTradeAmount) {
+      console.log(`⚠️ Trade amount $${sizing.baseAmount} below minimum $${sizing.minTradeAmount} for ${(bot.tradingType || bot.trading_type) || 'spot'} trading. Using $${sizing.effectiveBaseAmount}.`);
     }
-    
-    const totalAmount = effectiveBaseAmount * leverageMultiplier * riskMultiplier;
-    console.log(`💰 Trade calculation: Base=$${effectiveBaseAmount} (min=$${minTradeAmount}), Leverage=${leverageMultiplier}x, Risk=${bot.risk_level}(${riskMultiplier}x) = Total=$${totalAmount}`);
-    
-    const calculatedQuantity = totalAmount / price;
-    
-    // Apply min/max constraints first
-    const constraints = this.getQuantityConstraints(bot.symbol);
-    let clampedQuantity = Math.max(constraints.min, Math.min(constraints.max, calculatedQuantity));
-    
-    // Apply exchange step size rounding (floor to nearest step)
-    const { stepSize } = this.getSymbolSteps(bot.symbol);
-    if (stepSize > 0) {
-      clampedQuantity = Math.floor(clampedQuantity / stepSize) * stepSize;
-    }
-    
-    console.log(`📏 Quantity constraints for ${bot.symbol}: min=${constraints.min}, max=${constraints.max}, calculated=${calculatedQuantity.toFixed(6)}, final=${clampedQuantity.toFixed(6)}`);
-    
-    // Ensure still above min after rounding; if not, signal to caller
-    if (clampedQuantity < constraints.min) {
-      throw new Error(`Calculated quantity ${clampedQuantity} is below minimum ${constraints.min} after step rounding for ${bot.symbol}`);
-    }
-    
-    return clampedQuantity;
+
+    console.log(`💰 Trade calculation: Base=$${sizing.effectiveBaseAmount} (min=$${sizing.minTradeAmount}), Leverage=${sizing.leverageMultiplier}x, Risk=${bot.risk_level || bot.riskLevel || 'medium'}(${sizing.riskMultiplier}x) = Total=$${sizing.totalAmount}`);
+    console.log(`📏 Quantity constraints for ${bot.symbol}: min=${sizing.constraints.min}, max=${sizing.constraints.max}, calculated=${sizing.rawQuantity.toFixed(6)}, final=${sizing.quantity.toFixed(6)}`);
+
+    return sizing.quantity;
   }
 
   private getMinimumOrderValue(symbol: string, category: string): number {
@@ -2894,67 +3054,6 @@ class BotExecutor {
     return isFutures ? 5 : 1; // $5 for futures, $1 for spot
   }
 
-  private getQuantityConstraints(symbol: string): { min: number, max: number } {
-    const constraints: { [key: string]: { min: number, max: number } } = {
-      'BTCUSDT': { min: 0.001, max: 10 },
-      'ETHUSDT': { min: 0.01, max: 100 },
-      'XRPUSDT': { min: 10, max: 1000 }, // Reduced max from 10000 to 1000 for Bybit compliance
-      'ADAUSDT': { min: 10, max: 10000 }, // Increased min from 1 to 10
-      'DOTUSDT': { min: 0.1, max: 1000 },
-      'UNIUSDT': { min: 0.1, max: 1000 },
-      'AVAXUSDT': { min: 0.1, max: 1000 },
-      'SOLUSDT': { min: 0.1, max: 1000 },
-      'BNBUSDT': { min: 0.01, max: 100 },
-      'MATICUSDT': { min: 10, max: 10000 }, // Increased min from 1 to 10
-      'LINKUSDT': { min: 0.1, max: 1000 },
-      'LTCUSDT': { min: 0.01, max: 100 },
-      // Meme coins and low-value tokens - typically need larger quantities
-      'PEPEUSDT': { min: 1000, max: 1000000 }, // PEPE tokens are very low value
-      'DOGEUSDT': { min: 1, max: 10000 },
-      'SHIBUSDT': { min: 1000, max: 1000000 }
-    };
-    
-    // Default constraints for unknown symbols
-    // For low-value tokens, use larger min/max
-    const isLowValueToken = symbol.includes('PEPE') || symbol.includes('SHIB') || symbol.includes('FLOKI') || symbol.includes('BONK');
-    if (isLowValueToken) {
-      return { min: 1000, max: 1000000 };
-    }
-    
-    return constraints[symbol] || { min: 0.001, max: 100 };
-  }
-
-  private getSymbolSteps(symbol: string): { stepSize: number, tickSize: number } {
-    // Basic step/tick size defaults per common symbols (align with Bybit filters)
-    const steps: { [key: string]: { stepSize: number, tickSize: number } } = {
-      'BTCUSDT': { stepSize: 0.001, tickSize: 0.5 },
-      'ETHUSDT': { stepSize: 0.01,  tickSize: 0.05 },
-      'SOLUSDT': { stepSize: 0.1,   tickSize: 0.01 }, // Updated to match Bybit linear futures qtyStep
-      'ADAUSDT': { stepSize: 1,     tickSize: 0.0001 },
-      'UNIUSDT': { stepSize: 0.1,   tickSize: 0.001 },
-      'LINKUSDT':{ stepSize: 0.1,   tickSize: 0.01 }, // Updated: Bybit requires 0.1 step size for LINKUSDT
-      'AVAXUSDT':{ stepSize: 0.1,   tickSize: 0.01 },
-      'XRPUSDT': { stepSize: 1,     tickSize: 0.0001 },
-      'DOTUSDT': { stepSize: 0.1,   tickSize: 0.01 },
-      'BNBUSDT': { stepSize: 0.01,  tickSize: 0.01 },
-      'MATICUSDT':{stepSize: 1,     tickSize: 0.0001 },
-      'HBARUSDT': { stepSize: 1,    tickSize: 0.0001 }, // HBAR requires whole number quantities
-      // Meme coins and low-value tokens
-      'PEPEUSDT': { stepSize: 1000, tickSize: 0.00000001 }, // Very low-value token
-      'DOGEUSDT': { stepSize: 1,    tickSize: 0.0001 },
-      'SHIBUSDT': { stepSize: 1000, tickSize: 0.00000001 }
-    };
-    
-    // Default for unknown symbols
-    // For low-value tokens, use larger stepSize
-    const isLowValueToken = symbol.includes('PEPE') || symbol.includes('SHIB') || symbol.includes('FLOKI') || symbol.includes('BONK');
-    if (isLowValueToken) {
-      return { stepSize: 1000, tickSize: 0.00000001 };
-    }
-    
-    return steps[symbol] || { stepSize: 0.001, tickSize: 0.01 };
-  }
-  
   private async updateBotPerformance(botId: string, trade: any): Promise<void> {
     // Fetch current bot stats (including trade amount for percentage calc)
     const { data: bot, error: botError } = await this.supabaseClient
@@ -3693,41 +3792,69 @@ class PaperTradingExecutor {
         throw new Error(`Invalid price for ${bot.symbol} - market data unavailable`);
       }
       
-      // Calculate trade size (same logic as real trading)
+      // Align simulated execution with live trading sizing and constraints
+      const sizing = calculateTradeSizing(bot, currentPrice);
+      const normalizedOrder = normalizeOrderParams(
+        sizing.quantity,
+        currentPrice,
+        {
+          minQty: sizing.constraints.min,
+          maxQty: sizing.constraints.max,
+          qtyStep: sizing.steps.stepSize,
+          tickSize: sizing.steps.tickSize
+        }
+      );
+      const quantity = normalizedOrder.qty;
+      const normalizedPrice = normalizedOrder.price;
+
+      if (!quantity || !isFinite(quantity) || quantity <= 0) {
+        throw new Error(`Invalid simulated quantity for ${bot.symbol}: ${quantity}`);
+      }
+
+      const intendedSide = (tradeSignal.side || '').toLowerCase();
+      const positionSide = intendedSide === 'sell' || intendedSide === 'short' ? 'short' : 'long';
+      const effectiveOrderSide = positionSide === 'short' ? 'sell' : 'buy';
+      const anticipatedValue = quantity * normalizedPrice;
+      const slippageResult = applySlippage(normalizedPrice, effectiveOrderSide, bot.symbol, anticipatedValue);
+      const slippageBps = slippageResult.slippageBps;
+      const executedPriceUnrounded = slippageResult.price;
+      const executedPrice = sizing.steps.tickSize > 0
+        ? Math.round(executedPriceUnrounded / sizing.steps.tickSize) * sizing.steps.tickSize
+        : executedPriceUnrounded;
+
       const leverage = bot.leverage || 1;
-      const riskMultiplier = bot.risk_level === 'high' ? 2 : bot.risk_level === 'medium' ? 1.5 : 1;
-      const baseAmount = bot.trade_amount || 100;
-      const totalOrderValue = baseAmount * leverage * riskMultiplier;
-      const quantity = totalOrderValue / currentPrice;
-      
-      // Calculate margin required (for futures)
-      const marginRequired = bot.tradingType === 'futures' || bot.trading_type === 'futures'
-        ? totalOrderValue / leverage 
-        : totalOrderValue;
-      
-      // Check if sufficient balance
+      const notional = executedPrice * quantity;
+      const marginRequired = sizing.isFutures ? notional / leverage : notional;
+
       if (marginRequired > availableBalance) {
         throw new Error(`Insufficient paper balance: Need $${marginRequired.toFixed(2)}, Have $${availableBalance.toFixed(2)}`);
       }
-      
-      // Determine position side
-      const side = tradeSignal.side === 'buy' || tradeSignal.side === 'long' ? 'long' : 'short';
-      
-      // Calculate SL/TP prices (use bot settings)
+
+      // Determine position side after sizing (long/short)
+      const side = positionSide;
+
+      // Calculate SL/TP using executed price and exchange tick sizes
       const stopLossPct = bot.stop_loss || bot.stopLoss || 2.0;
       const takeProfitPct = bot.take_profit || bot.takeProfit || 4.0;
-      
+      const roundToTick = (value: number) => {
+        if (!sizing.steps.tickSize || sizing.steps.tickSize <= 0) return value;
+        return Math.round(value / sizing.steps.tickSize) * sizing.steps.tickSize;
+      };
+
       let stopLossPrice: number;
       let takeProfitPrice: number;
-      
+
       if (side === 'long') {
-        stopLossPrice = currentPrice * (1 - stopLossPct / 100);
-        takeProfitPrice = currentPrice * (1 + takeProfitPct / 100);
+        stopLossPrice = roundToTick(executedPrice * (1 - stopLossPct / 100));
+        takeProfitPrice = roundToTick(executedPrice * (1 + takeProfitPct / 100));
       } else {
-        stopLossPrice = currentPrice * (1 + stopLossPct / 100);
-        takeProfitPrice = currentPrice * (1 - takeProfitPct / 100);
+        stopLossPrice = roundToTick(executedPrice * (1 + stopLossPct / 100));
+        takeProfitPrice = roundToTick(executedPrice * (1 - takeProfitPct / 100));
       }
-      
+
+      const feeRate = resolveFeeRate(bot.exchange, bot.tradingType || bot.trading_type || 'futures');
+      const estimatedEntryFees = notional * feeRate;
+
       // Deduct margin from account
       const newBalance = availableBalance - marginRequired;
       await this.supabaseClient
@@ -3748,12 +3875,12 @@ class PaperTradingExecutor {
           exchange: bot.exchange,
           trading_type: bot.tradingType || bot.trading_type || 'futures',
           side: side,
-          entry_price: currentPrice,
+          entry_price: executedPrice,
           quantity: quantity,
           leverage: leverage,
           stop_loss_price: stopLossPrice,
           take_profit_price: takeProfitPrice,
-          current_price: currentPrice,
+          current_price: executedPrice,
           margin_used: marginRequired,
           status: 'open'
         })
@@ -3772,11 +3899,11 @@ class PaperTradingExecutor {
           symbol: bot.symbol,
           exchange: bot.exchange,
           side: side,
-          entry_price: currentPrice,
+          entry_price: executedPrice,
           quantity: quantity,
           leverage: leverage,
           margin_used: marginRequired,
-          fees: totalOrderValue * resolveFeeRate(bot.exchange, bot.tradingType || bot.trading_type || 'futures'),
+          fees: estimatedEntryFees,
           status: 'filled',
           executed_at: TimeSync.getCurrentTimeISO()
         })
@@ -3810,14 +3937,19 @@ class PaperTradingExecutor {
       await botExecutor.addBotLog(bot.id, {
         level: 'info',
         category: 'trade',
-        message: `📝 [PAPER] ${side.toUpperCase()} simulated: ${quantity.toFixed(6)} ${bot.symbol} @ $${currentPrice.toFixed(2)}`,
+        message: `📝 [PAPER] ${side.toUpperCase()} simulated: ${quantity.toFixed(6)} ${bot.symbol} @ $${executedPrice.toFixed(2)}`,
         details: {
           paper_trading: true,
           side: side,
-          entry_price: currentPrice,
+          entry_price: executedPrice,
+          expected_entry_price: normalizedPrice,
+          slippage_bps: slippageBps,
           quantity: quantity,
           margin_used: marginRequired,
-          remaining_balance: newBalance
+          remaining_balance: newBalance,
+          leverage,
+          notional,
+          estimated_entry_fees: estimatedEntryFees
         }
       });
       
@@ -3846,6 +3978,8 @@ class PaperTradingExecutor {
       
       if (error || !positions || positions.length === 0) return;
       
+      const botLogger = new BotExecutor(this.supabaseClient, this.user);
+
       for (const position of positions) {
         // Get REAL current market price from MAINNET
         const currentPrice = await MarketDataFetcher.fetchPrice(
@@ -3903,20 +4037,31 @@ class PaperTradingExecutor {
           updateData.closed_at = TimeSync.getCurrentTimeISO();
           
           // Calculate final PnL
+          const quantity = parseFloat(position.quantity);
+          const symbolSteps = getSymbolSteps(position.symbol);
+          const exitOrderSide = position.side === 'long' ? 'sell' : 'buy';
+          const initialExitNotional = quantity * exitPrice;
+          const slippageSeverity = newStatus === 'stopped' ? 1.4 : 1.0;
+          const exitSlip = applySlippage(exitPrice, exitOrderSide, position.symbol, initialExitNotional, { isExit: true, severity: slippageSeverity });
+          const slippedExitPriceUnrounded = exitSlip.price;
+          const slippedExitPrice = symbolSteps.tickSize > 0
+            ? Math.round(slippedExitPriceUnrounded / symbolSteps.tickSize) * symbolSteps.tickSize
+            : slippedExitPriceUnrounded;
+          exitPrice = slippedExitPrice;
+          
           let finalPnL = 0;
           if (position.side === 'long') {
-            finalPnL = (exitPrice - parseFloat(position.entry_price)) * parseFloat(position.quantity) * position.leverage;
+            finalPnL = (exitPrice - parseFloat(position.entry_price)) * quantity * position.leverage;
           } else {
-            finalPnL = (parseFloat(position.entry_price) - exitPrice) * parseFloat(position.quantity) * position.leverage;
+            finalPnL = (parseFloat(position.entry_price) - exitPrice) * quantity * position.leverage;
           }
           
-        // Deduct fees (entry + exit)
-        const feeRate = resolveFeeRate(position.exchange, position.trading_type);
-        const quantity = parseFloat(position.quantity);
-        const entryNotional = quantity * parseFloat(position.entry_price);
-        const exitNotional = quantity * exitPrice;
-        const fees = (entryNotional + exitNotional) * feeRate;
-        finalPnL -= fees;
+          // Deduct fees (entry + exit)
+          const feeRate = resolveFeeRate(position.exchange, position.trading_type);
+          const entryNotional = quantity * parseFloat(position.entry_price);
+          const exitNotional = quantity * exitPrice;
+          const fees = (entryNotional + exitNotional) * feeRate;
+          finalPnL -= fees;
           
           // Return margin + PnL to account
           const account = await this.getPaperAccount();
@@ -3950,6 +4095,29 @@ class PaperTradingExecutor {
             })
             .eq('position_id', position.id)
             .eq('status', 'filled');
+          
+          // Log closure with slippage details
+          try {
+            await botLogger.addBotLog(position.bot_id, {
+              level: newStatus === 'stopped' ? 'warning' : 'success',
+              category: 'trade',
+              message: `📝 [PAPER] Position closed (${newStatus}): ${position.symbol} ${position.side.toUpperCase()} exit @ $${exitPrice.toFixed(4)}`,
+              details: {
+                paper_trading: true,
+                status: newStatus,
+                side: position.side,
+                quantity,
+                exit_price: exitPrice,
+                slippage_bps: exitSlip.slippageBps,
+                fees,
+                pnl: finalPnL,
+                margin_returned: position.margin_used,
+                severity: slippageSeverity
+              }
+            });
+          } catch (logError) {
+            console.warn('⚠️ Failed to log paper position closure:', logError);
+          }
           
           // Update bot performance
           await this.updateBotPerformance(position.bot_id, finalPnL);
