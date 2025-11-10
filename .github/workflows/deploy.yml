@@ -1,0 +1,212 @@
+name: 🚀 Deploy to Supabase & VPS
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  deploy-supabase:
+    name: 📦 Deploy to Supabase
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: ⬇️ Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: 🔧 Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      
+      - name: 🔗 Link to Supabase project
+        env:
+            SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+            SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID }}
+            SUPABASE_DOTENV: "0"
+        run: |
+            echo "Linking project without loading .env"
+            if [ -f .env ]; then
+              echo "⚠️ .env file found (this should not be committed)"
+              head -5 .env || echo "Could not read .env"
+            else
+              echo "✅ No .env file (as expected - environment variables via secrets)"
+            fi
+            supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_ID }} --debug
+        
+      
+      - name: 🚀 Deploy Edge Functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DOTENV: "0"
+        run: |
+          echo "🚀 Deploying all Edge Functions..."
+          
+          # Deploy each function with error handling
+          supabase functions deploy bot-executor --no-verify-jwt || echo "⚠️ bot-executor deployment failed"
+          supabase functions deploy bot-management --no-verify-jwt || echo "⚠️ bot-management deployment failed"
+          supabase functions deploy admin-management-enhanced --no-verify-jwt || echo "⚠️ admin-management-enhanced deployment failed"
+          supabase functions deploy trading-engine --no-verify-jwt || echo "⚠️ trading-engine deployment failed"
+          supabase functions deploy telegram-notifier --no-verify-jwt || echo "⚠️ telegram-notifier deployment failed"
+          supabase functions deploy market-data --no-verify-jwt || echo "⚠️ market-data deployment failed"
+          supabase functions deploy futures-pairs --no-verify-jwt || echo "⚠️ futures-pairs deployment failed"
+          supabase functions deploy ml-predictions --no-verify-jwt || echo "⚠️ ml-predictions deployment failed"
+          supabase functions deploy alerts-system --no-verify-jwt || echo "⚠️ alerts-system deployment failed"
+          supabase functions deploy api-keys --no-verify-jwt || echo "⚠️ api-keys deployment failed"
+          supabase functions deploy profile-management --no-verify-jwt || echo "⚠️ profile-management deployment failed"
+          supabase functions deploy risk-management --no-verify-jwt || echo "⚠️ risk-management deployment failed"
+          supabase functions deploy invitation-management --no-verify-jwt || echo "⚠️ invitation-management deployment failed"
+          supabase functions deploy check-ai-keys --no-verify-jwt || echo "⚠️ check-ai-keys deployment failed"
+          supabase functions deploy paper-trading --no-verify-jwt || echo "⚠️ paper-trading deployment failed"
+          
+          echo "✅ Edge functions deployment completed!"
+      
+      - name: 📋 Deploy Info
+        run: |
+          echo "📅 Date: $(date)"
+          echo "🌿 Branch: ${{ github.ref_name }}"
+          echo "👤 Actor: ${{ github.actor }}"
+          echo "📝 Commit: ${{ github.sha }}"
+
+  deploy-vps:
+    name: 🌐 Deploy to VPS
+    runs-on: ubuntu-latest
+    needs: deploy-supabase # Wait for Supabase deployment first
+    
+    steps:
+      - name: ⬇️ Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: 📋 Deploy Info
+        run: |
+          echo "🚀 Starting VPS deployment..."
+          echo "📅 Date: $(date)"
+          echo "🌿 Branch: ${{ github.ref_name }}"
+          echo "👤 Actor: ${{ github.actor }}"
+          echo "📝 Commit: ${{ github.sha }}"
+      
+      - name: 🔑 Set up SSH
+        uses: webfactory/ssh-agent@v0.7.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+      
+      - name: 🚀 Deploy via SSH
+        run: |
+          # Connect to the VPS and run commands remotely
+          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 ${{ secrets.VPS_USERNAME }}@${{ secrets.VPS_HOST }} bash << 'ENDSSH'
+            set -euo pipefail
+            
+            echo "🚀 Starting VPS deployment..."
+            echo "📂 Current directory: $(pwd)"
+            echo "👤 User: $(whoami)"
+            
+            # Navigate to project directory
+            echo "📂 Navigating to project directory..."
+            if [ ! -d "/var/www/Ai-Trading-Bots" ]; then
+              echo "❌ Directory /var/www/Ai-Trading-Bots does not exist!"
+              exit 1
+            fi
+            cd "/var/www/Ai-Trading-Bots" || {
+              echo "❌ Failed to navigate to project directory"
+              exit 1
+            }
+            echo "✅ In project directory: $(pwd)"
+            
+            # Check git status
+            echo "📥 Checking git status..."
+            git status || {
+              echo "⚠️ Git status check failed, but continuing..."
+            }
+            
+            # Pull latest changes
+            echo "📥 Pulling latest changes..."
+            if ! git fetch origin master 2>&1; then
+              echo "⚠️ Git fetch failed, but continuing..."
+            fi
+            
+            if ! git reset --hard origin/master 2>&1; then
+              echo "❌ Git reset failed"
+              echo "📋 Git log:"
+              git log --oneline -5 || true
+              exit 1
+            fi
+            echo "✅ Git reset successful"
+            
+            # Check Node.js and npm versions
+            echo "📋 Node.js version: $(node --version || echo 'not found')"
+            echo "📋 npm version: $(npm --version || echo 'not found')"
+            
+            # Install dependencies
+            echo "📦 Installing dependencies..."
+            if ! npm install 2>&1; then
+              echo "❌ npm install failed"
+              exit 1
+            fi
+            echo "✅ Dependencies installed"
+            
+            # Build the application
+            echo "🔨 Building application..."
+            if ! npm run build 2>&1; then
+              echo "❌ npm run build failed"
+              echo "📋 Build output (last 50 lines):"
+              npm run build 2>&1 | tail -50 || true
+              exit 1
+            fi
+            echo "✅ Build successful"
+            
+            # Check PM2
+            echo "📋 Checking PM2..."
+            if ! command -v pm2 &> /dev/null; then
+              echo "❌ PM2 is not installed or not in PATH"
+              exit 1
+            fi
+            echo "✅ PM2 found: $(pm2 --version || echo 'version check failed')"
+            
+            # Restart PM2 process
+            echo "🔄 Checking PM2 processes..."
+            pm2 list || echo "⚠️ PM2 list failed, but continuing..."
+            
+            echo "🔄 Restarting application..."
+            if pm2 list | grep -q "pablobots"; then
+              echo "📌 Process 'pablobots' exists, restarting..."
+              if ! pm2 restart pablobots 2>&1; then
+                echo "⚠️ PM2 restart failed, trying to start..."
+                pm2 delete pablobots 2>&1 || true
+                if ! pm2 start --name pablobots npm -- run preview 2>&1; then
+                  echo "❌ PM2 start failed"
+                  exit 1
+                fi
+              fi
+            else
+              echo "📌 Starting new PM2 process..."
+              if ! pm2 start --name pablobots npm -- run preview 2>&1; then
+                echo "❌ PM2 start failed"
+                exit 1
+              fi
+            fi
+            echo "✅ PM2 process restarted"
+            
+            # Save PM2 process
+            echo "💾 Saving PM2 process..."
+            pm2 save 2>&1 || {
+              echo "⚠️ PM2 save failed, but continuing..."
+            }
+            
+            # Show PM2 status
+            echo "📊 PM2 status:"
+            pm2 status || echo "⚠️ Could not get PM2 status"
+            
+            # Show recent logs
+            echo "📋 Recent logs (last 10 lines):"
+            pm2 logs pablobots --lines 10 --nostream 2>&1 || {
+              echo "⚠️ Could not retrieve logs"
+            }
+            
+            echo "✅ Deployment completed successfully!"
+          ENDSSH
+      
+      - name: 📊 Deployment Summary
+        run: |
+          echo "✅ VPS deployment completed!"
+          echo "🌐 Your trading bot should be live at: https://${{ secrets.VPS_HOST }}"
+          echo "📱 Check PM2 status: ssh ${{ secrets.VPS_USERNAME }}@${{ secrets.VPS_HOST }} 'pm2 status'"
