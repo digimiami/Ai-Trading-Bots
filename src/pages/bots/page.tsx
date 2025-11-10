@@ -366,6 +366,55 @@ export default function BotsPage() {
     }
   };
 
+  const handleTogglePaperTrading = async (bot: TradingBot) => {
+    const isCurrentlyPaper = bot.paperTrading || false;
+    const nextModeIsPaper = !isCurrentlyPaper;
+
+    if (!nextModeIsPaper) {
+      const prerequisites = [
+        '✅ Real exchange API keys are connected and ACTIVE (non-testnet)',
+        '✅ Wallets have sufficient available balance for this bot\'s trade size',
+        '✅ Stop-loss, take-profit, and risk limits are reviewed for live execution',
+        '✅ You understand trades will execute on your real exchange account'
+      ].join('\n');
+
+      const confirmed = window.confirm(
+        `⚠️ Enable REAL trading for "${bot.name}"?\n\nBefore proceeding, make sure:\n\n${prerequisites}\n\nContinue to live trading mode?`
+      );
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    try {
+      await updateBot(bot.id, { paperTrading: nextModeIsPaper } as any);
+
+      await addLog(bot.id, {
+        level: nextModeIsPaper ? 'info' : 'warning',
+        category: 'system',
+        message: nextModeIsPaper
+          ? 'Bot switched to paper trading mode'
+          : 'Bot switched to REAL trading mode',
+        details: {
+          paperTrading: nextModeIsPaper,
+          switchedAt: new Date().toISOString()
+        }
+      });
+
+      if (nextModeIsPaper) {
+        alert(`✅ Bot switched to Paper Trading mode. Orders will only simulate fills for testing.`);
+      } else {
+        alert(
+          `🚨 "${bot.name}" is now in REAL trading mode.\n\nTrades will execute on your connected exchange using live funds.`
+        );
+      }
+    } catch (error: any) {
+      console.error('Failed to toggle paper trading:', error);
+      alert(`Failed to toggle trading mode: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header 
@@ -1002,23 +1051,32 @@ export default function BotsPage() {
                   </div>
                   
                   {/* Paper Trading Toggle */}
-                  <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                    <div className="flex items-center space-x-2">
+                  <div
+                    className={`flex items-center justify-between p-3 rounded-lg border ${
+                      bot.paperTrading
+                        ? 'bg-yellow-50 border-yellow-200'
+                        : 'bg-red-50 border-red-200 shadow-inner'
+                    }`}
+                  >
+                    <div className="flex flex-col">
+                      <div className="flex items-center space-x-2">
                       <i className={`ri-${bot.paperTrading ? 'edit-box-line' : 'money-dollar-circle-line'} text-yellow-600`}></i>
                       <span className="text-sm font-medium text-gray-700">
                         {bot.paperTrading ? '📝 Paper Trading' : '💰 Real Trading'}
                       </span>
+                      </div>
+                      {!bot.paperTrading && (
+                        <div className="flex items-center mt-1 text-xs font-semibold text-red-600 uppercase tracking-wide">
+                          <span className="relative flex h-2.5 w-2.5 mr-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                          </span>
+                          Live Trading Active
+                        </div>
+                      )}
                     </div>
                     <button
-                      onClick={async () => {
-                        try {
-                          const newPaperTrading = !(bot.paperTrading || false);
-                          await updateBot(bot.id, { paperTrading: newPaperTrading });
-                          alert(`✅ Bot switched to ${newPaperTrading ? 'Paper Trading' : 'Real Trading'} mode`);
-                        } catch (error: any) {
-                          alert(`Failed to toggle: ${error.message}`);
-                        }
-                      }}
+                      onClick={() => handleTogglePaperTrading(bot)}
                       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                         bot.paperTrading ? 'bg-yellow-600' : 'bg-gray-300'
                       }`}
