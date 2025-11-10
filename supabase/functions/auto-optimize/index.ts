@@ -335,7 +335,10 @@ Provide optimized parameters as JSON with confidence score:
           if (config.bias_mode && !['long-only', 'short-only', 'both', 'auto'].includes(config.bias_mode)) {
             config.bias_mode = 'auto';
           }
-          if (config.htf_timeframe && !['4h', '1d', '1h', '15m'].includes(config.htf_timeframe)) {
+          if (
+            config.htf_timeframe &&
+            !['15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d', '1w'].includes(config.htf_timeframe)
+          ) {
             config.htf_timeframe = '4h';
           }
           if (config.regime_mode && !['trend', 'mean-reversion', 'auto'].includes(config.regime_mode)) {

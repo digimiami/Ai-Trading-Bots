@@ -79,8 +79,8 @@ BEGIN
     END IF;
     
     -- Validate htf_timeframe
-    IF NOT (config->>'htf_timeframe' IN ('4h', '1d', '1h', '15m')) THEN
-        RAISE EXCEPTION 'Invalid htf_timeframe. Must be: 4h or 1d';
+    IF NOT (config->>'htf_timeframe' IN ('15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d', '1w')) THEN
+        RAISE EXCEPTION 'Invalid htf_timeframe. Must be one of: 15m, 30m, 1h, 2h, 4h, 6h, 12h, 1d, 1w';
     END IF;
     
     -- Validate regime_mode

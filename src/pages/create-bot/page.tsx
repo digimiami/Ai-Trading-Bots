@@ -10,27 +10,10 @@ import { useBots } from '../../hooks/useBots';
 import PairRecommendations from '../../components/bot/PairRecommendations';
 import type { PairRecommendation } from '../../services/pairRecommendations';
 import { STRATEGY_PRESETS, type StrategyPreset } from '../../constants/strategyPresets';
-
-const HTF_TREND_INDICATOR_OPTIONS = [
-  { value: 'EMA50', label: 'EMA 50 (Fast, reacts quickly to reversals)' },
-  { value: 'EMA100', label: 'EMA 100 (Medium-term trend)' },
-  { value: 'EMA200', label: 'EMA 200 (Long-term macro trend)' },
-  { value: 'SMA50', label: 'SMA 50 (Smoother EMA 50 alternative)' },
-  { value: 'SMA200', label: 'SMA 200 (Classic bull/bear filter)' },
-  { value: 'MA_CROSSOVER_50_200', label: 'MA Crossover 50/200 (Golden Cross)' },
-  { value: 'Supertrend', label: 'Supertrend (10,3)' },
-  { value: 'DonchianChannel20', label: 'Donchian Channel (20 High/Low)' },
-  { value: 'KeltnerChannelMidline', label: 'Keltner Channel Midline' },
-  { value: 'BollingerBasis20SMA', label: 'Bollinger Band Basis (20 SMA)' },
-  { value: 'HullMA55', label: 'Hull MA (HMA 55)' },
-  { value: 'HullMA100', label: 'Hull MA (HMA 100)' },
-  { value: 'VWAP', label: 'VWAP (Session/Daily)' },
-  { value: 'GChannelBaseline', label: 'G-Channel Baseline' },
-  { value: 'MACDZeroLine', label: 'MACD Zero-Line' },
-  { value: 'RSI50Baseline', label: 'RSI Baseline (50)' },
-  { value: 'HeikinAshiTrend', label: 'Heikin-Ashi Trend' },
-  { value: 'IchimokuKumoTrend', label: 'Ichimoku Kumo Trend' }
-] as const;
+import {
+  HTF_TIMEFRAME_OPTIONS,
+  HTF_TREND_INDICATOR_OPTIONS
+} from '../../constants/strategyOptions';
 
 export default function CreateBotPage() {
   const navigate = useNavigate();
@@ -976,12 +959,19 @@ All settings have been applied to your bot configuration.`;
                         </label>
                         <select
                           value={advancedConfig.htf_timeframe}
-                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, htf_timeframe: e.target.value as any }))}
+                          onChange={(e) =>
+                            setAdvancedConfig(prev => ({
+                              ...prev,
+                              htf_timeframe: e.target.value as typeof prev.htf_timeframe
+                            }))
+                          }
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                         >
-                          <option value="4h">4 Hours</option>
-                          <option value="1d">1 Day</option>
-                          <option value="1h">1 Hour</option>
+                          {HTF_TIMEFRAME_OPTIONS.map(option => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
                         </select>
                       </div>
 

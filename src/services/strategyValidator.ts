@@ -39,7 +39,7 @@ const VALIDATION_RANGES: Record<string, ValidationRange> = {
 
 const VALID_ENUMS: Record<string, string[]> = {
   bias_mode: ['long-only', 'short-only', 'both', 'auto'],
-  htf_timeframe: ['4h', '1d', '1h', '15m'],
+  htf_timeframe: ['15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d', '1w'],
   htf_trend_indicator: [
     'EMA50',
     'EMA100',
