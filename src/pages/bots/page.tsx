@@ -5,7 +5,7 @@ import { Header } from '../../components/feature/Header';
 import Navigation from '../../components/feature/Navigation';
 import Button from '../../components/base/Button';
 import Card from '../../components/base/Card';
-import { TradingBot } from '../../types/trading';
+import { ManualTradeSignal, TradingBot } from '../../types/trading';
 import { useNavigate } from 'react-router-dom';
 import { useBots } from '../../hooks/useBots';
 import { useBotActivity } from '../../hooks/useBotActivity';
@@ -26,10 +26,136 @@ export default function BotsPage() {
   const [editingLimitValue, setEditingLimitValue] = useState<number | null>(null);
   const [editingTradeAmountBotId, setEditingTradeAmountBotId] = useState<string | null>(null);
   const [editingTradeAmountValue, setEditingTradeAmountValue] = useState<number | null>(null);
+  const [webhookExpandedBot, setWebhookExpandedBot] = useState<string | null>(null);
+  const [webhookSignals, setWebhookSignals] = useState<Record<string, ManualTradeSignal[]>>({});
+  const [webhookSignalsLoading, setWebhookSignalsLoading] = useState<Record<string, boolean>>({});
+  const [webhookSecretVisible, setWebhookSecretVisible] = useState<Record<string, boolean>>({});
+  const [webhookActionLoading, setWebhookActionLoading] = useState<Record<string, boolean>>({});
   
   // Get trade limits for all bots
   const botIds = bots.map(b => b.id);
   const { limits, getLimit, refresh: refreshLimits } = useBotTradeLimits(botIds);
+
+  const webhookEndpoint = `${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/tradingview-webhook`;
+
+  const generateWebhookSecret = () => {
+    try {
+      const array = new Uint8Array(18);
+      if (window?.crypto?.getRandomValues) {
+        window.crypto.getRandomValues(array);
+        return Array.from(array, (byte) => byte.toString(16).padStart(2, '0')).join('');
+      }
+    } catch (error) {
+      console.warn('Falling back to Math.random for webhook secret generation:', error);
+    }
+    return Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 12);
+  };
+
+  const handleCopy = async (value: string, description: string) => {
+    if (!value) {
+      alert('Nothing to copy yet.');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(value);
+      alert(`✅ ${description} copied to clipboard`);
+    } catch (error) {
+      console.error('Failed to copy value:', error);
+      alert('Unable to copy to clipboard. Please copy manually.');
+    }
+  };
+
+  const loadWebhookSignals = async (botId: string) => {
+    setWebhookSignalsLoading(prev => ({ ...prev, [botId]: true }));
+    try {
+      const { data, error } = await supabase
+        .from('manual_trade_signals')
+        .select('*')
+        .eq('bot_id', botId)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      if (error) throw error;
+      setWebhookSignals(prev => ({ ...prev, [botId]: data || [] }));
+    } catch (error: any) {
+      console.error('Failed to load webhook signals:', error);
+      alert(`Failed to load webhook signals: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setWebhookSignalsLoading(prev => ({ ...prev, [botId]: false }));
+    }
+  };
+
+  const handleToggleWebhookPanel = async (botId: string) => {
+    const isOpen = webhookExpandedBot === botId;
+    const nextState = isOpen ? null : botId;
+    setWebhookExpandedBot(nextState);
+    if (!isOpen) {
+      await loadWebhookSignals(botId);
+    }
+  };
+
+  const handleRegenerateWebhookSecret = async (bot: TradingBot) => {
+    if (!confirm('Regenerate webhook secret? All existing TradingView alerts must be updated to use the new value.')) {
+      return;
+    }
+    const newSecret = generateWebhookSecret();
+    setWebhookActionLoading(prev => ({ ...prev, [bot.id]: true }));
+    try {
+      await updateBot(bot.id, { webhookSecret: newSecret });
+      setWebhookSecretVisible(prev => ({ ...prev, [bot.id]: true }));
+      alert('✅ Webhook secret regenerated. Update your TradingView alert settings.');
+    } catch (error: any) {
+      console.error('Failed to regenerate webhook secret:', error);
+      alert(`Failed to regenerate webhook secret: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setWebhookActionLoading(prev => ({ ...prev, [bot.id]: false }));
+    }
+  };
+
+  const handleToggleWebhookImmediate = async (bot: TradingBot) => {
+    const nextValue = !(bot.webhookTriggerImmediate ?? true);
+    setWebhookActionLoading(prev => ({ ...prev, [bot.id]: true }));
+    try {
+      await updateBot(bot.id, { webhookTriggerImmediate: nextValue });
+      alert(`✅ Immediate execution ${nextValue ? 'enabled' : 'disabled'} for TradingView webhook signals.`);
+    } catch (error: any) {
+      console.error('Failed to update webhook execution preference:', error);
+      alert(`Failed to update webhook execution preference: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setWebhookActionLoading(prev => ({ ...prev, [bot.id]: false }));
+    }
+  };
+
+  const buildSamplePayload = (bot: TradingBot) => {
+    return JSON.stringify({
+      secret: bot.webhookSecret || 'YOUR_TRADINGVIEW_WEBHOOK_SECRET',
+      botId: bot.id,
+      side: 'buy',
+      mode: bot.paperTrading ? 'paper' : 'real',
+      reason: 'TradingView alert signal'
+    }, null, 2);
+  };
+
+  const formatDateTime = (timestamp?: string | null) => {
+    if (!timestamp) return '—';
+    try {
+      return new Date(timestamp).toLocaleString();
+    } catch {
+      return timestamp;
+    }
+  };
+
+  const getSignalStatusBadgeClasses = (status: string) => {
+    switch ((status || '').toLowerCase()) {
+      case 'completed':
+        return 'bg-green-100 text-green-700';
+      case 'processing':
+        return 'bg-blue-100 text-blue-700';
+      case 'failed':
+        return 'bg-red-100 text-red-700';
+      default:
+        return 'bg-gray-100 text-gray-700';
+    }
+  };
 
   const filteredBots = bots.filter(bot => 
     filter === 'all' || bot.status === filter
@@ -1001,6 +1127,221 @@ export default function BotsPage() {
                     </div>
                   );
                 })()}
+
+                {/* TradingView Webhook Management */}
+                <div className="pt-4 border-t border-gray-100">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <i className="ri-link-m text-blue-500"></i>
+                      <h4 className="text-sm font-medium text-gray-700">TradingView Webhook</h4>
+                    </div>
+                    <button
+                      onClick={() => handleToggleWebhookPanel(bot.id)}
+                      className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                    >
+                      <i className={`ri-${webhookExpandedBot === bot.id ? 'arrow-up-s-line' : 'arrow-down-s-line'}`}></i>
+                      {webhookExpandedBot === bot.id ? 'Hide' : 'Manage'}
+                    </button>
+                  </div>
+
+                  {webhookExpandedBot === bot.id && (
+                    <div className="mt-3 space-y-4 bg-blue-50 border border-blue-100 rounded-lg p-4">
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div>
+                          <p className="text-xs uppercase font-semibold text-gray-500">Webhook Secret</p>
+                          <div className="mt-1 font-mono text-sm bg-white border border-gray-200 rounded px-3 py-2 flex items-center justify-between">
+                            <span className="truncate pr-3">
+                              {webhookSecretVisible[bot.id] ? (bot.webhookSecret || 'Not set yet') : '••••••••••••••••'}
+                            </span>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() =>
+                                setWebhookSecretVisible(prev => ({ ...prev, [bot.id]: !prev[bot.id] }))
+                              }
+                            >
+                              <i className="ri-eye-line mr-1"></i>
+                              {webhookSecretVisible[bot.id] ? 'Hide' : 'Reveal'}
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              disabled={!bot.webhookSecret}
+                              onClick={() => handleCopy(bot.webhookSecret || '', 'Webhook secret')}
+                            >
+                              <i className="ri-file-copy-line mr-1"></i>
+                              Copy Secret
+                            </Button>
+                            <Button
+                              variant="warning"
+                              size="sm"
+                              disabled={webhookActionLoading[bot.id]}
+                              onClick={() => handleRegenerateWebhookSecret(bot)}
+                            >
+                              {webhookActionLoading[bot.id] ? (
+                                <span className="flex items-center gap-1">
+                                  <i className="ri-loader-4-line animate-spin"></i>
+                                  Updating...
+                                </span>
+                              ) : (
+                                <>
+                                  <i className="ri-refresh-line mr-1"></i>
+                                  Regenerate
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                          <p className="mt-2 text-xs text-gray-500">
+                            Regenerating the secret invalidates existing TradingView alerts—remember to update them.
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-xs uppercase font-semibold text-gray-500">Webhook URL</p>
+                          <div className="mt-1 font-mono text-sm bg-white border border-gray-200 rounded px-3 py-2 flex items-center justify-between">
+                            <span className="truncate pr-3">{webhookEndpoint}</span>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => handleCopy(webhookEndpoint, 'Webhook URL')}
+                            >
+                              <i className="ri-file-copy-line mr-1"></i>
+                              Copy URL
+                            </Button>
+                          </div>
+                          <div className="mt-4">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs uppercase font-semibold text-gray-500">Immediate Execution</span>
+                              <button
+                                onClick={() => handleToggleWebhookImmediate(bot)}
+                                disabled={webhookActionLoading[bot.id]}
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                                  webhookActionLoading[bot.id] ? 'opacity-50 cursor-not-allowed' : ''
+                                } ${bot.webhookTriggerImmediate ? 'bg-blue-600' : 'bg-gray-300'}`}
+                              >
+                                <span
+                                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                    bot.webhookTriggerImmediate ? 'translate-x-6' : 'translate-x-1'
+                                  }`}
+                                />
+                              </button>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-1">
+                              When enabled, the webhook calls bot-executor immediately after logging the signal.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <h5 className="text-xs font-semibold text-gray-600 uppercase">TradingView Alert Payload</h5>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => handleCopy(buildSamplePayload(bot), 'Alert payload JSON')}
+                            >
+                              <i className="ri-code-line mr-1"></i>
+                              Copy JSON
+                            </Button>
+                          </div>
+                        </div>
+                        <pre className="bg-white border border-gray-200 rounded p-3 text-xs overflow-x-auto">
+{buildSamplePayload(bot)}
+                        </pre>
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <h5 className="text-xs font-semibold text-gray-600 uppercase">Recent Webhook Signals</h5>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => loadWebhookSignals(bot.id)}
+                              disabled={webhookSignalsLoading[bot.id]}
+                            >
+                              {webhookSignalsLoading[bot.id] ? (
+                                <span className="flex items-center gap-1">
+                                  <i className="ri-loader-4-line animate-spin"></i>
+                                  Refreshing...
+                                </span>
+                              ) : (
+                                <>
+                                  <i className="ri-refresh-line mr-1"></i>
+                                  Refresh
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+
+                        {webhookSignalsLoading[bot.id] ? (
+                          <div className="text-sm text-gray-600 flex items-center gap-2">
+                            <i className="ri-loader-4-line animate-spin"></i>
+                            Loading signals...
+                          </div>
+                        ) : webhookSignals[bot.id] && webhookSignals[bot.id].length > 0 ? (
+                          <div className="overflow-x-auto">
+                            <table className="min-w-full text-xs bg-white border border-gray-200 rounded-lg overflow-hidden">
+                              <thead className="bg-gray-100 text-gray-600 uppercase">
+                                <tr>
+                                  <th className="px-3 py-2 text-left">Created</th>
+                                  <th className="px-3 py-2 text-left">Side</th>
+                                  <th className="px-3 py-2 text-left">Mode</th>
+                                  <th className="px-3 py-2 text-right">Size x</th>
+                                  <th className="px-3 py-2 text-left">Reason</th>
+                                  <th className="px-3 py-2 text-left">Status</th>
+                                  <th className="px-3 py-2 text-left">Processed</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {webhookSignals[bot.id].map(signal => (
+                                  <tr key={signal.id} className="border-t border-gray-100">
+                                    <td className="px-3 py-2 whitespace-nowrap text-gray-700">
+                                      {formatDateTime(signal.created_at)}
+                                    </td>
+                                    <td className="px-3 py-2 uppercase font-semibold text-gray-700">
+                                      {signal.side || '—'}
+                                    </td>
+                                    <td className="px-3 py-2 capitalize text-gray-700">{signal.mode}</td>
+                                    <td className="px-3 py-2 text-right text-gray-700">
+                                      {(signal.size_multiplier ?? 1).toFixed(2)}
+                                    </td>
+                                    <td className="px-3 py-2 text-gray-700">
+                                      {signal.reason || '—'}
+                                      {signal.error && (
+                                        <div className="text-red-600 mt-1">Error: {signal.error}</div>
+                                      )}
+                                    </td>
+                                    <td className="px-3 py-2">
+                                      <span className={`px-2 py-1 rounded-full text-[10px] font-semibold ${getSignalStatusBadgeClasses(signal.status)}`}>
+                                        {signal.status.toUpperCase()}
+                                      </span>
+                                    </td>
+                                    <td className="px-3 py-2 text-gray-700">
+                                      {signal.processed_at ? formatDateTime(signal.processed_at) : 'Pending'}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <div className="text-sm text-gray-600 flex items-center gap-2">
+                            <i className="ri-information-line"></i>
+                            No webhook signals recorded yet.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 {/* Bot Actions */}
                 <div className="pt-4 border-t border-gray-100">

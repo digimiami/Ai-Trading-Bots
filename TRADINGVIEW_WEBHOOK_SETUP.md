@@ -8,18 +8,30 @@ Add the following to the `tradingview-webhook` and `bot-executor` edge functions
 
 | Key | Description |
 | --- | --- |
-| `TRADINGVIEW_WEBHOOK_SECRET` | Shared secret string that every TradingView alert must include. |
+| `TRADINGVIEW_WEBHOOK_SECRET` | (Optional fallback) A global shared secret. Per-bot secrets are now generated in-app, but the edge function will also accept this value for backward compatibility. |
 | `CRON_SECRET` | Existing secret used by the bot scheduler. Required so the webhook can trigger an immediate bot run. |
 
 > Keep the secret private. Anyone with the value can fire trades on your bots.
 
-## 2. Database migration
+## 2. Configure webhooks inside the app
+
+Open `Bots → TradingView Webhook` (each bot card now includes a “Manage” link):
+
+1. Reveal or regenerate the bot-specific webhook secret. Regeneration invalidates old alerts.
+2. Copy the webhook URL (`https://<PROJECT>.supabase.co/functions/v1/tradingview-webhook`) directly from the UI.
+3. Decide whether signals should trigger the bot immediately—the toggle controls the default `trigger_execution` flag for that bot.
+4. Copy the pre-filled TradingView alert JSON payload.
+5. Review recent webhook deliveries pulled from the `manual_trade_signals` table alongside any error messages.
+
+> Secrets are stored per bot (`trading_bots.webhook_secret`). The webhook accepts either the per-bot secret or the global fallback secret (if set), but the UI always shows the bot-level value.
+
+## 3. Database migration
 
 The migration `20250210_add_manual_trade_signals.sql` creates a `manual_trade_signals` table. Run `supabase db push` (or your existing migration pipeline) to apply the table before deploying the functions.
 
 Each TradingView alert stores one row in this table. The bot executor reads pending rows on its next run and executes them.
 
-## 3. TradingView alert payload
+## 4. TradingView alert payload
 
 Configure your TradingView alert to call:
 
@@ -44,15 +56,15 @@ with `POST` and JSON body similar to:
 
 | Field | Required | Notes |
 | ----- | -------- | ----- |
-| `secret` | ✅ | Must equal `TRADINGVIEW_WEBHOOK_SECRET`. |
+| `secret` | ✅ | Must equal the bot’s webhook secret (shown in the UI) or the legacy global secret if still used. |
 | `botId` | ✅ | UUID of the Pablo trading bot to control. |
 | `side` | ✅ | `buy`, `sell`, `long`, or `short`. (`long` maps to `buy`, `short` to `sell`). |
 | `mode` | Optional | `real` or `paper`. Defaults to `real`; `paper` forces a paper trade even if the bot is live. |
 | `size_multiplier` | Optional | Multiplies the bot’s configured trade amount (e.g. `1.5` increases size by 50%). |
 | `reason` / `note` / `strategy` | Optional | Stored with the signal and visible in bot activity logs. |
-| `trigger_execution` | Optional | Set to `false` to *skip* the immediate bot execution trigger. Otherwise the webhook will call `bot-executor` right away. |
+| `trigger_execution` | Optional | Overrides the bot-level default. When omitted, the webhook uses the “Immediate Execution” toggle from the UI. Set `false` to queue without triggering the executor. |
 
-## 4. Testing
+## 5. Testing
 
 1. Deploy the edge functions (`bot-executor` and the new `tradingview-webhook`) to Supabase.
 2. Send a test request (replace placeholders):
@@ -73,7 +85,7 @@ curl -X POST https://<YOUR_PROJECT>.supabase.co/functions/v1/tradingview-webhook
 4. Open the bot’s activity log; you should see a “TradingView signal received” entry followed by either a paper or live trade log.
 5. Confirm the trade executed (paper: `paper_trading_trades`, real: `trades` table / exchange order history).
 
-## 5. Operational notes
+## 6. Operational notes
 
 - The webhook records signals even if the bot is *stopped*. The immediate trigger will execute only if the bot function runs and the signal is pending; otherwise it waits for the next scheduled run.
 - Failed executions are marked in `manual_trade_signals.status = 'failed'` with an error message. Review bot logs for details.

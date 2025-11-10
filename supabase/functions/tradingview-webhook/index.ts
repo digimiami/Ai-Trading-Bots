@@ -100,15 +100,44 @@ serve(async (req) => {
     payload.webhook_secret ||
     "";
 
-  if (!tradingViewSecret) {
-    console.error("❌ TRADINGVIEW_WEBHOOK_SECRET env var is not set");
+  const botId = payload.botId || payload.bot_id;
+
+  if (!botId) {
+    return new Response(JSON.stringify({ error: "botId is required" }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
+  }
+
+  const supabaseClient = createClient(supabaseUrl, serviceRoleKey);
+
+  const { data: bot, error: botError } = await supabaseClient
+    .from("trading_bots")
+    .select("id, user_id, name, status, paper_trading, trade_amount, webhook_secret, webhook_trigger_immediate")
+    .eq("id", botId)
+    .single();
+
+  if (botError || !bot) {
+    console.error("❌ Trading bot not found for webhook", botError);
+    return new Response(JSON.stringify({ error: "Bot not found" }), {
+      status: 404,
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
+  }
+
+  const allowedSecrets = [tradingViewSecret, bot.webhook_secret].filter(
+    (secret): secret is string => Boolean(secret && secret.length > 0)
+  );
+
+  if (allowedSecrets.length === 0) {
+    console.error("❌ No webhook secret configured for TradingView webhook");
     return new Response(JSON.stringify({ error: "Webhook secret not configured" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
   }
 
-  if (!providedSecret || providedSecret !== tradingViewSecret) {
+  if (!providedSecret || !allowedSecrets.includes(providedSecret)) {
     console.warn("⚠️ Invalid TradingView webhook secret provided");
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
@@ -116,7 +145,6 @@ serve(async (req) => {
     });
   }
 
-  const botId = payload.botId || payload.bot_id;
   const normalizedSide = normalizeSide(payload.side || payload.signal || payload.action);
   const mode = normalizeMode(payload.mode || payload.trade_mode);
   const sizeMultiplier =
@@ -126,13 +154,6 @@ serve(async (req) => {
       ? payload.size
       : undefined;
 
-  if (!botId) {
-    return new Response(JSON.stringify({ error: "botId is required" }), {
-      status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" }
-    });
-  }
-
   if (!normalizedSide) {
     return new Response(JSON.stringify({ error: "side must be one of buy/sell/long/short" }), {
       status: 400,
@@ -140,23 +161,7 @@ serve(async (req) => {
     });
   }
 
-  const supabaseClient = createClient(supabaseUrl, serviceRoleKey);
-
   try {
-    const { data: bot, error: botError } = await supabaseClient
-      .from("trading_bots")
-      .select("id, user_id, name, status, paper_trading, trade_amount")
-      .eq("id", botId)
-      .single();
-
-    if (botError || !bot) {
-      console.error("❌ Trading bot not found for webhook", botError);
-      return new Response(JSON.stringify({ error: "Bot not found" }), {
-        status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
-    }
-
     const userIdOverride = payload.userId || payload.user_id;
     if (userIdOverride && userIdOverride !== bot.user_id) {
       return new Response(JSON.stringify({ error: "botId and userId mismatch" }), {
@@ -164,6 +169,11 @@ serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
+
+    const shouldTrigger =
+      typeof payload.trigger_execution === "boolean"
+        ? payload.trigger_execution
+        : bot.webhook_trigger_immediate ?? true;
 
     const sanitizedPayload = { ...payload };
     delete sanitizedPayload.secret;
@@ -181,7 +191,8 @@ serve(async (req) => {
           mode,
           size_multiplier: sizeMultiplier,
           source: "tradingview-webhook",
-          received_at: new Date().toISOString()
+          received_at: new Date().toISOString(),
+          trigger_execution: shouldTrigger
         },
         timestamp: new Date().toISOString()
       });
@@ -209,7 +220,7 @@ serve(async (req) => {
 
     let triggerResponse: { ok: boolean; status: number; message?: string } | null = null;
 
-    if (payload.trigger_execution !== false && cronSecret) {
+    if (shouldTrigger && cronSecret) {
       try {
         const triggerFetch = await fetch(`${supabaseUrl}/functions/v1/bot-executor`, {
           method: "POST",

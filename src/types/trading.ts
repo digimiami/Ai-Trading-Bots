@@ -25,6 +25,8 @@ export interface TradingBot {
   lossTrades?: number;
   closedTrades?: number;
   realizedPnl?: number;
+  webhookSecret?: string;
+  webhookTriggerImmediate?: boolean;
 }
 
 export interface TradingStrategy {
@@ -123,6 +125,20 @@ export interface AdvancedStrategyConfig {
   use_ml_prediction?: boolean;
   ml_confidence_threshold?: number;
   ml_min_samples?: number;
+}
+
+export interface ManualTradeSignal {
+  id: string;
+  bot_id: string;
+  user_id?: string;
+  mode: 'real' | 'paper';
+  side: 'buy' | 'sell' | 'long' | 'short';
+  size_multiplier?: number | null;
+  reason?: string | null;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  error?: string | null;
+  created_at: string;
+  processed_at?: string | null;
 }
 
 export interface Trade {

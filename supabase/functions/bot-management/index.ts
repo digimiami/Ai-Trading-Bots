@@ -186,7 +186,9 @@ serve(async (req) => {
           riskLevel: bot.risk_level || 'medium',
           strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy,
           aiMlEnabled: bot.ai_ml_enabled || false,
-          paperTrading: bot.paper_trading || false
+          paperTrading: bot.paper_trading || false,
+          webhookSecret: bot.webhook_secret || null,
+          webhookTriggerImmediate: bot.webhook_trigger_immediate ?? true
         });
         })
 
@@ -369,6 +371,14 @@ serve(async (req) => {
           dbUpdates.paper_trading = updates.paperTrading
         }
 
+        if (updates.webhookSecret !== undefined) {
+          dbUpdates.webhook_secret = updates.webhookSecret
+        }
+
+        if (updates.webhookTriggerImmediate !== undefined) {
+          dbUpdates.webhook_trigger_immediate = updates.webhookTriggerImmediate
+        }
+
         // First check if bot exists and belongs to user
         const { data: existingBot, error: checkError } = await supabaseClient
           .from('trading_bots')
@@ -428,7 +438,9 @@ serve(async (req) => {
           riskLevel: bot.risk_level,
           strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy,
           aiMlEnabled: bot.ai_ml_enabled || false,
-          paperTrading: bot.paper_trading || false
+          paperTrading: bot.paper_trading || false,
+          webhookSecret: bot.webhook_secret || null,
+          webhookTriggerImmediate: bot.webhook_trigger_immediate ?? true
         }
 
         return new Response(
@@ -472,7 +484,9 @@ serve(async (req) => {
           riskLevel: bot.risk_level,
           strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy,
           aiMlEnabled: bot.ai_ml_enabled || false,
-          paperTrading: bot.paper_trading || false
+          paperTrading: bot.paper_trading || false,
+          webhookSecret: bot.webhook_secret || null,
+          webhookTriggerImmediate: bot.webhook_trigger_immediate ?? true
         }
 
         return new Response(
@@ -510,7 +524,9 @@ serve(async (req) => {
           riskLevel: bot.risk_level,
           strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy,
           aiMlEnabled: bot.ai_ml_enabled || false,
-          paperTrading: bot.paper_trading || false
+          paperTrading: bot.paper_trading || false,
+          webhookSecret: bot.webhook_secret || null,
+          webhookTriggerImmediate: bot.webhook_trigger_immediate ?? true
         }
 
         return new Response(
