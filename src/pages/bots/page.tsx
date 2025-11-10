@@ -1,6 +1,6 @@
 
 // @ts-nocheck
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Header } from '../../components/feature/Header';
 import Navigation from '../../components/feature/Navigation';
 import Button from '../../components/base/Button';
@@ -19,6 +19,7 @@ export default function BotsPage() {
   const { activities, addLog } = useBotActivity(bots);
   const { isExecuting, lastExecution, timeSync, executeBot, executeAllBots } = useBotExecutor();
   const [filter, setFilter] = useState<'all' | 'running' | 'paused' | 'stopped'>('all');
+  const [viewMode, setViewMode] = useState<'overview' | 'webhook'>('overview');
   const [bulkLoading, setBulkLoading] = useState(false);
   const [expandedBot, setExpandedBot] = useState<string | null>(null);
   const [togglingAiMl, setTogglingAiMl] = useState<string | null>(null);
@@ -31,6 +32,7 @@ export default function BotsPage() {
   const [webhookSignalsLoading, setWebhookSignalsLoading] = useState<Record<string, boolean>>({});
   const [webhookSecretVisible, setWebhookSecretVisible] = useState<Record<string, boolean>>({});
   const [webhookActionLoading, setWebhookActionLoading] = useState<Record<string, boolean>>({});
+  const isWebhookView = viewMode === 'webhook';
   
   // Get trade limits for all bots
   const botIds = bots.map(b => b.id);
@@ -85,6 +87,9 @@ export default function BotsPage() {
   };
 
   const handleToggleWebhookPanel = async (botId: string) => {
+    if (isWebhookView) {
+      return;
+    }
     const isOpen = webhookExpandedBot === botId;
     const nextState = isOpen ? null : botId;
     setWebhookExpandedBot(nextState);
@@ -124,6 +129,17 @@ export default function BotsPage() {
       setWebhookActionLoading(prev => ({ ...prev, [bot.id]: false }));
     }
   };
+
+  useEffect(() => {
+    if (!isWebhookView) {
+      return;
+    }
+    bots.forEach((bot) => {
+      if (!webhookSignals[bot.id] && !webhookSignalsLoading[bot.id]) {
+        loadWebhookSignals(bot.id);
+      }
+    });
+  }, [isWebhookView, bots, webhookSignals, webhookSignalsLoading]);
 
   const buildSamplePayload = (bot: TradingBot) => {
     return JSON.stringify({
@@ -650,6 +666,26 @@ export default function BotsPage() {
             ))}
           </div>
 
+          {/* View Mode */}
+          <div className="flex space-x-2 overflow-x-auto">
+            {[
+              { id: 'overview', label: 'Bot Overview' },
+              { id: 'webhook', label: 'TradingView Webhooks' }
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setViewMode(tab.id as 'overview' | 'webhook')}
+                className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap ${
+                  viewMode === tab.id
+                    ? 'bg-purple-600 text-white'
+                    : 'bg-white text-gray-600 border border-gray-200'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
           {/* Bot List */}
           <div className="space-y-4">
             {loading ? (
@@ -712,7 +748,7 @@ export default function BotsPage() {
                 </div>
 
                 {/* Trade Limit Status */}
-                {(() => {
+                {!isWebhookView && (() => {
                   const limit = getLimit(bot.id);
                   if (limit) {
                     return (
@@ -862,6 +898,7 @@ export default function BotsPage() {
                 })()}
 
                 {/* Trade Amount */}
+                {!isWebhookView && (
                 <div className="pt-3 border-t border-gray-100">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
@@ -970,8 +1007,10 @@ export default function BotsPage() {
                     </div>
                   )}
                 </div>
+                )}
 
                 {/* Bot Stats */}
+                {!isWebhookView && (
                 <div className="grid grid-cols-2 md:grid-cols-6 gap-4 pt-4 border-t border-gray-100 dark:border-gray-700">
                   <div className="text-center">
                     <p className="text-sm text-gray-500 dark:text-gray-400">Trades</p>
@@ -1040,9 +1079,10 @@ export default function BotsPage() {
                     })()}
                   </div>
                 </div>
+                )}
 
                 {/* Bot Activity Logs */}
-                {(() => {
+                {!isWebhookView && (() => {
                   const activity = getBotActivity(bot.id);
                   const recentLogs = activity?.logs.slice(0, 3) || [];
                   
@@ -1129,23 +1169,32 @@ export default function BotsPage() {
                 })()}
 
                 {/* TradingView Webhook Management */}
-                <div className="pt-4 border-t border-gray-100">
+                {(() => {
+                  const showWebhookPanel = isWebhookView || webhookExpandedBot === bot.id;
+                  return (
+                <div className={`pt-4 border-t border-gray-100 ${isWebhookView ? 'bg-blue-50 rounded-lg border-blue-100' : ''}`}>
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
                       <i className="ri-link-m text-blue-500"></i>
                       <h4 className="text-sm font-medium text-gray-700">TradingView Webhook</h4>
                     </div>
-                    <button
-                      onClick={() => handleToggleWebhookPanel(bot.id)}
-                      className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
-                    >
-                      <i className={`ri-${webhookExpandedBot === bot.id ? 'arrow-up-s-line' : 'arrow-down-s-line'}`}></i>
-                      {webhookExpandedBot === bot.id ? 'Hide' : 'Manage'}
-                    </button>
+                    {isWebhookView ? (
+                      <span className="text-xs uppercase font-semibold text-blue-500 tracking-wide">
+                        Webhook Dashboard
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleToggleWebhookPanel(bot.id)}
+                        className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                      >
+                        <i className={`ri-${webhookExpandedBot === bot.id ? 'arrow-up-s-line' : 'arrow-down-s-line'}`}></i>
+                        {webhookExpandedBot === bot.id ? 'Hide' : 'Manage'}
+                      </button>
+                    )}
                   </div>
 
-                  {webhookExpandedBot === bot.id && (
-                    <div className="mt-3 space-y-4 bg-blue-50 border border-blue-100 rounded-lg p-4">
+                  {showWebhookPanel && (
+                    <div className={`mt-3 space-y-4 ${isWebhookView ? 'bg-white border border-blue-100' : 'bg-blue-50 border border-blue-100'} rounded-lg p-4`}>
                       <div className="grid gap-4 md:grid-cols-2">
                         <div>
                           <p className="text-xs uppercase font-semibold text-gray-500">Webhook Secret</p>
@@ -1342,8 +1391,11 @@ export default function BotsPage() {
                     </div>
                   )}
                 </div>
+                  );
+                })()}
 
                 {/* Bot Actions */}
+                {!isWebhookView && (
                 <div className="pt-4 border-t border-gray-100">
                   {/* Primary Actions Row */}
                   <div className="flex space-x-2 mb-2">
@@ -1498,6 +1550,7 @@ export default function BotsPage() {
                     </Button>
                   </div>
                 </div>
+                )}
               </Card>
               ))
             )}
