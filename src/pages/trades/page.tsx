@@ -152,19 +152,19 @@ export default function Trades() {
           
           return (
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
-              <Card className="p-4">
-                <div className="text-center">
+          <Card className="p-4">
+            <div className="text-center">
                   <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                    {filteredTrades.length}
-                  </div>
+                {filteredTrades.length}
+              </div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">Total Trades</div>
-                </div>
-              </Card>
-              <Card className="p-4">
-                <div className="text-center">
+            </div>
+          </Card>
+          <Card className="p-4">
+            <div className="text-center">
                   <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-                    {filteredTrades.filter(t => t.status === 'open').length}
-                  </div>
+                {filteredTrades.filter(t => t.status === 'open').length}
+              </div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">Active Trades</div>
                 </div>
               </Card>
@@ -217,9 +217,9 @@ export default function Trades() {
                   <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
                     Fees: ${totalFees.toFixed(2)}
                   </div>
-                </div>
-              </Card>
             </div>
+          </Card>
+        </div>
           );
         })()}
 

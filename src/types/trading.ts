@@ -43,7 +43,25 @@ export interface AdvancedStrategyConfig {
   // Directional Bias
   bias_mode: 'long-only' | 'short-only' | 'both' | 'auto';
   htf_timeframe: '4h' | '1d' | '1h' | '15m';
-  htf_trend_indicator: 'EMA200' | 'SMA200' | 'Supertrend';
+  htf_trend_indicator:
+    | 'EMA50'
+    | 'EMA100'
+    | 'EMA200'
+    | 'SMA50'
+    | 'SMA200'
+    | 'MA_CROSSOVER_50_200'
+    | 'Supertrend'
+    | 'DonchianChannel20'
+    | 'KeltnerChannelMidline'
+    | 'BollingerBasis20SMA'
+    | 'HullMA55'
+    | 'HullMA100'
+    | 'VWAP'
+    | 'GChannelBaseline'
+    | 'MACDZeroLine'
+    | 'RSI50Baseline'
+    | 'HeikinAshiTrend'
+    | 'IchimokuKumoTrend';
   ema_fast_period: number;
   require_price_vs_trend: 'above' | 'below' | 'any';
   adx_min_htf: number;

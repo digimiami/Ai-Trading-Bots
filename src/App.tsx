@@ -17,9 +17,9 @@ function AppRoutes() {
   // Load theme from localStorage on mount
   useEffect(() => {
     try {
-      const savedSettings = localStorage.getItem('appearance_settings');
-      if (savedSettings) {
-        const appearance = JSON.parse(savedSettings);
+    const savedSettings = localStorage.getItem('appearance_settings');
+    if (savedSettings) {
+      const appearance = JSON.parse(savedSettings);
         const theme = appearance?.theme || 'light';
         
         // Remove all theme classes first
@@ -28,8 +28,8 @@ function AppRoutes() {
         
         // Apply theme
         if (theme === 'dark') {
-          document.documentElement.classList.add('dark');
-          document.body.classList.add('dark');
+        document.documentElement.classList.add('dark');
+        document.body.classList.add('dark');
         } else if (theme !== 'light' && ['blue', 'green', 'purple', 'orange'].includes(theme)) {
           document.documentElement.classList.add(`theme-${theme}`);
           document.body.classList.add(`theme-${theme}`);

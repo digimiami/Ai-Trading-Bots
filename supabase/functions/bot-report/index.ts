@@ -124,14 +124,14 @@ serve(async (req) => {
         // Otherwise, calculate fee from amount and price
         // Try multiple field names to handle both real trades and paper trading trades
         const amount = parseFloat(t.amount || (t as any).size || (t as any).quantity || 0)
-        const price = parseFloat(t.price || (t as any).entry_price || 0)
-        
-        if (amount > 0 && price > 0) {
-          const tradeValue = amount * price
-          // Default to 0.1% if we can't determine exchange/trading_type from trade
-          // Per-bot calculation will use correct rates based on bot.exchange and bot.trading_type
-          fee = tradeValue * 0.001 // Default 0.1%
-        }
+      const price = parseFloat(t.price || (t as any).entry_price || 0)
+      
+      if (amount > 0 && price > 0) {
+        const tradeValue = amount * price
+        // Default to 0.1% if we can't determine exchange/trading_type from trade
+        // Per-bot calculation will use correct rates based on bot.exchange and bot.trading_type
+        fee = tradeValue * 0.001 // Default 0.1%
+      }
       }
       
       return sum + fee
@@ -258,11 +258,11 @@ serve(async (req) => {
           
           if (amount > 0 && price > 0) {
             const tradeValue = amount * price
-            if (trade.exchange === 'bybit') {
+          if (trade.exchange === 'bybit') {
               fee = tradingType === 'futures' ? tradeValue * 0.00055 : tradeValue * 0.001
-            } else if (trade.exchange === 'okx') {
+          } else if (trade.exchange === 'okx') {
               fee = tradingType === 'futures' ? tradeValue * 0.0005 : tradeValue * 0.0008
-            } else {
+          } else {
               fee = tradeValue * 0.001 // Default 0.1%
             }
           }
@@ -435,22 +435,22 @@ serve(async (req) => {
             // Otherwise, calculate fee from amount and price
             // Try multiple field names to handle both real trades and paper trading trades
             const amount = parseFloat(t.amount || (t as any).size || (t as any).quantity || 0)
-            const price = parseFloat(t.price || (t as any).entry_price || 0)
-            
-            if (amount > 0 && price > 0) {
-              tradesWithValidAmountPrice++
-              const tradeValue = amount * price
-              if (bot.exchange === 'bybit') {
-                fee = bot.trading_type === 'futures' ? tradeValue * 0.00055 : tradeValue * 0.001
-              } else if (bot.exchange === 'okx') {
-                fee = bot.trading_type === 'futures' ? tradeValue * 0.0005 : tradeValue * 0.0008
-              } else {
-                fee = tradeValue * 0.001 // Default 0.1%
-              }
+          const price = parseFloat(t.price || (t as any).entry_price || 0)
+          
+          if (amount > 0 && price > 0) {
+            tradesWithValidAmountPrice++
+            const tradeValue = amount * price
+            if (bot.exchange === 'bybit') {
+              fee = bot.trading_type === 'futures' ? tradeValue * 0.00055 : tradeValue * 0.001
+            } else if (bot.exchange === 'okx') {
+              fee = bot.trading_type === 'futures' ? tradeValue * 0.0005 : tradeValue * 0.0008
             } else {
-              tradesWithoutAmountPrice++
-              // Log first few trades without amount/price for debugging
-              if (tradesWithoutAmountPrice <= 3) {
+              fee = tradeValue * 0.001 // Default 0.1%
+            }
+          } else {
+            tradesWithoutAmountPrice++
+            // Log first few trades without amount/price for debugging
+            if (tradesWithoutAmountPrice <= 3) {
                 console.log(`⚠️ Bot ${bot.name} trade ${tradesWithoutAmountPrice}: amount=${t.amount || (t as any).size || (t as any).quantity || 'null'}, price=${t.price || (t as any).entry_price || 'null'}, storedFee=${storedFee}`)
               }
             }

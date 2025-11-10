@@ -58,9 +58,9 @@ serve(async (req) => {
     
     try {
       if (req.method === 'POST') {
-        const bodyText = await req.text()
-        if (bodyText) {
-          body = JSON.parse(bodyText)
+      const bodyText = await req.text()
+      if (bodyText) {
+        body = JSON.parse(bodyText)
           action = body.action
           params = { ...body }
           delete params.action
@@ -91,10 +91,10 @@ serve(async (req) => {
       // Existing user management functions
       case 'getUsers':
         try {
-          const { data: users, error: usersError } = await supabaseClient
-            .from('users')
-            .select('id, email, role, created_at, last_sign_in_at')
-            .order('created_at', { ascending: false })
+        const { data: users, error: usersError } = await supabaseClient
+          .from('users')
+          .select('id, email, role, created_at, last_sign_in_at')
+          .order('created_at', { ascending: false })
 
           if (usersError) {
             console.error('Error fetching users:', usersError)
@@ -203,8 +203,8 @@ serve(async (req) => {
             stack: error?.stack
           }), {
             status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          })
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
         }
 
       case 'createUser':

@@ -457,11 +457,11 @@ export default function AdminPage() {
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
                             <span className="font-medium text-gray-900 dark:text-white">{user.email}</span>
-                            <span className={`px-2 py-1 rounded-full text-xs ${
+                        <span className={`px-2 py-1 rounded-full text-xs ${
                               user.role === 'admin' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' : 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
-                            }`}>
-                              {user.role}
-                            </span>
+                        }`}>
+                          {user.role}
+                        </span>
                             <span className={`px-2 py-1 rounded-full text-xs flex items-center gap-1 ${
                               user.stats?.isActive 
                                 ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
@@ -472,7 +472,7 @@ export default function AdminPage() {
                               }`}></span>
                               {user.stats?.isActive ? 'Active' : 'Inactive'}
                             </span>
-                          </div>
+                      </div>
                           <div className="text-sm text-gray-500 dark:text-gray-400">
                             Created: {new Date(user.created_at).toLocaleDateString()}
                             {user.last_sign_in_at && (

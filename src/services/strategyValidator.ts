@@ -40,7 +40,26 @@ const VALIDATION_RANGES: Record<string, ValidationRange> = {
 const VALID_ENUMS: Record<string, string[]> = {
   bias_mode: ['long-only', 'short-only', 'both', 'auto'],
   htf_timeframe: ['4h', '1d', '1h', '15m'],
-  htf_trend_indicator: ['EMA200', 'SMA200', 'Supertrend'],
+  htf_trend_indicator: [
+    'EMA50',
+    'EMA100',
+    'EMA200',
+    'SMA50',
+    'SMA200',
+    'MA_CROSSOVER_50_200',
+    'Supertrend',
+    'DonchianChannel20',
+    'KeltnerChannelMidline',
+    'BollingerBasis20SMA',
+    'HullMA55',
+    'HullMA100',
+    'VWAP',
+    'GChannelBaseline',
+    'MACDZeroLine',
+    'RSI50Baseline',
+    'HeikinAshiTrend',
+    'IchimokuKumoTrend'
+  ],
   require_price_vs_trend: ['above', 'below', 'any'],
   regime_mode: ['trend', 'mean-reversion', 'auto'],
 };

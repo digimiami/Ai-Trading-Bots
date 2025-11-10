@@ -45,8 +45,8 @@ export default function Settings() {
   const [appearance, setAppearance] = useState(() => {
     // Load from localStorage with error handling
     try {
-      const saved = localStorage.getItem('appearance_settings');
-      if (saved) {
+    const saved = localStorage.getItem('appearance_settings');
+    if (saved) {
         const parsed = JSON.parse(saved);
         // Ensure theme is valid
         if (parsed && typeof parsed === 'object') {
@@ -166,18 +166,18 @@ export default function Settings() {
       // Apply new theme
       const isColorTheme = ['blue', 'green', 'purple', 'orange'].includes(appearance.theme);
       
-      if (appearance.theme === 'dark') {
+    if (appearance.theme === 'dark') {
         // Dark theme without color accent
-        document.documentElement.classList.add('dark');
-        document.body.classList.add('dark');
+      document.documentElement.classList.add('dark');
+      document.body.classList.add('dark');
       } else if (isColorTheme) {
         // Color themes are light themes with accent colors
         document.documentElement.classList.add(`theme-${appearance.theme}`);
         document.body.classList.add(`theme-${appearance.theme}`);
-      }
+    }
       // Light theme (default) - no classes needed
       
-      console.log(`🎨 Theme applied: ${appearance.theme}`);
+    console.log(`🎨 Theme applied: ${appearance.theme}`);
     } catch (error) {
       console.error('Error applying theme:', error);
     }
@@ -339,12 +339,12 @@ export default function Settings() {
     localStorage.setItem('appearance_settings', JSON.stringify(newAppearance));
     console.log(`💾 Saved to localStorage:`, newAppearance);
     
-      // Apply theme immediately (useEffect will handle the actual application)
-      if (key === 'theme') {
-        console.log(`🎨 Theme will change to: ${value}`);
+    // Apply theme immediately (useEffect will handle the actual application)
+    if (key === 'theme') {
+      console.log(`🎨 Theme will change to: ${value}`);
         // The useEffect hook will handle theme application
         alert(`✅ ${value.charAt(0).toUpperCase() + value.slice(1)} theme enabled!`);
-      }
+    }
     
     // Apply language immediately
     if (key === 'language') {
