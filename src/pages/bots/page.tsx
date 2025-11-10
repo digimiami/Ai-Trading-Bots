@@ -846,7 +846,7 @@ export default function BotsPage() {
                 </div>
 
                 {/* Bot Stats */}
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+                <div className="grid grid-cols-2 md:grid-cols-6 gap-4 pt-4 border-t border-gray-100 dark:border-gray-700">
                   <div className="text-center">
                     <p className="text-sm text-gray-500 dark:text-gray-400">Trades</p>
                     <p className="font-semibold text-gray-900 dark:text-white">{bot.totalTrades ?? 0}</p>
@@ -872,8 +872,35 @@ export default function BotsPage() {
                     })()}
                   </div>
                   <div className="text-center">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Leverage</p>
-                    <p className="font-semibold text-gray-900 dark:text-white">{bot.leverage ?? 1}x</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Fees</p>
+                    {(() => {
+                      const rawFees = bot.totalFees ?? bot.total_fees ?? bot.fees ?? 0;
+                      const feesValue = Number.isFinite(rawFees) ? rawFees : 0;
+                      const signPrefix = feesValue > 0 ? '-' : '';
+                      const displayValue = Math.abs(feesValue);
+                      return (
+                        <p className={`font-semibold ${displayValue > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>
+                          {signPrefix}${displayValue.toFixed(2)}
+                        </p>
+                      );
+                    })()}
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Drawdown</p>
+                    {(() => {
+                      const rawDrawdown = bot.drawdown ?? bot.maxDrawdown ?? 0;
+                      const drawdownValue = Number.isFinite(rawDrawdown) ? Math.abs(rawDrawdown) : 0;
+                      const rawDrawdownPct = bot.drawdownPercentage ?? bot.drawdown_percentage ?? 0;
+                      const drawdownPct = Number.isFinite(rawDrawdownPct) ? Math.abs(rawDrawdownPct) : 0;
+                      return (
+                        <div>
+                          <p className={`font-semibold ${drawdownValue > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>
+                            {drawdownValue > 0 ? '-' : ''}${drawdownValue.toFixed(2)}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{drawdownPct.toFixed(1)}%</p>
+                        </div>
+                      );
+                    })()}
                   </div>
                   <div className="text-center">
                     <p className="text-sm text-gray-500 dark:text-gray-400">PnL</p>

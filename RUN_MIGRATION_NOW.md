@@ -67,3 +67,5 @@ If you want all paper trading tables, run `APPLY_MIGRATION.sql` instead (include
 
 
 
+
+

@@ -971,6 +971,11 @@ class BotExecutor {
     try {
       console.log(`🤖 Executing bot: ${bot.name} (${bot.id}) - Status: ${bot.status}`);
       
+      const manualProcessed = await this.processManualSignals(bot);
+      if (manualProcessed > 0) {
+        console.log(`📬 Processed ${manualProcessed} manual trade signal(s) for bot ${bot.name}`);
+      }
+
       // ⚠️ CRITICAL: Check paper trading mode FIRST before any real API calls
       const isPaperTrading = bot.paper_trading === true;
       
@@ -1444,7 +1449,7 @@ class BotExecutor {
     };
   }
   
-  private async executeTrade(bot: any, tradeSignal: any): Promise<void> {
+  public async executeTrade(bot: any, tradeSignal: any): Promise<void> {
     try {
       // Get trading type with fallback (handle both camelCase and snake_case)
       const tradingType = bot.tradingType || bot.trading_type || 'futures';
@@ -1617,6 +1622,160 @@ class BotExecutor {
     }
   }
   
+  public async executeManualTrade(
+    bot: any,
+    params: {
+      side: string;
+      reason?: string;
+      confidence?: number;
+      mode?: 'real' | 'paper';
+      sizeMultiplier?: number | null;
+      source?: string;
+    }
+  ): Promise<{ mode: 'real' | 'paper' }> {
+    const effectiveSide = (params.side || '').toLowerCase();
+    if (!['buy', 'sell', 'long', 'short'].includes(effectiveSide)) {
+      throw new Error(`Invalid manual trade side: ${params.side}`);
+    }
+
+    const normalizedSide = effectiveSide === 'long' ? 'buy'
+      : effectiveSide === 'short' ? 'sell'
+      : effectiveSide;
+
+    const tradeSignal = {
+      shouldTrade: true,
+      side: normalizedSide,
+      reason: params.reason || `Manual trade trigger (${params.source || 'webhook'})`,
+      confidence: params.confidence ?? 1
+    };
+
+    const effectiveMode: 'real' | 'paper' =
+      params.mode === 'paper' ? 'paper' :
+      bot.paper_trading ? 'paper' :
+      'real';
+
+    const botSnapshot = { ...bot };
+    const multiplier = params.sizeMultiplier ?? null;
+    if (multiplier !== null && multiplier !== undefined) {
+      const parsedMultiplier = Number(multiplier);
+      if (Number.isFinite(parsedMultiplier) && parsedMultiplier > 0) {
+        const baseAmount = Number(bot.trade_amount || bot.tradeAmount || 100);
+        botSnapshot.trade_amount = baseAmount * parsedMultiplier;
+      }
+    }
+
+    await this.addBotLog(bot.id, {
+      level: 'info',
+      category: 'trade',
+      message: `Manual trade triggered via ${params.source || 'external webhook'} (${effectiveMode.toUpperCase()})`,
+      details: {
+        paper_trading: effectiveMode === 'paper',
+        side: normalizedSide,
+        reason: tradeSignal.reason,
+        confidence: tradeSignal.confidence,
+        size_multiplier: multiplier,
+        timestamp: TimeSync.getCurrentTimeISO()
+      }
+    });
+
+    if (effectiveMode === 'paper') {
+      const paperExecutor = new PaperTradingExecutor(this.supabaseClient, this.user);
+      await paperExecutor.executePaperTrade(botSnapshot, tradeSignal);
+      await paperExecutor.updatePaperPositions(bot.id);
+    } else {
+      await this.executeTrade(botSnapshot, tradeSignal);
+    }
+
+    return { mode: effectiveMode };
+  }
+
+  private async processManualSignals(bot: any): Promise<number> {
+    try {
+      const { data: pendingSignals, error } = await this.supabaseClient
+        .from('manual_trade_signals')
+        .select('*')
+        .eq('bot_id', bot.id)
+        .in('status', ['pending', 'processing'])
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        console.error(`❌ Failed to fetch manual trade signals for bot ${bot.id}:`, error);
+        return 0;
+      }
+
+      if (!pendingSignals || pendingSignals.length === 0) {
+        return 0;
+      }
+
+      let processedCount = 0;
+
+      for (const signal of pendingSignals) {
+        const signalId = signal.id;
+
+        try {
+          if (signal.status === 'pending') {
+            await this.supabaseClient
+              .from('manual_trade_signals')
+              .update({ status: 'processing' })
+              .eq('id', signalId)
+              .eq('status', 'pending');
+          }
+
+          const result = await this.executeManualTrade(bot, {
+            side: signal.side,
+            reason: signal.reason || 'Manual trade signal',
+            confidence: 1,
+            mode: signal.mode === 'paper' ? 'paper' : 'real',
+            sizeMultiplier: signal.size_multiplier ? Number(signal.size_multiplier) : undefined,
+            source: 'manual_trade_signal'
+          });
+
+          await this.supabaseClient
+            .from('manual_trade_signals')
+            .update({
+              status: 'completed',
+              error: null,
+              processed_at: TimeSync.getCurrentTimeISO(),
+              mode: result.mode
+            })
+            .eq('id', signalId);
+
+          processedCount += 1;
+        } catch (signalError) {
+          const errorMessage = signalError instanceof Error ? signalError.message : String(signalError);
+          console.error(`❌ Manual trade signal failed for bot ${bot.id}:`, errorMessage);
+
+          await this.addBotLog(bot.id, {
+            level: 'error',
+            category: 'trade',
+            message: `Manual trade signal failed: ${errorMessage}`,
+            details: {
+              signal_id: signalId,
+              side: signal.side,
+              mode: signal.mode,
+              error: errorMessage,
+              timestamp: TimeSync.getCurrentTimeISO()
+            }
+          });
+
+          await this.supabaseClient
+            .from('manual_trade_signals')
+            .update({
+              status: 'failed',
+              error: errorMessage,
+              processed_at: TimeSync.getCurrentTimeISO()
+            })
+            .eq('id', signalId);
+        }
+      }
+
+      return processedCount;
+    } catch (processError) {
+      console.error(`❌ Error processing manual trade signals for bot ${bot.id}:`, processError);
+      return 0;
+    }
+  }
+
   private async placeOrder(bot: any, tradeSignal: any, amount: number, price: number): Promise<any> {
     try {
       // Get API keys for the exchange
