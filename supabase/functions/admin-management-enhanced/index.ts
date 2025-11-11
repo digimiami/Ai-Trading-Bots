@@ -504,43 +504,57 @@ serve(async (req) => {
 
       // NEW: System Monitoring
       case 'getSystemStats': {
-        const { count: userCount } = await supabaseClient
-          .from('users')
-          .select('id', { count: 'exact', head: true })
+        const safeCount = async (table: string) => {
+          try {
+            const { count, error } = await supabaseClient
+              .from(table)
+              .select('id', { count: 'exact', head: true })
+            if (error) {
+              console.warn(`Warning: failed to count from ${table}:`, error.message)
+              return 0
+            }
+            return count || 0
+          } catch (err) {
+            console.warn(`Warning: exception counting ${table}:`, err)
+            return 0
+          }
+        }
 
-        const { count: botCount } = await supabaseClient
-          .from('trading_bots')
-          .select('id', { count: 'exact', head: true })
+        const [userCount, botCount, tradeCount, alertCount] = await Promise.all([
+          safeCount('users'),
+          safeCount('trading_bots'),
+          safeCount('trades'),
+          safeCount('alerts')
+        ])
 
-        const { count: tradeCount } = await supabaseClient
-          .from('trades')
-          .select('id', { count: 'exact', head: true })
-
-        const { count: alertCount } = await supabaseClient
-          .from('alerts')
-          .select('id', { count: 'exact', head: true })
-
-        // Get recent trading activity
-        const { data: recentTrades } = await supabaseClient
+        const { data: recentTrades, error: recentTradesError } = await supabaseClient
           .from('trades')
           .select('id, created_at, status, pnl')
           .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
           .order('created_at', { ascending: false })
 
-        // Calculate platform PnL
-        const { data: platformPnL } = await supabaseClient
-          .from('trades')
-          .select('pnl')
-          .eq('status', 'filled')
+        if (recentTradesError) {
+          console.warn('Warning: failed to fetch recent trades:', recentTradesError.message)
+        }
 
-        const totalPnL = platformPnL?.reduce((sum, trade) => sum + (trade.pnl || 0), 0) || 0
+        const { data: platformTrades, error: platformTradesError } = await supabaseClient
+          .from('trades')
+          .select('pnl, status')
+
+        if (platformTradesError) {
+          console.warn('Warning: failed to fetch platform trades:', platformTradesError.message)
+        }
+
+        const totalPnL = (platformTrades || [])
+          .filter(trade => (trade.status || '').toLowerCase() === 'closed' || (trade.status || '').toLowerCase() === 'filled')
+          .reduce((sum, trade) => sum + (parseFloat(trade.pnl || 0) || 0), 0)
 
         return new Response(JSON.stringify({
           stats: {
-            totalUsers: userCount || 0,
-            totalBots: botCount || 0,
-            totalTrades: tradeCount || 0,
-            totalAlerts: alertCount || 0,
+            totalUsers: userCount,
+            totalBots: botCount,
+            totalTrades: tradeCount,
+            totalAlerts: alertCount,
             platformPnL: totalPnL,
             recentTrades: recentTrades?.length || 0
           }
@@ -553,18 +567,36 @@ serve(async (req) => {
         const { period = '7' } = params
         const daysAgo = new Date(Date.now() - parseInt(period) * 24 * 60 * 60 * 1000)
 
-        const { data: trades } = await supabaseClient
+        const { data: trades, error: tradesError } = await supabaseClient
           .from('trades')
           .select('*')
           .gte('created_at', daysAgo.toISOString())
           .order('created_at', { ascending: false })
 
+        if (tradesError) {
+          console.error('Error fetching trades for analytics:', tradesError)
+          return new Response(JSON.stringify({
+            analytics: {
+              totalTrades: 0,
+              filledTrades: 0,
+              failedTrades: 0,
+              pendingTrades: 0,
+              totalPnL: 0,
+              successRate: 0,
+              exchangeStats: {},
+              trades: []
+            }
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
         // Calculate analytics
         const totalTrades = trades?.length || 0
-        const filledTrades = trades?.filter(t => t.status === 'filled').length || 0
-        const failedTrades = trades?.filter(t => t.status === 'failed').length || 0
-        const pendingTrades = trades?.filter(t => t.status === 'pending').length || 0
-        const totalPnL = trades?.reduce((sum, t) => sum + (t.pnl || 0), 0) || 0
+        const filledTrades = trades?.filter(t => (t.status || '').toLowerCase() === 'closed' || (t.status || '').toLowerCase() === 'filled').length || 0
+        const failedTrades = trades?.filter(t => (t.status || '').toLowerCase() === 'failed').length || 0
+        const pendingTrades = trades?.filter(t => (t.status || '').toLowerCase() === 'open' || (t.status || '').toLowerCase() === 'pending').length || 0
+        const totalPnL = trades?.reduce((sum, t) => sum + (parseFloat(t.pnl || 0) || 0), 0) || 0
         const successRate = totalTrades > 0 ? (filledTrades / totalTrades) * 100 : 0
 
         // Group by exchange
@@ -595,34 +627,58 @@ serve(async (req) => {
 
       // NEW: Financial Oversight
       case 'getFinancialOverview': {
-        const { data: allTrades } = await supabaseClient
-          .from('trades')
-          .select('pnl, fee, amount, price, created_at, status')
-          .eq('status', 'filled')
+        try {
+          const { data: allTrades, error: allTradesError } = await supabaseClient
+            .from('trades')
+            .select('pnl, created_at, status, size, entry_price, exit_price')
 
-        const totalVolume = allTrades?.reduce((sum, t) => sum + (t.amount * t.price), 0) || 0
-        const totalFees = allTrades?.reduce((sum, t) => sum + (t.fee || 0), 0) || 0
-        const totalPnL = allTrades?.reduce((sum, t) => sum + (t.pnl || 0), 0) || 0
-
-        // Daily PnL for last 30 days
-        const dailyPnL = allTrades?.reduce((acc, trade) => {
-          const date = trade.created_at.split('T')[0]
-          if (!acc[date]) acc[date] = 0
-          acc[date] += trade.pnl || 0
-          return acc
-        }, {} as Record<string, number>) || {}
-
-        return new Response(JSON.stringify({
-          financial: {
-            totalVolume,
-            totalFees,
-            totalPnL,
-            dailyPnL,
-            netProfit: totalPnL - totalFees
+          if (allTradesError) {
+            console.warn('Warning: failed to fetch trades for financial overview:', allTradesError.message)
           }
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
+
+          const closedTrades = (allTrades || []).filter(t => (t.status || '').toLowerCase() === 'closed' || (t.status || '').toLowerCase() === 'filled')
+
+          const totalVolume = closedTrades.reduce((sum, t) => {
+            const size = parseFloat(t.size || 0) || 0
+            const price = parseFloat(t.entry_price || 0) || 0
+            return sum + Math.abs(size * price)
+          }, 0)
+
+          const totalPnL = closedTrades.reduce((sum, t) => sum + (parseFloat(t.pnl || 0) || 0), 0)
+          const totalFees = 0 // Fees not stored in current schema
+
+          const dailyPnL = closedTrades.reduce((acc, trade) => {
+            const date = (trade.created_at || '').split('T')[0] || new Date().toISOString().split('T')[0]
+            if (!acc[date]) acc[date] = 0
+            acc[date] += parseFloat(trade.pnl || 0) || 0
+            return acc
+          }, {} as Record<string, number>)
+
+          return new Response(JSON.stringify({
+            financial: {
+              totalVolume,
+              totalFees,
+              totalPnL,
+              dailyPnL,
+              netProfit: totalPnL - totalFees
+            }
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        } catch (err) {
+          console.error('Error building financial overview:', err)
+          return new Response(JSON.stringify({
+            financial: {
+              totalVolume: 0,
+              totalFees: 0,
+              totalPnL: 0,
+              dailyPnL: {},
+              netProfit: 0
+            }
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
       }
 
       // NEW: User Activity Monitoring
@@ -659,25 +715,43 @@ serve(async (req) => {
 
       // NEW: Risk Monitoring
       case 'getRiskMetrics': {
-        const { data: largeTrades } = await supabaseClient
+        const { data: trades, error: tradesError } = await supabaseClient
           .from('trades')
           .select('*')
-          .gte('amount', 1000) // Large trades
           .order('created_at', { ascending: false })
-          .limit(20)
 
-        const { data: failedTrades } = await supabaseClient
-          .from('trades')
-          .select('*')
-          .eq('status', 'failed')
-          .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
-          .order('created_at', { ascending: false })
+        if (tradesError) {
+          console.warn('Warning: failed to fetch trades for risk metrics:', tradesError.message)
+          return new Response(JSON.stringify({
+            risk: {
+              largeTrades: [],
+              failedTrades: [],
+              riskScore: 0
+            }
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        const largeTrades = (trades || []).filter(trade => {
+          const size = parseFloat(trade.size || 0) || 0
+          const price = parseFloat(trade.entry_price || trade.price || 0) || 0
+          return Math.abs(size * price) >= 1000
+        }).slice(0, 20)
+
+        const failedTrades = (trades || []).filter(trade => {
+          const status = (trade.status || '').toLowerCase()
+          if (status === 'failed' || status === 'error') return true
+          const createdAt = trade.created_at ? new Date(trade.created_at).getTime() : 0
+          const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000
+          return status !== 'closed' && status !== 'filled' && createdAt >= oneDayAgo
+        }).slice(0, 20)
 
         return new Response(JSON.stringify({
           risk: {
             largeTrades,
             failedTrades,
-            riskScore: failedTrades?.length || 0
+            riskScore: failedTrades.length
           }
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
