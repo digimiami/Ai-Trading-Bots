@@ -17,43 +17,6 @@ export default function Onboarding() {
 
   const steps = [
     {
-      title: 'Welcome to Pablo',
-      subtitle: 'AI-Powered Trading Bots',
-      content: (
-        <div className="text-center space-y-6">
-          <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center mx-auto">
-            <i className="ri-robot-line text-4xl text-blue-600"></i>
-          </div>
-          <div>
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">Start Your Trading Journey</h2>
-            <p className="text-gray-600">
-              Create intelligent trading bots that work 24/7 across multiple exchanges
-            </p>
-          </div>
-          <div className="space-y-3">
-            <div className="flex items-center space-x-3 text-left">
-              <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                <i className="ri-check-line text-green-600"></i>
-              </div>
-              <span className="text-gray-700">Multi-exchange support (Bybit, OKX)</span>
-            </div>
-            <div className="flex items-center space-x-3 text-left">
-              <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                <i className="ri-check-line text-green-600"></i>
-              </div>
-              <span className="text-gray-700">Advanced risk management</span>
-            </div>
-            <div className="flex items-center space-x-3 text-left">
-              <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
-                <i className="ri-check-line text-green-600"></i>
-              </div>
-              <span className="text-gray-700">Real-time performance tracking</span>
-            </div>
-          </div>
-        </div>
-      )
-    },
-    {
       title: 'Trading Experience',
       subtitle: 'Help us understand your background',
       content: (
@@ -260,12 +223,11 @@ export default function Onboarding() {
 
   const canProceed = () => {
     switch (currentStep) {
-      case 0: return true;
-      case 1: return formData.experience !== '';
-      case 2: return formData.riskTolerance !== '';
-      case 3: return formData.tradingGoals !== '';
-      case 4: return formData.initialCapital !== '' && formData.preferredExchange !== '';
-      case 5: return true;
+      case 0: return formData.experience !== '';
+      case 1: return formData.riskTolerance !== '';
+      case 2: return formData.tradingGoals !== '';
+      case 3: return formData.initialCapital !== '' && formData.preferredExchange !== '';
+      case 4: return true;
       default: return false;
     }
   };
