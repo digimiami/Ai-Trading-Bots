@@ -20,20 +20,41 @@ export function useAuth() {
     }
 
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('role, status')
-        .eq('id', userId)
-        .single()
+      const selectAccessInfo = async (includeStatus: boolean) => {
+        const columns = includeStatus ? 'role, status' : 'role'
+        return supabase
+          .from('users')
+          .select(columns)
+          .eq('id', userId)
+          .single()
+      }
+
+      let { data, error } = await selectAccessInfo(true)
 
       if (error) {
+        // If status column doesn't exist yet, retry without it
+        const columnMissing = (error as any)?.code === '42703'
+        if (columnMissing) {
+          ({ data, error } = await selectAccessInfo(false))
+          if (error) {
+            console.error('❌ Error fetching user access info (fallback):', error)
+            return { role: 'user', status: 'active' }
+          }
+          const info = {
+            role: (data as any)?.role || 'user',
+            status: 'active'
+          }
+          setAccessCache(prev => ({ ...prev, [userId]: info }))
+          return info
+        }
+
         console.error('❌ Error fetching user access info:', error)
         return { role: 'user', status: 'active' }
       }
 
       const info = {
-        role: data?.role || 'user',
-        status: data?.status || 'active'
+        role: (data as any)?.role || 'user',
+        status: (data as any)?.status || 'active'
       }
 
       setAccessCache(prev => ({ ...prev, [userId]: info }))
