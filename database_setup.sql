@@ -64,17 +64,49 @@ CREATE TABLE IF NOT EXISTS api_keys (
 ALTER TABLE api_keys ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for api_keys table
-CREATE POLICY "Users can view their own API keys" ON api_keys
-    FOR SELECT USING (auth.uid() = user_id);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = current_schema()
+          AND tablename = 'api_keys'
+          AND polname = 'Users can view their own API keys'
+    ) THEN
+        CREATE POLICY "Users can view their own API keys" ON api_keys
+            FOR SELECT USING (auth.uid() = user_id);
+    END IF;
 
-CREATE POLICY "Users can insert their own API keys" ON api_keys
-    FOR INSERT WITH CHECK (auth.uid() = user_id);
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = current_schema()
+          AND tablename = 'api_keys'
+          AND polname = 'Users can insert their own API keys'
+    ) THEN
+        CREATE POLICY "Users can insert their own API keys" ON api_keys
+            FOR INSERT WITH CHECK (auth.uid() = user_id);
+    END IF;
 
-CREATE POLICY "Users can update their own API keys" ON api_keys
-    FOR UPDATE USING (auth.uid() = user_id);
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = current_schema()
+          AND tablename = 'api_keys'
+          AND polname = 'Users can update their own API keys'
+    ) THEN
+        CREATE POLICY "Users can update their own API keys" ON api_keys
+            FOR UPDATE USING (auth.uid() = user_id);
+    END IF;
 
-CREATE POLICY "Users can delete their own API keys" ON api_keys
-    FOR DELETE USING (auth.uid() = user_id);
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_policies
+        WHERE schemaname = current_schema()
+          AND tablename = 'api_keys'
+          AND polname = 'Users can delete their own API keys'
+    ) THEN
+        CREATE POLICY "Users can delete their own API keys" ON api_keys
+            FOR DELETE USING (auth.uid() = user_id);
+    END IF;
+END
+$$;
 
 -- =====================================================
 -- 3. TRADING BOTS TABLE
