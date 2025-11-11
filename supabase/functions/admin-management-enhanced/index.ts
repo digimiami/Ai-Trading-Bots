@@ -89,74 +89,57 @@ serve(async (req) => {
 
     switch (action) {
       // Existing user management functions
-      case 'getUsers':
+      case 'getUsers': {
         try {
-        const { data: users, error: usersError } = await supabaseClient
-          .from('users')
-          .select('id, email, role, created_at, last_sign_in_at')
-          .order('created_at', { ascending: false })
+          const { data: users, error: usersError } = await supabaseClient
+            .from('users')
+            .select('id, email, role, created_at, last_sign_in_at')
+            .order('created_at', { ascending: false })
 
           if (usersError) {
             console.error('Error fetching users:', usersError)
             throw usersError
           }
-          
-          // Fetch trading stats for each user
+
           const usersWithStats = await Promise.all(
-            users.map(async (user: any) => {
+            (users || []).map(async (user: any) => {
               try {
-                // Get user's bots and their PnL
-                const { data: bots, error: botsError } = await supabaseClient
+                const { data: bots } = await supabaseClient
                   .from('trading_bots')
-                  .select('id, pnl, total_trades, win_rate, status')
+                  .select('*')
                   .eq('user_id', user.id)
-                
-                if (botsError) {
-                  console.error(`Error fetching bots for user ${user.id}:`, botsError)
-                }
-                
-                const totalPnL = bots?.reduce((sum, bot) => sum + (parseFloat(bot.pnl || 0) || 0), 0) || 0
-                const totalTrades = bots?.reduce((sum, bot) => sum + (parseInt(bot.total_trades || 0) || 0), 0) || 0
-                const activeBots = bots?.filter(bot => bot.status === 'running').length || 0
-                const avgWinRate = bots && bots.length > 0 
-                  ? bots.reduce((sum, bot) => sum + (parseFloat(bot.win_rate || 0) || 0), 0) / bots.length 
+
+                const totalPnL = (bots || []).reduce((sum, bot) => sum + (parseFloat(bot.pnl || 0) || 0), 0)
+                const totalTrades = (bots || []).reduce((sum, bot) => sum + (parseInt(bot.total_trades || bot.totalTrades || 0) || 0), 0)
+                const activeBots = (bots || []).filter(bot => (bot.status || '').toLowerCase() === 'running').length
+                const avgWinRate = (bots && bots.length > 0)
+                  ? (bots.reduce((sum, bot) => sum + (parseFloat(bot.win_rate || bot.winRate || 0) || 0), 0) / bots.length)
                   : 0
-                
-                // Get user's trading volume (from trades table) - note: trades table doesn't have fees column
-                const { data: trades, error: tradesError } = await supabaseClient
+
+                const { data: trades } = await supabaseClient
                   .from('trades')
-                  .select('size, entry_price')
+                  .select('*')
                   .eq('user_id', user.id)
-                
-                if (tradesError) {
-                  console.error(`Error fetching trades for user ${user.id}:`, tradesError)
-                }
-                
-                const totalVolume = trades?.reduce((sum, trade) => {
-                  const size = parseFloat(trade.size || 0) || 0
-                  const entryPrice = parseFloat(trade.entry_price || 0) || 0
-                  return sum + (size * entryPrice)
-                }, 0) || 0
-                
-                // Get paper trading stats
-                const { data: paperTrades, error: paperTradesError } = await supabaseClient
+
+                const totalVolume = (trades || []).reduce((sum, trade) => {
+                  const size = parseFloat(trade.size || trade.amount || trade.quantity || 0) || 0
+                  const entryPrice = parseFloat(trade.entry_price || trade.price || 0) || 0
+                  return sum + Math.abs(size * entryPrice)
+                }, 0)
+
+                const { data: paperTrades } = await supabaseClient
                   .from('paper_trading_trades')
-                  .select('pnl, quantity, price')
+                  .select('*')
                   .eq('user_id', user.id)
                   .eq('status', 'closed')
-                
-                if (paperTradesError) {
-                  console.error(`Error fetching paper trades for user ${user.id}:`, paperTradesError)
-                }
-                
-                const paperPnL = paperTrades?.reduce((sum, trade) => sum + (parseFloat(trade.pnl || 0) || 0), 0) || 0
+
+                const paperPnL = (paperTrades || []).reduce((sum, trade) => sum + (parseFloat(trade.pnl || 0) || 0), 0)
                 const paperTradesCount = paperTrades?.length || 0
-                
-                // Determine if user is active (signed in within last 30 days)
-                const isActive = user.last_sign_in_at 
+
+                const isActive = user.last_sign_in_at
                   ? (new Date(user.last_sign_in_at).getTime() > Date.now() - (30 * 24 * 60 * 60 * 1000))
                   : false
-                
+
                 return {
                   ...user,
                   stats: {
@@ -171,8 +154,7 @@ serve(async (req) => {
                   }
                 }
               } catch (userError) {
-                console.error(`Error processing stats for user ${user.id}:`, userError)
-                // Return user without stats if there's an error
+                console.error(`Error processing stats for user ${user?.id}:`, userError)
                 return {
                   ...user,
                   stats: {
@@ -189,23 +171,21 @@ serve(async (req) => {
               }
             })
           )
-          
+
           return new Response(JSON.stringify({ users: usersWithStats }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         } catch (error) {
           console.error('Error in getUsers:', error)
-          console.error('Error stack:', error.stack)
-          console.error('Error details:', JSON.stringify(error, Object.getOwnPropertyNames(error)))
-          return new Response(JSON.stringify({ 
-            error: 'Failed to fetch users',
-            details: error?.message || String(error),
-            stack: error?.stack
+          return new Response(JSON.stringify({
+            users: [],
+            warning: 'Failed to fetch users. Returning empty list.',
+            details: error?.message || String(error)
           }), {
-            status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
         }
+      }
 
       case 'createUser':
         const { email, password, role } = params
