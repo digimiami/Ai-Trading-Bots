@@ -12,6 +12,10 @@ type TradingViewPayload = {
   webhook_secret?: string;
   botId?: string;
   bot_id?: string;
+  signalToken?: string;
+  signal_token?: string;
+  signalKey?: string;
+  signal_key?: string;
   userId?: string;
   user_id?: string;
   side?: string;
@@ -26,7 +30,64 @@ type TradingViewPayload = {
   note?: string;
   strategy?: string;
   trigger_execution?: boolean;
+  instrument?: string;
+  ticker?: string;
+  symbol?: string;
+  amount?: number | string;
+  marketPosition?: string;
+  market_position?: string;
+  prevMarketPosition?: string;
+  prev_market_position?: string;
+  marketPositionSize?: number | string;
+  market_position_size?: number | string;
 };
+
+function resolveAmountFromPayload(payload: TradingViewPayload): number | null {
+  const candidates: Array<number | string | undefined> = [
+    payload.amount,
+    payload.size,
+    payload.size_multiplier,
+    payload.marketPositionSize,
+    payload.market_position_size
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "number" && Number.isFinite(candidate)) {
+      return candidate;
+    }
+    if (typeof candidate === "string") {
+      const parsed = parseFloat(candidate);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+  return null;
+}
+
+function resolveSideFromAction(payload: TradingViewPayload): "buy" | "sell" | null {
+  const candidates = [
+    payload.side,
+    payload.signal,
+    payload.action,
+    payload.marketPosition,
+    payload.market_position
+  ];
+
+  for (const raw of candidates) {
+    if (!raw) continue;
+    const action = raw.toLowerCase();
+    if (["buy", "long", "enter_long", "entry_long"].includes(action)) return "buy";
+    if (["sell", "short", "enter_short", "entry_short", "sellshort"].includes(action)) return "sell";
+    if (["close", "exit", "flat"].includes(action)) {
+      const prev = (payload.prevMarketPosition || payload.prev_market_position || "").toLowerCase();
+      if (prev === "long") return "sell";
+      if (prev === "short") return "buy";
+    }
+  }
+
+  return null;
+}
 
 function normalizeSide(rawSide: string | undefined): "buy" | "sell" | null {
   if (!rawSide) return null;
@@ -101,6 +162,12 @@ serve(async (req) => {
     "";
 
   const botId = payload.botId || payload.bot_id;
+  const signalToken =
+    payload.signalToken ||
+    payload.signal_token ||
+    payload.signalKey ||
+    payload.signal_key ||
+    "";
 
   if (!botId) {
     return new Response(JSON.stringify({ error: "botId is required" }), {
@@ -111,21 +178,66 @@ serve(async (req) => {
 
   const supabaseClient = createClient(supabaseUrl, serviceRoleKey);
 
-  const { data: bot, error: botError } = await supabaseClient
-    .from("trading_bots")
-    .select("id, user_id, name, status, paper_trading, trade_amount, webhook_secret, webhook_trigger_immediate")
-    .eq("id", botId)
-    .single();
+  let bot: any = null;
+  let template: any = null;
 
-  if (botError || !bot) {
-    console.error("❌ Trading bot not found for webhook", botError);
-    return new Response(JSON.stringify({ error: "Bot not found" }), {
-      status: 404,
+  if (botId) {
+    const { data: botData, error: botError } = await supabaseClient
+      .from("trading_bots")
+      .select("id, user_id, name, status, paper_trading, trade_amount, webhook_secret, webhook_trigger_immediate")
+      .eq("id", botId)
+      .single();
+
+    if (botError || !botData) {
+      console.error("❌ Trading bot not found for webhook", botError);
+      return new Response(JSON.stringify({ error: "Bot not found" }), {
+        status: 404,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+    bot = botData;
+  } else if (signalToken) {
+    const { data: templateData, error: templateError } = await supabaseClient
+      .from("signal_templates")
+      .select("id, user_id, name, mode, trade_amount, leverage, default_symbol, linked_bot_id, active")
+      .eq("signal_token", signalToken)
+      .eq("active", true)
+      .single();
+
+    if (templateError || !templateData) {
+      console.warn("⚠️ Signal template not found or inactive for token");
+      return new Response(JSON.stringify({ error: "Signal template not found" }), {
+        status: 404,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    template = templateData;
+
+    if (template.linked_bot_id) {
+      const { data: linkedBot, error: linkedBotError } = await supabaseClient
+        .from("trading_bots")
+        .select("id, user_id, name, status, paper_trading, trade_amount, webhook_secret, webhook_trigger_immediate")
+        .eq("id", template.linked_bot_id)
+        .single();
+
+      if (linkedBotError || !linkedBot) {
+        console.error("❌ Linked bot missing for signal template", linkedBotError);
+        return new Response(JSON.stringify({ error: "Linked bot not found for template" }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+      bot = linkedBot;
+    }
+  } else {
+    return new Response(JSON.stringify({ error: "botId or signalToken required" }), {
+      status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
   }
 
-  const allowedSecrets = [tradingViewSecret, bot.webhook_secret].filter(
+  const allowedSecrets = [tradingViewSecret, bot?.webhook_secret].filter(
     (secret): secret is string => Boolean(secret && secret.length > 0)
   );
 
@@ -145,13 +257,19 @@ serve(async (req) => {
     });
   }
 
-  const normalizedSide = normalizeSide(payload.side || payload.signal || payload.action);
-  const mode = normalizeMode(payload.mode || payload.trade_mode);
+  const resolvedAmount = resolveAmountFromPayload(payload);
+  const normalizedSide =
+    resolveSideFromAction(payload) ||
+    normalizeSide(payload.side || payload.signal || payload.action);
+  let mode = normalizeMode(payload.mode || payload.trade_mode);
+  if (template) {
+    mode = template.mode === "paper" ? "paper" : "real";
+  }
   const sizeMultiplier =
     typeof payload.size_multiplier === "number"
       ? payload.size_multiplier
-      : typeof payload.size === "number"
-      ? payload.size
+      : resolvedAmount !== null
+      ? resolvedAmount
       : undefined;
 
   if (!normalizedSide) {
@@ -163,7 +281,8 @@ serve(async (req) => {
 
   try {
     const userIdOverride = payload.userId || payload.user_id;
-    if (userIdOverride && userIdOverride !== bot.user_id) {
+    const ownerId = bot ? bot.user_id : template?.user_id;
+    if (userIdOverride && ownerId && userIdOverride !== ownerId) {
       return new Response(JSON.stringify({ error: "botId and userId mismatch" }), {
         status: 403,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
@@ -173,31 +292,82 @@ serve(async (req) => {
     const shouldTrigger =
       typeof payload.trigger_execution === "boolean"
         ? payload.trigger_execution
-        : bot.webhook_trigger_immediate ?? true;
+        : bot
+        ? bot.webhook_trigger_immediate ?? true
+        : true;
 
     const sanitizedPayload = { ...payload };
     delete sanitizedPayload.secret;
     delete sanitizedPayload.webhook_secret;
 
-    await supabaseClient
-      .from("bot_activity_logs")
-      .insert({
-        bot_id: bot.id,
-        level: "info",
-        category: "webhook",
-        message: `TradingView signal received: ${normalizedSide.toUpperCase()} (${mode.toUpperCase()})`,
-        details: {
-          ...sanitizedPayload,
-          mode,
-          size_multiplier: sizeMultiplier,
-          source: "tradingview-webhook",
-          received_at: new Date().toISOString(),
-          trigger_execution: shouldTrigger
-        },
-        timestamp: new Date().toISOString()
-      });
+    if (bot) {
+      await supabaseClient
+        .from("bot_activity_logs")
+        .insert({
+          bot_id: bot.id,
+          level: "info",
+          category: "webhook",
+          message: `TradingView signal received: ${normalizedSide.toUpperCase()} (${mode.toUpperCase()})`,
+          details: {
+            ...sanitizedPayload,
+            mode,
+            size_multiplier: sizeMultiplier,
+            source: template ? "signal-template" : "tradingview-webhook",
+            template_id: template?.id,
+            received_at: new Date().toISOString(),
+            trigger_execution: shouldTrigger
+          },
+          timestamp: new Date().toISOString()
+        });
+    }
 
-    const { data: signal, error: insertError } = await supabaseClient
+    let signal = null;
+    let signalEvent = null;
+
+    if (template) {
+      const { data: eventData, error: eventError } = await supabaseClient
+        .from("signal_events")
+        .insert({
+          template_id: template.id,
+          user_id: template.user_id,
+          raw_payload: sanitizedPayload,
+          action: normalizedSide,
+          amount: resolvedAmount,
+          mode: mode,
+          status: bot ? "pending" : "ignored",
+          notes: {
+            instrument: payload.instrument || payload.ticker || payload.symbol,
+            id: payload.id || payload.signal_id || payload.strategy?.id
+          }
+        })
+        .select()
+        .single();
+
+      if (eventError || !eventData) {
+        console.error("❌ Failed to record signal event:", eventError);
+        return new Response(JSON.stringify({ error: "Failed to record signal event" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+
+      signalEvent = eventData;
+
+      if (!bot) {
+        return new Response(JSON.stringify({
+          success: true,
+          mode,
+          side: normalizedSide,
+          signalEventId: signalEvent.id,
+          message: "Signal recorded. No linked bot configured for execution."
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
+    }
+
+    const { data: manualSignal, error: insertError } = await supabaseClient
       .from("manual_trade_signals")
       .insert({
         bot_id: bot.id,
@@ -205,17 +375,44 @@ serve(async (req) => {
         mode,
         side: normalizedSide,
         size_multiplier: sizeMultiplier,
-        reason: payload.reason || payload.note || payload.strategy || "TradingView alert trigger"
+        reason: payload.reason || payload.note || payload.strategy || "TradingView alert trigger",
+        metadata: {
+          signalToken: signalToken || null,
+          templateId: template?.id || null,
+          sourcePayloadId: payload.id || payload.signal_id || null,
+          requestedAmount: resolvedAmount
+        }
       })
       .select()
       .single();
 
-    if (insertError) {
+    if (insertError || !manualSignal) {
+      if (signalEvent) {
+        await supabaseClient
+          .from("signal_events")
+          .update({
+            status: "failed",
+            error: insertError?.message || "Failed to queue manual trade signal"
+          })
+          .eq("id", signalEvent.id);
+      }
       console.error("❌ Failed to record manual trade signal:", insertError);
       return new Response(JSON.stringify({ error: "Failed to queue trade signal" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
+    }
+
+    signal = manualSignal;
+
+    if (signalEvent) {
+      await supabaseClient
+        .from("signal_events")
+        .update({
+          status: "pending",
+          linked_signal_id: manualSignal.id
+        })
+        .eq("id", signalEvent.id);
     }
 
     let triggerResponse: { ok: boolean; status: number; message?: string } | null = null;
@@ -250,7 +447,9 @@ serve(async (req) => {
       mode,
       side: normalizedSide,
       signalId: signal?.id,
-      bot: { id: bot.id, name: bot.name },
+      bot: bot ? { id: bot.id, name: bot.name } : null,
+      template: template ? { id: template.id, name: template.name } : null,
+      signalEventId: signalEvent?.id,
       trigger: triggerResponse
     }), {
       status: 200,
