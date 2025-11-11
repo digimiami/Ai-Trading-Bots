@@ -108,10 +108,13 @@ export default function TransactionLogPage() {
         .select('symbol', { distinct: true })
         .eq('user_id', user.id);
       if (error) throw error;
-      const unique = (data || [])
-        .map((row) => row.symbol)
-        .filter((value): value is string => Boolean(value))
-        .sort();
+      const unique = Array.from(
+        new Set(
+          (data || [])
+            .map((row) => row.symbol)
+            .filter((value): value is string => Boolean(value))
+        )
+      ).sort();
       setSymbols(unique);
     } catch (err) {
       console.error('Failed to load available symbols', err);
