@@ -13,6 +13,7 @@ const Backtest = lazy(() => import('../pages/backtest/page'));
 const Trades = lazy(() => import('../pages/trades/page'));
 const Reports = lazy(() => import('../pages/reports/page'));
 const Performance = lazy(() => import('../pages/performance/page'));
+const TransactionLog = lazy(() => import('../pages/transaction-log/page'));
 const Settings = lazy(() => import('../pages/settings/page'));
 const PaperTrading = lazy(() => import('../pages/paper-trading/page'));
 const FuturesPairsFinder = lazy(() => import('../pages/futures-pairs-finder/page'));
@@ -60,6 +61,10 @@ const routes: RouteObject[] = [
   {
     path: '/trades',
     element: <Trades />
+  },
+  {
+    path: '/transaction-log',
+    element: <TransactionLog />
   },
   {
     path: '/reports',
