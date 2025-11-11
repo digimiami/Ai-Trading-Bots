@@ -1,6 +1,8 @@
 
 import type { RouteObject } from 'react-router-dom';
 import { lazy } from 'react';
+import { Navigate } from 'react-router-dom';
+import { ONBOARDING_ENABLED } from '../constants/featureFlags';
 
 // Lazy load components
 const Home = lazy(() => import('../pages/home/page'));
@@ -36,7 +38,7 @@ const routes: RouteObject[] = [
   },
   {
     path: '/onboarding',
-    element: <Onboarding />
+    element: ONBOARDING_ENABLED ? <Onboarding /> : <Navigate to="/" replace />
   },
   {
     path: '/bots',

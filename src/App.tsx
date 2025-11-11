@@ -5,6 +5,7 @@ import { useRoutes, useNavigate } from 'react-router-dom';
 import routes from './router/config';
 import { useAuth } from './hooks/useAuth';
 import { useBotExecutor } from './hooks/useBotExecutor';
+import { ONBOARDING_ENABLED } from './constants/featureFlags';
 
 function AppRoutes() {
   const element = useRoutes(routes);
@@ -47,11 +48,15 @@ function AppRoutes() {
       const isOnboardingCompleted = localStorage.getItem('onboarding_completed');
       const currentPath = window.location.pathname;
       
+      if (!ONBOARDING_ENABLED && !isOnboardingCompleted) {
+        localStorage.setItem('onboarding_completed', 'true');
+      }
+      
       // Only redirect if we're certain about auth state
       if (user === null && currentPath !== '/auth' && currentPath !== '/onboarding') {
         console.log('🔄 No user, redirecting to auth')
         navigate('/auth', { replace: true });
-      } else if (user && !isOnboardingCompleted && currentPath !== '/onboarding') {
+      } else if (user && ONBOARDING_ENABLED && !isOnboardingCompleted && currentPath !== '/onboarding') {
         console.log('🔄 User logged in but onboarding not completed, redirecting to onboarding')
         navigate('/onboarding', { replace: true });
       }
