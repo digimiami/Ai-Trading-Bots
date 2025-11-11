@@ -184,7 +184,7 @@ select
   t.pnl,
   coalesce(t.fee, 0) as fees,
   t.created_at,
-  t.closed_at,
+  null::timestamptz as closed_at,
   'real'::text as mode
 from public.trades t
 join public.trading_bots b on b.id = t.bot_id
@@ -202,7 +202,7 @@ select
   pt.pnl,
   coalesce(pt.fees, 0) as fees,
   pt.created_at,
-  pt.closed_at,
+  null::timestamptz as closed_at,
   'paper'::text as mode
 from public.paper_trading_trades pt
 join public.trading_bots b on b.id = pt.bot_id;
