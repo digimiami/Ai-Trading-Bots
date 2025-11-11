@@ -93,7 +93,7 @@ serve(async (req) => {
         try {
           const { data: users, error: usersError } = await supabaseClient
             .from('users')
-            .select('id, email, role, created_at, last_sign_in_at')
+            .select('id, email, role, status, status_updated_at, created_at, last_sign_in_at')
             .order('created_at', { ascending: false })
 
           if (usersError) {
@@ -305,6 +305,50 @@ serve(async (req) => {
         return new Response(JSON.stringify({
           success: true,
           message: 'User role updated successfully'
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      case 'updateUserStatus': {
+        const { userId: statusUserId, status: newStatus } = params
+
+        if (!statusUserId || !newStatus) {
+          return new Response(JSON.stringify({
+            error: 'User ID and status are required'
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        if (!['active', 'suspended', 'disabled'].includes(newStatus)) {
+          return new Response(JSON.stringify({
+            error: 'Invalid status value'
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        const { error: statusUpdateError } = await supabaseClient
+          .from('users')
+          .update({ status: newStatus, status_updated_at: new Date().toISOString() })
+          .eq('id', statusUserId)
+
+        if (statusUpdateError) {
+          console.error('Error updating user status:', statusUpdateError)
+          return new Response(JSON.stringify({
+            error: statusUpdateError.message || 'Failed to update user status'
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        return new Response(JSON.stringify({
+          success: true,
+          message: 'User status updated successfully'
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })

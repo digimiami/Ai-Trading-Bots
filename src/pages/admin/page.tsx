@@ -12,6 +12,8 @@ interface User {
   id: string;
   email: string;
   role: string;
+  status?: string;
+  status_updated_at?: string;
   created_at: string;
   last_sign_in_at: string;
   stats?: {
@@ -108,6 +110,7 @@ export default function AdminPage() {
     exportData,
     deleteUser,
     updateUserRole,
+    updateUserStatus,
     sendPasswordResetLink
   } = useAdmin();
   
@@ -258,6 +261,21 @@ export default function AdminPage() {
     } catch (error: any) {
       console.error('Error updating user role:', error);
       alert(`❌ Failed to update user role: ${error?.message || error}`);
+    } finally {
+      setUserLoadingState(userId, false);
+    }
+  };
+
+  const handleUserStatusChange = async (userId: string, status: 'active' | 'suspended' | 'disabled') => {
+    setUserLoadingState(userId, true);
+    try {
+      await updateUserStatus(userId, status);
+      setUsers(prev => prev.map(user => user.id === userId ? { ...user, status } : user));
+      await loadData();
+      alert(`✅ Updated user status to ${status}`);
+    } catch (error: any) {
+      console.error('Error updating user status:', error);
+      alert(`❌ Failed to update user status: ${error?.message || error}`);
     } finally {
       setUserLoadingState(userId, false);
     }
@@ -522,11 +540,20 @@ export default function AdminPage() {
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
                             <span className="font-medium text-gray-900 dark:text-white">{user.email}</span>
-                        <span className={`px-2 py-1 rounded-full text-xs ${
+                            <span className={`px-2 py-1 rounded-full text-xs ${
                               user.role === 'admin' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' : 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200'
-                        }`}>
-                          {user.role}
-                        </span>
+                            }`}>
+                              {user.role}
+                            </span>
+                            <span className={`px-2 py-1 rounded-full text-xs ${
+                              (user.status || 'active') === 'active'
+                                ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                                : (user.status || 'active') === 'suspended'
+                                  ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200'
+                                  : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
+                            }`}>
+                              {user.status || 'active'}
+                            </span>
                             <span className={`px-2 py-1 rounded-full text-xs flex items-center gap-1 ${
                               user.stats?.isActive 
                                 ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
@@ -558,6 +585,19 @@ export default function AdminPage() {
                           >
                             <option value="user">User</option>
                             <option value="admin">Admin</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Status</label>
+                          <select
+                            value={user.status || 'active'}
+                            onChange={(e) => handleUserStatusChange(user.id, e.target.value as 'active' | 'suspended' | 'disabled')}
+                            disabled={isActionLoading}
+                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-900 dark:border-gray-700"
+                          >
+                            <option value="active">Active</option>
+                            <option value="suspended">Suspended</option>
+                            <option value="disabled">Disabled</option>
                           </select>
                         </div>
                         <div className="flex items-end gap-2">

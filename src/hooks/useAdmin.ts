@@ -6,6 +6,8 @@ interface User {
   id: string;
   email: string;
   role: string;
+  status?: string;
+  status_updated_at?: string;
   created_at: string;
   last_sign_in_at: string;
 }
@@ -129,6 +131,10 @@ export function useAdmin() {
     return await callAdminFunction('updateUserRole', { userId, role });
   };
 
+  const updateUserStatus = async (userId: string, status: string) => {
+    return await callAdminFunction('updateUserStatus', { userId, status });
+  };
+
   const sendPasswordResetLink = async (email: string) => {
     return await callAdminFunction('sendPasswordResetLink', { email });
   };
@@ -206,6 +212,7 @@ export function useAdmin() {
     createUser,
     deleteUser,
     updateUserRole,
+    updateUserStatus,
     sendPasswordResetLink,
     getInvitationCodes,
     generateInvitationCode,

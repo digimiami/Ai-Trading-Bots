@@ -5,50 +5,51 @@ import { supabase } from '../lib/supabase'
 
 interface UserWithRole extends User {
   role?: string;
+  status?: string;
 }
 
 export function useAuth() {
   const [user, setUser] = useState<UserWithRole | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
-  const [roleCache, setRoleCache] = useState<Record<string, string>>({})
+  const [accessCache, setAccessCache] = useState<Record<string, { role: string; status: string }>>({})
 
-  const fetchUserRole = useCallback(async (userId: string): Promise<string | null> => {
-    // Check cache first
-    if (roleCache[userId]) {
-      return roleCache[userId];
+  const fetchUserAccess = useCallback(async (userId: string): Promise<{ role: string; status: string }> => {
+    if (accessCache[userId]) {
+      return accessCache[userId]
     }
 
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('role')
+        .select('role, status')
         .eq('id', userId)
         .single()
-      
+
       if (error) {
-        console.error('❌ Error fetching user role:', error)
-        return 'user'
+        console.error('❌ Error fetching user access info:', error)
+        return { role: 'user', status: 'active' }
       }
-      
-      const role = data?.role || 'user';
-      
-      // Cache the role
-      setRoleCache(prev => ({ ...prev, [userId]: role }));
-      
-      return role;
+
+      const info = {
+        role: data?.role || 'user',
+        status: data?.status || 'active'
+      }
+
+      setAccessCache(prev => ({ ...prev, [userId]: info }))
+      return info
     } catch (error) {
-      console.error('❌ Error fetching user role:', error)
-      return 'user'
+      console.error('❌ Error fetching user access info:', error)
+      return { role: 'user', status: 'active' }
     }
-  }, [roleCache])
+  }, [accessCache])
 
   const refreshUserRole = async () => {
     if (user?.id) {
-      console.log('🔄 Refreshing user role for:', user.email);
-      const role = await fetchUserRole(user.id)
-      console.log('🔄 Setting user role to:', role);
-      setUser(prev => prev ? { ...prev, role: role || 'user' } : null)
+      console.log('🔄 Refreshing user access for:', user.email);
+      const access = await fetchUserAccess(user.id)
+      console.log('🔄 Setting user access to:', access);
+      setUser(prev => prev ? { ...prev, role: access.role || 'user', status: access.status || 'active' } : null)
       
       // Force a re-render by updating the state
       setTimeout(() => {
@@ -209,22 +210,23 @@ export function useAuth() {
             if (restoredSession.user) {
               // Set user immediately with metadata role to prevent delay
               const metadataRole = restoredSession.user.user_metadata?.role || 'user'
-              setUser({ ...restoredSession.user, role: metadataRole })
+              setUser({ ...restoredSession.user, role: metadataRole, status: 'active' })
               console.log('✅ User set from storage (immediate):', { 
                 email: restoredSession.user.email, 
-                role: metadataRole 
+                role: metadataRole,
+                status: 'active'
               })
               
               // Fetch real role in background and update
-              fetchUserRole(restoredSession.user.id)
-                .then((role) => {
-                  if (isMounted && role) {
-                    setUser({ ...restoredSession.user!, role })
-                    console.log('✅ User role updated:', { email: restoredSession.user!.email, role })
+              fetchUserAccess(restoredSession.user.id)
+                .then((access) => {
+                  if (isMounted && access) {
+                    setUser({ ...restoredSession.user!, role: access.role, status: access.status })
+                    console.log('✅ User access updated:', { email: restoredSession.user!.email, access })
                   }
                 })
-                .catch((roleError) => {
-                  console.warn('⚠️ Could not fetch role, using metadata role:', roleError)
+                .catch((accessError) => {
+                  console.warn('⚠️ Could not fetch access info, using metadata role:', accessError)
                 })
             } else {
               setUser(null)
@@ -257,9 +259,16 @@ export function useAuth() {
         console.log('🔐 Initial session:', session ? 'Found' : 'None', session?.user?.email)
         setSession(session)
         if (session?.user) {
-          const role = await fetchUserRole(session.user.id)
-          setUser({ ...session.user, role: role || 'user' })
-          console.log('✅ User loaded:', { email: session.user.email, role })
+          const access = await fetchUserAccess(session.user.id)
+          if (access.status !== 'active') {
+            console.warn('⚠️ User account is not active, signing out:', { email: session.user.email, status: access.status })
+            await supabase.auth.signOut()
+            setUser(null)
+            setLoading(false)
+            return
+          }
+          setUser({ ...session.user, role: access.role || 'user', status: access.status || 'active' })
+          console.log('✅ User loaded:', { email: session.user.email, access })
         } else {
           setUser(null)
         }
@@ -284,22 +293,23 @@ export function useAuth() {
           // Set user immediately with metadata role
           if (restoredSession.user) {
             const metadataRole = restoredSession.user.user_metadata?.role || 'user'
-            setUser({ ...restoredSession.user, role: metadataRole })
+            setUser({ ...restoredSession.user, role: metadataRole, status: 'active' })
             console.log('✅ User restored after error (immediate):', { 
               email: restoredSession.user.email, 
-              role: metadataRole 
+              role: metadataRole,
+              status: 'active' 
             })
             
             // Fetch real role in background
-            fetchUserRole(restoredSession.user.id)
-              .then((role) => {
-                if (isMounted && role) {
-                  setUser({ ...restoredSession.user!, role })
-                  console.log('✅ User role updated after error:', { email: restoredSession.user!.email, role })
+            fetchUserAccess(restoredSession.user.id)
+              .then((access) => {
+                if (isMounted && access) {
+                  setUser({ ...restoredSession.user!, role: access.role, status: access.status })
+                  console.log('✅ User access updated after error:', { email: restoredSession.user!.email, access })
                 }
               })
-              .catch((roleError) => {
-                console.warn('⚠️ Could not fetch role after error:', roleError)
+              .catch((accessError) => {
+                console.warn('⚠️ Could not fetch access info after error:', accessError)
               })
           } else {
             setUser(null)
@@ -342,22 +352,23 @@ export function useAuth() {
           // Set user immediately with metadata role
           if (restoredSession.user) {
             const metadataRole = restoredSession.user.user_metadata?.role || 'user'
-            setUser({ ...restoredSession.user, role: metadataRole })
+            setUser({ ...restoredSession.user, role: metadataRole, status: 'active' })
             console.log('✅ User restored on timeout (immediate):', { 
               email: restoredSession.user.email, 
-              role: metadataRole 
+              role: metadataRole,
+              status: 'active'
             })
             
             // Fetch real role in background
-            fetchUserRole(restoredSession.user.id)
-              .then((role) => {
-                if (isMounted && role) {
-                  setUser({ ...restoredSession.user!, role })
-                  console.log('✅ User role updated on timeout:', { email: restoredSession.user!.email, role })
+            fetchUserAccess(restoredSession.user.id)
+              .then((access) => {
+                if (isMounted && access) {
+                  setUser({ ...restoredSession.user!, role: access.role, status: access.status })
+                  console.log('✅ User access updated on timeout:', { email: restoredSession.user!.email, access })
                 }
               })
-              .catch((roleError) => {
-                console.warn('⚠️ Could not fetch role on timeout:', roleError)
+              .catch((accessError) => {
+                console.warn('⚠️ Could not fetch access info on timeout:', accessError)
               })
           } else {
             setUser(null)
@@ -396,10 +407,19 @@ export function useAuth() {
           
           // Only clear user if we're not in the middle of a manual restoration
           if (session?.user) {
-            const role = await fetchUserRole(session.user.id)
-            setUser({ ...session.user, role: role || 'user' })
+            const access = await fetchUserAccess(session.user.id)
+            if (access.status !== 'active') {
+              console.warn('⚠️ Auth change detected inactive user, signing out:', { email: session.user.email, status: access.status })
+              await supabase.auth.signOut()
+              setSession(null)
+              setUser(null)
+              setLoading(false)
+              manuallyRestoredSession = false
+              return
+            }
+            setUser({ ...session.user, role: access.role || 'user', status: access.status || 'active' })
             setSession(session)
-            console.log('✅ User set from auth state:', { email: session.user.email, role })
+            console.log('✅ User set from auth state:', { email: session.user.email, access })
             manuallyRestoredSession = false // Clear flag when we get a real auth state
           } else if (!manuallyRestoredSession) {
             // Only clear if we haven't manually restored
@@ -427,7 +447,7 @@ export function useAuth() {
         subscription.unsubscribe()
       }
     }
-  }, [fetchUserRole])
+  }, [fetchUserAccess])
 
   const signIn = async (email: string, password: string) => {
     try {
@@ -440,8 +460,16 @@ export function useAuth() {
       // If sign in successful, update session and user immediately
       if (data?.session && data?.user && !error) {
         setSession(data.session)
-      const role = await fetchUserRole(data.user.id)
-      setUser({ ...data.user, role: role || 'user' })
+        const access = await fetchUserAccess(data.user.id)
+        if (access.status !== 'active') {
+          console.warn('⚠️ User attempted to sign in but account is not active:', { email, status: access.status })
+          await supabase.auth.signOut()
+          setUser(null)
+          setSession(null)
+          setLoading(false)
+          return { data: null, error: { message: `Account is ${access.status}. Please contact support.` } as any }
+        }
+        setUser({ ...data.user, role: access.role || 'user', status: access.status || 'active' })
         setLoading(false)
         return { data, error: null }
     }

@@ -6,48 +6,159 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
+const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+
+if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  console.error('Missing Supabase environment variables')
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      {
-        global: {
-          headers: { Authorization: req.headers.get('Authorization')! },
-        },
-      }
-    )
+    const url = new URL(req.url)
+    const action = url.searchParams.get('action')
+    const authHeader = req.headers.get('Authorization') ?? ''
 
-    // Get the current user
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser()
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+    const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    const supabaseAuthed = authHeader
+      ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+          global: {
+            headers: { Authorization: authHeader },
+          },
+        })
+      : null
+
+    const requireUser = async () => {
+      if (!supabaseAuthed) {
+        return { error: 'Unauthorized', status: 401, user: null }
+      }
+      const { data: { user }, error } = await supabaseAuthed.auth.getUser()
+      if (error || !user) {
+        return { error: 'Unauthorized', status: 401, user: null }
+      }
+      return { user, error: null }
     }
 
-    // Check if user is admin
-    const { data: userData, error: userError } = await supabaseClient
-      .from('users')
-      .select('user_role')
-      .eq('id', user.id)
-      .single()
+    const requireAdmin = async () => {
+      const { user, error, status } = await requireUser()
+      if (error || !user) {
+        return { error, status }
+      }
 
-    if (userError || userData?.user_role !== 'admin') {
-      return new Response(JSON.stringify({ error: 'Admin access required' }), {
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      const { data: profile, error: profileError } = await supabaseAdmin
+        .from('users')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+
+      if (profileError || profile?.role !== 'admin') {
+        return { error: 'Admin access required', status: 403 }
+      }
+
+      return { user, error: null }
     }
 
     const { method } = req
-    const url = new URL(req.url)
-    const action = url.searchParams.get('action')
+
+    // Allow public validation of invitation codes
+    if (method === 'POST' && action === 'validate') {
+      const { code } = await req.json()
+
+      const { data, error } = await supabaseAdmin
+        .from('invitation_codes')
+        .select('*')
+        .eq('code', code)
+        .is('used_at', null)
+        .gt('expires_at', new Date().toISOString())
+        .single()
+
+      if (error || !data) {
+        return new Response(JSON.stringify({
+          valid: false,
+          error: 'Invalid or expired invitation code'
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      return new Response(JSON.stringify({
+        valid: true,
+        invitation: data
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // Mark invitation code as used (requires authenticated user)
+    if (method === 'POST' && action === 'use') {
+      const { code, userId } = await req.json()
+      const { user, error, status } = await requireUser()
+      if (error || !user) {
+        return new Response(JSON.stringify({ error }), {
+          status: status || 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      if (user.id !== userId) {
+        return new Response(JSON.stringify({ error: 'Invalid user' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      const { data: invitation, error: invitationError } = await supabaseAdmin
+        .from('invitation_codes')
+        .select('*')
+        .eq('code', code)
+        .is('used_at', null)
+        .gt('expires_at', new Date().toISOString())
+        .single()
+
+      if (invitationError || !invitation) {
+        return new Response(JSON.stringify({ error: 'Invalid or expired invitation code' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      const { data, error: updateError } = await supabaseAdmin
+        .from('invitation_codes')
+        .update({
+          used_at: new Date().toISOString(),
+          used_by: userId
+        })
+        .eq('code', code)
+        .is('used_at', null)
+        .gt('expires_at', new Date().toISOString())
+        .select()
+        .single()
+
+      if (updateError) {
+        return new Response(JSON.stringify({ error: updateError.message }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      return new Response(JSON.stringify({ success: true, invitation: data }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // Remaining actions require admin privileges
+    const { user, error: adminError, status: adminStatus } = await requireAdmin()
+    if (adminError || !user) {
+      return new Response(JSON.stringify({ error: adminError }), {
+        status: adminStatus || 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
 
     if (method === 'POST' && action === 'create') {
       const { email, expiresInDays } = await req.json()
@@ -57,7 +168,7 @@ serve(async (req) => {
       const expiresAt = new Date()
       expiresAt.setDate(expiresAt.getDate() + (expiresInDays || 7))
 
-      const { data, error } = await supabaseClient
+      const { data, error } = await supabaseAdmin
         .from('invitation_codes')
         .insert({
           code,
@@ -85,7 +196,7 @@ serve(async (req) => {
     }
 
     if (method === 'GET' && action === 'list') {
-      const { data, error } = await supabaseClient
+      const { data, error } = await supabaseAdmin
         .from('invitation_codes')
         .select(`
           *,
@@ -106,65 +217,10 @@ serve(async (req) => {
       })
     }
 
-    if (method === 'POST' && action === 'validate') {
-      const { code } = await req.json()
-
-      const { data, error } = await supabaseClient
-        .from('invitation_codes')
-        .select('*')
-        .eq('code', code)
-        .is('used_at', null)
-        .gt('expires_at', new Date().toISOString())
-        .single()
-
-      if (error || !data) {
-        return new Response(JSON.stringify({ 
-          valid: false, 
-          error: 'Invalid or expired invitation code' 
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
-      }
-
-      return new Response(JSON.stringify({ 
-        valid: true, 
-        invitation: data 
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    if (method === 'POST' && action === 'use') {
-      const { code, userId } = await req.json()
-
-      const { data, error } = await supabaseClient
-        .from('invitation_codes')
-        .update({
-          used_at: new Date().toISOString(),
-          used_by: userId
-        })
-        .eq('code', code)
-        .is('used_at', null)
-        .gt('expires_at', new Date().toISOString())
-        .select()
-        .single()
-
-      if (error) {
-        return new Response(JSON.stringify({ error: error.message }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
-      }
-
-      return new Response(JSON.stringify({ success: true, invitation: data }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
     if (method === 'DELETE') {
       const codeId = url.searchParams.get('id')
       
-      const { error } = await supabaseClient
+      const { error } = await supabaseAdmin
         .from('invitation_codes')
         .delete()
         .eq('id', codeId)
