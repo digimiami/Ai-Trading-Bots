@@ -230,8 +230,20 @@ begin
 end;
 $$;
 
-create trigger signal_templates_set_timestamp
-before update on public.signal_templates
-for each row
-execute procedure public.set_current_timestamp_updated_at();
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_trigger
+    where tgname = 'signal_templates_set_timestamp'
+  ) then
+    execute '
+      create trigger signal_templates_set_timestamp
+      before update on public.signal_templates
+      for each row
+      execute procedure public.set_current_timestamp_updated_at()
+    ';
+  end if;
+end;
+$$;
 
