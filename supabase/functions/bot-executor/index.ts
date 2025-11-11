@@ -1499,6 +1499,19 @@ class BotExecutor {
       const estimatedFees = orderNotional * feeRate * 2; // entry + exit estimate
       
       // Record trade - using actual database schema columns
+      const normalizedTradeStatus = (() => {
+        const raw = (orderResult.status || 'filled').toString().toLowerCase();
+        const allowed = ['open', 'closed', 'filled', 'completed', 'failed', 'cancelled', 'canceled', 'pending', 'partial'];
+        return allowed.includes(raw) ? raw : 'filled';
+      })();
+
+      const normalizedSide = (() => {
+        const raw = (tradeSignal.side || '').toString().toLowerCase();
+        if (raw === 'buy' || raw === 'long') return 'buy';
+        if (raw === 'sell' || raw === 'short') return 'sell';
+        return raw || 'buy';
+      })();
+
       const { data: trade, error } = await this.supabaseClient
         .from('trades')
         .insert({
@@ -1506,10 +1519,12 @@ class BotExecutor {
           bot_id: bot.id,
           exchange: bot.exchange,
           symbol: bot.symbol,
-          side: tradeSignal.side,
+          side: normalizedSide,
+          size: tradeAmount,
           amount: tradeAmount,
+          entry_price: normalizedPrice,
           price: normalizedPrice,
-          status: orderResult.status || 'filled',
+          status: normalizedTradeStatus,
           exchange_order_id: orderResult.orderId || orderResult.exchangeResponse?.result?.orderId || null,
           executed_at: TimeSync.getCurrentTimeISO(),
           fee: estimatedFees,

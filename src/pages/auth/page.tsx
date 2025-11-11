@@ -177,21 +177,21 @@ export default function AuthPage() {
             const accessToken = currentSession?.access_token || activeSession?.access_token
 
             if (accessToken) {
-              const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL
-              const useResponse = await fetch(`${supabaseUrl}/functions/v1/invitation-management?action=use`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
+            const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL
+            const useResponse = await fetch(`${supabaseUrl}/functions/v1/invitation-management?action=use`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
                   'Authorization': `Bearer ${accessToken}`
-                },
-                body: JSON.stringify({ 
-                  code: inviteCode,
-                  userId: result.data?.user?.id 
-                })
+              },
+              body: JSON.stringify({ 
+                code: inviteCode,
+                userId: result.data?.user?.id 
               })
-              
-              if (!useResponse.ok) {
-                console.error('Failed to mark invitation as used:', await useResponse.text())
+            })
+            
+            if (!useResponse.ok) {
+              console.error('Failed to mark invitation as used:', await useResponse.text())
               }
             } else {
               console.warn('No access token available to mark invitation as used.')

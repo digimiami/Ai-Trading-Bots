@@ -91,16 +91,16 @@ serve(async (req) => {
       // Existing user management functions
       case 'getUsers': {
         try {
-          const { data: users, error: usersError } = await supabaseClient
-            .from('users')
+        const { data: users, error: usersError } = await supabaseClient
+          .from('users')
             .select('id, email, role, status, status_updated_at, created_at, last_sign_in_at')
-            .order('created_at', { ascending: false })
+          .order('created_at', { ascending: false })
 
           if (usersError) {
             console.error('Error fetching users:', usersError)
             throw usersError
           }
-
+          
           const usersWithStats = await Promise.all(
             (users || []).map(async (user: any) => {
               try {
@@ -108,19 +108,19 @@ serve(async (req) => {
                   .from('trading_bots')
                   .select('*')
                   .eq('user_id', user.id)
-
+                
                 const totalPnL = (bots || []).reduce((sum, bot) => sum + (parseFloat(bot.pnl || 0) || 0), 0)
                 const totalTrades = (bots || []).reduce((sum, bot) => sum + (parseInt(bot.total_trades || bot.totalTrades || 0) || 0), 0)
                 const activeBots = (bots || []).filter(bot => (bot.status || '').toLowerCase() === 'running').length
                 const avgWinRate = (bots && bots.length > 0)
                   ? (bots.reduce((sum, bot) => sum + (parseFloat(bot.win_rate || bot.winRate || 0) || 0), 0) / bots.length)
                   : 0
-
+                
                 const { data: trades } = await supabaseClient
                   .from('trades')
                   .select('*')
                   .eq('user_id', user.id)
-
+                
                 const totalVolume = (trades || []).reduce((sum, trade) => {
                   const size = parseFloat(trade.size || trade.amount || trade.quantity || 0) || 0
                   const entryPrice = parseFloat(trade.entry_price || trade.price || 0) || 0
@@ -132,14 +132,14 @@ serve(async (req) => {
                   .select('*')
                   .eq('user_id', user.id)
                   .eq('status', 'closed')
-
+                
                 const paperPnL = (paperTrades || []).reduce((sum, trade) => sum + (parseFloat(trade.pnl || 0) || 0), 0)
                 const paperTradesCount = paperTrades?.length || 0
-
-                const isActive = user.last_sign_in_at
+                
+                const isActive = user.last_sign_in_at 
                   ? (new Date(user.last_sign_in_at).getTime() > Date.now() - (30 * 24 * 60 * 60 * 1000))
                   : false
-
+                
                 return {
                   ...user,
                   stats: {
@@ -171,21 +171,21 @@ serve(async (req) => {
               }
             })
           )
-
+          
           return new Response(JSON.stringify({ users: usersWithStats }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         } catch (error) {
           console.error('Error in getUsers:', error)
-          return new Response(JSON.stringify({
+          return new Response(JSON.stringify({ 
             users: [],
             warning: 'Failed to fetch users. Returning empty list.',
             details: error?.message || String(error)
           }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          })
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
         }
-      }
+        }
 
       case 'createUser':
         const { email, password, role } = params
@@ -532,7 +532,7 @@ serve(async (req) => {
           try {
             const { count, error } = await supabaseClient
               .from(table)
-              .select('id', { count: 'exact', head: true })
+          .select('id', { count: 'exact', head: true })
             if (error) {
               console.warn(`Warning: failed to count from ${table}:`, error.message)
               return 0
@@ -653,7 +653,7 @@ serve(async (req) => {
       case 'getFinancialOverview': {
         try {
           const { data: allTrades, error: allTradesError } = await supabaseClient
-            .from('trades')
+          .from('trades')
             .select('pnl, created_at, status, size, entry_price, exit_price')
 
           if (allTradesError) {
@@ -673,22 +673,22 @@ serve(async (req) => {
 
           const dailyPnL = closedTrades.reduce((acc, trade) => {
             const date = (trade.created_at || '').split('T')[0] || new Date().toISOString().split('T')[0]
-            if (!acc[date]) acc[date] = 0
+          if (!acc[date]) acc[date] = 0
             acc[date] += parseFloat(trade.pnl || 0) || 0
-            return acc
+          return acc
           }, {} as Record<string, number>)
 
-          return new Response(JSON.stringify({
-            financial: {
-              totalVolume,
-              totalFees,
-              totalPnL,
-              dailyPnL,
-              netProfit: totalPnL - totalFees
-            }
-          }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          })
+        return new Response(JSON.stringify({
+          financial: {
+            totalVolume,
+            totalFees,
+            totalPnL,
+            dailyPnL,
+            netProfit: totalPnL - totalFees
+          }
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
         } catch (err) {
           console.error('Error building financial overview:', err)
           return new Response(JSON.stringify({

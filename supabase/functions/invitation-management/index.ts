@@ -27,7 +27,7 @@ serve(async (req) => {
     const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
     const supabaseAuthed = authHeader
       ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-          global: {
+        global: {
             headers: { Authorization: authHeader },
           },
         })
@@ -137,7 +137,7 @@ serve(async (req) => {
         .is('used_at', null)
         .gt('expires_at', new Date().toISOString())
         .select()
-        .single()
+      .single()
 
       if (updateError) {
         return new Response(JSON.stringify({ error: updateError.message }), {

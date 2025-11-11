@@ -23,14 +23,14 @@ export function useAuth() {
       const selectAccessInfo = async (includeStatus: boolean) => {
         const columns = includeStatus ? 'role, status' : 'role'
         return supabase
-          .from('users')
+        .from('users')
           .select(columns)
-          .eq('id', userId)
+        .eq('id', userId)
           .maybeSingle()
       }
 
       let { data, error } = await selectAccessInfo(true)
-
+      
       if (error) {
         const columnMissing = (error as any)?.code === '42703'
         const noRows = (error as any)?.code === 'PGRST116'
@@ -52,7 +52,7 @@ export function useAuth() {
         }
         return { role: 'user', status: 'active' }
       }
-
+      
       const info = {
         role: (data as any)?.role || 'user',
         status: (data as any)?.status || 'active'

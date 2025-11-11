@@ -36,6 +36,11 @@ type TransactionEntry = {
   pnl: number;
   fees: number;
   mode: string;
+  amount?: number;
+  price?: number;
+  exchange?: string;
+  executedAt?: string;
+  updatedAt?: string;
   createdAt: string;
   closedAt: string | null;
 };
@@ -185,6 +190,12 @@ export default function TransactionLogPage() {
       maximumFractionDigits: 2
     }).format(value || 0);
   };
+
+  const formatAmount = (value?: number, digits: number = 4) =>
+    new Intl.NumberFormat('en-US', {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits
+    }).format(value ?? 0);
 
   const formatPercentage = (value: number) => `${(value * 100 || 0).toFixed(1)}%`;
 
@@ -394,9 +405,12 @@ export default function TransactionLogPage() {
                     <th className="px-3 py-2">Bot</th>
                     <th className="px-3 py-2">Symbol</th>
                     <th className="px-3 py-2">Side</th>
+                    <th className="px-3 py-2 text-right">Amount</th>
+                    <th className="px-3 py-2 text-right">Price</th>
                     <th className="px-3 py-2">Status</th>
                     <th className="px-3 py-2 text-right">PnL</th>
                     <th className="px-3 py-2 text-right">Fees</th>
+                    <th className="px-3 py-2">Exchange</th>
                     <th className="px-3 py-2 text-right">Mode</th>
                   </tr>
                 </thead>
@@ -404,7 +418,7 @@ export default function TransactionLogPage() {
                   {report.entries.map((entry) => (
                     <tr key={entry.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
                       <td className="px-3 py-2 text-gray-600 dark:text-gray-300">
-                        {new Date(entry.createdAt).toLocaleString()}
+                        {new Date(entry.executedAt ?? entry.createdAt).toLocaleString()}
                       </td>
                       <td className="px-3 py-2">
                         <div className="font-medium text-gray-900 dark:text-white">{entry.botName || '—'}</div>
@@ -414,6 +428,8 @@ export default function TransactionLogPage() {
                       <td className={`px-3 py-2 font-medium ${entry.side?.toLowerCase() === 'buy' || entry.side?.toLowerCase() === 'long' ? 'text-green-600' : 'text-red-600'}`}>
                         {entry.side?.toUpperCase()}
                       </td>
+                      <td className="px-3 py-2 text-right">{formatAmount(entry.amount)}</td>
+                      <td className="px-3 py-2 text-right">{formatCurrency(entry.price ?? 0)}</td>
                       <td className="px-3 py-2 capitalize">{entry.status || '—'}</td>
                       <td className={`px-3 py-2 text-right ${entry.pnl >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                         {formatCurrency(entry.pnl)}
@@ -421,6 +437,7 @@ export default function TransactionLogPage() {
                       <td className="px-3 py-2 text-right text-amber-600">
                         {formatCurrency(entry.fees)}
                       </td>
+                      <td className="px-3 py-2 uppercase">{entry.exchange || '—'}</td>
                       <td className="px-3 py-2 text-right capitalize">{entry.mode}</td>
                     </tr>
                   ))}
