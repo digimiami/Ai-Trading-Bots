@@ -26,29 +26,30 @@ export function useAuth() {
           .from('users')
           .select(columns)
           .eq('id', userId)
-          .single()
+          .maybeSingle()
       }
 
       let { data, error } = await selectAccessInfo(true)
 
       if (error) {
-        // If status column doesn't exist yet, retry without it
         const columnMissing = (error as any)?.code === '42703'
+        const noRows = (error as any)?.code === 'PGRST116'
+
         if (columnMissing) {
           ({ data, error } = await selectAccessInfo(false))
-          if (error) {
-            console.error('❌ Error fetching user access info (fallback):', error)
-            return { role: 'user', status: 'active' }
+          if (!error) {
+            const info = {
+              role: (data as any)?.role || 'user',
+              status: 'active'
+            }
+            setAccessCache(prev => ({ ...prev, [userId]: info }))
+            return info
           }
-          const info = {
-            role: (data as any)?.role || 'user',
-            status: 'active'
-          }
-          setAccessCache(prev => ({ ...prev, [userId]: info }))
-          return info
         }
 
-        console.error('❌ Error fetching user access info:', error)
+        if (!noRows) {
+          console.error('❌ Error fetching user access info:', error)
+        }
         return { role: 'user', status: 'active' }
       }
 
