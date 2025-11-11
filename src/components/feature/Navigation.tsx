@@ -13,7 +13,7 @@ export default function Navigation() {
   }
 
   const navItems = [
-    { path: '/', icon: 'ri-home-line', label: 'Home' },
+    { path: '/dashboard', icon: 'ri-home-line', label: 'Home' },
     { path: '/bots', icon: 'ri-robot-line', label: 'Bots' },
     { path: '/backtest', icon: 'ri-test-tube-line', label: 'Backtest' },
     { path: '/bot-activity', icon: 'ri-file-list-line', label: 'Activity' },

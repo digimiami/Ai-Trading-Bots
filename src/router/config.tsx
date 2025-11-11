@@ -5,6 +5,7 @@ import { Navigate } from 'react-router-dom';
 import { ONBOARDING_ENABLED } from '../constants/featureFlags';
 
 // Lazy load components
+const Landing = lazy(() => import('../pages/landing/page'));
 const Home = lazy(() => import('../pages/home/page'));
 const Auth = lazy(() => import('../pages/auth/page'));
 const Bots = lazy(() => import('../pages/bots/page'));
@@ -30,6 +31,10 @@ const AiMlDashboard = lazy(() => import('../pages/ai-ml-dashboard/page'));
 const routes: RouteObject[] = [
   {
     path: '/',
+    element: <Landing />
+  },
+  {
+    path: '/dashboard',
     element: <Home />
   },
   {

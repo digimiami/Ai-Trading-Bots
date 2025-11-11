@@ -211,7 +211,7 @@ export default function Onboarding() {
       // Complete onboarding
       localStorage.setItem('onboarding_completed', 'true');
       localStorage.setItem('user_profile', JSON.stringify(formData));
-      navigate('/');
+      navigate('/dashboard');
     }
   };
 
@@ -292,7 +292,7 @@ export default function Onboarding() {
             <button
               onClick={() => {
                 localStorage.setItem('onboarding_completed', 'true');
-                navigate('/');
+                navigate('/dashboard');
               }}
               className="text-gray-500 text-sm hover:text-gray-700 transition-colors"
             >

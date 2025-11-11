@@ -154,7 +154,7 @@ export default function AdminPage() {
     // After loading is complete, check if user is admin
     if (!user || user?.role !== 'admin') {
       console.log('❌ User is not admin, redirecting to home');
-      navigate('/');
+      navigate('/dashboard');
       return;
     }
     

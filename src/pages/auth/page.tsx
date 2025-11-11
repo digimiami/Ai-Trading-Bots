@@ -22,7 +22,7 @@ export default function AuthPage() {
   // Redirect authenticated users to home page
   useEffect(() => {
     if (!authLoading && user) {
-      navigate('/')
+      navigate('/dashboard')
     }
   }, [user, authLoading, navigate])
 

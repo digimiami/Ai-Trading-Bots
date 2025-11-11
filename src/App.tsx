@@ -47,17 +47,20 @@ function AppRoutes() {
     if (!loading) {
       const isOnboardingCompleted = localStorage.getItem('onboarding_completed');
       const currentPath = window.location.pathname;
+      const publicRoutes = ['/', '/auth', '/onboarding'];
       
       if (!ONBOARDING_ENABLED && !isOnboardingCompleted) {
         localStorage.setItem('onboarding_completed', 'true');
       }
       
       // Only redirect if we're certain about auth state
-      if (user === null && currentPath !== '/auth' && currentPath !== '/onboarding') {
-        console.log('🔄 No user, redirecting to auth')
+      if (user === null && !publicRoutes.includes(currentPath)) {
+        console.log('🔄 No user, redirecting to auth');
         navigate('/auth', { replace: true });
+      } else if (user && currentPath === '/') {
+        navigate('/dashboard', { replace: true });
       } else if (user && ONBOARDING_ENABLED && !isOnboardingCompleted && currentPath !== '/onboarding') {
-        console.log('🔄 User logged in but onboarding not completed, redirecting to onboarding')
+        console.log('🔄 User logged in but onboarding not completed, redirecting to onboarding');
         navigate('/onboarding', { replace: true });
       }
     }
