@@ -470,6 +470,15 @@ export default function LandingPage() {
             <button onClick={() => document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' })} className="text-slate-300/80 transition hover:text-white">
               Pricing
             </button>
+            <button onClick={() => navigate('/privacy')} className="text-slate-300/80 transition hover:text-white">
+              Privacy
+            </button>
+            <button onClick={() => navigate('/terms')} className="text-slate-300/80 transition hover:text-white">
+              Terms
+            </button>
+            <button onClick={() => navigate('/risk')} className="text-slate-300/80 transition hover:text-white">
+              Risk Disclosure
+            </button>
             <button onClick={() => navigate('/help')} className="text-slate-300/80 transition hover:text-white">
               Support
             </button>

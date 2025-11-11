@@ -24,6 +24,9 @@ const Admin = lazy(() => import('../pages/admin/page'));
 const Onboarding = lazy(() => import('../pages/onboarding/page'));
 const Help = lazy(() => import('../pages/help/page'));
 const NotFound = lazy(() => import('../pages/NotFound'));
+const Privacy = lazy(() => import('../pages/legal/privacy'));
+const Terms = lazy(() => import('../pages/legal/terms'));
+const Risk = lazy(() => import('../pages/legal/risk'));
 
 // AI/ML Dashboard - only loads when feature flag is enabled
 const AiMlDashboard = lazy(() => import('../pages/ai-ml-dashboard/page'));
@@ -104,6 +107,18 @@ const routes: RouteObject[] = [
   {
     path: '/ai-ml/dashboard',
     element: <AiMlDashboard />
+  },
+  {
+    path: '/privacy',
+    element: <Privacy />
+  },
+  {
+    path: '/terms',
+    element: <Terms />
+  },
+  {
+    path: '/risk',
+    element: <Risk />
   },
   {
     path: '*',
