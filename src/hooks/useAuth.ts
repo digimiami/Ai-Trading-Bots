@@ -204,7 +204,8 @@ export function useAuth() {
       supabase.auth.getSession(),
       new Promise<{ data: { session: any }, error: any }>((resolve) => {
         setTimeout(() => {
-          resolve({ data: { session: null }, error: { message: 'Timeout' } })
+          resolve({ data: { session: null }, error: { message: 'Timeout',
+            shouldRetry: true } })
         }, 5000)
       })
     ])
@@ -263,6 +264,18 @@ export function useAuth() {
             }, 3000)
             
             return
+          } else if (error?.shouldRetry) {
+            console.log('⏳ Retrying getSession after brief delay...')
+            await new Promise(resolve => setTimeout(resolve, 1200))
+            const retry = await supabase.auth.getSession()
+            if (retry?.data?.session) {
+              sessionLoaded = true
+              setSession(retry.data.session)
+              const access = await fetchUserAccess(retry.data.session.user.id)
+              setUser({ ...retry.data.session.user, role: access.role, status: access.status })
+              setLoading(false)
+              return
+            }
           } else {
             console.warn('⚠️ No session found in localStorage')
           }
