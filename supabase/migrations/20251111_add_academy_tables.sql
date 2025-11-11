@@ -52,12 +52,12 @@ create unique index if not exists user_course_progress_module_idx
 create or replace function public.set_timestamp_updated()
 returns trigger
 language plpgsql
-as 
+as $$
 begin
   new.updated_at = now();
   return new;
 end;
-;
+$$;
 
 drop trigger if exists trg_course_modules_updated on public.course_modules;
 create trigger trg_course_modules_updated
@@ -147,23 +147,28 @@ alter table public.course_modules enable row level security;
 alter table public.module_lessons enable row level security;
 alter table public.user_course_progress enable row level security;
 
-create policy if not exists "Modules readable by everyone"
+drop policy if exists "Modules readable by everyone" on public.course_modules;
+create policy "Modules readable by everyone"
   on public.course_modules
   for select using (true);
 
-create policy if not exists "Lessons readable by everyone"
+drop policy if exists "Lessons readable by everyone" on public.module_lessons;
+create policy "Lessons readable by everyone"
   on public.module_lessons
   for select using (true);
 
-create policy if not exists "Progress selectable by owner"
+drop policy if exists "Progress selectable by owner" on public.user_course_progress;
+create policy "Progress selectable by owner"
   on public.user_course_progress
   for select using (auth.uid() = user_id);
 
-create policy if not exists "Progress insert by owner"
+drop policy if exists "Progress insert by owner" on public.user_course_progress;
+create policy "Progress insert by owner"
   on public.user_course_progress
   for insert with check (auth.uid() = user_id);
 
-create policy if not exists "Progress update by owner"
+drop policy if exists "Progress update by owner" on public.user_course_progress;
+create policy "Progress update by owner"
   on public.user_course_progress
   for update using (auth.uid() = user_id);
 
@@ -177,7 +182,7 @@ create or replace function public.record_lesson_progress(
 language plpgsql
 security definer
 set search_path = public, extensions
-as 
+as $$
 declare
   v_user_id uuid := auth.uid();
   v_module_id uuid;
@@ -229,7 +234,7 @@ begin
 
   return v_progress;
 end;
-;
+$$;
 
 grant execute on function public.record_lesson_progress(text, text, text, numeric) to authenticated;
 
