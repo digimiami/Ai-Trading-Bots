@@ -14,6 +14,7 @@ export default function Navigation() {
 
   const navItems = [
     { path: '/dashboard', icon: 'ri-home-line', label: 'Home' },
+    { path: '/academy', icon: 'ri-graduation-cap-line', label: 'Academy' },
     { path: '/bots', icon: 'ri-robot-line', label: 'Bots' },
     { path: '/backtest', icon: 'ri-test-tube-line', label: 'Backtest' },
     { path: '/bot-activity', icon: 'ri-file-list-line', label: 'Activity' },

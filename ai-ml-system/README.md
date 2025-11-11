@@ -82,6 +82,32 @@ npm install --save-dev @types/uuid
 
 The AI/ML dashboard will only be accessible when `VITE_FEATURE_AI_ML=1`.
 
+---
+
+## 📘 Pablo Academy
+
+The main Pablo web application now includes a full Academy experience. Traders can access `/academy` for guided learning paths, while `/academy/<module>` provides interactive lessons with quizzes, videos, and best-practice guides. The Academy pulls its content from Supabase tables (`course_modules`, `module_lessons`, `user_course_progress`) and exposes an RPC (`record_lesson_progress`) for capturing module/lesson status.
+
+### Adding or Updating Modules
+
+1. **Create a migration** that inserts rows into `course_modules` and `module_lessons`. Include a `slug` and `order_index` for deterministic routing/order.
+2. **Seeding quizzes**: for quick scaffolding, set the lesson type to `quiz` and leave `content_md` empty. The frontend renders a placeholder multiple-choice form until bespoke questions are supplied.
+3. **Media assets**: reference hosted videos/PDFs/markdown via `media_url`. The UI embeds video through `<video>` and renders markdown-style copy using a lightweight parser.
+4. **Progress & badges**: `user_course_progress` tracks per-lesson progress and quiz scores. The `user_academy_summary` view aggregates completion to unlock the foundation badge (first three modules).
+5. **Preview**: run `npm run dev` and visit `/academy/<module-slug>` to confirm the new lesson renders correctly across breakpoints.
+
+### Contribution Guidelines
+
+- Keep `content_md` in GitHub-flavoured Markdown. Include headings, ordered lists, callouts, and links for optimal rendering.
+- Supply subtitles/transcripts with each video lesson to maintain accessibility standards.
+- Use descriptive slugs (e.g., `risk-controls`, `automation-playbooks`) to keep URL structure stable.
+- When shipping new modules, extend the Supabase seed migration and update documentation to outline the intended audience and expected outcomes.
+- Update Vitest coverage (`src/hooks/__tests__/useAcademy.test.ts`) if you introduce new helper logic for progress calculations.
+
+### Testing
+
+Run `npm run test` to execute Vitest specs covering Academy utilities (progress calculations, quiz parsing, etc.) plus hook helpers for lesson/module completion logic.
+
 ## 📊 Features
 
 ### Technical Indicators

@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../../components/feature/Header';
 import Navigation from '../../components/feature/Navigation';
@@ -12,6 +12,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useBots } from '../../hooks/useBots';
 import { useMarketData } from '../../hooks/useMarketData';
 import { useExchangeBalance } from '../../hooks/useExchangeBalance';
+import { useAcademy } from '../../hooks/useAcademy';
 import ExchangeBalanceDisplay from './components/ExchangeBalance';
 
 export default function Home() {
@@ -20,7 +21,33 @@ export default function Home() {
   const { bots, loading: botsLoading } = useBots();
   const { marketData, loading: marketLoading } = useMarketData();
   const { balances, loading: balancesLoading } = useExchangeBalance();
+  const { modules: academyModules, lessonProgress: academyProgress, summary: academySummary, loading: academyLoading } = useAcademy();
   const [showWelcome, setShowWelcome] = useState(false);
+  const orientationModule = useMemo(
+    () => academyModules.find((module) => module.order_index === 1 || module.slug === 'orientation-setup'),
+    [academyModules]
+  );
+
+  const orientationStats = useMemo(() => {
+    if (!orientationModule) {
+      return { completedLessons: 0, totalLessons: 0 };
+    }
+    const lessonIds = new Set(orientationModule.lessons.map((lesson) => lesson.id));
+    const completedLessons = academyProgress.filter(
+      (entry) => entry.module_id === orientationModule.id && (!!entry.lesson_id && lessonIds.has(entry.lesson_id)) && entry.status === 'completed'
+    ).length;
+    const totalLessons = orientationModule.lessons.length;
+    return { completedLessons, totalLessons };
+  }, [academyProgress, orientationModule]);
+
+  const hasCompletedOrientation = orientationModule ? isModuleCompleted(orientationModule, academyProgress) : false;
+  const showAcademyBanner = !academyLoading && orientationModule && !hasCompletedOrientation;
+
+  const foundationBadgeUnlocked = academySummary?.badge_foundation_finisher ?? false;
+  const foundationProgress =
+    orientationStats.totalLessons > 0
+      ? Math.round((orientationStats.completedLessons / orientationStats.totalLessons) * 100)
+      : 0;
 
   useEffect(() => {
     const isFirstVisit = !localStorage.getItem('welcome_shown');
@@ -32,7 +59,6 @@ export default function Home() {
 
   const activeBots = bots.filter(bot => bot.status === 'active');
   const totalPnL = bots.reduce((sum, bot) => sum + (bot.totalPnL || 0), 0);
-
   const handleCreateFirstBot = () => {
     setShowWelcome(false);
     navigate('/create-bot');
@@ -77,8 +103,80 @@ export default function Home() {
       />
       
       <div className="pt-20 pb-20 px-4 space-y-6">
+        {showAcademyBanner && orientationModule && (
+          <Card className="relative overflow-hidden border border-sky-500/40 bg-slate-900/60">
+            <div className="absolute inset-0 bg-gradient-to-r from-sky-500/10 via-indigo-500/10 to-purple-500/10 blur-2xl" />
+            <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-white">Launch the Pablo Academy</h3>
+                <p className="mt-2 text-sm text-slate-200/80">
+                  Complete Orientation & Setup to unlock advanced templates, badges, and faster onboarding for your team.
+                </p>
+                <div className="mt-3 flex items-center space-x-3 text-xs text-slate-300/70">
+                  <span>
+                    <i className="ri-time-line mr-1" />
+                    {orientationModule.duration_minutes} minutes
+                  </span>
+                  <span>
+                    <i className="ri-stack-line mr-1" />
+                    {orientationModule.lessons.length} lessons
+                  </span>
+                  {orientationStats.totalLessons > 0 && (
+                    <span>
+                      <i className="ri-progress-8-line mr-1" />
+                      {orientationStats.completedLessons}/{orientationStats.totalLessons} complete
+                    </span>
+                  )}
+                </div>
+              </div>
+              <Button size="lg" onClick={() => navigate(`/academy/${orientationModule.slug}`)}>
+                Start Module 1
+              </Button>
+            </div>
+          </Card>
+        )}
+
         {/* Welcome Message for New Users */}
         {showWelcome && (
+          <Card className="flex flex-col items-start gap-4 border border-blue-200 bg-gradient-to-r from-blue-50 via-white to-indigo-50 p-6 shadow-sm dark:border-blue-900/40 dark:from-blue-950/40 dark:via-gray-900 dark:to-indigo-950/40">
+            <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.3em] text-blue-400">
+              <i className="ri-graduation-cap-line text-lg" />
+              Academy
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Start the Pablo Academy</h3>
+              <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                Complete Orientation &amp; Setup to unlock pro tips, badges, and automation checklists tailored to your trading style.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <Button onClick={() => navigate('/academy/orientation-setup')} size="sm">
+                Begin Orientation
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => navigate('/academy')}>
+                View Curriculum
+              </Button>
+            </div>
+          </Card>
+        )}
+
+        {foundationBadgeUnlocked && (
+          <Card className="flex items-center gap-4 border border-emerald-200 bg-emerald-50 p-5 text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-200">
+              <i className="ri-award-fill text-xl" />
+            </div>
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold">Foundation Finisher</h3>
+              <p className="text-xs">
+                Congratulations! You’ve completed the core Pablo Academy modules. Advanced playbooks are now unlocked in the Academy hub.
+              </p>
+            </div>
+            <Button size="sm" variant="secondary" onClick={() => navigate('/academy')}>
+              Explore Advanced Paths
+            </Button>
+          </Card>
+        )}
+
           <Card className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
             <div className="flex items-start space-x-4">
               <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
@@ -116,7 +214,7 @@ export default function Home() {
               </button>
             </div>
           </Card>
-        )}
+        
 
         {/* Quick Stats */}
         <StatsGrid />
@@ -141,8 +239,50 @@ export default function Home() {
               <i className="ri-robot-line mr-2"></i>
               Manage Bots
             </Button>
+            <Button
+              variant="secondary"
+              onClick={() => navigate('/academy')}
+              className="col-span-2 h-12 flex items-center justify-center"
+            >
+              <i className="ri-graduation-cap-line mr-2"></i>
+              Visit Academy
+            </Button>
           </div>
         </Card>
+
+        {academySummary && (
+          <Card className="flex items-center justify-between border border-emerald-500/30 bg-emerald-500/10 px-6 py-4 text-sm text-emerald-100">
+            <div>
+              <div className="text-xs uppercase tracking-[0.4em] text-emerald-200/80">Academy Progress</div>
+              <p className="mt-2 text-base text-white">
+                {academySummary.modules_completed}/{academySummary.modules_available} modules completed
+              </p>
+              {foundationBadgeUnlocked ? (
+                <p className="text-xs text-emerald-200/80 mt-1">
+                  <i className="ri-award-fill mr-1" />
+                  Foundation badge unlocked — advanced content enabled.
+                </p>
+              ) : (
+                <p className="text-xs text-emerald-200/80 mt-1">
+                  Complete the first three modules to earn the Foundation badge.
+                </p>
+              )}
+            </div>
+            <div className="flex flex-col items-end">
+              <div className="flex items-center space-x-2 text-xs">
+                <span>{foundationProgress}% of Module 1</span>
+              </div>
+              <div className="mt-2 h-2 w-32 rounded-full bg-emerald-900/60">
+                <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-sky-400" style={{ width: `${foundationProgress}%` }} />
+              </div>
+              {!foundationBadgeUnlocked && (
+                <Button variant="secondary" size="sm" className="mt-3" onClick={() => navigate('/academy')}>
+                  Resume
+                </Button>
+              )}
+            </div>
+          </Card>
+        )}
 
         {/* Active Bots */}
         <ActiveBots bots={activeBots} />

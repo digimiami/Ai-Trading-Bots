@@ -7,6 +7,8 @@ import { ONBOARDING_ENABLED } from '../constants/featureFlags';
 // Lazy load components
 const Landing = lazy(() => import('../pages/landing/page'));
 const Home = lazy(() => import('../pages/home/page'));
+const Academy = lazy(() => import('../pages/academy/page'));
+const AcademyModule = lazy(() => import('../pages/academy/module'));
 const Auth = lazy(() => import('../pages/auth/page'));
 const Bots = lazy(() => import('../pages/bots/page'));
 const CreateBot = lazy(() => import('../pages/create-bot/page'));
@@ -39,6 +41,14 @@ const routes: RouteObject[] = [
   {
     path: '/dashboard',
     element: <Home />
+  },
+  {
+    path: '/academy',
+    element: <Academy />
+  },
+  {
+    path: '/academy/:moduleSlug',
+    element: <AcademyModule />
   },
   {
     path: '/auth',
