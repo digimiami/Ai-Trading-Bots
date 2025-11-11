@@ -12,10 +12,9 @@ language plpgsql
 security definer
 as $function$
 declare
-  filtered records;
-  summary jsonb;
-  entries jsonb;
-  breakdown jsonb;
+  summary jsonb := null;
+  symbol_breakdown jsonb := '[]'::jsonb;
+  entry_list jsonb := '[]'::jsonb;
 begin
   if p_user_id is null then
     raise exception 'user_id required';
@@ -56,77 +55,71 @@ begin
     group by symbol, mode
     order by trades desc
   )
-  select
-    jsonb_build_object(
-      'summary',
-      jsonb_build_object(
-        'totalTrades', total_trades,
-        'longTrades', long_trades,
-        'shortTrades', short_trades,
-        'wins', wins,
-        'losses', losses,
-        'winRate', case when total_trades > 0 then wins::numeric / total_trades else 0 end,
-        'grossPnl', gross_pnl,
-        'fees', total_fees,
-        'netPnl', gross_pnl - total_fees
-      ),
-      'breakdown',
-      jsonb_build_object(
-        'bySymbol', coalesce(jsonb_agg(
-          jsonb_build_object(
-            'symbol', symbol,
-            'mode', mode,
-            'trades', trades,
-            'pnl', pnl,
-            'fees', fees
-          )
-        ), '[]'::jsonb)
-      ),
-      'entries',
-      coalesce(
-        (
-          select jsonb_agg(jsonb_build_object(
-            'id', id,
-            'botId', bot_id,
-            'botName', bot_name,
-            'symbol', symbol,
-            'side', side,
-            'status', status,
-            'pnl', pnl,
-            'fees', fees,
-            'mode', mode,
-            'createdAt', created_at,
-            'closedAt', closed_at
-          ))
-          from (
-            select *
-            from filtered
-            order by created_at desc
-            limit p_limit
-            offset p_offset
-          ) sub
-        ),
-        '[]'::jsonb
-      )
-    )
+  select jsonb_build_object(
+    'totalTrades', coalesce(total_trades, 0),
+    'longTrades', coalesce(long_trades, 0),
+    'shortTrades', coalesce(short_trades, 0),
+    'wins', coalesce(wins, 0),
+    'losses', coalesce(losses, 0),
+    'winRate', case when coalesce(total_trades, 0) > 0 then coalesce(wins, 0)::numeric / total_trades else 0 end,
+    'grossPnl', coalesce(gross_pnl, 0),
+    'fees', coalesce(total_fees, 0),
+    'netPnl', coalesce(gross_pnl, 0) - coalesce(total_fees, 0)
+  )
   into summary
-  from aggregates, grouped;
+  from aggregates;
 
-  return coalesce(summary, jsonb_build_object(
-    'summary', jsonb_build_object(
-      'totalTrades', 0,
-      'longTrades', 0,
-      'shortTrades', 0,
-      'wins', 0,
-      'losses', 0,
-      'winRate', 0,
-      'grossPnl', 0,
-      'fees', 0,
-      'netPnl', 0
-    ),
-    'breakdown', jsonb_build_object('bySymbol', '[]'::jsonb),
-    'entries', '[]'::jsonb
+  select coalesce(jsonb_agg(
+    jsonb_build_object(
+      'symbol', symbol,
+      'mode', mode,
+      'trades', trades,
+      'pnl', pnl,
+      'fees', fees
+    )
+  ), '[]'::jsonb)
+  into symbol_breakdown
+  from grouped;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id', id,
+    'botId', bot_id,
+    'botName', bot_name,
+    'symbol', symbol,
+    'side', side,
+    'status', status,
+    'pnl', pnl,
+    'fees', fees,
+    'mode', mode,
+    'createdAt', created_at,
+    'closedAt', closed_at
+  )), '[]'::jsonb)
+  into entry_list
+  from (
+    select *
+    from filtered
+    order by created_at desc
+    limit p_limit
+    offset p_offset
+  ) sub;
+
+  summary := coalesce(summary, jsonb_build_object(
+    'totalTrades', 0,
+    'longTrades', 0,
+    'shortTrades', 0,
+    'wins', 0,
+    'losses', 0,
+    'winRate', 0,
+    'grossPnl', 0,
+    'fees', 0,
+    'netPnl', 0
   ));
+
+  return jsonb_build_object(
+    'summary', summary,
+    'breakdown', jsonb_build_object('bySymbol', symbol_breakdown),
+    'entries', entry_list
+  );
 end;
 $function$;
 -- Migration: Create signal templates and events for TradingView webhook integration
@@ -189,7 +182,7 @@ select
   t.side,
   t.status,
   t.pnl,
-  t.fees,
+  coalesce(t.fee, 0) as fees,
   t.created_at,
   t.closed_at,
   'real'::text as mode
@@ -207,7 +200,7 @@ select
   pt.side,
   pt.status,
   pt.pnl,
-  pt.fees,
+  coalesce(pt.fees, 0) as fees,
   pt.created_at,
   pt.closed_at,
   'paper'::text as mode
