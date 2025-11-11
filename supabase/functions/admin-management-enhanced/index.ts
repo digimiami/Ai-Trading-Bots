@@ -281,6 +281,91 @@ serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
 
+      case 'updateUserRole': {
+        const { userId: roleUserId, role: newRole } = params
+
+        if (!roleUserId || !newRole) {
+          return new Response(JSON.stringify({
+            error: 'User ID and role are required'
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        const { error: authUpdateError } = await supabaseClient.auth.admin.updateUserById(roleUserId, {
+          user_metadata: { role: newRole }
+        })
+
+        if (authUpdateError) {
+          console.error('Error updating auth user role:', authUpdateError)
+          return new Response(JSON.stringify({
+            error: authUpdateError.message || 'Failed to update user role in authentication system'
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        const { error: updateRoleError } = await supabaseClient
+          .from('users')
+          .update({ role: newRole })
+          .eq('id', roleUserId)
+
+        if (updateRoleError) {
+          console.error('Error updating user role in database:', updateRoleError)
+          return new Response(JSON.stringify({
+            error: updateRoleError.message || 'Failed to update user role in database'
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        return new Response(JSON.stringify({
+          success: true,
+          message: 'User role updated successfully'
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      case 'sendPasswordResetLink': {
+        const { email: resetEmail } = params
+
+        if (!resetEmail) {
+          return new Response(JSON.stringify({
+            error: 'Email is required'
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        const { data: resetData, error: resetError } = await supabaseClient.auth.admin.generateLink({
+          type: 'recovery',
+          email: resetEmail
+        })
+
+        if (resetError) {
+          console.error('Error generating password reset link:', resetError)
+          return new Response(JSON.stringify({
+            error: resetError.message || 'Failed to generate password reset link'
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        return new Response(JSON.stringify({
+          success: true,
+          message: 'Password reset link generated successfully',
+          resetLink: resetData?.properties?.action_link ?? null
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
       case 'getInvitationCodes':
         const { data: codes, error: codesError } = await supabaseClient
           .from('invitation_codes')

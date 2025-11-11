@@ -105,7 +105,10 @@ export default function AdminPage() {
     getUserActivity,
     getSystemLogs,
     getRiskMetrics,
-    exportData
+    exportData,
+    deleteUser,
+    updateUserRole,
+    sendPasswordResetLink
   } = useAdmin();
   
   const [activeTab, setActiveTab] = useState('overview');
@@ -123,6 +126,7 @@ export default function AdminPage() {
   const [showCreateInvitation, setShowCreateInvitation] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [userActionLoading, setUserActionLoading] = useState<Record<string, boolean>>({});
   
   const [newUser, setNewUser] = useState({
     email: '',
@@ -237,6 +241,65 @@ export default function AdminPage() {
     } catch (error: any) {
       console.error('Error creating invitation:', error);
       setError(error?.message || error?.error || 'Failed to create invitation code. Please try again.');
+    }
+  };
+
+  const setUserLoadingState = (userId: string, value: boolean) => {
+    setUserActionLoading(prev => ({ ...prev, [userId]: value }));
+  };
+
+  const handleUserRoleChange = async (userId: string, role: 'user' | 'admin') => {
+    setUserLoadingState(userId, true);
+    try {
+      await updateUserRole(userId, role);
+      setUsers(prev => prev.map(user => user.id === userId ? { ...user, role } : user));
+      await loadData();
+      alert(`✅ Updated user role to ${role}`);
+    } catch (error: any) {
+      console.error('Error updating user role:', error);
+      alert(`❌ Failed to update user role: ${error?.message || error}`);
+    } finally {
+      setUserLoadingState(userId, false);
+    }
+  };
+
+  const handleDeleteUserAccount = async (userId: string, email: string) => {
+    const confirmed = window.confirm(`Delete user "${email}"? This cannot be undone.`);
+    if (!confirmed) return;
+
+    setUserLoadingState(userId, true);
+    try {
+      await deleteUser(userId);
+      await loadData();
+      alert('✅ User deleted successfully');
+    } catch (error: any) {
+      console.error('Error deleting user:', error);
+      alert(`❌ Failed to delete user: ${error?.message || error}`);
+    } finally {
+      setUserLoadingState(userId, false);
+    }
+  };
+
+  const handleSendPasswordReset = async (userId: string, email: string) => {
+    setUserLoadingState(userId, true);
+    try {
+      const result = await sendPasswordResetLink(email);
+      const resetLink = result?.resetLink;
+      if (resetLink) {
+        try {
+          await navigator.clipboard.writeText(resetLink);
+          alert('✅ Password reset link generated and copied to clipboard.');
+        } catch {
+          alert(`✅ Password reset link generated:\n${resetLink}`);
+        }
+      } else {
+        alert('✅ Password reset link generated.');
+      }
+    } catch (error: any) {
+      console.error('Error generating password reset link:', error);
+      alert(`❌ Failed to generate password reset link: ${error?.message || error}`);
+    } finally {
+      setUserLoadingState(userId, false);
     }
   };
 
@@ -451,7 +514,9 @@ export default function AdminPage() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {users.map((user) => (
+                  {users.map((user) => {
+                    const isActionLoading = !!userActionLoading[user.id];
+                    return (
                     <div key={user.id} className="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex-1">
@@ -479,6 +544,41 @@ export default function AdminPage() {
                               <> • Last active: {new Date(user.last_sign_in_at).toLocaleDateString()}</>
                             )}
                           </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-3">
+                        <div>
+                          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Role</label>
+                          <select
+                            value={user.role}
+                            onChange={(e) => handleUserRoleChange(user.id, e.target.value as 'user' | 'admin')}
+                            disabled={isActionLoading}
+                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-900 dark:border-gray-700"
+                          >
+                            <option value="user">User</option>
+                            <option value="admin">Admin</option>
+                          </select>
+                        </div>
+                        <div className="flex items-end gap-2">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => handleSendPasswordReset(user.id, user.email)}
+                            disabled={isActionLoading}
+                          >
+                            <i className="ri-lock-password-line mr-1"></i>
+                            Reset Password
+                          </Button>
+                          <Button
+                            variant="danger"
+                            size="sm"
+                            onClick={() => handleDeleteUserAccount(user.id, user.email)}
+                            disabled={isActionLoading}
+                          >
+                            <i className="ri-delete-bin-line mr-1"></i>
+                            Delete
+                          </Button>
                         </div>
                       </div>
                       
@@ -531,7 +631,7 @@ export default function AdminPage() {
                         </div>
                       )}
                     </div>
-                  ))}
+                  )})}
                 </div>
               )}
             </Card>

@@ -125,6 +125,14 @@ export function useAdmin() {
     return await callAdminFunction('deleteUser', { userId });
   };
 
+  const updateUserRole = async (userId: string, role: string) => {
+    return await callAdminFunction('updateUserRole', { userId, role });
+  };
+
+  const sendPasswordResetLink = async (email: string) => {
+    return await callAdminFunction('sendPasswordResetLink', { email });
+  };
+
   const getInvitationCodes = async (): Promise<InvitationCode[]> => {
     const data = await callAdminFunction('getInvitationCodes');
     return data.codes || [];
@@ -197,6 +205,8 @@ export function useAdmin() {
     getUsers,
     createUser,
     deleteUser,
+    updateUserRole,
+    sendPasswordResetLink,
     getInvitationCodes,
     generateInvitationCode,
     // Trading Bot Management

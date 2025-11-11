@@ -18,7 +18,7 @@ export default function BotsPage() {
   const { bots, loading, startBot, stopBot, updateBot, deleteBot, createBot } = useBots();
   const { activities, addLog } = useBotActivity(bots);
   const { isExecuting, lastExecution, timeSync, executeBot, executeAllBots } = useBotExecutor();
-  const [filter, setFilter] = useState<'all' | 'running' | 'paused' | 'stopped'>('all');
+  const [filter, setFilter] = useState<'all' | 'running' | 'paused' | 'stopped' | 'live'>('all');
   const [viewMode, setViewMode] = useState<'overview' | 'webhook'>('overview');
   const [bulkLoading, setBulkLoading] = useState(false);
   const [expandedBot, setExpandedBot] = useState<string | null>(null);
@@ -173,9 +173,11 @@ export default function BotsPage() {
     }
   };
 
-  const filteredBots = bots.filter(bot => 
-    filter === 'all' || bot.status === filter
-  );
+  const filteredBots = bots.filter(bot => {
+    if (filter === 'all') return true;
+    if (filter === 'live') return !bot.paperTrading;
+    return bot.status === filter;
+  });
 
   const resetPaperTradingPerformance = async () => {
     try {
@@ -651,17 +653,23 @@ export default function BotsPage() {
 
           {/* Filter Tabs */}
           <div className="flex space-x-2 overflow-x-auto">
-            {['all', 'running', 'paused', 'stopped'].map((status) => (
+            {[
+              { id: 'all', label: 'All' },
+              { id: 'running', label: 'Running' },
+              { id: 'paused', label: 'Paused' },
+              { id: 'stopped', label: 'Stopped' },
+              { id: 'live', label: 'Live Trading' }
+            ].map((option) => (
               <button
-                key={status}
-                onClick={() => setFilter(status as any)}
+                key={option.id}
+                onClick={() => setFilter(option.id as typeof filter)}
                 className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap ${
-                  filter === status
+                  filter === option.id
                     ? 'bg-blue-600 text-white'
                     : 'bg-white text-gray-600 border border-gray-200'
                 }`}
               >
-                {status.charAt(0).toUpperCase() + status.slice(1)}
+                {option.label}
               </button>
             ))}
           </div>
