@@ -162,22 +162,39 @@ export default function AuthPage() {
         // If signup successful, mark invitation code as used
         if (!result.error && result.data?.user && inviteCode) {
           try {
-            const { data: { session } } = await supabase.auth.getSession()
-            const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL
-            const useResponse = await fetch(`${supabaseUrl}/functions/v1/invitation-management?action=use`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session?.access_token || ''}`
-              },
-              body: JSON.stringify({ 
-                code: inviteCode,
-                userId: result.data?.user?.id 
+            let activeSession = result.data?.session || null
+
+            if (!activeSession) {
+              const loginResult = await supabase.auth.signInWithPassword({ email, password })
+              if (loginResult.error) {
+                console.warn('Auto sign-in after signup failed:', loginResult.error)
+              } else {
+                activeSession = loginResult.data?.session || null
+              }
+            }
+
+            const { data: { session: currentSession } } = await supabase.auth.getSession()
+            const accessToken = currentSession?.access_token || activeSession?.access_token
+
+            if (accessToken) {
+              const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL
+              const useResponse = await fetch(`${supabaseUrl}/functions/v1/invitation-management?action=use`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${accessToken}`
+                },
+                body: JSON.stringify({ 
+                  code: inviteCode,
+                  userId: result.data?.user?.id 
+                })
               })
-            })
-            
-            if (!useResponse.ok) {
-              console.error('Failed to mark invitation as used:', await useResponse.text())
+              
+              if (!useResponse.ok) {
+                console.error('Failed to mark invitation as used:', await useResponse.text())
+              }
+            } else {
+              console.warn('No access token available to mark invitation as used.')
             }
           } catch (inviteError) {
             console.error('Failed to mark invitation as used:', inviteError)
