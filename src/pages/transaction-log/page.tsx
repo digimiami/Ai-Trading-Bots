@@ -69,7 +69,7 @@ export default function TransactionLogPage() {
   const [customStart, setCustomStart] = useState<string>('');
   const [customEnd, setCustomEnd] = useState<string>('');
   const [symbols, setSymbols] = useState<string[]>([]);
-  const [selectedSymbols, setSelectedSymbols] = useState<string[]>([]);
+  const [selectedSymbol, setSelectedSymbol] = useState<string>('all');
   const [report, setReport] = useState<ReportResponse>({
     summary: DEFAULT_SUMMARY,
     breakdown: { bySymbol: [] },
@@ -132,7 +132,7 @@ export default function TransactionLogPage() {
     try {
       const { data, error } = await supabase.rpc('transaction_log_report', {
         p_user_id: user.id,
-        p_symbols: selectedSymbols.length > 0 ? selectedSymbols : null,
+        p_symbols: selectedSymbol !== 'all' ? [selectedSymbol] : null,
         p_mode: mode,
         p_start: start,
         p_end: end,
@@ -168,11 +168,10 @@ export default function TransactionLogPage() {
     if (!user) return;
     fetchReport();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, range, mode, JSON.stringify(selectedSymbols)]);
+  }, [user?.id, range, mode, selectedSymbol]);
 
   const handleSymbolChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    const selected = Array.from(event.target.selectedOptions).map((option) => option.value);
-    setSelectedSymbols(selected);
+    setSelectedSymbol(event.target.value);
   };
 
   const formatCurrency = (value: number) => {
@@ -293,13 +292,13 @@ export default function TransactionLogPage() {
             </div>
 
             <div className="flex flex-col md:col-span-2">
-              <label className="text-sm text-gray-600 mb-1">Symbols</label>
+              <label className="text-sm text-gray-600 mb-1">Symbol</label>
               <select
-                multiple
-                value={selectedSymbols}
+                value={selectedSymbol}
                 onChange={handleSymbolChange}
-                className="bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm h-24"
+                className="bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm"
               >
+                <option value="all">All Pairs</option>
                 {symbols.length === 0 && <option value="" disabled>No symbols available yet</option>}
                 {symbols.map((symbol) => (
                   <option key={symbol} value={symbol}>
@@ -307,7 +306,6 @@ export default function TransactionLogPage() {
                   </option>
                 ))}
               </select>
-              <p className="text-xs text-gray-500 mt-1">Hold Ctrl/Cmd to select multiple symbols.</p>
             </div>
           </div>
 

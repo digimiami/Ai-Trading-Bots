@@ -43,17 +43,6 @@ begin
       coalesce(sum(pnl), 0) as gross_pnl,
       coalesce(sum(fees), 0) as total_fees
     from filtered
-  ),
-  grouped as (
-    select
-      symbol,
-      mode,
-      count(*) as trades,
-      coalesce(sum(pnl), 0) as pnl,
-      coalesce(sum(fees), 0) as fees
-    from filtered
-    group by symbol, mode
-    order by trades desc
   )
   select jsonb_build_object(
     'totalTrades', coalesce(total_trades, 0),
@@ -69,6 +58,30 @@ begin
   into summary
   from aggregates;
 
+  with filtered as (
+    select *
+    from public.transaction_log_entries
+    where user_id = p_user_id
+      and (p_symbols is null or symbol = any(p_symbols))
+      and (
+        p_mode = 'all'
+        or (p_mode = 'real' and mode = 'real')
+        or (p_mode = 'paper' and mode = 'paper')
+      )
+      and (p_start is null or created_at >= p_start)
+      and (p_end is null or created_at <= p_end)
+  ),
+  grouped as (
+    select
+      symbol,
+      mode,
+      count(*) as trades,
+      coalesce(sum(pnl), 0) as pnl,
+      coalesce(sum(fees), 0) as fees
+    from filtered
+    group by symbol, mode
+    order by trades desc
+  )
   select coalesce(jsonb_agg(
     jsonb_build_object(
       'symbol', symbol,
@@ -81,6 +94,19 @@ begin
   into symbol_breakdown
   from grouped;
 
+  with filtered as (
+    select *
+    from public.transaction_log_entries
+    where user_id = p_user_id
+      and (p_symbols is null or symbol = any(p_symbols))
+      and (
+        p_mode = 'all'
+        or (p_mode = 'real' and mode = 'real')
+        or (p_mode = 'paper' and mode = 'paper')
+      )
+      and (p_start is null or created_at >= p_start)
+      and (p_end is null or created_at <= p_end)
+  )
   select coalesce(jsonb_agg(jsonb_build_object(
     'id', id,
     'botId', bot_id,
