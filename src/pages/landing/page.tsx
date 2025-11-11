@@ -135,6 +135,9 @@ export default function LandingPage() {
           </div>
 
           <nav className="hidden items-center space-x-8 text-sm font-medium text-slate-200/80 md:flex">
+            <button onClick={() => navigate('/academy')} className="transition hover:text-white">
+              Academy
+            </button>
             <button onClick={() => document.getElementById('capabilities')?.scrollIntoView({ behavior: 'smooth' })} className="transition hover:text-white">
               Platform
             </button>
@@ -179,6 +182,15 @@ export default function LandingPage() {
               <Button variant="secondary" size="lg" onClick={() => document.getElementById('capabilities')?.scrollIntoView({ behavior: 'smooth' })}>
                 Explore Capabilities
                 <i className="ri-scan-2-fill ml-2 text-base" />
+              </Button>
+              <Button
+                variant="secondary"
+                size="lg"
+                className="bg-transparent text-slate-200 hover:bg-slate-800/60 border border-slate-700/70"
+                onClick={() => navigate('/academy')}
+              >
+                View Pablo Academy
+                <i className="ri-graduation-cap-line ml-2 text-lg" />
               </Button>
             </div>
 

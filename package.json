@@ -10,7 +10,6 @@
     "lucide-react": "0.539.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-markdown": "^9.0.3",
     "react-i18next": "^15.6.0",
     "react-router-dom": "^7.6.3",
     "recharts": "3.2.0",
