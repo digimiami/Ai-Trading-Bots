@@ -53,27 +53,43 @@ export default function Navigation() {
   const useScrollable = gridCols === 'flex';
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 z-40">
-      <div className={useScrollable 
-        ? "flex overflow-x-auto h-16 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
-        : `grid ${gridCols} h-16`
-      }>
+    <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-blue-200/60 bg-white/95 backdrop-blur-sm shadow-[0_-6px_18px_-12px_rgba(30,64,175,0.45)] dark:border-blue-400/30 dark:bg-gray-900/95">
+      <div
+        className={
+          useScrollable
+            ? 'flex h-20 overflow-x-auto px-2 py-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]'
+            : `grid ${gridCols} h-20 px-3 py-2`
+        }
+      >
         {navItems.map((item) => {
           const isActive = location.pathname === item.path;
           return (
             <button
               key={item.path}
               onClick={() => navigate(item.path)}
-              className={`flex flex-col items-center justify-center space-y-1 transition-colors ${
-                useScrollable ? 'min-w-[70px] px-2 flex-shrink-0' : ''
+              className={`group relative flex flex-col items-center justify-center gap-1 rounded-xl transition-all duration-150 ${
+                useScrollable ? 'min-w-[80px] px-3 flex-shrink-0' : 'px-2'
               } ${
-                isActive 
-                  ? 'text-blue-600 dark:text-blue-400' 
-                  : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+                isActive
+                  ? 'text-blue-600 dark:text-blue-300'
+                  : 'text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-300'
               }`}
             >
-              <i className={`${item.icon} text-xl`}></i>
-              <span className="text-xs font-medium whitespace-nowrap">{item.label}</span>
+              <span
+                className={`flex h-11 w-11 items-center justify-center rounded-full border transition-all duration-150 ${
+                  isActive
+                    ? 'border-blue-500 bg-blue-600 text-white shadow-lg shadow-blue-500/30'
+                    : 'border-slate-200 bg-slate-50 text-inherit group-hover:border-blue-300 group-hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800 dark:group-hover:border-blue-500/60 dark:group-hover:bg-slate-800'
+                }`}
+              >
+                <i className={`${item.icon} text-[1.35rem]`}></i>
+              </span>
+              <span className="text-[0.72rem] font-semibold uppercase tracking-wide whitespace-nowrap drop-shadow-sm">
+                {item.label}
+              </span>
+              {isActive && (
+                <span className="absolute bottom-0 h-1 w-10 rounded-full bg-gradient-to-r from-blue-500 via-blue-400 to-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.45)]" />
+              )}
             </button>
           );
         })}
