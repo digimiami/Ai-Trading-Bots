@@ -106,8 +106,42 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
       
       const { data: openPositions } = await openPositionsQuery;
 
+      // Helper to normalize numeric fields (Supabase returns numerics as strings)
+      const normalizePosition = (raw: any, overrides: Partial<PaperPosition> = {}): PaperPosition => {
+        const toNumber = (value: any, fallback = 0) => {
+          const parsed = typeof value === 'number' ? value : parseFloat(value ?? '');
+          return Number.isFinite(parsed) ? parsed : fallback;
+        };
+
+        const entryPrice = toNumber(raw.entry_price);
+        const quantity = toNumber(raw.quantity);
+        const leverage = toNumber(raw.leverage, 1);
+        const marginUsed = toNumber(raw.margin_used);
+        const currentPrice = overrides.current_price !== undefined
+          ? overrides.current_price
+          : toNumber(raw.current_price, entryPrice);
+        const unrealizedPnL = overrides.unrealized_pnl !== undefined
+          ? overrides.unrealized_pnl
+          : toNumber(raw.unrealized_pnl);
+        const side = (raw.side || 'long').toString().toLowerCase() === 'short' ? 'short' : 'long';
+        const normalized: PaperPosition = {
+          id: raw.id,
+          symbol: raw.symbol || 'UNKNOWN',
+          side,
+          entry_price: entryPrice,
+          current_price: currentPrice,
+          quantity,
+          leverage,
+          unrealized_pnl: unrealizedPnL,
+          margin_used: marginUsed,
+          status: raw.status || 'open',
+          opened_at: raw.opened_at || raw.created_at || new Date().toISOString()
+        };
+        return normalized;
+      };
+
       // Fetch current prices for open positions
-      let positionsWithPrices: any[] = [];
+      let positionsWithPrices: PaperPosition[] = [];
       if (openPositions && openPositions.length > 0) {
         positionsWithPrices = await Promise.all(
           openPositions.map(async (position: any) => {
@@ -125,41 +159,37 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
                 
                 if (currentPrice > 0) {
                   // Calculate unrealized PnL
-                  const entryPrice = parseFloat(position.entry_price);
-                  const leverage = parseFloat(position.leverage || 1);
-                  const marginUsed = parseFloat(position.margin_used || 0);
+                  const entryPrice = parseFloat(position.entry_price ?? '') || 0;
+                  const leverage = parseFloat(position.leverage ?? '1') || 1;
+                  const marginUsed = parseFloat(position.margin_used ?? '') || 0;
                   
                   let unrealizedPnL = 0;
-                  if (position.side === 'long') {
-                    unrealizedPnL = ((currentPrice - entryPrice) / entryPrice) * marginUsed * leverage;
-                  } else {
-                    unrealizedPnL = ((entryPrice - currentPrice) / entryPrice) * marginUsed * leverage;
+                  if (entryPrice > 0 && marginUsed !== 0) {
+                    if ((position.side || '').toLowerCase() === 'long') {
+                      unrealizedPnL = ((currentPrice - entryPrice) / entryPrice) * marginUsed * leverage;
+                    } else {
+                      unrealizedPnL = ((entryPrice - currentPrice) / entryPrice) * marginUsed * leverage;
+                    }
                   }
                   
-                  return {
-                    ...position,
+                  return normalizePosition(position, {
                     current_price: currentPrice,
                     unrealized_pnl: unrealizedPnL
-                  };
+                  });
                 }
               } catch (apiError) {
                 console.error(`Error fetching price for ${position.symbol} via API:`, apiError);
-                // Fallback: use stored unrealized_pnl if API call fails
-                return {
-                  ...position,
-                  current_price: parseFloat(position.entry_price || 0),
-                  unrealized_pnl: parseFloat(position.unrealized_pnl || 0)
-                };
+                // Fallback handled below
               }
             } catch (error) {
               console.error(`Error fetching price for ${position.symbol}:`, error);
             }
             
-            return position;
+            return normalizePosition(position);
           })
         );
         
-        setPositions(positionsWithPrices as PaperPosition[]);
+        setPositions(positionsWithPrices);
       } else {
         setPositions([]);
       }
@@ -213,9 +243,9 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
         let totalUnrealizedPnL = 0;
         let totalMarginUsed = 0;
         if (positionsWithPrices && positionsWithPrices.length > 0) {
-          positionsWithPrices.forEach((position: any) => {
-            totalUnrealizedPnL += parseFloat(position.unrealized_pnl || 0);
-            totalMarginUsed += parseFloat(position.margin_used || 0);
+          positionsWithPrices.forEach((position) => {
+            totalUnrealizedPnL += position.unrealized_pnl || 0;
+            totalMarginUsed += position.margin_used || 0;
           });
         }
         
@@ -292,7 +322,7 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
             const pairPerf = pairsMap.get(symbol)!;
             pairPerf.openPositions++;
             // Get unrealized PnL from positionsWithPrices
-            const positionWithPrice = positionsWithPrices.find((p: any) => p.id === position.id);
+            const positionWithPrice = positionsWithPrices.find((p) => p.id === position.id);
             if (positionWithPrice) {
               pairPerf.unrealizedPnL += positionWithPrice.unrealized_pnl || 0;
             } else {
@@ -389,8 +419,8 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
         const initialBalance = account?.initial_balance || 10000;
         let totalUnrealizedPnL = 0;
         if (positionsWithPrices && positionsWithPrices.length > 0) {
-          positionsWithPrices.forEach((position: any) => {
-            totalUnrealizedPnL += parseFloat(position.unrealized_pnl || 0);
+          positionsWithPrices.forEach((position) => {
+            totalUnrealizedPnL += position.unrealized_pnl || 0;
           });
         }
         const calculatedCurrentBalance = initialBalance + 
@@ -425,7 +455,7 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
             
             const pairPerf = pairsMap.get(symbol)!;
             pairPerf.openPositions++;
-            const positionWithPrice = positionsWithPrices.find((p: any) => p.id === position.id);
+            const positionWithPrice = positionsWithPrices.find((p) => p.id === position.id);
             if (positionWithPrice) {
               pairPerf.unrealizedPnL += positionWithPrice.unrealized_pnl || 0;
             } else {
