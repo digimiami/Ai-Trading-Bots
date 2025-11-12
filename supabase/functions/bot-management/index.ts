@@ -495,6 +495,46 @@ serve(async (req) => {
         )
       }
 
+      if (action === 'pause') {
+        const { id } = body
+
+        const { data: bot, error } = await supabaseClient
+          .from('trading_bots')
+          .update({ status: 'paused' })
+          .eq('id', id)
+          .eq('user_id', user.id)
+          .select()
+          .single()
+
+        if (error) throw error
+
+        const transformedBot = {
+          id: bot.id,
+          name: bot.name,
+          exchange: bot.exchange,
+          symbol: bot.symbol,
+          status: bot.status,
+          leverage: bot.leverage,
+          pnl: bot.pnl,
+          pnlPercentage: bot.pnl_percentage,
+          totalTrades: bot.total_trades,
+          winRate: bot.win_rate,
+          createdAt: bot.created_at,
+          lastTradeAt: bot.last_trade_at,
+          riskLevel: bot.risk_level,
+          strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy,
+          aiMlEnabled: bot.ai_ml_enabled || false,
+          paperTrading: bot.paper_trading || false,
+          webhookSecret: bot.webhook_secret || null,
+          webhookTriggerImmediate: bot.webhook_trigger_immediate ?? true
+        }
+
+        return new Response(
+          JSON.stringify({ bot: transformedBot }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
       if (action === 'stop') {
         const { id } = body
 

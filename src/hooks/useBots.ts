@@ -10,30 +10,37 @@ export const useBots = () => {
   const [error, setError] = useState<string | null>(null);
   const { user, loading: authLoading } = useAuth();
 
+  const requireAccessToken = async (): Promise<string> => {
+    let token = await getAuthTokenFast();
+
+    if (!token) {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        token = session?.access_token ?? null;
+      } catch (error) {
+        console.warn('useBots: getSession fallback failed', error);
+      }
+    }
+
+    if (!token) {
+      throw new Error('No active session');
+    }
+
+    return token;
+  };
+
   const fetchBots = async () => {
     try {
       console.log('useBots: Fetching bots');
       setLoading(true);
       setError(null);
       
-      // Default to localStorage, fallback to 1s getSession race
-      let accessToken = await getAuthTokenFast();
-      
-      if (!accessToken) {
-        // Retry once shortly after to allow auth to finish restoring
-        await new Promise(resolve => setTimeout(resolve, 300));
-        accessToken = await getAuthTokenFast();
-      }
-      
-      if (!accessToken) {
-        throw new Error('No active session');
-      }
+      const accessToken = await requireAccessToken();
 
       const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
         },
       });
 
@@ -56,11 +63,7 @@ export const useBots = () => {
 
   const createBot = async (botData: Omit<TradingBot, 'id' | 'createdAt'>) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        throw new Error('No active session');
-      }
+      const accessToken = await requireAccessToken();
 
       console.log('useBots: About to send bot data:', botData);
       console.log('useBots: Exchange value:', botData.exchange, 'Type:', typeof botData.exchange);
@@ -68,7 +71,7 @@ export const useBots = () => {
       const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management?action=create`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
+          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(botData),
@@ -96,12 +99,7 @@ export const useBots = () => {
 
   const startBot = async (botId: string) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        console.error('❌ No active session - cannot start bot');
-        throw new Error('No active session. Please log in again.');
-      }
+      const accessToken = await requireAccessToken();
 
       const url = `${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management?action=start`;
       console.log('🚀 Starting bot:', { botId, url, origin: window.location.origin });
@@ -109,7 +107,7 @@ export const useBots = () => {
       const response = await fetch(url, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
+          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ id: botId }),
@@ -155,12 +153,7 @@ export const useBots = () => {
 
   const stopBot = async (botId: string) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        console.error('❌ No active session - cannot stop bot');
-        throw new Error('No active session. Please log in again.');
-      }
+      const accessToken = await requireAccessToken();
 
       const url = `${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management?action=stop`;
       console.log('🛑 Stopping bot:', { botId, url, origin: window.location.origin });
@@ -168,7 +161,7 @@ export const useBots = () => {
       const response = await fetch(url, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
+          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ id: botId }),
@@ -212,14 +205,62 @@ export const useBots = () => {
     }
   };
 
+  const pauseBot = async (botId: string) => {
+    try {
+      const accessToken = await requireAccessToken();
+
+      const url = `${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management?action=pause`;
+      console.log('⏸️ Pausing bot:', { botId, url, origin: window.location.origin });
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ id: botId }),
+      });
+
+      console.log('📡 Response status:', response.status, response.statusText);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Bot pause error:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorText,
+          headers: Object.fromEntries(response.headers.entries())
+        });
+
+        if (response.status === 0 || errorText.includes('CORS') || errorText.includes('cors')) {
+          throw new Error(`CORS error: Failed to connect to server. This might be a domain configuration issue.`);
+        }
+
+        throw new Error(`Failed to pause bot: ${response.status} - ${errorText || response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ Bot paused successfully:', data);
+
+      if (data.bot) {
+        setBots(prev => prev.map(bot => bot.id === botId ? data.bot : bot));
+        return data.bot;
+      }
+      throw new Error('No bot data returned');
+    } catch (err: any) {
+      console.error('❌ Error pausing bot:', {
+        error: err,
+        message: err?.message,
+        name: err?.name,
+        stack: err?.stack
+      });
+      throw err;
+    }
+  };
+
   const updateBot = async (botId: string, updates: Partial<TradingBot>) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        console.error('❌ No active session - cannot update bot');
-        throw new Error('No active session. Please log in again.');
-      }
+      const accessToken = await requireAccessToken();
 
       const url = `${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management?action=update`;
       console.log('📝 Updating bot:', { botId, url, origin: window.location.origin, updates });
@@ -227,7 +268,7 @@ export const useBots = () => {
       const response = await fetch(url, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
+          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -276,16 +317,12 @@ export const useBots = () => {
 
   const deleteBot = async (botId: string) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        throw new Error('No active session');
-      }
+      const accessToken = await requireAccessToken();
 
       const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
+          'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -333,6 +370,7 @@ export const useBots = () => {
     createBot,
     startBot,
     stopBot,
+    pauseBot,
     updateBot,
     deleteBot,
   };

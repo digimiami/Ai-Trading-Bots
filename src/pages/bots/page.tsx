@@ -15,7 +15,7 @@ import { supabase } from '../../lib/supabase';
 
 export default function BotsPage() {
   const navigate = useNavigate();
-  const { bots, loading, startBot, stopBot, updateBot, deleteBot, createBot } = useBots();
+  const { bots, loading, startBot, stopBot, pauseBot, updateBot, deleteBot, createBot } = useBots();
   const { activities, addLog } = useBotActivity(bots);
   const { isExecuting, lastExecution, timeSync, executeBot, executeAllBots } = useBotExecutor();
   const [filter, setFilter] = useState<'all' | 'running' | 'paused' | 'stopped' | 'live'>('all');
@@ -261,30 +261,42 @@ export default function BotsPage() {
       
       if (action === 'start') {
         await startBot(botId);
-        await addLog(botId, {
-          level: 'success',
-          category: 'system',
-          message: 'Bot started successfully',
-          details: { action: 'start', timestamp: new Date().toISOString() }
-        });
+        try {
+          await addLog(botId, {
+            level: 'success',
+            category: 'system',
+            message: 'Bot started successfully',
+            details: { action: 'start', timestamp: new Date().toISOString() }
+          });
+        } catch (logError) {
+          console.warn('⚠️ Failed to record start log:', logError);
+        }
         alert(`✅ Bot started successfully!`);
       } else if (action === 'stop') {
         await stopBot(botId);
-        await addLog(botId, {
-          level: 'info',
-          category: 'system',
-          message: 'Bot stopped by user',
-          details: { action: 'stop', timestamp: new Date().toISOString() }
-        });
+        try {
+          await addLog(botId, {
+            level: 'info',
+            category: 'system',
+            message: 'Bot stopped by user',
+            details: { action: 'stop', timestamp: new Date().toISOString() }
+          });
+        } catch (logError) {
+          console.warn('⚠️ Failed to record stop log:', logError);
+        }
         alert(`✅ Bot stopped successfully!`);
       } else if (action === 'pause') {
-        await updateBot(botId, { status: 'paused' });
-        await addLog(botId, {
-          level: 'warning',
-          category: 'system',
-          message: 'Bot paused by user',
-          details: { action: 'pause', timestamp: new Date().toISOString() }
-        });
+        await pauseBot(botId);
+        try {
+          await addLog(botId, {
+            level: 'warning',
+            category: 'system',
+            message: 'Bot paused by user',
+            details: { action: 'pause', timestamp: new Date().toISOString() }
+          });
+        } catch (logError) {
+          console.warn('⚠️ Failed to record pause log:', logError);
+        }
         alert(`✅ Bot paused successfully!`);
       }
     } catch (error: any) {
