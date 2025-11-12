@@ -66,6 +66,29 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
   const [refreshing, setRefreshing] = useState(false);
   const [resetting, setResetting] = useState(false);
 
+  const ensureAccountExists = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return null;
+
+    const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/paper-trading`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ action: 'get_balance' })
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      console.error('Failed to ensure paper account exists:', err?.error || response.statusText);
+      return null;
+    }
+
+    const result = await response.json().catch(() => null);
+    return result?.account ?? null;
+  };
+
   const fetchPerformance = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -105,6 +128,8 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
       }
       
       const { data: openPositions } = await openPositionsQuery;
+
+      const accountData = account || (await ensureAccountExists());
 
       // Helper to normalize numeric fields (Supabase returns numerics as strings)
       const normalizePosition = (raw: any, overrides: Partial<PaperPosition> = {}): PaperPosition => {
@@ -214,7 +239,7 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
         const totalWins = winningTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
         const totalLosses = Math.abs(losingTrades.reduce((sum, t) => sum + (t.pnl || 0), 0));
         
-        const initialBalance = account?.initial_balance || 10000;
+        const initialBalance = accountData?.initial_balance || account?.initial_balance || 10000;
         const winRate = trades.length > 0 ? (winningTrades.length / trades.length) * 100 : 0;
         const averageWin = winningTrades.length > 0 ? totalWins / winningTrades.length : 0;
         const averageLoss = losingTrades.length > 0 ? totalLosses / losingTrades.length : 0;
@@ -254,7 +279,7 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
         // Note: Margin is already deducted from balance when position opens, so we only add unrealized PnL
         const realizedPnL = totalPnL; // Total PnL from closed trades
         const calculatedCurrentBalance = initialBalance + 
-          parseFloat(account?.total_deposited || 0) + 
+          parseFloat((accountData?.total_deposited ?? account?.total_deposited) || 0) + 
           realizedPnL + 
           totalUnrealizedPnL;
         
@@ -416,7 +441,7 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
         });
       } else {
         // No trades yet - calculate balance including unrealized PnL from open positions
-        const initialBalance = account?.initial_balance || 10000;
+        const initialBalance = accountData?.initial_balance || account?.initial_balance || 10000;
         let totalUnrealizedPnL = 0;
         if (positionsWithPrices && positionsWithPrices.length > 0) {
           positionsWithPrices.forEach((position) => {
@@ -424,7 +449,7 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
           });
         }
         const calculatedCurrentBalance = initialBalance + 
-          parseFloat(account?.total_deposited || 0) + 
+          parseFloat((accountData?.total_deposited ?? account?.total_deposited) || 0) + 
           totalUnrealizedPnL;
         
         // Calculate pairsPerformance even when there are no closed trades (only open positions)

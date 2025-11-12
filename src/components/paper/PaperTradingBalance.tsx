@@ -26,6 +26,29 @@ export default function PaperTradingBalance() {
   const [logs, setLogs] = useState<PaperLog[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
   
+  const ensureAccountExists = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return null;
+
+    const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/paper-trading`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ action: 'get_balance' })
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      console.error('Failed to ensure paper account exists:', err?.error || response.statusText);
+      return null;
+    }
+
+    const result = await response.json().catch(() => null);
+    return result?.account ?? null;
+  };
+
   useEffect(() => {
     fetchBalance();
     fetchLogs();
@@ -42,7 +65,7 @@ export default function PaperTradingBalance() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('paper_trading_accounts')
       .select('*')
       .eq('user_id', user.id)
@@ -50,6 +73,16 @@ export default function PaperTradingBalance() {
     
     if (data) {
       setBalance(data);
+      return;
+    }
+
+    if (error?.code === 'PGRST116' || !data) {
+      const ensuredAccount = await ensureAccountExists();
+      if (ensuredAccount) {
+        setBalance(ensuredAccount);
+      } else {
+        setBalance(null);
+      }
     }
   };
 
