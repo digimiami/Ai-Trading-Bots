@@ -2386,6 +2386,7 @@ class BotExecutor {
       const positionData = await positionResponse.json();
       let actualPositionSide = side; // Default to trade side
       let positionSize = 0;
+      let positionIdx = 0; // 0 = one-way, 1 = Buy (long) hedge, 2 = Sell (short) hedge
       
       if (positionData.retCode === 0 && positionData.result?.list) {
         const position = positionData.result.list.find((p: any) => {
@@ -2395,6 +2396,12 @@ class BotExecutor {
         
         if (position) {
           positionSize = parseFloat(position.size || '0');
+          if (position.positionIdx !== undefined && position.positionIdx !== null) {
+            const parsedIdx = Number(position.positionIdx);
+            if (Number.isFinite(parsedIdx)) {
+              positionIdx = parsedIdx;
+            }
+          }
           // Bybit: Positive size = Long (Buy), Negative size = Short (Sell)
           // But Bybit API might report side as "Buy" or "Sell" in different fields
           // Use size to determine: positive = Buy (Long), negative = Sell (Short)
@@ -2409,7 +2416,7 @@ class BotExecutor {
             console.log(`   Using Bybit reported side: ${actualPositionSide}`);
           }
           
-          console.log(`📊 Actual position side for ${symbol}: ${actualPositionSide} (size: ${positionSize}, Bybit side: ${bybitPositionSide || 'not reported'})`);
+          console.log(`📊 Actual position side for ${symbol}: ${actualPositionSide} (size: ${positionSize}, positionIdx: ${positionIdx}, Bybit side: ${bybitPositionSide || 'not reported'})`);
           
           // Update entry price from actual position if available
           if (position.avgPrice && parseFloat(position.avgPrice) > 0) {
@@ -2479,7 +2486,13 @@ class BotExecutor {
           if (updatedPosition) {
             const updatedSize = parseFloat(updatedPosition.size || '0');
             const updatedSide = updatedSize > 0 ? 'Buy' : 'Sell';
-            console.log(`📊 Position after delay: ${updatedSide} (size: ${updatedSize})`);
+            if (updatedPosition.positionIdx !== undefined && updatedPosition.positionIdx !== null) {
+              const parsedIdx = Number(updatedPosition.positionIdx);
+              if (Number.isFinite(parsedIdx)) {
+                positionIdx = parsedIdx;
+              }
+            }
+            console.log(`📊 Position after delay: ${updatedSide} (size: ${updatedSize}, positionIdx: ${positionIdx})`);
             
             // Update with the new position info
             if (updatedPosition.avgPrice && parseFloat(updatedPosition.avgPrice) > 0) {
@@ -2707,7 +2720,13 @@ class BotExecutor {
         if (finalPosition) {
           const finalSize = parseFloat(finalPosition.size || '0');
           finalPositionSide = finalSize > 0 ? 'Buy' : 'Sell';
-          console.log(`🔍 Final position check before SL/TP: ${finalPositionSide} (size: ${finalSize})`);
+        if (finalPosition.positionIdx !== undefined && finalPosition.positionIdx !== null) {
+          const parsedIdx = Number(finalPosition.positionIdx);
+          if (Number.isFinite(parsedIdx)) {
+            positionIdx = parsedIdx;
+          }
+        }
+        console.log(`🔍 Final position check before SL/TP: ${finalPositionSide} (size: ${finalSize}, positionIdx: ${positionIdx})`);
           
           // If position side changed, recalculate SL/TP
           if (finalPositionSide !== actualPositionSide) {
@@ -2779,7 +2798,7 @@ class BotExecutor {
         symbol: symbol,
         stopLoss: formattedStopLoss,
         takeProfit: formattedTakeProfit,
-        positionIdx: 0  // 0 for one-way mode, 1 for Buy side in hedge mode, 2 for Sell side
+        positionIdx: positionIdx  // 0 for one-way mode, 1 for Buy side in hedge mode, 2 for Sell side
       };
       
       const signaturePayload = timestamp + apiKey + recvWindow + JSON.stringify(requestBody);
@@ -2790,7 +2809,8 @@ class BotExecutor {
       console.log(`   Stop Loss: ${formattedStopLoss} (formatted from ${stopLossPrice})`);
       console.log(`   Take Profit: ${formattedTakeProfit} (formatted from ${takeProfitPrice})`);
       console.log(`   Position Side: ${actualPositionSide}`);
-      console.log(`   Position Index: 0 (one-way mode)`);
+      const positionIdxLabel = positionIdx === 0 ? '0 (one-way mode)' : `${positionIdx} (hedge mode)`;
+      console.log(`   Position Index: ${positionIdxLabel}`);
       
       const response = await fetch(`${baseUrl}/v5/position/trading-stop`, {
         method: 'POST',
@@ -2874,6 +2894,7 @@ class BotExecutor {
           const closeCheckData = await closeCheckResponse.json();
           let closePositionSize = 0;
           let actualClosePositionSide = actualPositionSide; // Default to what we detected earlier
+          let closePositionIdx = positionIdx;
           
           if (closeCheckData.retCode === 0 && closeCheckData.result?.list) {
             const closePosition = closeCheckData.result.list.find((p: any) => {
@@ -2883,6 +2904,13 @@ class BotExecutor {
             if (closePosition) {
               const rawSize = parseFloat(closePosition.size || '0');
               closePositionSize = Math.abs(rawSize);
+              
+              if (closePosition.positionIdx !== undefined && closePosition.positionIdx !== null) {
+                const parsedIdx = Number(closePosition.positionIdx);
+                if (Number.isFinite(parsedIdx)) {
+                  closePositionIdx = parsedIdx;
+                }
+              }
               
               // CRITICAL: Re-determine position side from actual position data
               // Positive size = Long (Buy), Negative size = Short (Sell)
@@ -2895,7 +2923,7 @@ class BotExecutor {
                 console.log(`📊 Using Bybit reported side for closure: ${actualClosePositionSide}`);
               }
               
-              console.log(`📊 Position closure check: size=${rawSize}, detected side=${actualClosePositionSide}, bybit side=${bybitCloseSide || 'not reported'}`);
+              console.log(`📊 Position closure check: size=${rawSize}, detected side=${actualClosePositionSide}, positionIdx=${closePositionIdx}, bybit side=${bybitCloseSide || 'not reported'}`);
             }
           }
           
@@ -2938,7 +2966,7 @@ class BotExecutor {
                 orderType: 'Market',
                 qty: formattedQty,
                 reduceOnly: true, // CRITICAL: This ensures we're closing, not opening
-                positionIdx: 0 // 0 for one-way mode
+                positionIdx: closePositionIdx // respect position mode (0/1/2)
               };
               
               const closeSigPayload = closeTimestamp + apiKey + closeRecvWindow + JSON.stringify(closeOrderBody);
