@@ -104,32 +104,34 @@ export default function Home() {
       
       <div className="pt-20 pb-20 px-4 space-y-6">
         {showAcademyBanner && orientationModule && (
-          <Card className="relative overflow-hidden border border-sky-500/40 bg-slate-900/60">
-            <div className="absolute inset-0 bg-gradient-to-r from-sky-500/10 via-indigo-500/10 to-purple-500/10 blur-2xl" />
+          <Card className="relative overflow-hidden border border-sky-500/60 bg-slate-900">
+            <div className="absolute inset-0 bg-gradient-to-r from-sky-500/30 via-indigo-500/25 to-purple-500/30 opacity-80" />
             <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h3 className="text-lg font-semibold text-white">Launch the Pablo Academy</h3>
-                <p className="mt-2 text-sm text-slate-200/80">
+                <h3 className="text-xl font-semibold text-white drop-shadow-lg">Launch the Pablo Academy</h3>
+                <p className="mt-2 text-sm text-slate-100">
                   Complete Orientation & Setup to unlock advanced templates, badges, and faster onboarding for your team.
                 </p>
-                <div className="mt-3 flex items-center space-x-3 text-xs text-slate-300/70">
-                  <span>
-                    <i className="ri-time-line mr-1" />
-                    {orientationModule.duration_minutes} minutes
+                <div className="mt-3 flex items-center space-x-4 text-xs text-slate-200">
+                  <span className="flex items-center">
+                    <i className="ri-time-line mr-1 text-slate-100" />
+                    <span>{orientationModule.duration_minutes} minutes</span>
                   </span>
-                  <span>
-                    <i className="ri-stack-line mr-1" />
-                    {orientationModule.lessons.length} lessons
+                  <span className="flex items-center">
+                    <i className="ri-stack-line mr-1 text-slate-100" />
+                    <span>{orientationModule.lessons.length} lessons</span>
                   </span>
                   {orientationStats.totalLessons > 0 && (
-                    <span>
-                      <i className="ri-progress-8-line mr-1" />
-                      {orientationStats.completedLessons}/{orientationStats.totalLessons} complete
+                    <span className="flex items-center">
+                      <i className="ri-progress-8-line mr-1 text-slate-100" />
+                      <span>
+                        {orientationStats.completedLessons}/{orientationStats.totalLessons} complete
+                      </span>
                     </span>
                   )}
                 </div>
               </div>
-              <Button size="lg" onClick={() => navigate(`/academy/${orientationModule.slug}`)}>
+              <Button size="lg" className="shadow-lg shadow-cyan-500/30" onClick={() => navigate(`/academy/${orientationModule.slug}`)}>
                 Start Module 1
               </Button>
             </div>
@@ -161,13 +163,13 @@ export default function Home() {
         )}
 
         {foundationBadgeUnlocked && (
-          <Card className="flex items-center gap-4 border border-emerald-200 bg-emerald-50 p-5 text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-900/20 dark:text-emerald-200">
+          <Card className="flex items-center gap-4 border border-emerald-300 bg-emerald-100 p-5 text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-900/30 dark:text-emerald-200">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-900/50 dark:text-emerald-200">
               <i className="ri-award-fill text-xl" />
             </div>
             <div className="flex-1">
-              <h3 className="text-sm font-semibold">Foundation Finisher</h3>
-              <p className="text-xs">
+              <h3 className="text-base font-semibold text-emerald-900 dark:text-emerald-100">Foundation Finisher</h3>
+              <p className="text-sm text-emerald-800/90 dark:text-emerald-200">
                 Congratulations! You’ve completed the core Pablo Academy modules. Advanced playbooks are now unlocked in the Academy hub.
               </p>
             </div>
@@ -251,32 +253,37 @@ export default function Home() {
         </Card>
 
         {academySummary && (
-          <Card className="flex items-center justify-between border border-emerald-500/30 bg-emerald-500/10 px-6 py-4 text-sm text-emerald-100">
-            <div>
-              <div className="text-xs uppercase tracking-[0.4em] text-emerald-200/80">Academy Progress</div>
-              <p className="mt-2 text-base text-white">
+          <Card className="flex items-center justify-between border border-emerald-300 bg-gradient-to-r from-emerald-100 via-teal-100 to-sky-100 px-6 py-5 text-sm text-emerald-900 dark:border-emerald-800/50 dark:bg-emerald-900/40 dark:text-emerald-100">
+            <div className="space-y-2">
+              <div className="text-xs font-semibold uppercase tracking-[0.35em] text-emerald-700 dark:text-emerald-200">
+                Academy Progress
+              </div>
+              <p className="text-base font-semibold text-emerald-900 dark:text-emerald-100">
                 {academySummary.modules_completed}/{academySummary.modules_available} modules completed
               </p>
               {foundationBadgeUnlocked ? (
-                <p className="text-xs text-emerald-200/80 mt-1">
-                  <i className="ri-award-fill mr-1" />
+                <p className="text-xs text-emerald-700 dark:text-emerald-200">
+                  <i className="ri-award-fill mr-1 text-emerald-600 dark:text-emerald-200" />
                   Foundation badge unlocked — advanced content enabled.
                 </p>
               ) : (
-                <p className="text-xs text-emerald-200/80 mt-1">
+                <p className="text-xs text-emerald-700 dark:text-emerald-200">
                   Complete the first three modules to earn the Foundation badge.
                 </p>
               )}
             </div>
             <div className="flex flex-col items-end">
-              <div className="flex items-center space-x-2 text-xs">
+              <div className="flex items-center space-x-2 text-xs font-semibold text-emerald-800 dark:text-emerald-100">
                 <span>{foundationProgress}% of Module 1</span>
               </div>
-              <div className="mt-2 h-2 w-32 rounded-full bg-emerald-900/60">
-                <div className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-sky-400" style={{ width: `${foundationProgress}%` }} />
+              <div className="mt-2 h-2.5 w-36 rounded-full bg-emerald-200 dark:bg-emerald-800/70">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-teal-400 to-sky-400 shadow-inner"
+                  style={{ width: `${foundationProgress}%` }}
+                />
               </div>
               {!foundationBadgeUnlocked && (
-                <Button variant="secondary" size="sm" className="mt-3" onClick={() => navigate('/academy')}>
+                <Button variant="secondary" size="sm" className="mt-3 shadow-sm" onClick={() => navigate('/academy')}>
                   Resume
                 </Button>
               )}
