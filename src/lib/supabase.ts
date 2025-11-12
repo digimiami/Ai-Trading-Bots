@@ -123,14 +123,14 @@ export const API_ENDPOINTS = {
 // Helper function to make authenticated API calls
 export async function apiCall(endpoint: string, options: RequestInit = {}) {
   try {
-    const { data: { session } } = await supabase.auth.getSession()
-    // Fallback: if Supabase client hasn't been hydrated with session yet (after refresh),
-    // use the token from localStorage so authenticated calls don't fail.
-    const fallbackToken = !session?.access_token ? getAccessTokenFromLocalStorage() : null
-    
-    const authToken = session?.access_token || fallbackToken || ''
     const headers = new Headers(options.headers as HeadersInit)
-    headers.set('Content-Type', 'application/json')
+    // Only set Content-Type automatically when we have a body
+    if (!headers.has('Content-Type') && options.body) {
+      headers.set('Content-Type', 'application/json')
+    }
+
+    const authToken = await getAuthTokenFast()
+    
     if (authToken) {
       headers.set('Authorization', `Bearer ${authToken}`)
     } else {
