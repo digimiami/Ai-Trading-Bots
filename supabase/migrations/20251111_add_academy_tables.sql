@@ -175,7 +175,7 @@ create policy "Progress update by owner"
 -- RPC helper ----------------------------------------------------------
 create or replace function public.record_lesson_progress(
   p_module_slug text,
-  p_lesson_slug text,
+  p_lesson_slug text default null,
   p_status text,
   p_quiz_score numeric default null
 ) returns public.user_course_progress
@@ -236,7 +236,7 @@ begin
 end;
 $$;
 
-grant execute on function public.record_lesson_progress(text, text, text, numeric) to authenticated;
+grant execute on function public.record_lesson_progress(text, text default null, text, numeric default null) to authenticated;
 
 grant select on public.course_modules, public.module_lessons, public.user_academy_summary to authenticated;
 grant select on public.course_modules, public.module_lessons to anon;

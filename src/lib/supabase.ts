@@ -126,7 +126,7 @@ export async function apiCall(endpoint: string, options: RequestInit = {}) {
     const headers = new Headers(options.headers as HeadersInit)
     // Only set Content-Type automatically when we have a body
     if (!headers.has('Content-Type') && options.body) {
-      headers.set('Content-Type', 'application/json')
+    headers.set('Content-Type', 'application/json')
     }
 
     const authToken = await getAuthTokenFast()

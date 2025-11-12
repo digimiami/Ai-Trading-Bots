@@ -5,6 +5,8 @@ import Button from '../../components/base/Button';
 import Navigation from '../../components/feature/Navigation';
 import Header from '../../components/feature/Header';
 import { useAcademy, getLessonStatus, LessonProgress } from '../../hooks/useAcademy';
+import { parseQuizPayload } from '../../utils/academy';
+import type { QuizPayload } from '../../types/academy';
 
 interface QuizQuestion {
   id: string;
@@ -13,38 +15,25 @@ interface QuizQuestion {
   correct: string;
 }
 
-const PLACEHOLDER_QUIZ: QuizQuestion[] = [
-  {
-    id: 'q1',
-    prompt: 'Which Pablo component chains signals, risk, and execution together?',
-    options: [
-      { label: 'Liquidity Engine', value: 'a' },
-      { label: 'Workflow Automations', value: 'b' },
-      { label: 'Strategy Sandbox', value: 'c' },
-    ],
-    correct: 'b',
-  },
-  {
-    id: 'q2',
-    prompt: 'Where can you configure guardrails and alerts?',
-    options: [
-      { label: 'Market Maker', value: 'a' },
-      { label: 'Monitoring & Alerts', value: 'b' },
-      { label: 'API Keys Manager', value: 'c' },
-    ],
-    correct: 'b',
-  },
-  {
-    id: 'q3',
-    prompt: 'What is a recommended step before enabling live execution?',
-    options: [
-      { label: 'Disable all alerts', value: 'a' },
-      { label: 'Benchmark with paper trading and alert thresholds', value: 'b' },
-      { label: 'Scale leverage to 10x immediately', value: 'c' },
-    ],
-    correct: 'b',
-  },
-];
+// Convert database quiz format to component format
+function convertQuizToQuestions(quizPayload: QuizPayload | null): QuizQuestion[] {
+  if (!quizPayload || !Array.isArray(quizPayload.questions)) {
+    return [];
+  }
+
+  return quizPayload.questions.map((q, index) => {
+    const optionValues = ['a', 'b', 'c', 'd', 'e', 'f'];
+    return {
+      id: `q${index + 1}`,
+      prompt: q.question,
+      options: q.options.map((opt, optIndex) => ({
+        label: opt,
+        value: optionValues[optIndex] || String(optIndex),
+      })),
+      correct: optionValues[q.correctIndex] || String(q.correctIndex),
+    };
+  });
+}
 
 const lessonTypeIcon: Record<string, string> = {
   video: 'ri-play-circle-fill',
@@ -119,12 +108,17 @@ export default function AcademyModulePage() {
 
   const handleQuizSubmit = async () => {
     if (!module || !activeLesson || activeQuizMeta?.submitted) return;
-    const correctCount = PLACEHOLDER_QUIZ.reduce(
+    const quizPayload = parseQuizPayload(activeLesson.content_md);
+    const quizQuestions = convertQuizToQuestions(quizPayload);
+    
+    if (quizQuestions.length === 0) return;
+    
+    const correctCount = quizQuestions.reduce(
       (acc, question) =>
         quizAnswers[answerKey(activeLesson.id, question.id)] === question.correct ? acc + 1 : acc,
       0
     );
-    const score = Math.round((correctCount / PLACEHOLDER_QUIZ.length) * 100);
+    const score = Math.round((correctCount / quizQuestions.length) * 100);
     setQuizMeta((prev) => ({
       ...prev,
       [activeLesson.id]: { score, submitted: true },
@@ -174,12 +168,25 @@ export default function AcademyModulePage() {
     if (activeLesson.type === 'quiz') {
       const submitted = activeQuizMeta?.submitted ?? false;
       const score = activeQuizMeta?.score ?? null;
-      return (
-        <div className="space-y-4">
+      const quizPayload = parseQuizPayload(activeLesson.content_md);
+      const quizQuestions = convertQuizToQuestions(quizPayload);
+
+      if (quizQuestions.length === 0) {
+        return (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              Quiz content is not available. Please check back later.
+            </p>
+          </div>
+        );
+      }
+
+  return (
+    <div className="space-y-4">
           <p className="text-sm text-gray-600 dark:text-gray-300">
             Quick knowledge check. Select the best answer for each prompt to lock in your score.
           </p>
-          {PLACEHOLDER_QUIZ.map((question) => {
+          {quizQuestions.map((question) => {
             const selected = quizAnswers[answerKey(activeLesson.id, question.id)] ?? '';
             return (
               <div
@@ -192,8 +199,8 @@ export default function AcademyModulePage() {
                     const isChecked = selected === option.value;
                     const isCorrect = submitted && option.value === question.correct;
                     const isIncorrect = submitted && isChecked && option.value !== question.correct;
-                    return (
-                      <label
+              return (
+                <label
                         key={option.value}
                         className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 transition ${
                           isCorrect
@@ -203,10 +210,10 @@ export default function AcademyModulePage() {
                             : isChecked
                             ? 'border-blue-500/60 bg-blue-500/10 text-blue-700 dark:text-blue-200'
                             : 'border-gray-200 bg-white text-gray-600 hover:border-blue-300 hover:bg-blue-50/70 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-blue-400 dark:hover:bg-blue-900/20'
-                        }`}
-                      >
-                        <input
-                          type="radio"
+                  }`}
+                >
+                  <input
+                    type="radio"
                           name={answerKey(activeLesson.id, question.id)}
                           value={option.value}
                           checked={isChecked}
@@ -215,47 +222,47 @@ export default function AcademyModulePage() {
                           className="h-4 w-4"
                         />
                         <span>{option.label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
+                </label>
+              );
+            })}
+          </div>
+        </div>
             );
           })}
           <div className="flex flex-wrap items-center gap-3">
             <Button size="sm" onClick={handleQuizSubmit} disabled={submitted}>
               {submitted ? 'Quiz Submitted' : 'Submit Quiz'}
-            </Button>
+        </Button>
             {submitted && score !== null && (
               <span className="text-sm font-semibold text-emerald-500">
                 Score saved: {score}%
-              </span>
-            )}
-          </div>
-        </div>
-      );
+          </span>
+        )}
+      </div>
+    </div>
+  );
     }
 
     if (activeLesson.type === 'guide' && activeLesson.content_md) {
       const sections = activeLesson.content_md.split(/\n{2,}/);
-      return (
+    return (
         <div className="space-y-3 text-sm leading-relaxed text-gray-700 dark:text-gray-200">
           {sections.map((paragraph, idx) => (
             <p key={idx} className="whitespace-pre-wrap">
               {paragraph.trim()}
             </p>
           ))}
-        </div>
-      );
-    }
+      </div>
+    );
+  }
 
     if (activeLesson.type === 'video' && activeLesson.media_url) {
-      return (
+    return (
         <div className="overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-700">
           <video src={activeLesson.media_url} controls className="w-full bg-black" />
-        </div>
-      );
-    }
+      </div>
+    );
+  }
 
     return (
       <p className="text-sm text-gray-600 dark:text-gray-300">
@@ -293,24 +300,24 @@ export default function AcademyModulePage() {
               </div>
               <Button variant="secondary" size="sm" onClick={handleModuleComplete}>
                 Mark Module Complete
-              </Button>
+                  </Button>
             </Card>
 
             <Card className="space-y-3 border border-gray-200 bg-white p-5 text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
               <p>
                 Lessons automatically mark as in progress when opened. Use the controls below each lesson to record completion or retake the quiz at any time.
               </p>
-            </Card>
+          </Card>
 
             <div className="space-y-3">
               {module.lessons.map((lesson) => {
                 const status = getLessonStatus(lessonProgress, module.id, lesson.id);
                 const isActive = lesson.id === activeLesson?.id;
-                return (
-                  <button
-                    key={lesson.id}
+  return (
+                <button
+                  key={lesson.id}
                     onClick={() => setActiveLessonId(lesson.id)}
-                    className={`w-full rounded-2xl border px-4 py-4 text-left transition ${
+                  className={`w-full rounded-2xl border px-4 py-4 text-left transition ${
                       isActive
                         ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-500 dark:bg-blue-900/30 dark:text-blue-100'
                         : 'border-gray-200 bg-white text-gray-700 hover:border-blue-300 hover:bg-blue-50/60 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-blue-400 dark:hover:bg-blue-900/20'
@@ -339,7 +346,7 @@ export default function AcademyModulePage() {
                   </button>
                 );
               })}
-            </div>
+                  </div>
           </aside>
 
           <section className="flex-1 space-y-6">
@@ -370,7 +377,7 @@ export default function AcademyModulePage() {
                   <span>Status: {lessonStatus.replace('_', ' ')}</span>
                   <Button variant="ghost" size="sm" onClick={handleModuleComplete}>
                     Complete Module
-                  </Button>
+                      </Button>
                 </div>
               </Card>
             ) : (

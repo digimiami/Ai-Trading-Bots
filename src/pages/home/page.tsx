@@ -392,24 +392,101 @@ export default function Home() {
         <Card className="p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Trading Tips</h3>
           <div className="space-y-3">
-            <div className="p-3 bg-blue-50 rounded-lg">
+            <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg shadow-sm">
               <div className="flex items-start space-x-3">
-                <i className="ri-lightbulb-line text-blue-600 mt-1"></i>
+                <i className="ri-lightbulb-line text-indigo-600 mt-1 text-lg"></i>
                 <div>
-                  <h4 className="font-medium text-blue-900 mb-1">Risk Management</h4>
-                  <p className="text-sm text-blue-700">
-                    Never risk more than 2-3% of your capital on a single trade. Use stop losses to protect your investments.
+                  <h4 className="font-medium text-indigo-900 mb-1">Risk Management</h4>
+                  <p className="text-sm text-indigo-700">
+                    Never risk more than 2-3% of your capital on a single trade. Use stop losses to protect your investments and revisit them as volatility changes.
                   </p>
                 </div>
               </div>
             </div>
-            <div className="p-3 bg-green-50 rounded-lg">
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg shadow-sm">
               <div className="flex items-start space-x-3">
-                <i className="ri-bar-chart-line text-green-600 mt-1"></i>
+                <i className="ri-bar-chart-line text-emerald-600 mt-1 text-lg"></i>
                 <div>
-                  <h4 className="font-medium text-green-900 mb-1">Diversification</h4>
+                  <h4 className="font-medium text-emerald-900 mb-1">Diversification</h4>
                   <p className="text-sm text-green-700">
                     Spread your trades across different cryptocurrencies and strategies to reduce overall risk.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg shadow-sm">
+              <div className="flex items-start space-x-3">
+                <i className="ri-calendar-check-line text-amber-600 mt-1 text-lg"></i>
+                <div>
+                  <h4 className="font-medium text-amber-900 mb-1">Review Schedules</h4>
+                  <p className="text-sm text-amber-700">
+                    Set time blocks to review your bots weekly. Pause underperforming strategies, tune parameters, and celebrate what’s working.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg shadow-sm">
+              <div className="flex items-start space-x-3">
+                <i className="ri-heart-pulse-line text-rose-600 mt-1 text-lg"></i>
+                <div>
+                  <h4 className="font-medium text-rose-900 mb-1">Keep Emotions in Check</h4>
+                  <p className="text-sm text-rose-700">
+                    Stick to your plan. Avoid chasing pumps or panic-selling dips—your automation works best when signals stay objective.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="p-3 bg-sky-50 border border-sky-200 rounded-lg shadow-sm">
+              <div className="flex items-start space-x-3">
+                <i className="ri-history-line text-sky-600 mt-1 text-lg"></i>
+                <div>
+                  <h4 className="font-medium text-sky-900 mb-1">Backtest & Iterate</h4>
+                  <p className="text-sm text-sky-700">
+                    Before deploying capital, run backtests over multiple market regimes. Iteration builds confidence and surfaces edge cases early.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="p-3 bg-cyan-50 border border-cyan-200 rounded-lg shadow-sm">
+              <div className="flex items-start space-x-3">
+                <i className="ri-slideshow-line text-cyan-600 mt-1 text-lg"></i>
+                <div>
+                  <h4 className="font-medium text-cyan-900 mb-1">Right-Size Positions</h4>
+                  <p className="text-sm text-cyan-700">
+                    Scale entries based on volatility and conviction. Smaller sizing during uncertain markets keeps drawdowns manageable.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="p-3 bg-lime-50 border border-lime-200 rounded-lg shadow-sm">
+              <div className="flex items-start space-x-3">
+                <i className="ri-pie-chart-2-line text-lime-600 mt-1 text-lg"></i>
+                <div>
+                  <h4 className="font-medium text-lime-900 mb-1">Track Core Metrics</h4>
+                  <p className="text-sm text-lime-700">
+                    Monitor win rate, profit factor, max drawdown, and average trade duration to spot trends before they erode performance.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="p-3 bg-violet-50 border border-violet-200 rounded-lg shadow-sm">
+              <div className="flex items-start space-x-3">
+                <i className="ri-wireless-charging-line text-violet-600 mt-1 text-lg"></i>
+                <div>
+                  <h4 className="font-medium text-violet-900 mb-1">Plan Liquidity</h4>
+                  <p className="text-sm text-violet-700">
+                    Favor pairs with healthy depth. Thin books amplify slippage, so adjust order types or trade size when liquidity dries up.
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg shadow-sm">
+              <div className="flex items-start space-x-3">
+                <i className="ri-shield-check-line text-slate-600 mt-1 text-lg"></i>
+                <div>
+                  <h4 className="font-medium text-slate-900 mb-1">Stay Compliant</h4>
+                  <p className="text-sm text-slate-700">
+                    Keep tabs on exchange rules, tax obligations, and API rate limits. Small compliance habits prevent sudden trading interruptions.
                   </p>
                 </div>
               </div>

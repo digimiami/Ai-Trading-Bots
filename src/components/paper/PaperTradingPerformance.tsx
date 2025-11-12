@@ -191,9 +191,9 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
                   let unrealizedPnL = 0;
                   if (entryPrice > 0 && marginUsed !== 0) {
                     if ((position.side || '').toLowerCase() === 'long') {
-                      unrealizedPnL = ((currentPrice - entryPrice) / entryPrice) * marginUsed * leverage;
-                    } else {
-                      unrealizedPnL = ((entryPrice - currentPrice) / entryPrice) * marginUsed * leverage;
+                    unrealizedPnL = ((currentPrice - entryPrice) / entryPrice) * marginUsed * leverage;
+                  } else {
+                    unrealizedPnL = ((entryPrice - currentPrice) / entryPrice) * marginUsed * leverage;
                     }
                   }
                   
