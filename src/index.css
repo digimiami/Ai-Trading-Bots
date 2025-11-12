@@ -230,3 +230,14 @@ html.dark {
 .dark.theme-orange .bg-blue-900\/30 { background-color: rgba(124, 45, 18, 0.3) !important; }
 .dark.theme-orange .text-blue-700 { color: #fdba74 !important; }
 .dark.theme-orange .text-blue-200 { color: #fed7aa !important; }
+
+/* Make all font weights bold by default for improved visibility */
+html, body {
+  font-weight: 700;
+}
+
+*,
+*::before,
+*::after {
+  font-weight: inherit;
+}
