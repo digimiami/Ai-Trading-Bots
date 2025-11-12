@@ -12,7 +12,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useBots } from '../../hooks/useBots';
 import { useMarketData } from '../../hooks/useMarketData';
 import { useExchangeBalance } from '../../hooks/useExchangeBalance';
-import { useAcademy } from '../../hooks/useAcademy';
+import { useAcademy, isModuleCompleted } from '../../hooks/useAcademy';
 import ExchangeBalanceDisplay from './components/ExchangeBalance';
 
 export default function Home() {
