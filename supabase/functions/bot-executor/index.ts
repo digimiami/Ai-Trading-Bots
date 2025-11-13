@@ -536,18 +536,24 @@ function estimateSlippageBps(symbol: string, tradeValue: number, options?: Slipp
     baseBps = 6;
   }
 
+  // Increase slippage for larger orders (more realistic)
   if (tradeValue > 2000) {
-    baseBps *= 1.35;
+    baseBps *= 1.5; // Increased from 1.35
   }
   if (tradeValue > 5000) {
-    baseBps *= 1.75;
+    baseBps *= 2.0; // Increased from 1.75
+  }
+  if (tradeValue > 10000) {
+    baseBps *= 1.5; // Additional penalty for very large orders
   }
 
-  const randomMultiplier = 0.6 + Math.random() * 0.9; // 0.6 - 1.5
+  // More realistic random multiplier (wider range, less optimistic)
+  const randomMultiplier = 0.7 + Math.random() * 1.1; // 0.7 - 1.8 (was 0.6 - 1.5)
   let slippageBps = baseBps * randomMultiplier;
 
+  // Exits typically have worse slippage (especially stop losses)
   if (options?.isExit) {
-    slippageBps *= 1.1;
+    slippageBps *= 1.3; // Increased from 1.1 - exits are harder
   }
   if (options?.severity) {
     slippageBps *= options.severity;
@@ -1544,8 +1550,48 @@ class BotExecutor {
       
       console.log(`✅ Validated order params for ${bot.symbol}: qty=${tradeAmount}, price=$${normalizedPrice}`);
       
-      // Place actual order on exchange
-      const orderResult = await this.placeOrder(bot, tradeSignal, tradeAmount, normalizedPrice);
+      // Place actual order on exchange with retry logic
+      let orderResult;
+      let lastError;
+      const maxRetries = 3;
+      let retryCount = 0;
+      
+      while (retryCount < maxRetries) {
+        try {
+          orderResult = await this.placeOrder(bot, tradeSignal, tradeAmount, normalizedPrice);
+          break; // Success, exit retry loop
+        } catch (error: any) {
+          lastError = error;
+          retryCount++;
+          
+          // Don't retry on certain errors (insufficient balance, regulatory, etc.)
+          const nonRetryableErrors = [
+            'Insufficient balance',
+            'regulatory restriction',
+            '10024',
+            'not enough',
+            'Shortfall',
+            'Cannot sell on spot market'
+          ];
+          
+          const isNonRetryable = nonRetryableErrors.some(msg => 
+            error.message?.toLowerCase().includes(msg.toLowerCase())
+          );
+          
+          if (isNonRetryable || retryCount >= maxRetries) {
+            throw error; // Don't retry, throw immediately
+          }
+          
+          // Wait before retry (exponential backoff)
+          const waitTime = Math.min(1000 * Math.pow(2, retryCount - 1), 5000); // 1s, 2s, 4s max
+          console.log(`⚠️ Order placement failed (attempt ${retryCount}/${maxRetries}), retrying in ${waitTime}ms...`);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+        }
+      }
+      
+      if (!orderResult) {
+        throw lastError || new Error('Order placement failed after retries');
+      }
       
       console.log('📝 Recording trade in database...');
       console.log('Order result:', JSON.stringify(orderResult, null, 2));
@@ -4174,6 +4220,22 @@ class PaperTradingExecutor {
     try {
       console.log(`📝 [PAPER TRADING] Executing simulated trade for ${bot.name}`);
       
+      // 🎲 REALISTIC SIMULATION: Simulate random order rejections (2% chance)
+      // This mimics real exchange rejections due to various reasons
+      const rejectionChance = 0.02; // 2% chance of rejection
+      if (Math.random() < rejectionChance) {
+        const rejectionReasons = [
+          'Insufficient liquidity',
+          'Order size too large for current market depth',
+          'Temporary exchange maintenance',
+          'Rate limit exceeded',
+          'Market volatility protection'
+        ];
+        const reason = rejectionReasons[Math.floor(Math.random() * rejectionReasons.length)];
+        console.log(`❌ [PAPER] Simulated order rejection: ${reason}`);
+        throw new Error(`Simulated order rejection: ${reason}. This happens in real trading too.`);
+      }
+      
       // Get account balance
       const account = await this.getPaperAccount();
       
@@ -4210,27 +4272,66 @@ class PaperTradingExecutor {
           tickSize: sizing.steps.tickSize
         }
       );
-      const quantity = normalizedOrder.qty;
+      let quantity = normalizedOrder.qty;
       const normalizedPrice = normalizedOrder.price;
 
       if (!quantity || !isFinite(quantity) || quantity <= 0) {
         throw new Error(`Invalid simulated quantity for ${bot.symbol}: ${quantity}`);
       }
 
+      // 🎲 REALISTIC SIMULATION: Simulate partial fills (5% chance)
+      // In real trading, large orders may not fill completely
+      const partialFillChance = 0.05; // 5% chance
+      let fillPercentage = 1.0;
+      if (Math.random() < partialFillChance && quantity > sizing.constraints.min * 2) {
+        // Partial fill between 70% and 95%
+        fillPercentage = 0.70 + Math.random() * 0.25;
+        const originalQuantity = quantity;
+        quantity = quantity * fillPercentage;
+        // Round to step size
+        if (sizing.steps.stepSize > 0) {
+          quantity = Math.floor(quantity / sizing.steps.stepSize) * sizing.steps.stepSize;
+        }
+        quantity = Math.max(quantity, sizing.constraints.min);
+        console.log(`⚠️ [PAPER] Simulated partial fill: ${(fillPercentage * 100).toFixed(1)}% (${quantity.toFixed(6)} of ${originalQuantity.toFixed(6)})`);
+      }
+
       const intendedSide = (tradeSignal.side || '').toLowerCase();
       const positionSide = intendedSide === 'sell' || intendedSide === 'short' ? 'short' : 'long';
       const effectiveOrderSide = positionSide === 'short' ? 'sell' : 'buy';
       const anticipatedValue = quantity * normalizedPrice;
-      const slippageResult = applySlippage(normalizedPrice, effectiveOrderSide, bot.symbol, anticipatedValue);
+      
+      // 🎯 REALISTIC SLIPPAGE: Use more conservative slippage for paper trading
+      // Entry slippage is typically better than exit, but still realistic
+      const slippageResult = applySlippage(normalizedPrice, effectiveOrderSide, bot.symbol, anticipatedValue, {
+        isExit: false,
+        severity: 1.1 // 10% more slippage for realism
+      });
       const slippageBps = slippageResult.slippageBps;
       const executedPriceUnrounded = slippageResult.price;
       const executedPrice = sizing.steps.tickSize > 0
         ? Math.round(executedPriceUnrounded / sizing.steps.tickSize) * sizing.steps.tickSize
         : executedPriceUnrounded;
 
+      // 🕐 REALISTIC SIMULATION: Simulate network latency (50-200ms)
+      // Real API calls have latency that can affect execution price
+      const simulatedLatency = 50 + Math.random() * 150; // 50-200ms
+      // During latency, price may have moved slightly (add small random price movement)
+      const priceMovementDuringLatency = executedPrice * (1 + (Math.random() - 0.5) * 0.001); // ±0.05% movement
+      const finalExecutedPrice = sizing.steps.tickSize > 0
+        ? Math.round(priceMovementDuringLatency / sizing.steps.tickSize) * sizing.steps.tickSize
+        : priceMovementDuringLatency;
+
       const leverage = bot.leverage || 1;
-      const notional = executedPrice * quantity;
+      const notional = finalExecutedPrice * quantity;
       const marginRequired = sizing.isFutures ? notional / leverage : notional;
+      
+      // 🛡️ REALISTIC SIMULATION: Check minimum order value (like real exchanges)
+      const minOrderValue = sizing.isFutures ? 5 : 1; // $5 for futures, $1 for spot
+      const orderValue = finalExecutedPrice * quantity;
+      if (orderValue < minOrderValue) {
+        throw new Error(`Order value $${orderValue.toFixed(2)} below minimum $${minOrderValue} for ${bot.symbol}. This happens in real trading too.`);
+      }
 
       if (marginRequired > availableBalance) {
         throw new Error(`Insufficient paper balance: Need $${marginRequired.toFixed(2)}, Have $${availableBalance.toFixed(2)}`);
@@ -4281,12 +4382,12 @@ class PaperTradingExecutor {
           exchange: bot.exchange,
           trading_type: bot.tradingType || bot.trading_type || 'futures',
           side: side,
-          entry_price: executedPrice,
+          entry_price: finalExecutedPrice,
           quantity: quantity,
           leverage: leverage,
           stop_loss_price: stopLossPrice,
           take_profit_price: takeProfitPrice,
-          current_price: executedPrice,
+          current_price: finalExecutedPrice,
           margin_used: marginRequired,
           status: 'open'
         })
@@ -4305,7 +4406,7 @@ class PaperTradingExecutor {
           symbol: bot.symbol,
           exchange: bot.exchange,
           side: side,
-          entry_price: executedPrice,
+          entry_price: finalExecutedPrice,
           quantity: quantity,
           leverage: leverage,
           margin_used: marginRequired,
@@ -4343,23 +4444,25 @@ class PaperTradingExecutor {
       await botExecutor.addBotLog(bot.id, {
         level: 'info',
         category: 'trade',
-        message: `📝 [PAPER] ${side.toUpperCase()} simulated: ${quantity.toFixed(6)} ${bot.symbol} @ $${executedPrice.toFixed(2)}`,
+        message: `📝 [PAPER] ${side.toUpperCase()} simulated: ${quantity.toFixed(6)} ${bot.symbol} @ $${finalExecutedPrice.toFixed(2)}`,
         details: {
           paper_trading: true,
           side: side,
-          entry_price: executedPrice,
+          entry_price: finalExecutedPrice,
           expected_entry_price: normalizedPrice,
           slippage_bps: slippageBps,
           quantity: quantity,
+          fill_percentage: fillPercentage < 1.0 ? fillPercentage : undefined,
           margin_used: marginRequired,
           remaining_balance: newBalance,
           leverage,
           notional,
-          estimated_entry_fees: estimatedEntryFees
+          estimated_entry_fees: estimatedEntryFees,
+          simulated_latency_ms: simulatedLatency
         }
       });
       
-      console.log(`✅ [PAPER TRADING] Position opened: ${side} ${quantity.toFixed(6)} ${bot.symbol} @ $${currentPrice}`);
+      console.log(`✅ [PAPER TRADING] Position opened: ${side} ${quantity.toFixed(6)} ${bot.symbol} @ $${finalExecutedPrice.toFixed(2)} (expected: $${normalizedPrice.toFixed(2)}, slippage: ${slippageBps.toFixed(2)} bps)`);
       
     } catch (error) {
       console.error(`❌ [PAPER TRADING] Error:`, error);
@@ -4404,29 +4507,68 @@ class PaperTradingExecutor {
           unrealizedPnL = (parseFloat(position.entry_price) - currentPrice) * parseFloat(position.quantity) * position.leverage;
         }
         
-        // Check SL/TP triggers
+        // Check SL/TP triggers with realistic execution
+        // In real trading, SL/TP may not execute at exact price due to gaps, slippage, etc.
         let newStatus = position.status;
         let exitPrice = currentPrice;
         let shouldClose = false;
         
+        const stopLossPrice = parseFloat(position.stop_loss_price);
+        const takeProfitPrice = parseFloat(position.take_profit_price);
+        
+        // 🎯 REALISTIC SL/TP EXECUTION: Use current price, not exact SL/TP price
+        // In real trading, stop losses often execute worse than set price, especially during volatility
         if (position.side === 'long') {
-          if (currentPrice <= parseFloat(position.stop_loss_price)) {
+          if (currentPrice <= stopLossPrice) {
             newStatus = 'stopped';
-            exitPrice = parseFloat(position.stop_loss_price);
+            // Realistic: SL often executes worse than set price (especially during fast moves)
+            // Use current price (which is already below SL) or add slippage
+            const slSlippage = applySlippage(
+              Math.min(currentPrice, stopLossPrice), 
+              'sell', 
+              position.symbol, 
+              parseFloat(position.quantity) * currentPrice,
+              { isExit: true, severity: 1.5 } // Higher slippage for stop losses
+            );
+            exitPrice = slSlippage.price;
             shouldClose = true;
-          } else if (currentPrice >= parseFloat(position.take_profit_price)) {
+          } else if (currentPrice >= takeProfitPrice) {
             newStatus = 'taken_profit';
-            exitPrice = parseFloat(position.take_profit_price);
+            // TP can execute at or near the trigger price, but still with some slippage
+            const tpSlippage = applySlippage(
+              Math.max(currentPrice, takeProfitPrice),
+              'sell',
+              position.symbol,
+              parseFloat(position.quantity) * currentPrice,
+              { isExit: true, severity: 1.0 }
+            );
+            exitPrice = tpSlippage.price;
             shouldClose = true;
           }
         } else {
-          if (currentPrice >= parseFloat(position.stop_loss_price)) {
+          if (currentPrice >= stopLossPrice) {
             newStatus = 'stopped';
-            exitPrice = parseFloat(position.stop_loss_price);
+            // Short stop loss: price went up, execute with slippage
+            const slSlippage = applySlippage(
+              Math.max(currentPrice, stopLossPrice),
+              'buy',
+              position.symbol,
+              parseFloat(position.quantity) * currentPrice,
+              { isExit: true, severity: 1.5 } // Higher slippage for stop losses
+            );
+            exitPrice = slSlippage.price;
             shouldClose = true;
-          } else if (currentPrice <= parseFloat(position.take_profit_price)) {
+          } else if (currentPrice <= takeProfitPrice) {
             newStatus = 'taken_profit';
-            exitPrice = parseFloat(position.take_profit_price);
+            // Short TP: price went down, execute with slippage
+            const tpSlippage = applySlippage(
+              Math.min(currentPrice, takeProfitPrice),
+              'buy',
+              position.symbol,
+              parseFloat(position.quantity) * currentPrice,
+              { isExit: true, severity: 1.0 }
+            );
+            exitPrice = tpSlippage.price;
             shouldClose = true;
           }
         }
@@ -4442,18 +4584,22 @@ class PaperTradingExecutor {
           updateData.status = newStatus;
           updateData.closed_at = TimeSync.getCurrentTimeISO();
           
-          // Calculate final PnL
+          // Calculate final PnL (exitPrice already has slippage applied above)
           const quantity = parseFloat(position.quantity);
           const symbolSteps = getSymbolSteps(position.symbol);
+          
+          // Round exit price to tick size if needed
+          const finalExitPrice = symbolSteps.tickSize > 0
+            ? Math.round(exitPrice / symbolSteps.tickSize) * symbolSteps.tickSize
+            : exitPrice;
+          
+          exitPrice = finalExitPrice;
+          
+          // Calculate slippage for logging
           const exitOrderSide = position.side === 'long' ? 'sell' : 'buy';
-          const initialExitNotional = quantity * exitPrice;
-          const slippageSeverity = newStatus === 'stopped' ? 1.4 : 1.0;
-          const exitSlip = applySlippage(exitPrice, exitOrderSide, position.symbol, initialExitNotional, { isExit: true, severity: slippageSeverity });
-          const slippedExitPriceUnrounded = exitSlip.price;
-          const slippedExitPrice = symbolSteps.tickSize > 0
-            ? Math.round(slippedExitPriceUnrounded / symbolSteps.tickSize) * symbolSteps.tickSize
-            : slippedExitPriceUnrounded;
-          exitPrice = slippedExitPrice;
+          const initialExitNotional = quantity * parseFloat(position.entry_price);
+          const slippageSeverity = newStatus === 'stopped' ? 1.5 : 1.0;
+          const exitSlip = applySlippage(parseFloat(position.entry_price), exitOrderSide, position.symbol, initialExitNotional, { isExit: true, severity: slippageSeverity });
           
           let finalPnL = 0;
           if (position.side === 'long') {
