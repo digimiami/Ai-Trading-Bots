@@ -1795,16 +1795,21 @@ class BotExecutor {
       }
     }
 
+    // Log with clear BUY/SELL ALERT message
+    const alertEmoji = normalizedSide === 'buy' ? '🟢' : '🔴';
+    const alertType = normalizedSide.toUpperCase() + ' ALERT';
     await this.addBotLog(bot.id, {
       level: 'info',
       category: 'trade',
-      message: `Manual trade triggered via ${params.source || 'external webhook'} (${effectiveMode.toUpperCase()})`,
+      message: `${alertEmoji} ${alertType} EXECUTING: ${params.source || 'TradingView webhook'} signal (${effectiveMode.toUpperCase()})`,
       details: {
         paper_trading: effectiveMode === 'paper',
         side: normalizedSide,
         reason: tradeSignal.reason,
         confidence: tradeSignal.confidence,
         size_multiplier: multiplier,
+        alert_type: alertType,
+        source: params.source || 'tradingview-webhook',
         timestamp: TimeSync.getCurrentTimeISO()
       }
     });

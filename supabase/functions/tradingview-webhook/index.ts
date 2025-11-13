@@ -572,29 +572,39 @@ serve(async (req) => {
 
     if (bot) {
       // Log to bot_activity_logs with 'trade' category so it shows in bot logs
+      // Use clear BUY/SELL ALERT message format
+      const alertEmoji = normalizedSide === 'buy' ? '🟢' : '🔴';
+      const alertType = normalizedSide.toUpperCase() + ' ALERT';
       try {
-        await supabaseClient
+        const { error: logError } = await supabaseClient
           .from("bot_activity_logs")
           .insert({
             bot_id: bot.id,
             level: "info",
             category: "trade", // Use 'trade' category so it appears in bot logs
-            message: `📥 TradingView webhook signal received: ${normalizedSide.toUpperCase()} (${mode.toUpperCase()})`,
+            message: `${alertEmoji} ${alertType} TRIGGERED: TradingView webhook signal received (${mode.toUpperCase()} mode)`,
             details: {
               ...sanitizedPayload,
+              side: normalizedSide,
               mode,
               size_multiplier: sizeMultiplier,
               source: template ? "signal-template" : "tradingview-webhook",
               template_id: template?.id,
               received_at: new Date().toISOString(),
               trigger_execution: shouldTrigger,
-              webhook_call_id: webhookCallId
+              webhook_call_id: webhookCallId,
+              alert_type: alertType
             },
             timestamp: new Date().toISOString()
           });
-        console.log(`✅ Logged TradingView signal to bot_activity_logs for bot ${bot.id}`);
+        
+        if (logError) {
+          console.error(`❌ Failed to log TradingView signal to bot_activity_logs:`, logError);
+        } else {
+          console.log(`✅ Logged ${alertType} to bot_activity_logs for bot ${bot.id}`);
+        }
       } catch (logError) {
-        console.error(`❌ Failed to log TradingView signal to bot_activity_logs:`, logError);
+        console.error(`❌ Exception logging TradingView signal to bot_activity_logs:`, logError);
         // Don't fail the webhook if logging fails
       }
     }
