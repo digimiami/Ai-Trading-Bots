@@ -46,7 +46,7 @@ const answerKey = (lessonId: string, questionId: string) => `${lessonId}:${quest
 export default function AcademyModulePage() {
   const { moduleSlug } = useParams<{ moduleSlug: string }>();
   const navigate = useNavigate();
-  const { modules, lessonProgress, loading, error, recordProgress } = useAcademy();
+  const { modules, lessonProgress, loading, error, recordProgress, refresh } = useAcademy();
 
   const module = useMemo(() => modules.find((item) => item.slug === moduleSlug) ?? null, [modules, moduleSlug]);
 
@@ -95,7 +95,13 @@ export default function AcademyModulePage() {
 
   const handleModuleComplete = async () => {
     if (!module) return;
-    await recordProgress(module.slug, null, 'completed');
+    try {
+      await recordProgress(module.slug, null, 'completed');
+      // Refresh progress to update UI
+      await refresh();
+    } catch (error) {
+      console.error('Failed to mark module as complete:', error);
+    }
   };
 
   const handleQuizAnswerChange = (questionId: string, value: string) => {

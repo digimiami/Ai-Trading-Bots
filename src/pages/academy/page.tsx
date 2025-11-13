@@ -63,12 +63,50 @@ export default function AcademyPage() {
                 >
                   <div className="flex flex-col gap-4 p-6 md:flex-row md:gap-6">
                     <div className="flex w-full flex-col gap-3 md:w-[220px]">
-                      <div className="aspect-video w-full overflow-hidden rounded-2xl bg-gray-100 dark:bg-gray-800">
+                      <div className="aspect-video w-full overflow-hidden rounded-2xl bg-gray-100 dark:bg-gray-800 relative">
                         {module.media_url ? (
-                          <video src={module.media_url} className="h-full w-full object-cover" muted playsInline />
+                          (() => {
+                            const url = module.media_url.toLowerCase();
+                            const isImage = /\.(jpg|jpeg|png|gif|webp|svg|avif)$/i.test(url) || url.includes('/images/') || url.includes('/img/');
+                            const isVideo = /\.(mp4|webm|ogg|mov|avi)$/i.test(url) || url.includes('/videos/') || url.includes('/video/');
+                            
+                            if (isImage) {
+                              return (
+                                <img 
+                                  src={module.media_url} 
+                                  alt={module.title}
+                                  className="h-full w-full object-cover" 
+                                  loading="lazy"
+                                />
+                              );
+                            } else if (isVideo) {
+                              return (
+                                <video 
+                                  src={module.media_url} 
+                                  className="h-full w-full object-cover" 
+                                  muted 
+                                  playsInline 
+                                />
+                              );
+                            } else {
+                              // Default: try as image
+                              return (
+                                <img 
+                                  src={module.media_url} 
+                                  alt={module.title}
+                                  className="h-full w-full object-cover" 
+                                  loading="lazy"
+                                  onError={(e) => {
+                                    // Show placeholder on error
+                                    e.currentTarget.style.display = 'none';
+                                  }}
+                                />
+                              );
+                            }
+                          })()
                         ) : (
                           <div className="flex h-full items-center justify-center text-gray-400">
-                            <i className="ri-play-circle-line text-3xl" />
+                            <i className="ri-image-line text-3xl" />
                           </div>
                         )}
                       </div>
