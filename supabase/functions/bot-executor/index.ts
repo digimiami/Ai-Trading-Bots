@@ -1110,6 +1110,36 @@ class BotExecutor {
           }
         }
         
+        // ⏱️ COOLDOWN BARS CHECK - Check if enough bars have passed since last trade (for paper trading too)
+        const cooldownCheck = await this.checkCooldownBars(bot);
+        if (!cooldownCheck.canTrade) {
+          console.log(`⏸️ [PAPER] Cooldown active for ${bot.name}: ${cooldownCheck.reason}`);
+          await this.addBotLog(bot.id, {
+            level: 'info',
+            category: 'system',
+            message: `📝 [PAPER] Cooldown active: ${cooldownCheck.reason}`,
+            details: { ...cooldownCheck, paper_trading: true }
+          });
+          // Update paper positions but don't trade
+          await paperExecutor.updatePaperPositions(bot.id);
+          return; // Stop execution - wait for cooldown
+        }
+        
+        // 🕐 TRADING HOURS CHECK - Check if current hour is in allowed trading hours (for paper trading too)
+        const tradingHoursCheck = this.checkTradingHours(bot);
+        if (!tradingHoursCheck.canTrade) {
+          console.log(`🕐 [PAPER] Outside trading hours for ${bot.name}: ${tradingHoursCheck.reason}`);
+          await this.addBotLog(bot.id, {
+            level: 'info',
+            category: 'system',
+            message: `📝 [PAPER] Outside trading hours: ${tradingHoursCheck.reason}`,
+            details: { ...tradingHoursCheck, paper_trading: true }
+          });
+          // Update paper positions but don't trade
+          await paperExecutor.updatePaperPositions(bot.id);
+          return; // Stop execution - outside allowed hours
+        }
+        
         if (shouldTrade.shouldTrade) {
           await paperExecutor.executePaperTrade(bot, shouldTrade);
         } else {
@@ -1130,6 +1160,32 @@ class BotExecutor {
       
       // ⚠️ REAL TRADING MODE - Existing code continues unchanged
       console.log(`💰 [REAL TRADING MODE] Bot: ${bot.name}`);
+      
+      // ⏱️ COOLDOWN BARS CHECK - Check if enough bars have passed since last trade
+      const cooldownCheck = await this.checkCooldownBars(bot);
+      if (!cooldownCheck.canTrade) {
+        console.log(`⏸️ Cooldown active for ${bot.name}: ${cooldownCheck.reason}`);
+        await this.addBotLog(bot.id, {
+          level: 'info',
+          category: 'system',
+          message: `Cooldown active: ${cooldownCheck.reason}`,
+          details: cooldownCheck
+        });
+        return; // Stop execution - wait for cooldown
+      }
+      
+      // 🕐 TRADING HOURS CHECK - Check if current hour is in allowed trading hours
+      const tradingHoursCheck = this.checkTradingHours(bot);
+      if (!tradingHoursCheck.canTrade) {
+        console.log(`🕐 Outside trading hours for ${bot.name}: ${tradingHoursCheck.reason}`);
+        await this.addBotLog(bot.id, {
+          level: 'info',
+          category: 'system',
+          message: `Outside trading hours: ${tradingHoursCheck.reason}`,
+          details: tradingHoursCheck
+        });
+        return; // Stop execution - outside allowed hours
+      }
       
       // COMPREHENSIVE SETTINGS VALIDATION & LOGGING
       console.log(`\n📋 Bot Settings Validation:`);
@@ -3726,6 +3782,182 @@ class BotExecutor {
     } catch (error) {
       return 2; // Default
     }
+  }
+
+  /**
+   * Check if cooldown bars have passed since last trade
+   */
+  private async checkCooldownBars(bot: any): Promise<{ canTrade: boolean; reason?: string; barsSinceLastTrade?: number; requiredBars?: number }> {
+    try {
+      // Get strategy config
+      const strategyConfig = typeof bot.strategy_config === 'string' 
+        ? JSON.parse(bot.strategy_config) 
+        : bot.strategy_config || {};
+      
+      const cooldownBars = strategyConfig.cooldown_bars || 8; // Default: 8 bars
+      
+      // If cooldown is 0 or negative, skip check
+      if (cooldownBars <= 0) {
+        return { canTrade: true };
+      }
+      
+      // Get last trade time
+      const lastTrade = await this.getLastTradeTime(bot.id);
+      if (!lastTrade) {
+        // No previous trades, cooldown doesn't apply
+        return { canTrade: true };
+      }
+      
+      // Get bot timeframe
+      const timeframe = bot.timeframe || bot.timeFrame || '1h';
+      
+      // Calculate bars since last trade
+      const barsSinceLastTrade = this.calculateBarsSince(lastTrade, timeframe);
+      
+      if (barsSinceLastTrade < cooldownBars) {
+        return {
+          canTrade: false,
+          reason: `Cooldown active: ${barsSinceLastTrade}/${cooldownBars} bars passed since last trade`,
+          barsSinceLastTrade,
+          requiredBars: cooldownBars
+        };
+      }
+      
+      return { canTrade: true, barsSinceLastTrade, requiredBars: cooldownBars };
+    } catch (error) {
+      console.warn('Error checking cooldown bars:', error);
+      // On error, allow trading (fail open)
+      return { canTrade: true };
+    }
+  }
+
+  /**
+   * Check if current hour is in allowed trading hours
+   */
+  private checkTradingHours(bot: any): { canTrade: boolean; reason?: string; currentHour?: number; allowedHours?: number[] } {
+    try {
+      // Get strategy config
+      const strategyConfig = typeof bot.strategy_config === 'string' 
+        ? JSON.parse(bot.strategy_config) 
+        : bot.strategy_config || {};
+      
+      // Check if session filter is enabled
+      const sessionFilterEnabled = strategyConfig.session_filter_enabled || false;
+      
+      // If session filter is disabled, allow trading
+      if (!sessionFilterEnabled) {
+        return { canTrade: true };
+      }
+      
+      // Get allowed hours (default to all hours if not set)
+      const allowedHours = strategyConfig.allowed_hours_utc || [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23];
+      
+      // If all 24 hours are allowed, skip check
+      if (allowedHours.length === 24) {
+        return { canTrade: true };
+      }
+      
+      // Get current UTC hour
+      const currentHourUTC = new Date().getUTCHours();
+      
+      if (!allowedHours.includes(currentHourUTC)) {
+        return {
+          canTrade: false,
+          reason: `Outside allowed trading hours (current: ${currentHourUTC}:00 UTC, allowed: ${allowedHours.join(', ')})`,
+          currentHour: currentHourUTC,
+          allowedHours
+        };
+      }
+      
+      return { canTrade: true, currentHour: currentHourUTC, allowedHours };
+    } catch (error) {
+      console.warn('Error checking trading hours:', error);
+      // On error, allow trading (fail open)
+      return { canTrade: true };
+    }
+  }
+
+  /**
+   * Get last trade time for a bot
+   */
+  private async getLastTradeTime(botId: string): Promise<string | null> {
+    try {
+      const { data, error } = await this.supabaseClient
+        .from('trades')
+        .select('executed_at, created_at')
+        .eq('bot_id', botId)
+        .not('executed_at', 'is', null)
+        .order('executed_at', { ascending: false })
+        .limit(1)
+        .single();
+      
+      if (error || !data) {
+        // Try with created_at as fallback
+        const { data: fallbackData } = await this.supabaseClient
+          .from('trades')
+          .select('created_at')
+          .eq('bot_id', botId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+        
+        return fallbackData?.created_at || null;
+      }
+      
+      return data.executed_at || data.created_at || null;
+    } catch (error) {
+      console.warn('Error getting last trade time:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Calculate number of bars since a given timestamp based on timeframe
+   */
+  private calculateBarsSince(timestamp: string, timeframe: string): number {
+    try {
+      const lastTradeTime = new Date(timestamp).getTime();
+      const currentTime = Date.now();
+      const timeDiffMs = currentTime - lastTradeTime;
+      
+      // Convert timeframe to milliseconds
+      const timeframeMs = this.timeframeToMilliseconds(timeframe);
+      
+      if (timeframeMs <= 0) {
+        return 0;
+      }
+      
+      // Calculate bars (floor to get complete bars only)
+      const bars = Math.floor(timeDiffMs / timeframeMs);
+      
+      return Math.max(0, bars);
+    } catch (error) {
+      console.warn('Error calculating bars since:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Convert timeframe string to milliseconds
+   */
+  private timeframeToMilliseconds(timeframe: string): number {
+    const tf = timeframe.toLowerCase();
+    
+    if (tf === '1m') return 60 * 1000;
+    if (tf === '5m') return 5 * 60 * 1000;
+    if (tf === '15m') return 15 * 60 * 1000;
+    if (tf === '30m') return 30 * 60 * 1000;
+    if (tf === '1h') return 60 * 60 * 1000;
+    if (tf === '2h') return 2 * 60 * 60 * 1000;
+    if (tf === '3h') return 3 * 60 * 60 * 1000;
+    if (tf === '4h') return 4 * 60 * 60 * 1000;
+    if (tf === '6h') return 6 * 60 * 60 * 1000;
+    if (tf === '12h') return 12 * 60 * 60 * 1000;
+    if (tf === '1d') return 24 * 60 * 60 * 1000;
+    if (tf === '1w') return 7 * 24 * 60 * 60 * 1000;
+    
+    // Default to 1 hour
+    return 60 * 60 * 1000;
   }
 
   /**
