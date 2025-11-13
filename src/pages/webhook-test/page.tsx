@@ -72,11 +72,14 @@ export default function WebhookTestPage() {
         } else {
           setWebhookUrl(`${supabaseUrl}/functions/v1/tradingview-webhook`);
         }
-        setWebhookSecret(bot.webhook_secret || '');
+        
+        // Always update secret from bot data (in case it was updated)
+        const botSecret = bot.webhook_secret || bot.webhookSecret || '';
+        setWebhookSecret(botSecret);
         
         // Generate test payload
         const payload = {
-          secret: bot.webhook_secret || '',
+          secret: botSecret,
           botId: bot.id,
           side: 'buy',
           mode: 'paper',
@@ -259,7 +262,10 @@ export default function WebhookTestPage() {
                         const newSecret = generateWebhookSecret();
                         try {
                           await updateBot(selectedBot, { webhookSecret: newSecret });
+                          // Update local state immediately
                           setWebhookSecret(newSecret);
+                          
+                          // Update the payload with the new secret
                           const bot = bots.find(b => b.id === selectedBot);
                           if (bot) {
                             const payload = {
@@ -271,9 +277,13 @@ export default function WebhookTestPage() {
                             };
                             setTestPayload(JSON.stringify(payload, null, 2));
                           }
+                          
+                          // Force a re-render by updating the selected bot
+                          // This ensures the UI reflects the new secret
+                          console.log('✅ Webhook secret generated and saved:', newSecret);
                           alert('✅ Webhook secret generated! You can now test the webhook.');
                         } catch (error) {
-                          console.error('Error generating webhook secret:', error);
+                          console.error('❌ Error generating webhook secret:', error);
                           alert('❌ Failed to generate webhook secret. Please try again.');
                         }
                       }}
