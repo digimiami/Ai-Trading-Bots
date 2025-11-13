@@ -111,3 +111,4 @@ All checks log:
 - `src/pages/create-bot/page.tsx` - Settings collection (already implemented)
 - `supabase/functions/bot-management/index.ts` - Settings storage (already implemented)
 
+
