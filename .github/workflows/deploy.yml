@@ -59,6 +59,7 @@ jobs:
           supabase functions deploy check-ai-keys --no-verify-jwt || echo "⚠️ check-ai-keys deployment failed"
           supabase functions deploy paper-trading --no-verify-jwt || echo "⚠️ paper-trading deployment failed"
           supabase functions deploy backtest-engine --no-verify-jwt || echo "⚠️ backtest-engine deployment failed"
+          supabase functions deploy tradingview-webhook --no-verify-jwt || echo "⚠️ tradingview-webhook deployment failed"
           
           echo "✅ Edge functions deployment completed!"
       
