@@ -138,50 +138,194 @@ serve(async (req) => {
 
   const supabaseClient = createClient(supabaseUrl, serviceRoleKey);
   
-  // Record webhook call attempt
+  // Record webhook call attempt IMMEDIATELY - before any processing
   let webhookCallId: string | null = null;
   const webhookCallStartTime = Date.now();
   let rawBody = "";
   
+  // Capture request metadata for logging
+  const requestHeaders: Record<string, string> = {};
+  req.headers.forEach((value, key) => {
+    requestHeaders[key] = value;
+  });
+  
+  const requestMetadata = {
+    method: req.method,
+    url: req.url,
+    headers: requestHeaders,
+    timestamp: new Date().toISOString(),
+    userAgent: req.headers.get("user-agent") || "unknown",
+    origin: req.headers.get("origin") || "unknown",
+    referer: req.headers.get("referer") || "unknown"
+  };
+  
+  console.log("📥 Incoming webhook request:", {
+    method: req.method,
+    url: req.url,
+    contentType: req.headers.get("content-type"),
+    userAgent: requestMetadata.userAgent,
+    origin: requestMetadata.origin,
+    timestamp: requestMetadata.timestamp
+  });
+  
   try {
     rawBody = await req.text();
+    console.log("📦 Raw body received:", {
+      length: rawBody.length,
+      preview: rawBody.substring(0, 200),
+      contentType: req.headers.get("content-type")
+    });
   } catch (error) {
     console.error("❌ Failed to read request body:", error);
+    
+    // Record failed webhook call immediately
+    try {
+      const { data: failedCall } = await supabaseClient
+        .from("webhook_calls")
+        .insert({
+          raw_payload: { 
+            raw: "", 
+            error: "Failed to read request body",
+            metadata: requestMetadata
+          },
+          status: "failed",
+          error_message: error instanceof Error ? error.message : String(error),
+          response_status: 400,
+          created_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+      webhookCallId = failedCall?.id || null;
+      console.log("📝 Recorded failed webhook call (read error):", webhookCallId);
+    } catch (recordError) {
+      console.error("❌ Failed to record webhook call:", recordError);
+    }
+    
     return new Response(JSON.stringify({ error: "Failed to read request body" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
   }
 
+  // Record webhook call IMMEDIATELY with raw body (before parsing)
+  if (!webhookCallId) {
+    try {
+      const { data: recordedCall } = await supabaseClient
+        .from("webhook_calls")
+        .insert({
+          raw_payload: { 
+            raw: rawBody,
+            length: rawBody.length,
+            contentType: req.headers.get("content-type") || "unknown",
+            metadata: requestMetadata
+          },
+          status: "processing",
+          created_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+      webhookCallId = recordedCall?.id || null;
+      console.log("📝 Recorded incoming webhook call:", webhookCallId);
+    } catch (recordError) {
+      console.error("❌ Failed to record webhook call (initial):", recordError);
+      // Continue processing even if recording fails
+    }
+  }
+  
   let payload: TradingViewPayload;
   try {
     if (!rawBody) {
       throw new Error("Empty request body");
     }
-    try {
-      payload = JSON.parse(rawBody);
-    } catch {
-      console.warn("⚠️ TradingView payload not valid JSON, attempting fallback parsing");
-      payload = JSON.parse(rawBody.replace(/'/g, "\""));
+    
+    const contentType = req.headers.get("content-type") || "";
+    console.log("🔍 Parsing payload, content-type:", contentType);
+    
+    // Handle different content types
+    if (contentType.includes("application/json")) {
+      try {
+        payload = JSON.parse(rawBody);
+      } catch {
+        console.warn("⚠️ JSON parse failed, attempting fallback");
+        payload = JSON.parse(rawBody.replace(/'/g, "\""));
+      }
+    } else if (contentType.includes("application/x-www-form-urlencoded")) {
+      // Handle form-encoded data
+      const params = new URLSearchParams(rawBody);
+      payload = Object.fromEntries(params) as TradingViewPayload;
+      console.log("📋 Parsed form-encoded payload:", payload);
+    } else if (contentType.includes("text/plain") || contentType === "") {
+      // TradingView might send plain text or no content-type
+      // Try JSON first, then fallback to text parsing
+      try {
+        payload = JSON.parse(rawBody);
+      } catch {
+        // If not JSON, try to extract key-value pairs from text
+        console.warn("⚠️ Plain text payload, attempting to parse as JSON or extract fields");
+        try {
+          payload = JSON.parse(rawBody.replace(/'/g, "\""));
+        } catch {
+          // Last resort: create a minimal payload from text
+          payload = {
+            raw_text: rawBody,
+            side: rawBody.toLowerCase().includes("buy") || rawBody.toLowerCase().includes("long") ? "buy" : 
+                  rawBody.toLowerCase().includes("sell") || rawBody.toLowerCase().includes("short") ? "sell" : undefined
+          } as TradingViewPayload;
+          console.warn("⚠️ Created minimal payload from plain text:", payload);
+        }
+      }
+    } else {
+      // Unknown content type, try JSON anyway
+      try {
+        payload = JSON.parse(rawBody);
+      } catch {
+        payload = JSON.parse(rawBody.replace(/'/g, "\""));
+      }
     }
+    
+    console.log("✅ Parsed payload:", {
+      hasBotId: !!(payload.botId || payload.bot_id),
+      hasSide: !!(payload.side || payload.signal || payload.action),
+      hasSecret: !!(payload.secret || payload.webhook_secret),
+      keys: Object.keys(payload)
+    });
   } catch (parseError) {
     console.error("❌ Failed to parse TradingView payload:", parseError);
     
-    // Record failed webhook call
-    try {
-      const { data: failedCall } = await supabaseClient
-        .from("webhook_calls")
-        .insert({
-          raw_payload: { raw: rawBody, error: "Invalid JSON" },
-          status: "failed",
-          error_message: parseError instanceof Error ? parseError.message : String(parseError),
-          response_status: 400
-        })
-        .select()
-        .single();
-      webhookCallId = failedCall?.id || null;
-    } catch (recordError) {
-      console.error("❌ Failed to record webhook call:", recordError);
+    // Update webhook call record with error
+    if (webhookCallId) {
+      try {
+        await supabaseClient
+          .from("webhook_calls")
+          .update({
+            parsed_payload: { error: "Parse failed", raw: rawBody },
+            status: "failed",
+            error_message: parseError instanceof Error ? parseError.message : String(parseError),
+            response_status: 400,
+            processed_at: new Date().toISOString()
+          })
+          .eq("id", webhookCallId);
+        console.log("📝 Updated webhook call record with parse error:", webhookCallId);
+      } catch (recordError) {
+        console.error("❌ Failed to update webhook call record:", recordError);
+      }
+    } else {
+      // Record if we didn't record earlier
+      try {
+        const { data: failedCall } = await supabaseClient
+          .from("webhook_calls")
+          .insert({
+            raw_payload: { raw: rawBody, error: "Invalid JSON", metadata: requestMetadata },
+            status: "failed",
+            error_message: parseError instanceof Error ? parseError.message : String(parseError),
+            response_status: 400
+          })
+          .select()
+          .single();
+        webhookCallId = failedCall?.id || null;
+      } catch (recordError) {
+        console.error("❌ Failed to record webhook call:", recordError);
+      }
     }
     
     return new Response(JSON.stringify({ error: "Invalid JSON payload" }), {
@@ -209,19 +353,43 @@ serve(async (req) => {
     "";
 
   if (!botId) {
-    // Record webhook call without botId
-    try {
-      await supabaseClient
-        .from("webhook_calls")
-        .insert({
-          raw_payload: { raw: rawBody },
-          parsed_payload: payload,
-          status: "failed",
-          error_message: "botId is required",
-          response_status: 400
-        });
-    } catch (recordError) {
-      console.error("❌ Failed to record webhook call:", recordError);
+    console.warn("⚠️ No botId found in payload:", payload);
+    
+    // Update webhook call record with error
+    if (webhookCallId) {
+      try {
+        await supabaseClient
+          .from("webhook_calls")
+          .update({
+            parsed_payload: payload,
+            status: "failed",
+            error_message: "botId is required",
+            response_status: 400,
+            processed_at: new Date().toISOString()
+          })
+          .eq("id", webhookCallId);
+        console.log("📝 Updated webhook call record (no botId):", webhookCallId);
+      } catch (recordError) {
+        console.error("❌ Failed to update webhook call record:", recordError);
+      }
+    } else {
+      // Record webhook call without botId
+      try {
+        const { data: failedCall } = await supabaseClient
+          .from("webhook_calls")
+          .insert({
+            raw_payload: { raw: rawBody, metadata: requestMetadata },
+            parsed_payload: payload,
+            status: "failed",
+            error_message: "botId is required",
+            response_status: 400
+          })
+          .select()
+          .single();
+        webhookCallId = failedCall?.id || null;
+      } catch (recordError) {
+        console.error("❌ Failed to record webhook call:", recordError);
+      }
     }
     
     return new Response(JSON.stringify({ error: "botId is required" }), {
@@ -302,7 +470,57 @@ serve(async (req) => {
   }
 
   if (!providedSecret || !allowedSecrets.includes(providedSecret)) {
-    console.warn("⚠️ Invalid TradingView webhook secret provided");
+    console.warn("⚠️ Invalid TradingView webhook secret provided", {
+      provided: providedSecret ? "***" : "empty",
+      allowedCount: allowedSecrets.length,
+      botId
+    });
+    
+    // Update webhook call record with auth error
+    if (webhookCallId) {
+      try {
+        await supabaseClient
+          .from("webhook_calls")
+          .update({
+            parsed_payload: payload,
+            secret_provided: providedSecret ? "***" : null,
+            secret_valid: false,
+            bot_found: !!bot,
+            bot_id: bot?.id || null,
+            status: "failed",
+            error_message: "Unauthorized: Invalid webhook secret",
+            response_status: 401,
+            processed_at: new Date().toISOString()
+          })
+          .eq("id", webhookCallId);
+        console.log("📝 Updated webhook call record (unauthorized):", webhookCallId);
+      } catch (recordError) {
+        console.error("❌ Failed to update webhook call record:", recordError);
+      }
+    } else {
+      // Record if we didn't record earlier
+      try {
+        const { data: failedCall } = await supabaseClient
+          .from("webhook_calls")
+          .insert({
+            raw_payload: { raw: rawBody, metadata: requestMetadata },
+            parsed_payload: payload,
+            secret_provided: providedSecret ? "***" : null,
+            secret_valid: false,
+            bot_found: !!bot,
+            bot_id: bot?.id || null,
+            status: "failed",
+            error_message: "Unauthorized: Invalid webhook secret",
+            response_status: 401
+          })
+          .select()
+          .single();
+        webhookCallId = failedCall?.id || null;
+      } catch (recordError) {
+        console.error("❌ Failed to record webhook call:", recordError);
+      }
+    }
+    
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
@@ -521,7 +739,7 @@ serve(async (req) => {
       console.log(`ℹ️ Immediate execution disabled for bot ${bot.id}. Signal will be processed on next bot execution cycle.`);
     }
 
-    // Record successful webhook call
+    // Record successful webhook call (update existing or insert new)
     const responseBody = {
       success: true,
       mode,
@@ -534,26 +752,56 @@ serve(async (req) => {
     };
     
     try {
-      await supabaseClient
-        .from("webhook_calls")
-        .insert({
-          bot_id: bot?.id || null,
-          user_id: bot?.user_id || template?.user_id || null,
-          raw_payload: { raw: rawBody },
-          parsed_payload: payload,
-          secret_provided: providedSecret ? "***" : null,
-          secret_valid: true,
-          bot_found: !!bot,
-          side: normalizedSide,
-          mode,
-          status: "processed",
-          response_status: 200,
-          response_body: responseBody,
-          signal_id: signal?.id || null,
-          trigger_executed: shouldTrigger,
-          trigger_response: triggerResponse,
-          processed_at: new Date().toISOString()
-        });
+      if (webhookCallId) {
+        // Update existing record
+        await supabaseClient
+          .from("webhook_calls")
+          .update({
+            parsed_payload: payload,
+            secret_provided: providedSecret ? "***" : null,
+            secret_valid: true,
+            bot_found: !!bot,
+            bot_id: bot?.id || null,
+            user_id: bot?.user_id || template?.user_id || null,
+            side: normalizedSide,
+            mode,
+            status: "processed",
+            response_status: 200,
+            response_body: responseBody,
+            signal_id: signal?.id || null,
+            trigger_executed: shouldTrigger,
+            trigger_response: triggerResponse,
+            processed_at: new Date().toISOString()
+          })
+          .eq("id", webhookCallId);
+        console.log("📝 Updated webhook call record (success):", webhookCallId);
+      } else {
+        // Insert new record (shouldn't happen, but just in case)
+        const { data: newCall } = await supabaseClient
+          .from("webhook_calls")
+          .insert({
+            bot_id: bot?.id || null,
+            user_id: bot?.user_id || template?.user_id || null,
+            raw_payload: { raw: rawBody, metadata: requestMetadata },
+            parsed_payload: payload,
+            secret_provided: providedSecret ? "***" : null,
+            secret_valid: true,
+            bot_found: !!bot,
+            side: normalizedSide,
+            mode,
+            status: "processed",
+            response_status: 200,
+            response_body: responseBody,
+            signal_id: signal?.id || null,
+            trigger_executed: shouldTrigger,
+            trigger_response: triggerResponse,
+            processed_at: new Date().toISOString()
+          })
+          .select()
+          .single();
+        webhookCallId = newCall?.id || null;
+        console.log("📝 Inserted webhook call record (success):", webhookCallId);
+      }
     } catch (recordError) {
       console.error("❌ Failed to record webhook call:", recordError);
     }
