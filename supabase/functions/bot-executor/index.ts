@@ -4754,15 +4754,23 @@ serve(async (req) => {
   try {
     const cronSecretHeader = req.headers.get('x-cron-secret') ?? ''
     const cronSecretEnv = Deno.env.get('CRON_SECRET') ?? ''
-    const isCron = !!cronSecretHeader && cronSecretHeader === cronSecretEnv
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    const authHeader = req.headers.get('Authorization') || req.headers.get('authorization') || ''
     
-    // Log cron detection for debugging
+    // Check if this is a cron request OR an internal service call (using service role key)
+    const isCron = !!cronSecretHeader && cronSecretHeader === cronSecretEnv
+    const isServiceCall = authHeader && authHeader.includes(serviceRoleKey) && serviceRoleKey.length > 0
+    const isInternalCall = isCron || isServiceCall
+    
+    // Log cron/service call detection for debugging
     if (req.method === 'POST') {
-      console.log('🔍 [bot-executor] Cron detection:');
+      console.log('🔍 [bot-executor] Authentication detection:');
       console.log(`   x-cron-secret header present: ${!!cronSecretHeader} (length: ${cronSecretHeader.length})`);
       console.log(`   CRON_SECRET env present: ${!!cronSecretEnv} (length: ${cronSecretEnv.length})`);
       console.log(`   Secrets match: ${cronSecretHeader === cronSecretEnv}`);
       console.log(`   Detected as cron: ${isCron}`);
+      console.log(`   Detected as service call: ${isServiceCall}`);
+      console.log(`   Detected as internal call: ${isInternalCall}`);
       
       // Enhanced error messages for missing CRON_SECRET
       if (cronSecretHeader && !cronSecretEnv) {
@@ -4784,8 +4792,8 @@ serve(async (req) => {
     const incomingAuthHeader = req.headers.get('Authorization') || req.headers.get('authorization') || undefined
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      isCron ? (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '') : (Deno.env.get('SUPABASE_ANON_KEY') ?? ''),
-      isCron || !incomingAuthHeader
+      isInternalCall ? (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '') : (Deno.env.get('SUPABASE_ANON_KEY') ?? ''),
+      isInternalCall || !incomingAuthHeader
         ? undefined
         : { global: { headers: { Authorization: incomingAuthHeader } } }
     )
@@ -4795,12 +4803,12 @@ serve(async (req) => {
     const action = url?.searchParams.get('action')
     const isPublicEndpoint = action === 'time' || action === 'market-data'
     
-    const { data: { user } } = isCron || isPublicEndpoint
+    const { data: { user } } = isInternalCall || isPublicEndpoint
       ? { data: { user: null } as any }
       : await supabaseClient.auth.getUser()
 
     // Only require authentication for non-public endpoints
-    if (!isCron && !isPublicEndpoint && !user) {
+    if (!isInternalCall && !isPublicEndpoint && !user) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
