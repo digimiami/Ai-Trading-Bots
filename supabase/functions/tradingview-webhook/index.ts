@@ -131,9 +131,25 @@ serve(async (req) => {
     });
   }
 
+  const supabaseClient = createClient(supabaseUrl, serviceRoleKey);
+  
+  // Record webhook call attempt
+  let webhookCallId: string | null = null;
+  const webhookCallStartTime = Date.now();
+  let rawBody = "";
+  
+  try {
+    rawBody = await req.text();
+  } catch (error) {
+    console.error("❌ Failed to read request body:", error);
+    return new Response(JSON.stringify({ error: "Failed to read request body" }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
+    });
+  }
+
   let payload: TradingViewPayload;
   try {
-    const rawBody = await req.text();
     if (!rawBody) {
       throw new Error("Empty request body");
     }
@@ -145,6 +161,24 @@ serve(async (req) => {
     }
   } catch (parseError) {
     console.error("❌ Failed to parse TradingView payload:", parseError);
+    
+    // Record failed webhook call
+    try {
+      const { data: failedCall } = await supabaseClient
+        .from("webhook_calls")
+        .insert({
+          raw_payload: { raw: rawBody, error: "Invalid JSON" },
+          status: "failed",
+          error_message: parseError instanceof Error ? parseError.message : String(parseError),
+          response_status: 400
+        })
+        .select()
+        .single();
+      webhookCallId = failedCall?.id || null;
+    } catch (recordError) {
+      console.error("❌ Failed to record webhook call:", recordError);
+    }
+    
     return new Response(JSON.stringify({ error: "Invalid JSON payload" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
@@ -170,13 +204,26 @@ serve(async (req) => {
     "";
 
   if (!botId) {
+    // Record webhook call without botId
+    try {
+      await supabaseClient
+        .from("webhook_calls")
+        .insert({
+          raw_payload: { raw: rawBody },
+          parsed_payload: payload,
+          status: "failed",
+          error_message: "botId is required",
+          response_status: 400
+        });
+    } catch (recordError) {
+      console.error("❌ Failed to record webhook call:", recordError);
+    }
+    
     return new Response(JSON.stringify({ error: "botId is required" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
   }
-
-  const supabaseClient = createClient(supabaseUrl, serviceRoleKey);
 
   let bot: any = null;
   let template: any = null;
@@ -469,7 +516,8 @@ serve(async (req) => {
       console.log(`ℹ️ Immediate execution disabled for bot ${bot.id}. Signal will be processed on next bot execution cycle.`);
     }
 
-    return new Response(JSON.stringify({
+    // Record successful webhook call
+    const responseBody = {
       success: true,
       mode,
       side: normalizedSide,
@@ -478,12 +526,60 @@ serve(async (req) => {
       template: template ? { id: template.id, name: template.name } : null,
       signalEventId: signalEvent?.id,
       trigger: triggerResponse
-    }), {
+    };
+    
+    try {
+      await supabaseClient
+        .from("webhook_calls")
+        .insert({
+          bot_id: bot?.id || null,
+          user_id: bot?.user_id || template?.user_id || null,
+          raw_payload: { raw: rawBody },
+          parsed_payload: payload,
+          secret_provided: providedSecret ? "***" : null,
+          secret_valid: true,
+          bot_found: !!bot,
+          side: normalizedSide,
+          mode,
+          status: "processed",
+          response_status: 200,
+          response_body: responseBody,
+          signal_id: signal?.id || null,
+          trigger_executed: shouldTrigger,
+          trigger_response: triggerResponse,
+          processed_at: new Date().toISOString()
+        });
+    } catch (recordError) {
+      console.error("❌ Failed to record webhook call:", recordError);
+    }
+    
+    return new Response(JSON.stringify(responseBody), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
   } catch (error) {
     console.error("❌ TradingView webhook processing error:", error);
+    
+    // Record failed webhook call
+    try {
+      await supabaseClient
+        .from("webhook_calls")
+        .insert({
+          bot_id: bot?.id || null,
+          user_id: bot?.user_id || template?.user_id || null,
+          raw_payload: { raw: rawBody },
+          parsed_payload: payload || null,
+          secret_provided: providedSecret ? "***" : null,
+          secret_valid: false,
+          bot_found: !!bot,
+          status: "failed",
+          error_message: error instanceof Error ? error.message : String(error),
+          response_status: 500
+        });
+    } catch (recordError) {
+      console.error("❌ Failed to record webhook call error:", recordError);
+    }
+    
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" }

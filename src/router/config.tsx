@@ -103,6 +103,10 @@ const routes: RouteObject[] = [
     element: <PaperTrading />
   },
   {
+    path: '/webhook-test',
+    element: <WebhookTest />
+  },
+  {
     path: '/futures-pairs-finder',
     element: <FuturesPairsFinder />
   },
