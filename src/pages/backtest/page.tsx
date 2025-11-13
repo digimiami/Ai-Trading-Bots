@@ -5,6 +5,11 @@ import Button from '../../components/base/Button';
 import Header from '../../components/feature/Header';
 import { createClient } from '@supabase/supabase-js';
 import type { TradingStrategy, AdvancedStrategyConfig } from '../../types/trading';
+import {
+  HTF_TIMEFRAME_OPTIONS,
+  HTF_TREND_INDICATOR_OPTIONS
+} from '../../constants/strategyOptions';
+import { supabase } from '../../lib/supabase';
 
 const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -359,61 +364,44 @@ export default function BacktestPage() {
       console.log('Starting backtest with data:', backtestData);
       console.log(`Parsed ${symbols.length} symbols:`, symbols);
       
-      // Simulate backtest execution with delay
+      // Call real backtest engine API
       setIsRunning(true);
       setProgress(0);
       
-      // Simulate progress
+      // Update progress periodically
       const progressInterval = setInterval(() => {
         setProgress(prev => {
-          if (prev >= 90) {
-            clearInterval(progressInterval);
+          if (prev >= 95) {
             return prev;
           }
-          return prev + Math.random() * 10;
+          return prev + 1;
         });
-      }, 200);
+      }, 500);
       
-      // Simulate backtest running...
-      setTimeout(() => {
+      try {
+        const { data, error } = await supabase.functions.invoke('backtest-engine', {
+          body: backtestData
+        });
+        
         clearInterval(progressInterval);
         setProgress(100);
         
-        // Demo results - replace with actual API call later
-        // Generate results based on actual symbols used
-        const resultsPerPair: { [key: string]: any } = {};
-        symbols.forEach((symbol, index) => {
-          // Generate realistic demo data for each symbol
-          const trades = Math.floor(Math.random() * 30) + 15;
-          const winRate = Math.random() * 20 + 50; // 50-70%
-          const pnl = (Math.random() * 2000) - 500; // -500 to 1500
-          
-          resultsPerPair[symbol] = {
-            trades,
-            win_rate: winRate,
-            pnl: pnl
-          };
-        });
-
-        const demoResults = {
-          total_trades: Object.values(resultsPerPair).reduce((sum: number, data: any) => sum + (data.trades || 0), 0),
-          winning_trades: Math.floor(Object.values(resultsPerPair).reduce((sum: number, data: any) => sum + (data.trades || 0) * (data.win_rate || 0) / 100, 0)),
-          losing_trades: 0,
-          win_rate: Object.values(resultsPerPair).reduce((sum: number, data: any) => sum + (data.win_rate || 0), 0) / symbols.length,
-          total_pnl: Object.values(resultsPerPair).reduce((sum: number, data: any) => sum + (data.pnl || 0), 0),
-          total_pnl_percentage: 0,
-          max_drawdown: -12.5,
-          sharpe_ratio: 1.85,
-          profit_factor: 1.92,
-          results_per_pair: resultsPerPair
-        };
+        if (error) {
+          throw new Error(error.message || 'Backtest failed');
+        }
         
-        demoResults.losing_trades = demoResults.total_trades - demoResults.winning_trades;
-        demoResults.total_pnl_percentage = (demoResults.total_pnl / (config.tradeAmount * symbols.length * 10)) * 100;
+        if (data.error) {
+          throw new Error(data.error);
+        }
         
-        setResults(demoResults);
+        console.log('Backtest results:', data);
+        setResults(data);
+      } catch (apiError: any) {
+        clearInterval(progressInterval);
+        throw new Error(apiError.message || 'Failed to run backtest');
+      } finally {
         setIsRunning(false);
-      }, 2000);
+      }
       
     } catch (err: any) {
       setError(err.message || 'Failed to start backtest');
@@ -658,6 +646,9 @@ export default function BacktestPage() {
                   max="10"
                   step="0.5"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Maximum loss percentage before closing position
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -672,7 +663,97 @@ export default function BacktestPage() {
                   max="20"
                   step="0.5"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Target profit percentage before closing position
+                </p>
               </div>
+            </div>
+
+            {/* Cooldown Bars */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Cooldown (Bars)
+              </label>
+              <input
+                type="number"
+                value={advancedConfig.cooldown_bars}
+                onChange={(e) => setAdvancedConfig(prev => ({ ...prev, cooldown_bars: parseInt(e.target.value) || 8 }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                min="1"
+                max="100"
+                step="1"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Number of bars to wait between trades (prevents overtrading)
+              </p>
+            </div>
+
+            {/* Allowed Trading Hours */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Allowed Trading Hours (EST)
+              </label>
+              <div className="border border-gray-300 rounded-lg p-3 bg-gray-50 max-h-48 overflow-y-auto">
+                <div className="flex items-center mb-2">
+                  <input
+                    type="checkbox"
+                    checked={advancedConfig.allowed_hours_utc.length === 24}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setAdvancedConfig(prev => ({ 
+                          ...prev, 
+                          allowed_hours_utc: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23],
+                          session_filter_enabled: false
+                        }));
+                      } else {
+                        setAdvancedConfig(prev => ({ 
+                          ...prev, 
+                          allowed_hours_utc: [],
+                          session_filter_enabled: true
+                        }));
+                      }
+                    }}
+                    className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <span className="text-sm font-medium text-gray-700">Select All (24/7)</span>
+                </div>
+                <div className="grid grid-cols-4 gap-2">
+                  {Array.from({ length: 24 }, (_, i) => {
+                    const estHour = (i - 5 + 24) % 24;
+                    const isSelected = advancedConfig.allowed_hours_utc.includes(i);
+                    return (
+                      <label key={i} className="flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setAdvancedConfig(prev => ({
+                                ...prev,
+                                allowed_hours_utc: [...prev.allowed_hours_utc, i].sort((a, b) => a - b),
+                                session_filter_enabled: true
+                              }));
+                            } else {
+                              setAdvancedConfig(prev => ({
+                                ...prev,
+                                allowed_hours_utc: prev.allowed_hours_utc.filter(h => h !== i),
+                                session_filter_enabled: prev.allowed_hours_utc.filter(h => h !== i).length > 0
+                              }));
+                            }
+                          }}
+                          className="mr-1 h-3 w-3 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                        <span className="text-xs text-gray-700">
+                          {estHour.toString().padStart(2, '0')}:00 EST
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                Select hours when bot is allowed to trade (stored in UTC, displayed in EST)
+              </p>
             </div>
 
             {/* Strategy Parameters Section */}
@@ -770,11 +851,290 @@ export default function BacktestPage() {
               </button>
               
               {showAdvanced && (
-                <div className="mt-6 space-y-4">
+                <div className="mt-6 space-y-6">
+                  {/* Directional Bias */}
+                  <div className="border-l-4 border-purple-500 pl-4">
+                    <h3 className="text-md font-semibold text-gray-800 mb-3">🎯 Directional Bias</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Risk Per Trade (%)
+                          Bias Mode
+                        </label>
+                        <select
+                          value={advancedConfig.bias_mode}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, bias_mode: e.target.value as any }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="auto">Auto (Follow HTF Trend)</option>
+                          <option value="long-only">Long Only</option>
+                          <option value="short-only">Short Only</option>
+                          <option value="both">Both Directions</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          HTF Timeframe
+                        </label>
+                        <select
+                          value={advancedConfig.htf_timeframe}
+                          onChange={(e) =>
+                            setAdvancedConfig(prev => ({
+                              ...prev,
+                              htf_timeframe: e.target.value as typeof prev.htf_timeframe
+                            }))
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        >
+                          {HTF_TIMEFRAME_OPTIONS.map(option => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          HTF Trend Indicator
+                        </label>
+                        <select
+                          value={advancedConfig.htf_trend_indicator}
+                          onChange={(e) =>
+                            setAdvancedConfig(prev => ({
+                              ...prev,
+                              htf_trend_indicator: e.target.value as typeof prev.htf_trend_indicator
+                            }))
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        >
+                          {HTF_TREND_INDICATOR_OPTIONS.map(option => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          ADX Min (HTF): {advancedConfig.adx_min_htf}
+                        </label>
+                        <input
+                          type="range"
+                          value={advancedConfig.adx_min_htf}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, adx_min_htf: parseFloat(e.target.value) }))}
+                          className="w-full"
+                          min="15"
+                          max="35"
+                          step="1"
+                        />
+                        <p className="text-xs text-gray-500">Minimum ADX for trend confirmation</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Indicator Settings */}
+                  <div className="border-l-4 border-indigo-500 pl-4">
+                    <h3 className="text-md font-semibold text-gray-800 mb-3">📐 Indicator Settings</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          EMA Length
+                        </label>
+                        <input
+                          type="number"
+                          value={advancedConfig.ema_fast_period ?? 50}
+                          onChange={(e) =>
+                            setAdvancedConfig(prev => ({
+                              ...prev,
+                              ema_fast_period: parseInt(e.target.value) || 50
+                            }))
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          min={1}
+                          max={500}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          ATR Length
+                        </label>
+                        <input
+                          type="number"
+                          value={advancedConfig.atr_period ?? 14}
+                          onChange={(e) =>
+                            setAdvancedConfig(prev => ({
+                              ...prev,
+                              atr_period: parseInt(e.target.value) || 14
+                            }))
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          min={1}
+                          max={200}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          ATR TP Multiplier
+                        </label>
+                        <input
+                          type="number"
+                          value={advancedConfig.atr_tp_multiplier ?? 3}
+                          onChange={(e) =>
+                            setAdvancedConfig(prev => ({
+                              ...prev,
+                              atr_tp_multiplier: parseFloat(e.target.value) || 3
+                            }))
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          min={0.5}
+                          max={10}
+                          step={0.1}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          ATR SL Multiplier
+                        </label>
+                        <input
+                          type="number"
+                          value={advancedConfig.sl_atr_mult}
+                          onChange={(e) =>
+                            setAdvancedConfig(prev => ({
+                              ...prev,
+                              sl_atr_mult: parseFloat(e.target.value) || prev.sl_atr_mult
+                            }))
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          min={0.5}
+                          max={5}
+                          step={0.1}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          RSI Length
+                        </label>
+                        <input
+                          type="number"
+                          value={advancedConfig.rsi_period ?? 14}
+                          onChange={(e) =>
+                            setAdvancedConfig(prev => ({
+                              ...prev,
+                              rsi_period: parseInt(e.target.value) || 14
+                            }))
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          min={5}
+                          max={50}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          RSI Overbought
+                        </label>
+                        <input
+                          type="number"
+                          value={advancedConfig.rsi_overbought ?? 70}
+                          onChange={(e) =>
+                            setAdvancedConfig(prev => ({
+                              ...prev,
+                              rsi_overbought: parseInt(e.target.value) || 70
+                            }))
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          min={50}
+                          max={100}
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          RSI Oversold
+                        </label>
+                        <input
+                          type="number"
+                          value={advancedConfig.rsi_oversold ?? 30}
+                          onChange={(e) =>
+                            setAdvancedConfig(prev => ({
+                              ...prev,
+                              rsi_oversold: parseInt(e.target.value) || 30
+                            }))
+                          }
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          min={0}
+                          max={50}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Regime Filter */}
+                  <div className="border-l-4 border-blue-500 pl-4">
+                    <h3 className="text-md font-semibold text-gray-800 mb-3">📊 Regime Filter</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Regime Mode
+                        </label>
+                        <select
+                          value={advancedConfig.regime_mode}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, regime_mode: e.target.value as any }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="auto">Auto Detect</option>
+                          <option value="trend">Trend Only</option>
+                          <option value="mean-reversion">Mean Reversion Only</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          ADX Trend Min: {advancedConfig.adx_trend_min}
+                        </label>
+                        <input
+                          type="range"
+                          value={advancedConfig.adx_trend_min}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, adx_trend_min: parseFloat(e.target.value) }))}
+                          className="w-full"
+                          min="20"
+                          max="35"
+                          step="1"
+                        />
+                        <p className="text-xs text-gray-500">ADX ≥ this = trending</p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          ADX Mean Rev Max: {advancedConfig.adx_meanrev_max}
+                        </label>
+                        <input
+                          type="range"
+                          value={advancedConfig.adx_meanrev_max}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, adx_meanrev_max: parseFloat(e.target.value) }))}
+                          className="w-full"
+                          min="15"
+                          max="25"
+                          step="1"
+                        />
+                        <p className="text-xs text-gray-500">ADX ≤ this = ranging</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Risk Management */}
+                  <div className="border-l-4 border-red-500 pl-4">
+                    <h3 className="text-md font-semibold text-gray-800 mb-3">🛡️ Risk Management</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Risk Per Trade: {advancedConfig.risk_per_trade_pct}%
                       </label>
                       <input
                         type="range"
@@ -785,12 +1145,26 @@ export default function BacktestPage() {
                         max="2.0"
                         step="0.25"
                       />
-                      <p className="text-xs text-gray-500">{advancedConfig.risk_per_trade_pct}%</p>
                     </div>
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Max Trades/Day
+                          Daily Loss Limit: {advancedConfig.daily_loss_limit_pct}%
+                        </label>
+                        <input
+                          type="range"
+                          value={advancedConfig.daily_loss_limit_pct}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, daily_loss_limit_pct: parseFloat(e.target.value) }))}
+                          className="w-full"
+                          min="1"
+                          max="10"
+                          step="0.5"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Max Trades/Day: {advancedConfig.max_trades_per_day}
                       </label>
                       <input
                         type="range"
@@ -801,7 +1175,172 @@ export default function BacktestPage() {
                         max="200"
                         step="1"
                       />
-                      <p className="text-xs text-gray-500">{advancedConfig.max_trades_per_day}</p>
+                    </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Weekly Loss Limit: {advancedConfig.weekly_loss_limit_pct}%
+                        </label>
+                        <input
+                          type="range"
+                          value={advancedConfig.weekly_loss_limit_pct}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, weekly_loss_limit_pct: parseFloat(e.target.value) }))}
+                          className="w-full"
+                          min="2"
+                          max="15"
+                          step="0.5"
+                        />
+                        <p className="text-xs text-gray-500">Auto-pause if weekly loss exceeds</p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Max Concurrent Positions: {advancedConfig.max_concurrent}
+                        </label>
+                        <input
+                          type="range"
+                          value={advancedConfig.max_concurrent}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, max_concurrent: parseInt(e.target.value) }))}
+                          className="w-full"
+                          min="1"
+                          max="5"
+                          step="1"
+                        />
+                        <p className="text-xs text-gray-500">Max open positions simultaneously</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Safety Features */}
+                  <div className="border-l-4 border-orange-500 pl-4 mt-6">
+                    <h3 className="text-md font-semibold text-gray-800 mb-3">🛡️ Safety Features</h3>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Configure automatic safety limits to protect your bot from excessive losses.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Max Consecutive Losses: {advancedConfig.max_consecutive_losses || 5}
+                        </label>
+                        <input
+                          type="range"
+                          value={advancedConfig.max_consecutive_losses || 5}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, max_consecutive_losses: parseInt(e.target.value) }))}
+                          className="w-full"
+                          min="2"
+                          max="10"
+                          step="1"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Auto-pause bot after this many consecutive losses
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Exit Strategy */}
+                  <div className="border-l-4 border-green-500 pl-4">
+                    <h3 className="text-md font-semibold text-gray-800 mb-3">🎯 Exit Strategy</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          TP1 (R): {advancedConfig.tp1_r}
+                        </label>
+                        <input
+                          type="range"
+                          value={advancedConfig.tp1_r}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, tp1_r: parseFloat(e.target.value) }))}
+                          className="w-full"
+                          min="0.5"
+                          max="3.0"
+                          step="0.25"
+                        />
+                        <p className="text-xs text-gray-500">First take profit (R = Risk units)</p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          TP2 (R): {advancedConfig.tp2_r}
+                        </label>
+                        <input
+                          type="range"
+                          value={advancedConfig.tp2_r}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, tp2_r: parseFloat(e.target.value) }))}
+                          className="w-full"
+                          min="1.0"
+                          max="5.0"
+                          step="0.25"
+                        />
+                        <p className="text-xs text-gray-500">Second take profit</p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          TP1 Size: {(advancedConfig.tp1_size * 100).toFixed(0)}%
+                        </label>
+                        <input
+                          type="range"
+                          value={advancedConfig.tp1_size}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, tp1_size: parseFloat(e.target.value) }))}
+                          className="w-full"
+                          min="0.25"
+                          max="0.75"
+                          step="0.05"
+                        />
+                        <p className="text-xs text-gray-500">% to close at TP1</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Quick Presets */}
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    <h4 className="font-semibold text-blue-900 mb-3">⚡ Quick Presets</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setAdvancedConfig({
+                          ...advancedConfig,
+                          bias_mode: 'auto',
+                          regime_mode: 'trend',
+                          risk_per_trade_pct: 0.5,
+                          max_trades_per_day: 6,
+                          tp1_r: 1.5,
+                          tp2_r: 3.0
+                        })}
+                        className="px-4 py-2 bg-white border-2 border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50 font-medium"
+                      >
+                        🐢 Conservative
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAdvancedConfig({
+                          ...advancedConfig,
+                          bias_mode: 'auto',
+                          regime_mode: 'auto',
+                          risk_per_trade_pct: 0.75,
+                          max_trades_per_day: 8,
+                          tp1_r: 1.0,
+                          tp2_r: 2.0
+                        })}
+                        className="px-4 py-2 bg-white border-2 border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50 font-medium"
+                      >
+                        ⚖️ Balanced
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAdvancedConfig({
+                          ...advancedConfig,
+                          bias_mode: 'both',
+                          regime_mode: 'auto',
+                          risk_per_trade_pct: 1.0,
+                          max_trades_per_day: 12,
+                          tp1_r: 0.8,
+                          tp2_r: 1.5
+                        })}
+                        className="px-4 py-2 bg-white border-2 border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50 font-medium"
+                      >
+                        🚀 Aggressive
+                      </button>
                     </div>
                   </div>
                 </div>
