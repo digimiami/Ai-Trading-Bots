@@ -328,7 +328,7 @@ export default function WebhookTestPage() {
                   onChange={(e) => setTestPayload(e.target.value)}
                   rows={8}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
-                  placeholder='{"secret": "...", "botId": "...", "side": "buy", "mode": "paper"}'
+                  placeholder='{"secret": "...", "botId": "...", "action": "{{strategy.order.action}}", "mode": "paper"}'
                 />
               </div>
 
