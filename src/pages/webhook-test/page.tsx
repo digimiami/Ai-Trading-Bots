@@ -51,8 +51,14 @@ export default function WebhookTestPage() {
     if (selectedBot) {
       const bot = bots.find(b => b.id === selectedBot);
       if (bot) {
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
-        setWebhookUrl(`${supabaseUrl}/functions/v1/tradingview-webhook`);
+        // Use the same method as supabase.ts to get the URL
+        const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '';
+        if (!supabaseUrl) {
+          console.error('⚠️ Supabase URL not configured');
+          setWebhookUrl('/functions/v1/tradingview-webhook');
+        } else {
+          setWebhookUrl(`${supabaseUrl}/functions/v1/tradingview-webhook`);
+        }
         setWebhookSecret(bot.webhook_secret || '');
         
         // Generate test payload
@@ -84,10 +90,20 @@ export default function WebhookTestPage() {
         .order('created_at', { ascending: false })
         .limit(50);
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Error fetching webhook calls:', error);
+        // Check if table exists
+        if (error.code === '42P01' || error.message?.includes('does not exist')) {
+          console.error('⚠️ webhook_calls table does not exist. Please run the migration: 20250113_create_webhook_calls_table.sql');
+        }
+        setWebhookCalls([]);
+        return;
+      }
+      console.log(`✅ Fetched ${data?.length || 0} webhook calls`);
       setWebhookCalls(data || []);
     } catch (error) {
-      console.error('Error fetching webhook calls:', error);
+      console.error('❌ Error fetching webhook calls:', error);
+      setWebhookCalls([]);
     } finally {
       setLoadingCalls(false);
     }
@@ -104,7 +120,22 @@ export default function WebhookTestPage() {
 
     try {
       const payload = JSON.parse(testPayload);
-      const response = await fetch(webhookUrl, {
+      
+      // Ensure we have a full URL
+      let fullWebhookUrl = webhookUrl;
+      if (!webhookUrl.startsWith('http')) {
+        const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '';
+        if (supabaseUrl) {
+          fullWebhookUrl = `${supabaseUrl}${webhookUrl.startsWith('/') ? '' : '/'}${webhookUrl}`;
+        } else {
+          throw new Error('Supabase URL not configured. Please check your environment variables.');
+        }
+      }
+      
+      console.log('🚀 Sending webhook to:', fullWebhookUrl);
+      console.log('📦 Payload:', payload);
+      
+      const response = await fetch(fullWebhookUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -117,7 +148,7 @@ export default function WebhookTestPage() {
       try {
         responseData = JSON.parse(responseText);
       } catch {
-        responseData = { raw: responseText };
+        responseData = { raw: responseText.substring(0, 500) }; // Limit raw text length
       }
 
       setTestResult({
@@ -128,11 +159,12 @@ export default function WebhookTestPage() {
         timestamp: new Date().toISOString()
       });
 
-      // Refresh webhook calls
+      // Refresh webhook calls after a short delay to allow DB write
       setTimeout(() => {
         fetchWebhookCalls();
-      }, 1000);
+      }, 2000);
     } catch (error) {
+      console.error('❌ Webhook test error:', error);
       setTestResult({
         error: error instanceof Error ? error.message : String(error),
         timestamp: new Date().toISOString()
