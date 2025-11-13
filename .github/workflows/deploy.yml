@@ -72,6 +72,7 @@ jobs:
     name: 🌐 Deploy to VPS
     runs-on: ubuntu-latest
     needs: deploy-supabase # Wait for Supabase deployment first
+    continue-on-error: true # Don't fail entire workflow if VPS deployment fails
     
     steps:
       - name: ⬇️ Checkout Repository
@@ -85,128 +86,201 @@ jobs:
           echo "👤 Actor: ${{ github.actor }}"
           echo "📝 Commit: ${{ github.sha }}"
       
+      - name: 🔍 Check VPS Connectivity
+        id: check_vps
+        run: |
+          echo "🔍 Checking VPS connectivity..."
+          if [ -z "${{ secrets.VPS_HOST }}" ]; then
+            echo "⚠️ VPS_HOST secret is not set"
+            echo "vps_available=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          if [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
+            echo "⚠️ VPS_SSH_KEY secret is not set"
+            echo "vps_available=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Try to ping the host first
+          echo "📡 Testing connectivity to ${{ secrets.VPS_HOST }}..."
+          if timeout 5 ping -c 1 ${{ secrets.VPS_HOST }} 2>/dev/null || timeout 5 nc -zv ${{ secrets.VPS_HOST }} 22 2>/dev/null; then
+            echo "✅ VPS is reachable"
+            echo "vps_available=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ VPS is not reachable (timeout or connection refused)"
+            echo "vps_available=false" >> $GITHUB_OUTPUT
+          fi
+      
       - name: 🔑 Set up SSH
+        if: steps.check_vps.outputs.vps_available == 'true'
         uses: webfactory/ssh-agent@v0.7.0
         with:
           ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
       
       - name: 🚀 Deploy via SSH
+        if: steps.check_vps.outputs.vps_available == 'true'
+        timeout-minutes: 10
         run: |
-          # Connect to the VPS and run commands remotely
-          ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 ${{ secrets.VPS_USERNAME }}@${{ secrets.VPS_HOST }} bash << 'ENDSSH'
-            set -euo pipefail
+          # Connect to the VPS and run commands remotely with retry logic
+          MAX_RETRIES=3
+          RETRY_COUNT=0
+          SUCCESS=false
+          
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ] && [ "$SUCCESS" = false ]; do
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+            echo "🔄 Attempt $RETRY_COUNT of $MAX_RETRIES..."
             
-            echo "🚀 Starting VPS deployment..."
-            echo "📂 Current directory: $(pwd)"
-            echo "👤 User: $(whoami)"
-            
-            # Navigate to project directory
-            echo "📂 Navigating to project directory..."
-            if [ ! -d "/var/www/Ai-Trading-Bots" ]; then
-              echo "❌ Directory /var/www/Ai-Trading-Bots does not exist!"
-              exit 1
-            fi
-            cd "/var/www/Ai-Trading-Bots" || {
-              echo "❌ Failed to navigate to project directory"
-              exit 1
-            }
-            echo "✅ In project directory: $(pwd)"
-            
-            # Check git status
-            echo "📥 Checking git status..."
-            git status || {
-              echo "⚠️ Git status check failed, but continuing..."
-            }
-            
-            # Pull latest changes
-            echo "📥 Pulling latest changes..."
-            if ! git fetch origin master 2>&1; then
-              echo "⚠️ Git fetch failed, but continuing..."
-            fi
-            
-            if ! git reset --hard origin/master 2>&1; then
-              echo "❌ Git reset failed"
-              echo "📋 Git log:"
-              git log --oneline -5 || true
-              exit 1
-            fi
-            echo "✅ Git reset successful"
-            
-            # Check Node.js and npm versions
-            echo "📋 Node.js version: $(node --version || echo 'not found')"
-            echo "📋 npm version: $(npm --version || echo 'not found')"
-            
-            # Install dependencies
-            echo "📦 Installing dependencies..."
-            if ! npm install 2>&1; then
-              echo "❌ npm install failed"
-              exit 1
-            fi
-            echo "✅ Dependencies installed"
-            
-            # Build the application
-            echo "🔨 Building application..."
-            if ! npm run build 2>&1; then
-              echo "❌ npm run build failed"
-              echo "📋 Build output (last 50 lines):"
-              npm run build 2>&1 | tail -50 || true
-              exit 1
-            fi
-            echo "✅ Build successful"
-            
-            # Check PM2
-            echo "📋 Checking PM2..."
-            if ! command -v pm2 &> /dev/null; then
-              echo "❌ PM2 is not installed or not in PATH"
-              exit 1
-            fi
-            echo "✅ PM2 found: $(pm2 --version || echo 'version check failed')"
-            
-            # Restart PM2 process
-            echo "🔄 Checking PM2 processes..."
-            pm2 list || echo "⚠️ PM2 list failed, but continuing..."
-            
-            echo "🔄 Restarting application..."
-            if pm2 list | grep -q "pablobots"; then
-              echo "📌 Process 'pablobots' exists, restarting..."
-              if ! pm2 restart pablobots 2>&1; then
-                echo "⚠️ PM2 restart failed, trying to start..."
-                pm2 delete pablobots 2>&1 || true
-                if ! pm2 start --name pablobots npm -- run preview 2>&1; then
-                  echo "❌ PM2 start failed"
-                  exit 1
-                fi
-              fi
-            else
-              echo "📌 Starting new PM2 process..."
+            # Try SSH connection with retry
+            if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 -o ServerAliveInterval=60 -o ServerAliveCountMax=3 ${{ secrets.VPS_USERNAME }}@${{ secrets.VPS_HOST }} bash << 'ENDSSH'
+          set -euo pipefail
+          
+          echo "🚀 Starting VPS deployment..."
+          echo "📂 Current directory: $(pwd)"
+          echo "👤 User: $(whoami)"
+          
+          # Navigate to project directory
+          echo "📂 Navigating to project directory..."
+          if [ ! -d "/var/www/Ai-Trading-Bots" ]; then
+            echo "❌ Directory /var/www/Ai-Trading-Bots does not exist!"
+            exit 1
+          fi
+          cd "/var/www/Ai-Trading-Bots" || {
+            echo "❌ Failed to navigate to project directory"
+            exit 1
+          }
+          echo "✅ In project directory: $(pwd)"
+          
+          # Check git status
+          echo "📥 Checking git status..."
+          git status || {
+            echo "⚠️ Git status check failed, but continuing..."
+          }
+          
+          # Pull latest changes
+          echo "📥 Pulling latest changes..."
+          if ! git fetch origin master 2>&1; then
+            echo "⚠️ Git fetch failed, but continuing..."
+          fi
+          
+          if ! git reset --hard origin/master 2>&1; then
+            echo "❌ Git reset failed"
+            echo "📋 Git log:"
+            git log --oneline -5 || true
+            exit 1
+          fi
+          echo "✅ Git reset successful"
+          
+          # Check Node.js and npm versions
+          echo "📋 Node.js version: $(node --version || echo 'not found')"
+          echo "📋 npm version: $(npm --version || echo 'not found')"
+          
+          # Install dependencies
+          echo "📦 Installing dependencies..."
+          if ! npm install 2>&1; then
+            echo "❌ npm install failed"
+            exit 1
+          fi
+          echo "✅ Dependencies installed"
+          
+          # Build the application
+          echo "🔨 Building application..."
+          if ! npm run build 2>&1; then
+            echo "❌ npm run build failed"
+            echo "📋 Build output (last 50 lines):"
+            npm run build 2>&1 | tail -50 || true
+            exit 1
+          fi
+          echo "✅ Build successful"
+          
+          # Check PM2
+          echo "📋 Checking PM2..."
+          if ! command -v pm2 &> /dev/null; then
+            echo "❌ PM2 is not installed or not in PATH"
+            exit 1
+          fi
+          echo "✅ PM2 found: $(pm2 --version || echo 'version check failed')"
+          
+          # Restart PM2 process
+          echo "🔄 Checking PM2 processes..."
+          pm2 list || echo "⚠️ PM2 list failed, but continuing..."
+          
+          echo "🔄 Restarting application..."
+          if pm2 list | grep -q "pablobots"; then
+            echo "📌 Process 'pablobots' exists, restarting..."
+            if ! pm2 restart pablobots 2>&1; then
+              echo "⚠️ PM2 restart failed, trying to start..."
+              pm2 delete pablobots 2>&1 || true
               if ! pm2 start --name pablobots npm -- run preview 2>&1; then
                 echo "❌ PM2 start failed"
                 exit 1
               fi
             fi
-            echo "✅ PM2 process restarted"
-            
-            # Save PM2 process
-            echo "💾 Saving PM2 process..."
-            pm2 save 2>&1 || {
-              echo "⚠️ PM2 save failed, but continuing..."
-            }
-            
-            # Show PM2 status
-            echo "📊 PM2 status:"
-            pm2 status || echo "⚠️ Could not get PM2 status"
-            
-            # Show recent logs
-            echo "📋 Recent logs (last 10 lines):"
-            pm2 logs pablobots --lines 10 --nostream 2>&1 || {
-              echo "⚠️ Could not retrieve logs"
-            }
-            
-            echo "✅ Deployment completed successfully!"
+          else
+            echo "📌 Starting new PM2 process..."
+            if ! pm2 start --name pablobots npm -- run preview 2>&1; then
+              echo "❌ PM2 start failed"
+              exit 1
+            fi
+          fi
+          echo "✅ PM2 process restarted"
+          
+          # Save PM2 process
+          echo "💾 Saving PM2 process..."
+          pm2 save 2>&1 || {
+            echo "⚠️ PM2 save failed, but continuing..."
+          }
+          
+          # Show PM2 status
+          echo "📊 PM2 status:"
+          pm2 status || echo "⚠️ Could not get PM2 status"
+          
+          # Show recent logs
+          echo "📋 Recent logs (last 10 lines):"
+          pm2 logs pablobots --lines 10 --nostream 2>&1 || {
+            echo "⚠️ Could not retrieve logs"
+          }
+          
+          echo "✅ Deployment completed successfully!"
           ENDSSH
+            then
+              SUCCESS=true
+              echo "✅ SSH deployment successful!"
+            else
+              SSH_EXIT_CODE=$?
+              if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+                echo "⚠️ SSH deployment failed (exit code: $SSH_EXIT_CODE), retrying in 10 seconds..."
+                sleep 10
+              else
+                echo "❌ SSH deployment failed after $MAX_RETRIES attempts (last exit code: $SSH_EXIT_CODE)"
+                echo "💡 Common issues:"
+                echo "   - VPS is down or unreachable"
+                echo "   - SSH port 22 is blocked by firewall"
+                echo "   - SSH key authentication failed"
+                echo "   - Network connectivity issues"
+                exit 1
+              fi
+            fi
+          done
+      
+      - name: ⚠️ VPS Deployment Skipped
+        if: steps.check_vps.outputs.vps_available != 'true'
+        run: |
+          echo "⚠️ VPS deployment skipped - VPS is not reachable or secrets are not configured"
+          echo "📝 Supabase deployment completed successfully"
+          echo "💡 To deploy to VPS manually, check:"
+          echo "   1. VPS is running and accessible"
+          echo "   2. SSH port 22 is open"
+          echo "   3. VPS_HOST, VPS_USERNAME, and VPS_SSH_KEY secrets are configured"
       
       - name: 📊 Deployment Summary
+        if: always()
         run: |
-          echo "✅ VPS deployment completed!"
-          echo "🌐 Your trading bot should be live at: https://${{ secrets.VPS_HOST }}"
-          echo "📱 Check PM2 status: ssh ${{ secrets.VPS_USERNAME }}@${{ secrets.VPS_HOST }} 'pm2 status'"
+          if [ "${{ steps.check_vps.outputs.vps_available }}" = "true" ]; then
+            echo "✅ VPS deployment completed!"
+            echo "🌐 Your trading bot should be live at: https://${{ secrets.VPS_HOST }}"
+            echo "📱 Check PM2 status: ssh ${{ secrets.VPS_USERNAME }}@${{ secrets.VPS_HOST }} 'pm2 status'"
+          else
+            echo "⚠️ VPS deployment was skipped"
+            echo "✅ Supabase deployment completed successfully"
+          fi
