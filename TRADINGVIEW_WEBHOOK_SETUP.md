@@ -39,16 +39,61 @@ Configure your TradingView alert to call:
 https://<YOUR_PROJECT>.supabase.co/functions/v1/tradingview-webhook
 ```
 
-with `POST` and JSON body similar to:
+### Alert Message Format
+
+In your TradingView alert, use the following JSON message format. TradingView will automatically replace the variables with actual values:
 
 ```json
 {
   "secret": "REPLACE_WITH_TRADINGVIEW_WEBHOOK_SECRET",
   "botId": "e0f9c1e2-1234-5678-9abc-def012345678",
-  "side": "buy",
+  "action": "{{strategy.order.action}}",
   "mode": "real",
   "size_multiplier": 1.0,
-  "reason": "TradingView RSI crossover"
+  "reason": "TradingView {{strategy.order.comment}}"
+}
+```
+
+**Key Variable: `{{strategy.order.action}}`**
+
+This TradingView variable automatically provides:
+- `"buy"` - When entering a long position
+- `"sell"` - When entering a short position  
+- `"long"` - Alternative format for long positions (also supported)
+- `"short"` - Alternative format for short positions (also supported)
+
+The webhook automatically converts:
+- `"buy"` or `"long"` → Opens/closes long position
+- `"sell"` or `"short"` → Opens/closes short position
+
+### Alternative Field Names
+
+You can also use these field names (all are supported):
+- `"action"` - Uses `{{strategy.order.action}}` (recommended)
+- `"side"` - Alternative to `action`
+- `"signal"` - Alternative to `action`
+
+### Complete Example for Long/Short Trading
+
+**For Long Positions (Buy):**
+```json
+{
+  "secret": "your_webhook_secret_here",
+  "botId": "your_bot_id_here",
+  "action": "{{strategy.order.action}}",
+  "mode": "real",
+  "reason": "Long entry: {{strategy.order.comment}}"
+}
+```
+
+**For Short Positions (Sell):**
+```json
+{
+  "secret": "your_webhook_secret_here",
+  "botId": "your_bot_id_here",
+  "action": "{{strategy.order.action}}",
+  "mode": "real",
+  "reason": "Short entry: {{strategy.order.comment}}"
 }
 ```
 
@@ -56,13 +101,13 @@ with `POST` and JSON body similar to:
 
 | Field | Required | Notes |
 | ----- | -------- | ----- |
-| `secret` | ✅ | Must equal the bot’s webhook secret (shown in the UI) or the legacy global secret if still used. |
+| `secret` | ✅ | Must equal the bot's webhook secret (shown in the UI) or the legacy global secret if still used. |
 | `botId` | ✅ | UUID of the Pablo trading bot to control. |
-| `side` | ✅ | `buy`, `sell`, `long`, or `short`. (`long` maps to `buy`, `short` to `sell`). |
+| `action` / `side` / `signal` | ✅ | Use `{{strategy.order.action}}` for automatic buy/sell/long/short detection. Accepts: `buy`, `sell`, `long`, `short`, `enter_long`, `enter_short`, `entry_long`, `entry_short`. |
 | `mode` | Optional | `real` or `paper`. Defaults to `real`; `paper` forces a paper trade even if the bot is live. |
-| `size_multiplier` | Optional | Multiplies the bot’s configured trade amount (e.g. `1.5` increases size by 50%). |
-| `reason` / `note` / `strategy` | Optional | Stored with the signal and visible in bot activity logs. |
-| `trigger_execution` | Optional | Overrides the bot-level default. When omitted, the webhook uses the “Immediate Execution” toggle from the UI. Set `false` to queue without triggering the executor. |
+| `size_multiplier` | Optional | Multiplies the bot's configured trade amount (e.g. `1.5` increases size by 50%). |
+| `reason` / `note` / `strategy` | Optional | Stored with the signal and visible in bot activity logs. Can use TradingView variables like `{{strategy.order.comment}}`. |
+| `trigger_execution` | Optional | Overrides the bot-level default. When omitted, the webhook uses the "Immediate Execution" toggle from the UI. Set `false` to queue without triggering the executor. |
 
 ## 5. Testing
 

@@ -77,11 +77,11 @@ export default function WebhookTestPage() {
         const botSecret = bot.webhook_secret || bot.webhookSecret || '';
         setWebhookSecret(botSecret);
         
-        // Generate test payload
+        // Generate test payload (using 'action' field with TradingView format)
         const payload = {
           secret: botSecret,
           botId: bot.id,
-          side: 'buy',
+          action: 'buy', // Can be: 'buy', 'sell', 'long', 'short' (TradingView uses {{strategy.order.action}})
           mode: 'paper',
           reason: 'Test webhook from testing interface'
         };
@@ -274,7 +274,7 @@ export default function WebhookTestPage() {
                             const payload = {
                               secret: newSecret,
                               botId: bot.id,
-                              side: 'buy',
+                              action: 'buy', // Can be: 'buy', 'sell', 'long', 'short' (TradingView uses {{strategy.order.action}})
                               mode: 'paper',
                               reason: 'Test webhook from testing interface'
                             };
