@@ -6,6 +6,19 @@ import Button from '../../components/base/Button';
 import { supabase } from '../../lib/supabase';
 import { useBots } from '../../hooks/useBots';
 
+const generateWebhookSecret = () => {
+  try {
+    const array = new Uint8Array(18);
+    if (window?.crypto?.getRandomValues) {
+      window.crypto.getRandomValues(array);
+      return Array.from(array, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    }
+  } catch (error) {
+    console.warn('Falling back to Math.random for webhook secret generation:', error);
+  }
+  return Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 12);
+};
+
 interface WebhookCall {
   id: string;
   bot_id: string | null;
@@ -30,7 +43,7 @@ interface WebhookCall {
 
 export default function WebhookTestPage() {
   const navigate = useNavigate();
-  const { bots } = useBots();
+  const { bots, updateBot } = useBots();
   const [selectedBot, setSelectedBot] = useState<string>('');
   const [webhookUrl, setWebhookUrl] = useState<string>('');
   const [webhookSecret, setWebhookSecret] = useState<string>('');
@@ -235,20 +248,58 @@ export default function WebhookTestPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Webhook Secret
                 </label>
-                <div className="flex gap-2">
-                  <input
-                    type={showSecret ? 'text' : 'password'}
-                    value={webhookSecret}
-                    readOnly
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
-                  />
-                  <Button
-                    variant="secondary"
-                    onClick={() => setShowSecret(!showSecret)}
-                  >
-                    <i className={showSecret ? 'ri-eye-off-line' : 'ri-eye-line'}></i>
-                  </Button>
-                </div>
+                {!webhookSecret ? (
+                  <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                    <p className="text-sm text-orange-800 mb-2">
+                      ⚠️ No webhook secret configured for this bot
+                    </p>
+                    <Button
+                      onClick={async () => {
+                        if (!selectedBot) return;
+                        const newSecret = generateWebhookSecret();
+                        try {
+                          await updateBot(selectedBot, { webhookSecret: newSecret });
+                          setWebhookSecret(newSecret);
+                          const bot = bots.find(b => b.id === selectedBot);
+                          if (bot) {
+                            const payload = {
+                              secret: newSecret,
+                              botId: bot.id,
+                              side: 'buy',
+                              mode: 'paper',
+                              reason: 'Test webhook from testing interface'
+                            };
+                            setTestPayload(JSON.stringify(payload, null, 2));
+                          }
+                          alert('✅ Webhook secret generated! You can now test the webhook.');
+                        } catch (error) {
+                          console.error('Error generating webhook secret:', error);
+                          alert('❌ Failed to generate webhook secret. Please try again.');
+                        }
+                      }}
+                      variant="primary"
+                      size="sm"
+                    >
+                      <i className="ri-refresh-line mr-2"></i>
+                      Generate Webhook Secret
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <input
+                      type={showSecret ? 'text' : 'password'}
+                      value={webhookSecret}
+                      readOnly
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg bg-gray-50"
+                    />
+                    <Button
+                      variant="secondary"
+                      onClick={() => setShowSecret(!showSecret)}
+                    >
+                      <i className={showSecret ? 'ri-eye-off-line' : 'ri-eye-line'}></i>
+                    </Button>
+                  </div>
+                )}
               </div>
 
               {/* Test Payload */}
@@ -269,11 +320,17 @@ export default function WebhookTestPage() {
               <Button
                 onClick={handleTestWebhook}
                 loading={isTesting}
+                disabled={!webhookSecret}
                 className="w-full"
               >
                 <i className="ri-send-plane-line mr-2"></i>
                 Send Test Webhook
               </Button>
+              {!webhookSecret && (
+                <p className="text-xs text-orange-600 mt-1">
+                  ⚠️ Please generate a webhook secret first
+                </p>
+              )}
 
               {/* Test Result */}
               {testResult && (
