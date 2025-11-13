@@ -977,9 +977,23 @@ class BotExecutor {
     try {
       console.log(`🤖 Executing bot: ${bot.name} (${bot.id}) - Status: ${bot.status}`);
       
+      // Process manual signals FIRST, regardless of bot status
+      // This allows webhook-triggered trades even when bot is stopped
       const manualProcessed = await this.processManualSignals(bot);
       if (manualProcessed > 0) {
         console.log(`📬 Processed ${manualProcessed} manual trade signal(s) for bot ${bot.name}`);
+        // If we processed manual signals, we can return early if bot is stopped
+        // Manual signals are handled independently of bot status
+        if (bot.status !== 'running') {
+          console.log(`ℹ️ Bot ${bot.name} is ${bot.status}, but manual signals were processed. Skipping regular execution.`);
+          return;
+        }
+      }
+      
+      // If bot is stopped and no manual signals, skip execution
+      if (bot.status !== 'running') {
+        console.log(`⏸️ Bot ${bot.name} is ${bot.status}, skipping execution`);
+        return;
       }
 
       // ⚠️ CRITICAL: Check paper trading mode FIRST before any real API calls
@@ -1808,6 +1822,7 @@ class BotExecutor {
 
   private async processManualSignals(bot: any): Promise<number> {
     try {
+      console.log(`🔍 Checking for manual trade signals for bot ${bot.id}...`);
       const { data: pendingSignals, error } = await this.supabaseClient
         .from('manual_trade_signals')
         .select('*')
@@ -1821,13 +1836,16 @@ class BotExecutor {
       }
 
       if (!pendingSignals || pendingSignals.length === 0) {
+        console.log(`ℹ️ No pending manual trade signals for bot ${bot.id}`);
         return 0;
       }
 
+      console.log(`📬 Found ${pendingSignals.length} pending manual trade signal(s) for bot ${bot.id}`);
       let processedCount = 0;
 
       for (const signal of pendingSignals) {
         const signalId = signal.id;
+        console.log(`🔄 Processing manual signal ${signalId}: ${signal.side} (${signal.mode})`);
 
         try {
           if (signal.status === 'pending') {
@@ -1838,6 +1856,7 @@ class BotExecutor {
               .eq('status', 'pending');
           }
 
+          console.log(`⚡ Executing manual trade: ${signal.side} for bot ${bot.name} (${signal.mode} mode)`);
           const result = await this.executeManualTrade(bot, {
             side: signal.side,
             reason: signal.reason || 'Manual trade signal',
@@ -1857,10 +1876,11 @@ class BotExecutor {
             })
             .eq('id', signalId);
 
+          console.log(`✅ Manual signal ${signalId} processed successfully`);
           processedCount += 1;
         } catch (signalError) {
           const errorMessage = signalError instanceof Error ? signalError.message : String(signalError);
-          console.error(`❌ Manual trade signal failed for bot ${bot.id}:`, errorMessage);
+          console.error(`❌ Manual trade signal ${signalId} failed for bot ${bot.id}:`, errorMessage);
 
           await this.addBotLog(bot.id, {
             level: 'error',

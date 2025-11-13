@@ -417,14 +417,28 @@ serve(async (req) => {
 
     let triggerResponse: { ok: boolean; status: number; message?: string } | null = null;
 
-    if (shouldTrigger && cronSecret) {
+    if (shouldTrigger) {
       try {
+        // Always try to use x-cron-secret if available (preferred method)
+        // If not available, we'll still try but it may fail if CRON_SECRET is not set in bot-executor
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json"
+        };
+        
+        if (cronSecret) {
+          headers["x-cron-secret"] = cronSecret;
+          console.log(`🚀 Triggering immediate bot execution for bot ${bot.id} using x-cron-secret...`);
+        } else {
+          // Fallback: Use service role key as Authorization header
+          // Note: This requires bot-executor to accept service role key
+          headers["Authorization"] = `Bearer ${serviceRoleKey}`;
+          console.log(`🚀 Triggering immediate bot execution for bot ${bot.id} using service role key...`);
+          console.warn(`⚠️ CRON_SECRET not set - using service role key. Ensure bot-executor accepts this.`);
+        }
+        
         const triggerFetch = await fetch(`${supabaseUrl}/functions/v1/bot-executor`, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-cron-secret": cronSecret
-          },
+          headers,
           body: JSON.stringify({
             action: "execute_bot",
             botId: bot.id
@@ -437,9 +451,22 @@ serve(async (req) => {
           status: triggerFetch.status,
           message: triggerText
         };
+        
+        if (triggerFetch.ok) {
+          console.log(`✅ Bot execution triggered successfully for bot ${bot.id}`);
+        } else {
+          console.error(`❌ Bot execution trigger failed: ${triggerFetch.status} - ${triggerText}`);
+        }
       } catch (triggerError) {
         console.error("⚠️ Failed to trigger immediate bot execution:", triggerError);
+        triggerResponse = {
+          ok: false,
+          status: 0,
+          message: triggerError instanceof Error ? triggerError.message : String(triggerError)
+        };
       }
+    } else {
+      console.log(`ℹ️ Immediate execution disabled for bot ${bot.id}. Signal will be processed on next bot execution cycle.`);
     }
 
     return new Response(JSON.stringify({
