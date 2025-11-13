@@ -32,6 +32,7 @@ interface PairPerformance {
   openPositions: number;
   unrealizedPnL: number;
   runningHours: number;
+  botNames: string[];
 }
 
 interface PaperPerformance {
@@ -128,6 +129,34 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
       }
       
       const { data: openPositions } = await openPositionsQuery;
+
+      // Fetch bot names for all bot_ids found in trades and positions
+      const botIds = new Set<string>();
+      if (trades) {
+        trades.forEach((trade: any) => {
+          if (trade.bot_id) botIds.add(trade.bot_id);
+        });
+      }
+      if (openPositions) {
+        openPositions.forEach((position: any) => {
+          if (position.bot_id) botIds.add(position.bot_id);
+        });
+      }
+
+      // Fetch bot names
+      const botNamesMap = new Map<string, string>();
+      if (botIds.size > 0) {
+        const { data: bots } = await supabase
+          .from('trading_bots')
+          .select('id, name')
+          .in('id', Array.from(botIds));
+        
+        if (bots) {
+          bots.forEach((bot: any) => {
+            botNamesMap.set(bot.id, bot.name || 'Unknown Bot');
+          });
+        }
+      }
 
       const accountData = account || (await ensureAccountExists());
 
@@ -304,7 +333,8 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
               profitFactor: 0,
               openPositions: 0,
               unrealizedPnL: 0,
-              runningHours: 0
+              runningHours: 0,
+              botNames: []
             });
           }
           
@@ -313,6 +343,14 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
           pairPerf.totalPnL += trade.pnl || 0;
           pairPerf.totalFees += trade.fees || 0;
           pairPerf.totalVolume += parseFloat(trade.quantity || 0) * parseFloat(trade.price || 0);
+          
+          // Add bot name if available
+          if (trade.bot_id && botNamesMap.has(trade.bot_id)) {
+            const botName = botNamesMap.get(trade.bot_id)!;
+            if (!pairPerf.botNames.includes(botName)) {
+              pairPerf.botNames.push(botName);
+            }
+          }
           
           if ((trade.pnl || 0) > 0) {
             pairPerf.winningTrades++;
@@ -340,12 +378,22 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
               profitFactor: 0,
               openPositions: 0,
               unrealizedPnL: 0,
-              runningHours: 0
+              runningHours: 0,
+              botNames: []
             });
             }
             
             const pairPerf = pairsMap.get(symbol)!;
             pairPerf.openPositions++;
+            
+            // Add bot name if available
+            if (position.bot_id && botNamesMap.has(position.bot_id)) {
+              const botName = botNamesMap.get(position.bot_id)!;
+              if (!pairPerf.botNames.includes(botName)) {
+                pairPerf.botNames.push(botName);
+              }
+            }
+            
             // Get unrealized PnL from positionsWithPrices
             const positionWithPrice = positionsWithPrices.find((p) => p.id === position.id);
             if (positionWithPrice) {
@@ -474,12 +522,22 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
                 profitFactor: 0,
                 openPositions: 0,
                 unrealizedPnL: 0,
-                runningHours: 0
+                runningHours: 0,
+                botNames: []
               });
             }
             
             const pairPerf = pairsMap.get(symbol)!;
             pairPerf.openPositions++;
+            
+            // Add bot name if available
+            if (position.bot_id && botNamesMap.has(position.bot_id)) {
+              const botName = botNamesMap.get(position.bot_id)!;
+              if (!pairPerf.botNames.includes(botName)) {
+                pairPerf.botNames.push(botName);
+              }
+            }
+            
             const positionWithPrice = positionsWithPrices.find((p) => p.id === position.id);
             if (positionWithPrice) {
               pairPerf.unrealizedPnL += positionWithPrice.unrealized_pnl || 0;
@@ -831,7 +889,22 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
                   className="p-4 bg-gray-50 rounded-lg border border-gray-200 hover:shadow-md transition-shadow"
                 >
                   <div className="flex items-center justify-between mb-3">
-                    <h4 className="font-semibold text-gray-900 dark:text-white text-lg">{pair.symbol}</h4>
+                    <div>
+                      <h4 className="font-semibold text-gray-900 dark:text-white text-lg">{pair.symbol}</h4>
+                      {pair.botNames && pair.botNames.length > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {pair.botNames.map((botName, idx) => (
+                            <span
+                              key={idx}
+                              className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200"
+                            >
+                              <i className="ri-robot-line mr-1"></i>
+                              {botName}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     <div className={`text-right ${totalPnLWithUnrealized >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                       <div className="text-xl font-bold">
                         {totalPnLWithUnrealized >= 0 ? '+' : ''}${totalPnLWithUnrealized.toFixed(2)}
