@@ -378,6 +378,31 @@ All settings have been applied to your bot configuration.`;
             </div>
           )}
 
+          {/* Notification when coming from backtest */}
+          {isFromBacktest && backtestData && (
+            <Card className="p-4 mb-6 bg-green-50 border-2 border-green-300">
+              <div className="flex items-start">
+                <div className="flex-shrink-0">
+                  <i className="ri-checkbox-circle-line text-2xl text-green-600"></i>
+                </div>
+                <div className="ml-3 flex-1">
+                  <h3 className="text-sm font-semibold text-green-900 mb-1">
+                    ✅ Form Pre-filled from Backtest
+                  </h3>
+                  <p className="text-sm text-green-700 mb-2">
+                    Your bot settings have been automatically filled from the backtest results. Review and adjust as needed, then click "Create Bot" to create your trading bot.
+                  </p>
+                  {backtestData?.backtestResults && (
+                    <div className="text-xs text-green-600 mt-2">
+                      <span className="font-semibold">Backtest Performance:</span> {backtestData.backtestResults.win_rate?.toFixed(1) || 0}% win rate, 
+                      ${(backtestData.backtestResults.net_profit || backtestData.backtestResults.total_pnl || 0).toFixed(2)} net profit
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Card>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-6">
             {/* Basic Configuration */}
             <Card className="p-6">
