@@ -571,24 +571,32 @@ serve(async (req) => {
     delete sanitizedPayload.webhook_secret;
 
     if (bot) {
-      await supabaseClient
-        .from("bot_activity_logs")
-        .insert({
-          bot_id: bot.id,
-          level: "info",
-          category: "webhook",
-          message: `TradingView signal received: ${normalizedSide.toUpperCase()} (${mode.toUpperCase()})`,
-          details: {
-            ...sanitizedPayload,
-            mode,
-            size_multiplier: sizeMultiplier,
-            source: template ? "signal-template" : "tradingview-webhook",
-            template_id: template?.id,
-            received_at: new Date().toISOString(),
-            trigger_execution: shouldTrigger
-          },
-          timestamp: new Date().toISOString()
-        });
+      // Log to bot_activity_logs with 'trade' category so it shows in bot logs
+      try {
+        await supabaseClient
+          .from("bot_activity_logs")
+          .insert({
+            bot_id: bot.id,
+            level: "info",
+            category: "trade", // Use 'trade' category so it appears in bot logs
+            message: `📥 TradingView webhook signal received: ${normalizedSide.toUpperCase()} (${mode.toUpperCase()})`,
+            details: {
+              ...sanitizedPayload,
+              mode,
+              size_multiplier: sizeMultiplier,
+              source: template ? "signal-template" : "tradingview-webhook",
+              template_id: template?.id,
+              received_at: new Date().toISOString(),
+              trigger_execution: shouldTrigger,
+              webhook_call_id: webhookCallId
+            },
+            timestamp: new Date().toISOString()
+          });
+        console.log(`✅ Logged TradingView signal to bot_activity_logs for bot ${bot.id}`);
+      } catch (logError) {
+        console.error(`❌ Failed to log TradingView signal to bot_activity_logs:`, logError);
+        // Don't fail the webhook if logging fails
+      }
     }
 
     let signal = null;
