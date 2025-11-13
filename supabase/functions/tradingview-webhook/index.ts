@@ -575,14 +575,20 @@ serve(async (req) => {
       // Use clear BUY/SELL ALERT message format
       const alertEmoji = normalizedSide === 'buy' ? '🟢' : '🔴';
       const alertType = normalizedSide.toUpperCase() + ' ALERT';
+      const logMessage = `${alertEmoji} ${alertType} TRIGGERED: TradingView webhook signal received (${mode.toUpperCase()} mode)`;
+      
+      console.log(`📝 Attempting to log ${alertType} to bot_activity_logs for bot ${bot.id}...`);
+      console.log(`   Bot ID: ${bot.id}, User ID: ${bot.user_id}`);
+      console.log(`   Message: ${logMessage}`);
+      
       try {
-        const { error: logError } = await supabaseClient
+        const { data: logData, error: logError } = await supabaseClient
           .from("bot_activity_logs")
           .insert({
             bot_id: bot.id,
             level: "info",
             category: "trade", // Use 'trade' category so it appears in bot logs
-            message: `${alertEmoji} ${alertType} TRIGGERED: TradingView webhook signal received (${mode.toUpperCase()} mode)`,
+            message: logMessage,
             details: {
               ...sanitizedPayload,
               side: normalizedSide,
@@ -596,15 +602,28 @@ serve(async (req) => {
               alert_type: alertType
             },
             timestamp: new Date().toISOString()
-          });
+          })
+          .select();
         
         if (logError) {
-          console.error(`❌ Failed to log TradingView signal to bot_activity_logs:`, logError);
+          console.error(`❌ Failed to log TradingView signal to bot_activity_logs:`, {
+            error: logError,
+            code: logError.code,
+            message: logError.message,
+            details: logError.details,
+            hint: logError.hint,
+            bot_id: bot.id
+          });
         } else {
-          console.log(`✅ Logged ${alertType} to bot_activity_logs for bot ${bot.id}`);
+          console.log(`✅ Successfully logged ${alertType} to bot_activity_logs:`, logData);
         }
       } catch (logError) {
-        console.error(`❌ Exception logging TradingView signal to bot_activity_logs:`, logError);
+        console.error(`❌ Exception logging TradingView signal to bot_activity_logs:`, {
+          error: logError,
+          message: logError instanceof Error ? logError.message : String(logError),
+          stack: logError instanceof Error ? logError.stack : undefined,
+          bot_id: bot.id
+        });
         // Don't fail the webhook if logging fails
       }
     }
