@@ -336,15 +336,20 @@ export default function WebhookTestPage() {
               <Button
                 onClick={handleTestWebhook}
                 loading={isTesting}
-                disabled={!webhookSecret}
+                disabled={!webhookSecret || webhookSecret.trim() === '' || !selectedBot}
                 className="w-full"
               >
                 <i className="ri-send-plane-line mr-2"></i>
                 Send Test Webhook
               </Button>
-              {!webhookSecret && (
+              {(!webhookSecret || webhookSecret.trim() === '') && (
                 <p className="text-xs text-orange-600 mt-1">
                   ⚠️ Please generate a webhook secret first
+                </p>
+              )}
+              {webhookSecret && webhookSecret.trim() !== '' && selectedBot && (
+                <p className="text-xs text-green-600 mt-1">
+                  ✅ Ready to test! Secret is configured.
                 </p>
               )}
 
