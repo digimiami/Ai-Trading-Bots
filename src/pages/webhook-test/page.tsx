@@ -261,11 +261,14 @@ export default function WebhookTestPage() {
                         if (!selectedBot) return;
                         const newSecret = generateWebhookSecret();
                         try {
+                          console.log('🔄 Generating webhook secret for bot:', selectedBot);
                           await updateBot(selectedBot, { webhookSecret: newSecret });
-                          // Update local state immediately
-                          setWebhookSecret(newSecret);
                           
-                          // Update the payload with the new secret
+                          // Update local state immediately (don't wait for bots list refresh)
+                          setWebhookSecret(newSecret);
+                          console.log('✅ Webhook secret state updated:', newSecret);
+                          
+                          // Update the payload with the new secret immediately
                           const bot = bots.find(b => b.id === selectedBot);
                           if (bot) {
                             const payload = {
@@ -276,11 +279,14 @@ export default function WebhookTestPage() {
                               reason: 'Test webhook from testing interface'
                             };
                             setTestPayload(JSON.stringify(payload, null, 2));
+                            console.log('✅ Test payload updated with new secret');
                           }
                           
-                          // Force a re-render by updating the selected bot
-                          // This ensures the UI reflects the new secret
-                          console.log('✅ Webhook secret generated and saved:', newSecret);
+                          // Small delay to ensure state updates are processed
+                          setTimeout(() => {
+                            console.log('✅ Webhook secret generated! Button should now be enabled.');
+                          }, 100);
+                          
                           alert('✅ Webhook secret generated! You can now test the webhook.');
                         } catch (error) {
                           console.error('❌ Error generating webhook secret:', error);
