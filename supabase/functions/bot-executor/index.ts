@@ -4343,11 +4343,25 @@ class PaperTradingExecutor {
             // Otherwise, continue to throw original error
           }
           
-          // Provide helpful error message with symbol format suggestions
-          const suggestedFormat = bot.symbol.startsWith('1000') 
-            ? bot.symbol.replace(/^1000/, '') 
-            : '1000' + bot.symbol;
-          throw new Error(`Invalid price for ${bot.symbol} - market data unavailable. Symbol may not exist for ${tradingType} trading on ${bot.exchange}, or may require a different format (e.g., try ${suggestedFormat}). Please verify the symbol on the exchange.`);
+          // For major coins like BTC, ETH, etc., they don't use 1000 prefix
+          // Only smaller coins like PEPE, FLOKI use 1000 prefix
+          const majorCoins = ['BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'ADA', 'DOGE', 'DOT', 'MATIC', 'AVAX', 'LINK', 'UNI', 'ATOM', 'LTC', 'ETC', 'XLM', 'ALGO', 'VET', 'FIL', 'TRX'];
+          const isMajorCoin = majorCoins.some(coin => bot.symbol.startsWith(coin));
+          
+          let suggestedFormat = '';
+          if (isMajorCoin) {
+            // Major coins: BTCUSDT works for both spot and futures, no prefix needed
+            // The issue might be API availability or network error
+            suggestedFormat = `${bot.symbol} (should work for both spot and futures - check API availability)`;
+          } else if (bot.symbol.startsWith('1000')) {
+            // Already has prefix, try without
+            suggestedFormat = bot.symbol.replace(/^1000/, '');
+          } else {
+            // Smaller coins might need prefix for futures
+            suggestedFormat = `1000${bot.symbol}`;
+          }
+          
+          throw new Error(`Invalid price for ${bot.symbol} - market data unavailable for ${tradingType} trading on ${bot.exchange}. ${isMajorCoin ? 'Major coins like BTC/ETH should work - this might be a temporary API issue.' : `Try alternative format: ${suggestedFormat}`} Please verify the symbol exists on the exchange.`);
         }
       }
       
