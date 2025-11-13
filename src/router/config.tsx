@@ -21,6 +21,7 @@ const Performance = lazy(() => import('../pages/performance/page'));
 const TransactionLog = lazy(() => import('../pages/transaction-log/page'));
 const Settings = lazy(() => import('../pages/settings/page'));
 const PaperTrading = lazy(() => import('../pages/paper-trading/page'));
+const WebhookTest = lazy(() => import('../pages/webhook-test/page'));
 const FuturesPairsFinder = lazy(() => import('../pages/futures-pairs-finder/page'));
 const Admin = lazy(() => import('../pages/admin/page'));
 const Onboarding = lazy(() => import('../pages/onboarding/page'));
