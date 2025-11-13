@@ -206,18 +206,41 @@ export default function BacktestPage() {
     csv += `Winning Trades,${results.winning_trades || 0}\n`;
     csv += `Losing Trades,${results.losing_trades || 0}\n`;
     csv += `Win Rate,${(results.win_rate || 0).toFixed(2)}%\n`;
-    csv += `Total P&L,$${(results.total_pnl || 0).toFixed(2)}\n`;
+    csv += `Gross Profit,$${(results.gross_profit || 0).toFixed(2)}\n`;
+    csv += `Gross Loss,$${(results.gross_loss || 0).toFixed(2)}\n`;
+    csv += `Net Profit,$${(results.net_profit || results.total_pnl || 0).toFixed(2)}\n`;
     csv += `Total P&L %,${(results.total_pnl_percentage || 0).toFixed(2)}%\n`;
-    csv += `Max Drawdown,${(results.max_drawdown || 0).toFixed(2)}%\n`;
+    csv += `Max Drawdown (%),${(results.max_drawdown || 0).toFixed(2)}%\n`;
+    csv += `Max Drawdown ($),$${Math.abs(results.max_drawdown_value || 0).toFixed(2)}\n`;
+    csv += `Avg Drawdown,${(results.avg_drawdown || 0).toFixed(2)}%\n`;
     csv += `Sharpe Ratio,${(results.sharpe_ratio || 0).toFixed(2)}\n`;
     csv += `Profit Factor,${(results.profit_factor || 0).toFixed(2)}\n\n`;
+    
+    // Position Size
+    csv += 'POSITION SIZE\n';
+    csv += `Average Size,${(results.avg_position_size || 0).toFixed(4)}\n`;
+    csv += `Min Size,${(results.min_position_size || 0).toFixed(4)}\n`;
+    csv += `Max Size,${(results.max_position_size || 0).toFixed(4)}\n\n`;
+    
+    // Long/Short Breakdown
+    csv += 'LONG/SHORT BREAKDOWN\n';
+    csv += `Long Trades,${results.long_trades || 0}\n`;
+    csv += `Long Wins,${results.long_wins || 0}\n`;
+    csv += `Long Losses,${results.long_losses || 0}\n`;
+    csv += `Long Win Rate,${(results.long_win_rate || 0).toFixed(2)}%\n`;
+    csv += `Long PnL,$${(results.long_pnl || 0).toFixed(2)}\n`;
+    csv += `Short Trades,${results.short_trades || 0}\n`;
+    csv += `Short Wins,${results.short_wins || 0}\n`;
+    csv += `Short Losses,${results.short_losses || 0}\n`;
+    csv += `Short Win Rate,${(results.short_win_rate || 0).toFixed(2)}%\n`;
+    csv += `Short PnL,$${(results.short_pnl || 0).toFixed(2)}\n\n`;
 
     // Per-Pair Results
     if (results.results_per_pair && Object.keys(results.results_per_pair).length > 0) {
       csv += 'PER-PAIR PERFORMANCE\n';
-      csv += 'Pair,Trades,Win Rate,Total P&L\n';
+      csv += 'Pair,Trades,Win Rate,Total P&L,Long Trades,Short Trades,Long Wins,Long Losses,Short Wins,Short Losses,Gross Profit,Gross Loss\n';
       Object.entries(results.results_per_pair).forEach(([pair, data]: [string, any]) => {
-        csv += `${pair},${data.trades || 0},${(data.win_rate || 0).toFixed(2)}%,$${(data.pnl || 0).toFixed(2)}\n`;
+        csv += `${pair},${data.trades || 0},${(data.win_rate || 0).toFixed(2)}%,$${(data.pnl || 0).toFixed(2)},${data.long_trades || 0},${data.short_trades || 0},${data.long_wins || 0},${data.long_losses || 0},${data.short_wins || 0},${data.short_losses || 0},$${(data.gross_profit || 0).toFixed(2)},$${(data.gross_loss || 0).toFixed(2)}\n`;
       });
     }
 
@@ -1357,7 +1380,9 @@ export default function BacktestPage() {
             {results && (
               <Card className="p-6 mt-6 bg-green-50 border-green-200">
                 <h3 className="text-lg font-semibold mb-4 text-gray-900">📊 Backtest Results</h3>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                
+                {/* Overview Metrics */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                   <div className="bg-white rounded-lg p-3">
                     <div className="text-2xl font-bold text-blue-600">{results.total_trades || 0}</div>
                     <div className="text-sm text-gray-500">Total Trades</div>
@@ -1367,12 +1392,151 @@ export default function BacktestPage() {
                     <div className="text-sm text-gray-500">Win Rate</div>
                   </div>
                   <div className="bg-white rounded-lg p-3">
-                    <div className="text-2xl font-bold text-purple-600">${(results.total_pnl || 0).toFixed(2)}</div>
-                    <div className="text-sm text-gray-500">Total PnL</div>
+                    <div className="text-2xl font-bold text-purple-600">${(results.net_profit || results.total_pnl || 0).toFixed(2)}</div>
+                    <div className="text-sm text-gray-500">Net Profit</div>
                   </div>
                   <div className="bg-white rounded-lg p-3">
                     <div className="text-2xl font-bold text-orange-600">{(results.sharpe_ratio || 0).toFixed(2)}</div>
                     <div className="text-sm text-gray-500">Sharpe Ratio</div>
+                  </div>
+                </div>
+
+                {/* Profit Metrics */}
+                <div className="bg-white rounded-lg p-4 mb-6">
+                  <h4 className="font-semibold mb-3 text-gray-800">💰 Profit Breakdown</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <div className="text-lg font-bold text-green-600">${(results.gross_profit || 0).toFixed(2)}</div>
+                      <div className="text-sm text-gray-500">Gross Profit</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-bold text-red-600">${(results.gross_loss || 0).toFixed(2)}</div>
+                      <div className="text-sm text-gray-500">Gross Loss</div>
+                    </div>
+                    <div>
+                      <div className={`text-lg font-bold ${(results.net_profit || results.total_pnl || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        ${(results.net_profit || results.total_pnl || 0).toFixed(2)}
+                      </div>
+                      <div className="text-sm text-gray-500">Net Profit</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Position Size Metrics */}
+                <div className="bg-white rounded-lg p-4 mb-6">
+                  <h4 className="font-semibold mb-3 text-gray-800">📏 Position Size</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <div className="text-lg font-bold text-blue-600">{(results.avg_position_size || 0).toFixed(4)}</div>
+                      <div className="text-sm text-gray-500">Average Size</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-bold text-gray-600">{(results.min_position_size || 0).toFixed(4)}</div>
+                      <div className="text-sm text-gray-500">Min Size</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-bold text-gray-600">{(results.max_position_size || 0).toFixed(4)}</div>
+                      <div className="text-sm text-gray-500">Max Size</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Long/Short Breakdown */}
+                <div className="bg-white rounded-lg p-4 mb-6">
+                  <h4 className="font-semibold mb-3 text-gray-800">📈 Long/Short Performance</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Long Trades */}
+                    <div className="border-l-4 border-green-500 pl-4">
+                      <h5 className="font-medium text-green-700 mb-2">🔼 Long Trades</h5>
+                      <div className="space-y-1 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Total:</span>
+                          <span className="font-semibold">{results.long_trades || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Wins:</span>
+                          <span className="font-semibold text-green-600">{results.long_wins || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Losses:</span>
+                          <span className="font-semibold text-red-600">{results.long_losses || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Win Rate:</span>
+                          <span className="font-semibold">{(results.long_win_rate || 0).toFixed(1)}%</span>
+                        </div>
+                        <div className="flex justify-between pt-2 border-t">
+                          <span className="text-gray-600">PnL:</span>
+                          <span className={`font-bold ${(results.long_pnl || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            ${(results.long_pnl || 0).toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Short Trades */}
+                    <div className="border-l-4 border-red-500 pl-4">
+                      <h5 className="font-medium text-red-700 mb-2">🔽 Short Trades</h5>
+                      <div className="space-y-1 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Total:</span>
+                          <span className="font-semibold">{results.short_trades || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Wins:</span>
+                          <span className="font-semibold text-green-600">{results.short_wins || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Losses:</span>
+                          <span className="font-semibold text-red-600">{results.short_losses || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Win Rate:</span>
+                          <span className="font-semibold">{(results.short_win_rate || 0).toFixed(1)}%</span>
+                        </div>
+                        <div className="flex justify-between pt-2 border-t">
+                          <span className="text-gray-600">PnL:</span>
+                          <span className={`font-bold ${(results.short_pnl || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            ${(results.short_pnl || 0).toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Drawdown Metrics */}
+                <div className="bg-white rounded-lg p-4 mb-6">
+                  <h4 className="font-semibold mb-3 text-gray-800">📉 Drawdown Analysis</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <div className="text-lg font-bold text-red-600">{(results.max_drawdown || 0).toFixed(2)}%</div>
+                      <div className="text-sm text-gray-500">Max Drawdown (%)</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-bold text-red-600">${Math.abs(results.max_drawdown_value || 0).toFixed(2)}</div>
+                      <div className="text-sm text-gray-500">Max Drawdown ($)</div>
+                    </div>
+                    <div>
+                      <div className="text-lg font-bold text-orange-600">{(results.avg_drawdown || 0).toFixed(2)}%</div>
+                      <div className="text-sm text-gray-500">Avg Drawdown (%)</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Additional Metrics */}
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+                  <div className="bg-white rounded-lg p-3">
+                    <div className="text-xl font-bold text-green-600">{results.winning_trades || 0}</div>
+                    <div className="text-sm text-gray-500">Winning Trades</div>
+                  </div>
+                  <div className="bg-white rounded-lg p-3">
+                    <div className="text-xl font-bold text-red-600">{results.losing_trades || 0}</div>
+                    <div className="text-sm text-gray-500">Losing Trades</div>
+                  </div>
+                  <div className="bg-white rounded-lg p-3">
+                    <div className="text-xl font-bold text-blue-600">{(results.profit_factor || 0).toFixed(2)}</div>
+                    <div className="text-sm text-gray-500">Profit Factor</div>
                   </div>
                 </div>
 
@@ -1382,16 +1546,36 @@ export default function BacktestPage() {
                     <h4 className="font-semibold mb-3">Performance by Pair</h4>
                     <div className="space-y-2">
                       {Object.entries(results.results_per_pair).map(([pair, data]: [string, any]) => (
-                        <div key={pair} className="bg-white rounded-lg p-3 flex justify-between items-center">
-                          <div>
-                            <div className="font-medium">{pair}</div>
-                            <div className="text-sm text-gray-500">{data.trades || 0} trades</div>
-                          </div>
-                          <div className="text-right">
-                            <div className={`font-bold ${(data.pnl || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              ${(data.pnl || 0).toFixed(2)}
+                        <div key={pair} className="bg-white rounded-lg p-4 border border-gray-200">
+                          <div className="flex justify-between items-start mb-2">
+                            <div>
+                              <div className="font-medium text-lg">{pair}</div>
+                              <div className="text-sm text-gray-500">{data.trades || 0} trades</div>
                             </div>
-                            <div className="text-sm text-gray-500">{(data.win_rate || 0).toFixed(1)}% win</div>
+                            <div className="text-right">
+                              <div className={`font-bold text-lg ${(data.pnl || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                ${(data.pnl || 0).toFixed(2)}
+                              </div>
+                              <div className="text-sm text-gray-500">{(data.win_rate || 0).toFixed(1)}% win</div>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3 pt-3 border-t border-gray-200 text-xs">
+                            <div>
+                              <div className="text-gray-500">Long: {data.long_trades || 0}</div>
+                              <div className="text-gray-500">Short: {data.short_trades || 0}</div>
+                            </div>
+                            <div>
+                              <div className="text-green-600">Wins: {((data.long_wins || 0) + (data.short_wins || 0))}</div>
+                              <div className="text-red-600">Losses: {((data.long_losses || 0) + (data.short_losses || 0))}</div>
+                            </div>
+                            <div>
+                              <div className="text-gray-500">Gross Profit:</div>
+                              <div className="text-green-600 font-semibold">${(data.gross_profit || 0).toFixed(2)}</div>
+                            </div>
+                            <div>
+                              <div className="text-gray-500">Gross Loss:</div>
+                              <div className="text-red-600 font-semibold">${(data.gross_loss || 0).toFixed(2)}</div>
+                            </div>
                           </div>
                         </div>
                       ))}

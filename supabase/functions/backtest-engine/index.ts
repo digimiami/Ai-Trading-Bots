@@ -415,22 +415,69 @@ async function runBacktestForSymbol(
     });
   }
   
-  // Calculate metrics
-  const winningTrades = trades.filter(t => t.pnl > 0);
-  const losingTrades = trades.filter(t => t.pnl <= 0);
-  const totalPnL = trades.reduce((sum, t) => sum + t.pnl, 0);
-  const winRate = trades.length > 0 ? (winningTrades.length / trades.length) * 100 : 0;
-  
-  return {
-    symbol,
-    trades: trades.length,
-    winning_trades: winningTrades.length,
-    losing_trades: losingTrades.length,
-    win_rate: winRate,
-    pnl: totalPnL,
-    pnl_percentage: config.tradeAmount > 0 ? (totalPnL / config.tradeAmount) * 100 : 0,
-    all_trades: trades
-  };
+    // Calculate metrics
+    const winningTrades = trades.filter(t => t.pnl > 0);
+    const losingTrades = trades.filter(t => t.pnl <= 0);
+    const totalPnL = trades.reduce((sum, t) => sum + t.pnl, 0);
+    const winRate = trades.length > 0 ? (winningTrades.length / trades.length) * 100 : 0;
+    
+    // Calculate position sizes
+    const positionSizes = trades.map(t => t.size || 0).filter(s => s > 0);
+    const avgPositionSize = positionSizes.length > 0 
+      ? positionSizes.reduce((sum, s) => sum + s, 0) / positionSizes.length 
+      : 0;
+    const minPositionSize = positionSizes.length > 0 ? Math.min(...positionSizes) : 0;
+    const maxPositionSize = positionSizes.length > 0 ? Math.max(...positionSizes) : 0;
+    
+    // Long/Short breakdown
+    const longTrades = trades.filter(t => t.side === 'long');
+    const shortTrades = trades.filter(t => t.side === 'short');
+    const longWins = longTrades.filter(t => t.pnl > 0);
+    const longLosses = longTrades.filter(t => t.pnl <= 0);
+    const shortWins = shortTrades.filter(t => t.pnl > 0);
+    const shortLosses = shortTrades.filter(t => t.pnl <= 0);
+    
+    const longWinRate = longTrades.length > 0 ? (longWins.length / longTrades.length) * 100 : 0;
+    const shortWinRate = shortTrades.length > 0 ? (shortWins.length / shortTrades.length) * 100 : 0;
+    
+    // Gross profit and loss
+    const grossProfit = winningTrades.reduce((sum, t) => sum + t.pnl, 0);
+    const grossLoss = Math.abs(losingTrades.reduce((sum, t) => sum + t.pnl, 0));
+    const netProfit = totalPnL; // Same as totalPnL
+    
+    // Long/Short PnL
+    const longPnL = longTrades.reduce((sum, t) => sum + t.pnl, 0);
+    const shortPnL = shortTrades.reduce((sum, t) => sum + t.pnl, 0);
+    
+    return {
+      symbol,
+      trades: trades.length,
+      winning_trades: winningTrades.length,
+      losing_trades: losingTrades.length,
+      win_rate: winRate,
+      pnl: totalPnL,
+      pnl_percentage: config.tradeAmount > 0 ? (totalPnL / config.tradeAmount) * 100 : 0,
+      // Position size metrics
+      avg_position_size: avgPositionSize,
+      min_position_size: minPositionSize,
+      max_position_size: maxPositionSize,
+      // Long/Short breakdown
+      long_trades: longTrades.length,
+      short_trades: shortTrades.length,
+      long_wins: longWins.length,
+      long_losses: longLosses.length,
+      short_wins: shortWins.length,
+      short_losses: shortLosses.length,
+      long_win_rate: longWinRate,
+      short_win_rate: shortWinRate,
+      long_pnl: longPnL,
+      short_pnl: shortPnL,
+      // Profit metrics
+      gross_profit: grossProfit,
+      gross_loss: grossLoss,
+      net_profit: netProfit,
+      all_trades: trades
+    };
 }
 
 serve(async (req) => {
@@ -512,7 +559,18 @@ serve(async (req) => {
           trades: result.trades,
           win_rate: result.win_rate,
           pnl: result.pnl,
-          pnl_percentage: result.pnl_percentage
+          pnl_percentage: result.pnl_percentage,
+          avg_position_size: result.avg_position_size,
+          long_trades: result.long_trades,
+          short_trades: result.short_trades,
+          long_wins: result.long_wins,
+          long_losses: result.long_losses,
+          short_wins: result.short_wins,
+          short_losses: result.short_losses,
+          long_pnl: result.long_pnl,
+          short_pnl: result.short_pnl,
+          gross_profit: result.gross_profit,
+          gross_loss: result.gross_loss
         }
         
         // Add trades with symbol
@@ -539,6 +597,28 @@ serve(async (req) => {
     const totalPnL = Object.values(resultsPerPair).reduce((sum: number, data: any) => sum + (data.pnl || 0), 0)
     const avgWinRate = Object.values(resultsPerPair).reduce((sum: number, data: any) => sum + (data.win_rate || 0), 0) / symbols.length
 
+    // Position size metrics (aggregate)
+    const allPositionSizes = allTrades.map(t => t.size || 0).filter(s => s > 0)
+    const avgPositionSize = allPositionSizes.length > 0
+      ? allPositionSizes.reduce((sum, s) => sum + s, 0) / allPositionSizes.length
+      : 0
+    const minPositionSize = allPositionSizes.length > 0 ? Math.min(...allPositionSizes) : 0
+    const maxPositionSize = allPositionSizes.length > 0 ? Math.max(...allPositionSizes) : 0
+
+    // Long/Short breakdown (aggregate)
+    const longTrades = allTrades.filter(t => t.side === 'long')
+    const shortTrades = allTrades.filter(t => t.side === 'short')
+    const longWins = longTrades.filter(t => t.pnl > 0)
+    const longLosses = longTrades.filter(t => t.pnl <= 0)
+    const shortWins = shortTrades.filter(t => t.pnl > 0)
+    const shortLosses = shortTrades.filter(t => t.pnl <= 0)
+    
+    const longWinRate = longTrades.length > 0 ? (longWins.length / longTrades.length) * 100 : 0
+    const shortWinRate = shortTrades.length > 0 ? (shortWins.length / shortTrades.length) * 100 : 0
+    
+    const longPnL = longTrades.reduce((sum, t) => sum + t.pnl, 0)
+    const shortPnL = shortTrades.reduce((sum, t) => sum + t.pnl, 0)
+
     // Calculate Sharpe ratio (simplified)
     const returns = allTrades.map(t => t.pnlPercent || 0)
     const avgReturn = returns.length > 0 ? returns.reduce((a, b) => a + b, 0) / returns.length : 0
@@ -548,24 +628,32 @@ serve(async (req) => {
     const stdDev = Math.sqrt(variance)
     const sharpeRatio = stdDev > 0 ? (avgReturn / stdDev) * Math.sqrt(252) : 0 // Annualized
 
-    // Calculate profit factor
+    // Calculate profit metrics
     const grossProfit = allTrades.filter(t => t.pnl > 0).reduce((sum, t) => sum + t.pnl, 0)
     const grossLoss = Math.abs(allTrades.filter(t => t.pnl <= 0).reduce((sum, t) => sum + t.pnl, 0))
+    const netProfit = totalPnL // Same as totalPnL
     const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? 999 : 0
 
-    // Calculate max drawdown
+    // Calculate max drawdown (more detailed)
     let peak = 0
     let maxDrawdown = 0
+    let maxDrawdownValue = 0
     let runningPnL = 0
+    const drawdowns: number[] = []
     
     for (const trade of allTrades.sort((a, b) => new Date(a.entryTime).getTime() - new Date(b.entryTime).getTime())) {
       runningPnL += trade.pnl
       if (runningPnL > peak) peak = runningPnL
       const drawdown = peak - runningPnL
-      if (drawdown > maxDrawdown) maxDrawdown = drawdown
+      drawdowns.push(drawdown)
+      if (drawdown > maxDrawdown) {
+        maxDrawdown = drawdown
+        maxDrawdownValue = runningPnL
+      }
     }
     
-    const maxDrawdownPercent = tradeAmount > 0 ? (maxDrawdown / tradeAmount) * 100 : 0
+    const maxDrawdownPercent = tradeAmount > 0 ? (maxDrawdown / (tradeAmount * symbols.length)) * 100 : 0
+    const avgDrawdown = drawdowns.length > 0 ? drawdowns.reduce((sum, d) => sum + d, 0) / drawdowns.length : 0
 
     const results = {
       total_trades: totalTrades,
@@ -574,7 +662,29 @@ serve(async (req) => {
       win_rate: avgWinRate,
       total_pnl: totalPnL,
       total_pnl_percentage: tradeAmount > 0 ? (totalPnL / (tradeAmount * symbols.length)) * 100 : 0,
+      // Position size metrics
+      avg_position_size: avgPositionSize,
+      min_position_size: minPositionSize,
+      max_position_size: maxPositionSize,
+      // Long/Short breakdown
+      long_trades: longTrades.length,
+      short_trades: shortTrades.length,
+      long_wins: longWins.length,
+      long_losses: longLosses.length,
+      short_wins: shortWins.length,
+      short_losses: shortLosses.length,
+      long_win_rate: longWinRate,
+      short_win_rate: shortWinRate,
+      long_pnl: longPnL,
+      short_pnl: shortPnL,
+      // Profit metrics
+      gross_profit: grossProfit,
+      gross_loss: grossLoss,
+      net_profit: netProfit,
+      // Drawdown metrics
       max_drawdown: -maxDrawdownPercent,
+      max_drawdown_value: -maxDrawdown,
+      avg_drawdown: -avgDrawdown,
       sharpe_ratio: sharpeRatio,
       profit_factor: profitFactor,
       results_per_pair: resultsPerPair,
