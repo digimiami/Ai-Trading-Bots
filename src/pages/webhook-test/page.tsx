@@ -326,6 +326,15 @@ export default function WebhookTestPage() {
                 <i className="ri-file-list-line text-3xl mb-2"></i>
                 <p>No webhook calls recorded yet</p>
                 <p className="text-sm mt-1">Send a test webhook to see it here</p>
+                <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg text-left max-w-md mx-auto">
+                  <p className="text-xs font-semibold text-orange-800 mb-2">⚠️ Troubleshooting:</p>
+                  <ul className="text-xs text-orange-700 space-y-1 list-disc list-inside">
+                    <li>Ensure the webhook_calls table migration has been run</li>
+                    <li>Check that the webhook function is deployed</li>
+                    <li>Open browser console (F12) to see detailed logs</li>
+                    <li>Verify the webhook URL is correct (should start with https://)</li>
+                  </ul>
+                </div>
               </div>
             ) : (
               <div className="overflow-x-auto">
