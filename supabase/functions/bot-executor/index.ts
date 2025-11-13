@@ -4278,29 +4278,72 @@ class PaperTradingExecutor {
       );
       
       if (!currentPrice || currentPrice === 0) {
-        // fetchPrice already tries symbol variants, so if it returns 0, none worked
-        // Try opposite trading type as diagnostic
-        const oppositeType = tradingType === 'spot' ? 'futures' : 'spot';
-        let oppositePrice = 0;
-        try {
-          oppositePrice = await MarketDataFetcher.fetchPrice(bot.symbol, bot.exchange, oppositeType);
-          if (oppositePrice && oppositePrice > 0) {
-            console.log(`⚠️ Found price for ${bot.symbol} but in ${oppositeType} trading type (bot configured for ${tradingType})`);
-            throw new Error(`Symbol ${bot.symbol} is available for ${oppositeType} trading, but bot is configured for ${tradingType}. Please update bot settings or use correct symbol format.`);
+        // fetchPrice already tries symbol variants, but let's try a more aggressive fallback
+        // For futures: if 1000PEPEUSDT fails, try PEPEUSDT (some symbols exist without prefix)
+        // For spot: if PEPEUSDT fails, try 1000PEPEUSDT (unlikely but possible)
+        let fallbackPrice = 0;
+        let fallbackSymbol = '';
+        
+        if (tradingType === 'futures' || tradingType === 'linear') {
+          // For futures, try removing 1000 prefix if present
+          if (bot.symbol.startsWith('1000')) {
+            fallbackSymbol = bot.symbol.replace(/^1000/, '');
+            console.log(`🔄 Trying fallback symbol for futures: ${fallbackSymbol} (original: ${bot.symbol})`);
+            try {
+              fallbackPrice = await MarketDataFetcher.fetchPrice(fallbackSymbol, bot.exchange, tradingType);
+              if (fallbackPrice && fallbackPrice > 0) {
+                console.log(`✅ Found price using fallback symbol: ${fallbackSymbol} for futures trading`);
+                // Use the fallback price - this means the symbol format was wrong
+                // But we'll proceed with the trade using the correct symbol format
+                currentPrice = fallbackPrice;
+                console.log(`⚠️ Using ${fallbackSymbol} instead of ${bot.symbol} - consider updating bot symbol to ${fallbackSymbol}`);
+              }
+            } catch (fallbackErr) {
+              // Continue to other checks
+            }
           }
-        } catch (oppositeErr: any) {
-          // If it's our custom error, re-throw it
-          if (oppositeErr.message?.includes('is available for')) {
-            throw oppositeErr;
+        } else if (tradingType === 'spot') {
+          // For spot, try adding 1000 prefix if not present (unlikely but possible)
+          if (!bot.symbol.startsWith('1000') && !bot.symbol.startsWith('10000')) {
+            fallbackSymbol = '1000' + bot.symbol;
+            console.log(`🔄 Trying fallback symbol for spot: ${fallbackSymbol} (original: ${bot.symbol})`);
+            try {
+              fallbackPrice = await MarketDataFetcher.fetchPrice(fallbackSymbol, bot.exchange, tradingType);
+              if (fallbackPrice && fallbackPrice > 0) {
+                console.log(`✅ Found price using fallback symbol: ${fallbackSymbol} for spot trading`);
+                currentPrice = fallbackPrice;
+                console.log(`⚠️ Using ${fallbackSymbol} instead of ${bot.symbol} - consider updating bot symbol to ${fallbackSymbol}`);
+              }
+            } catch (fallbackErr) {
+              // Continue to other checks
+            }
           }
-          // Otherwise, continue to throw original error
         }
         
-        // Provide helpful error message with symbol format suggestions
-        const suggestedFormat = bot.symbol.startsWith('1000') 
-          ? bot.symbol.replace(/^1000/, '') 
-          : '1000' + bot.symbol;
-        throw new Error(`Invalid price for ${bot.symbol} - market data unavailable. Symbol may not exist for ${tradingType} trading on ${bot.exchange}, or may require a different format (e.g., try ${suggestedFormat}). Please verify the symbol on the exchange.`);
+        // If still no price, try opposite trading type as diagnostic
+        if (!currentPrice || currentPrice === 0) {
+          const oppositeType = tradingType === 'spot' ? 'futures' : 'spot';
+          let oppositePrice = 0;
+          try {
+            oppositePrice = await MarketDataFetcher.fetchPrice(bot.symbol, bot.exchange, oppositeType);
+            if (oppositePrice && oppositePrice > 0) {
+              console.log(`⚠️ Found price for ${bot.symbol} but in ${oppositeType} trading type (bot configured for ${tradingType})`);
+              throw new Error(`Symbol ${bot.symbol} is available for ${oppositeType} trading, but bot is configured for ${tradingType}. Please update bot settings to use ${oppositeType} trading type or change the symbol.`);
+            }
+          } catch (oppositeErr: any) {
+            // If it's our custom error, re-throw it
+            if (oppositeErr.message?.includes('is available for')) {
+              throw oppositeErr;
+            }
+            // Otherwise, continue to throw original error
+          }
+          
+          // Provide helpful error message with symbol format suggestions
+          const suggestedFormat = bot.symbol.startsWith('1000') 
+            ? bot.symbol.replace(/^1000/, '') 
+            : '1000' + bot.symbol;
+          throw new Error(`Invalid price for ${bot.symbol} - market data unavailable. Symbol may not exist for ${tradingType} trading on ${bot.exchange}, or may require a different format (e.g., try ${suggestedFormat}). Please verify the symbol on the exchange.`);
+        }
       }
       
       // Align simulated execution with live trading sizing and constraints
