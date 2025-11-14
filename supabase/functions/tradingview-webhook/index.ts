@@ -633,7 +633,38 @@ serve(async (req) => {
       : undefined;
 
   if (!normalizedSide) {
-    return new Response(JSON.stringify({ error: "side must be one of buy/sell/long/short" }), {
+    // Check if we have template variables that weren't replaced
+    const hasTemplateVars = [
+      payload.action,
+      payload.side,
+      payload.signal,
+      payload.marketPosition,
+      payload.market_position
+    ].some(field => field && typeof field === "string" && (field.includes("{{") || field.includes("}}")));
+    
+    const errorMessage = hasTemplateVars
+      ? "TradingView template variables detected (e.g., {{strategy.order.action}}). These must be replaced with actual values by TradingView before sending. Please check your TradingView alert configuration."
+      : "side must be one of buy/sell/long/short";
+    
+    console.warn("⚠️ Failed to resolve side from payload:", {
+      action: payload.action,
+      side: payload.side,
+      signal: payload.signal,
+      marketPosition: payload.marketPosition,
+      hasTemplateVars,
+      errorMessage
+    });
+    
+    return new Response(JSON.stringify({ 
+      error: errorMessage,
+      hint: "When testing, replace template variables with actual values (e.g., use 'buy' instead of '{{strategy.order.action}}')",
+      receivedPayload: {
+        action: payload.action,
+        side: payload.side,
+        signal: payload.signal,
+        marketPosition: payload.marketPosition
+      }
+    }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
