@@ -732,6 +732,44 @@ class MarketDataFetcher {
           console.warn(`⚠️ Error fetching all tickers for ${symbol}:`, err);
         }
         
+        // For major coins (BTC, ETH, etc.), try the opposite category as fallback
+        const isMajorCoin = ['BTC', 'ETH', 'BNB', 'SOL'].some(coin => symbol.toUpperCase().startsWith(coin));
+        if (isMajorCoin && bybitCategory === 'linear') {
+          console.log(`🔄 Trying spot category as fallback for major coin ${symbol}...`);
+          try {
+            const spotResponse = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${symbol}`);
+            const spotData = await spotResponse.json();
+            
+            if (spotData.retCode === 0 && spotData.result?.list && spotData.result.list.length > 0) {
+              const price = parseFloat(spotData.result.list[0]?.lastPrice || '0');
+              if (price > 0 && isFinite(price)) {
+                console.log(`✅ Found price for ${symbol} in spot category (fallback): $${price}`);
+                console.warn(`⚠️ Note: ${symbol} found in spot but not linear. Consider checking if the symbol exists for futures trading.`);
+                return price;
+              }
+            }
+          } catch (err) {
+            console.warn(`⚠️ Error trying spot fallback for ${symbol}:`, err);
+          }
+        } else if (isMajorCoin && bybitCategory === 'spot') {
+          console.log(`🔄 Trying linear category as fallback for major coin ${symbol}...`);
+          try {
+            const linearResponse = await fetch(`https://api.bybit.com/v5/market/tickers?category=linear&symbol=${symbol}`);
+            const linearData = await linearResponse.json();
+            
+            if (linearData.retCode === 0 && linearData.result?.list && linearData.result.list.length > 0) {
+              const price = parseFloat(linearData.result.list[0]?.lastPrice || '0');
+              if (price > 0 && isFinite(price)) {
+                console.log(`✅ Found price for ${symbol} in linear category (fallback): $${price}`);
+                console.warn(`⚠️ Note: ${symbol} found in linear but not spot. Consider checking if the symbol exists for spot trading.`);
+                return price;
+              }
+            }
+          } catch (err) {
+            console.warn(`⚠️ Error trying linear fallback for ${symbol}:`, err);
+          }
+        }
+        
         console.warn(`⚠️ Symbol ${symbol} not found in ${bybitCategory} category on Bybit. Tried variants: ${symbolVariants.join(', ')}`);
         return 0;
       } else if (exchange === 'okx') {
