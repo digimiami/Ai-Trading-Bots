@@ -2204,9 +2204,18 @@ class BotExecutor {
       
       const data = await response.json();
       
+      console.log(`\n📥 === BYBIT API RESPONSE ===`);
+      console.log(`📊 HTTP Status: ${response.status}`);
+      console.log(`📋 Response Body:`, JSON.stringify(data, null, 2));
+      console.log(`=== END RESPONSE ===\n`);
+      
       if (data.retCode !== 0) {
         // Log the full error response for debugging
-        console.error('Bybit Order Response:', data);
+        console.error(`\n❌ === BYBIT ORDER ERROR ===`);
+        console.error(`📊 RetCode: ${data.retCode}`);
+        console.error(`📋 RetMsg: ${data.retMsg}`);
+        console.error(`📋 Full Response:`, JSON.stringify(data, null, 2));
+        console.error(`=== END ERROR ===\n`);
         
         // Handle specific error codes with better messages
         if (data.retCode === 10001) {
