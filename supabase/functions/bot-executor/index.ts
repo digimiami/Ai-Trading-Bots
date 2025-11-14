@@ -659,34 +659,56 @@ class MarketDataFetcher {
             
             // Log full API response for debugging major coins
             const isMajorCoin = ['BTC', 'ETH', 'BNB', 'SOL'].some(coin => symbolVariant.startsWith(coin));
+            
+            // Check for API errors first
+            if (data.retCode !== 0 && data.retCode !== undefined) {
+              if (isMajorCoin) {
+                console.error(`❌ Bybit API error for ${symbolVariant} (${bybitCategory}):`, {
+                  retCode: data.retCode,
+                  retMsg: data.retMsg,
+                  fullResponse: JSON.stringify(data, null, 2),
+                  apiUrl: apiUrl
+                });
+              } else {
+                console.warn(`⚠️ Bybit API error for ${symbolVariant}: retCode=${data.retCode}, retMsg=${data.retMsg}`);
+              }
+              continue; // Try next variant
+            }
+            
+            // Log API response for debugging
+            if (!data.result || !data.result.list || data.result.list.length === 0) {
+              if (isMajorCoin) {
+                console.error(`❌ Bybit API returned no data for ${symbolVariant} (${bybitCategory}):`, {
+                  retCode: data.retCode,
+                  retMsg: data.retMsg,
+                  result: data.result,
+                  fullResponse: JSON.stringify(data, null, 2),
+                  apiUrl: apiUrl
+                });
+              } else {
+                console.warn(`⚠️ Bybit API returned no data for ${symbolVariant} (${bybitCategory}):`, {
+                  retCode: data.retCode,
+                  retMsg: data.retMsg,
+                  result: data.result
+                });
+              }
+              continue; // Try next variant
+            }
+            
+            // Log successful response for major coins
             if (isMajorCoin) {
-              console.log(`📊 Bybit API response for ${symbolVariant}:`, {
+              console.log(`📊 Bybit API response for ${symbolVariant} (${bybitCategory}):`, {
                 retCode: data.retCode,
                 retMsg: data.retMsg,
                 hasResult: !!data.result,
                 listLength: data.result?.list?.length || 0,
                 firstItem: data.result?.list?.[0] ? {
                   symbol: data.result.list[0].symbol,
-                  lastPrice: data.result.list[0].lastPrice
+                  lastPrice: data.result.list[0].lastPrice,
+                  bid1Price: data.result.list[0].bid1Price,
+                  ask1Price: data.result.list[0].ask1Price
                 } : null
               });
-            }
-            
-            // Check for API errors
-            if (data.retCode !== 0 && data.retCode !== undefined) {
-              console.warn(`⚠️ Bybit API error for ${symbolVariant}: retCode=${data.retCode}, retMsg=${data.retMsg}`);
-              continue; // Try next variant
-            }
-            
-            // Log API response for debugging
-            if (!data.result || !data.result.list || data.result.list.length === 0) {
-              console.warn(`⚠️ Bybit API returned no data for ${symbolVariant} (${bybitCategory}):`, {
-                retCode: data.retCode,
-                retMsg: data.retMsg,
-                result: data.result,
-                fullResponse: isMajorCoin ? JSON.stringify(data).substring(0, 500) : undefined
-              });
-              continue; // Try next variant
             }
             
             const price = parseFloat(data.result.list[0]?.lastPrice || '0');
@@ -712,24 +734,72 @@ class MarketDataFetcher {
         }
         
         // If all variants failed, try fetching all tickers and searching
+        const isMajorCoin = ['BTC', 'ETH', 'BNB', 'SOL'].some(coin => symbol.toUpperCase().startsWith(coin));
+        if (isMajorCoin) {
+          console.log(`🔍 All symbol variants failed for ${symbol}, trying to fetch all tickers from ${bybitCategory} category...`);
+        }
+        
         try {
-          const allTickersResponse = await fetch(`https://api.bybit.com/v5/market/tickers?category=${bybitCategory}`);
-          const allTickersData = await allTickersResponse.json();
+          const allTickersUrl = `https://api.bybit.com/v5/market/tickers?category=${bybitCategory}`;
+          const allTickersResponse = await fetch(allTickersUrl);
           
-          if (allTickersData.result?.list) {
-            for (const symbolVariant of symbolVariants) {
-              const ticker = allTickersData.result.list.find((t: any) => t.symbol === symbolVariant);
-              if (ticker && ticker.lastPrice) {
-                const price = parseFloat(ticker.lastPrice);
-                if (price > 0 && isFinite(price)) {
-                  console.log(`✅ Found price using symbol variant from all tickers: ${symbolVariant} (original: ${symbol})`);
-                  return price;
+          if (!allTickersResponse.ok) {
+            console.warn(`⚠️ Failed to fetch all tickers: HTTP ${allTickersResponse.status}`);
+            const errorText = await allTickersResponse.text();
+            console.warn(`⚠️ Error response: ${errorText.substring(0, 200)}`);
+          } else {
+            const allTickersData = await allTickersResponse.json();
+            
+            if (isMajorCoin) {
+              console.log(`📊 All tickers response for ${bybitCategory}:`, {
+                retCode: allTickersData.retCode,
+                retMsg: allTickersData.retMsg,
+                totalTickers: allTickersData.result?.list?.length || 0,
+                sampleSymbols: allTickersData.result?.list?.slice(0, 5).map((t: any) => t.symbol) || []
+              });
+            }
+            
+            if (allTickersData.retCode === 0 && allTickersData.result?.list) {
+              // Search for exact match first
+              for (const symbolVariant of symbolVariants) {
+                const ticker = allTickersData.result.list.find((t: any) => t.symbol === symbolVariant);
+                if (ticker && ticker.lastPrice) {
+                  const price = parseFloat(ticker.lastPrice);
+                  if (price > 0 && isFinite(price)) {
+                    console.log(`✅ Found price using symbol variant from all tickers: ${symbolVariant} (original: ${symbol})`);
+                    return price;
+                  }
                 }
               }
+              
+              // For major coins, also try case-insensitive search
+              if (isMajorCoin) {
+                const upperSymbol = symbol.toUpperCase();
+                const ticker = allTickersData.result.list.find((t: any) => t.symbol.toUpperCase() === upperSymbol);
+                if (ticker && ticker.lastPrice) {
+                  const price = parseFloat(ticker.lastPrice);
+                  if (price > 0 && isFinite(price)) {
+                    console.log(`✅ Found price using case-insensitive search: ${ticker.symbol} (original: ${symbol})`);
+                    return price;
+                  }
+                }
+              }
+            } else if (isMajorCoin) {
+              console.error(`❌ Failed to fetch all tickers:`, {
+                retCode: allTickersData.retCode,
+                retMsg: allTickersData.retMsg,
+                fullResponse: JSON.stringify(allTickersData, null, 2).substring(0, 1000)
+              });
             }
           }
         } catch (err) {
-          console.warn(`⚠️ Error fetching all tickers for ${symbol}:`, err);
+          console.error(`❌ Error fetching all tickers for ${symbol}:`, err);
+          if (isMajorCoin) {
+            console.error(`   Full error:`, {
+              message: err instanceof Error ? err.message : String(err),
+              stack: err instanceof Error ? err.stack : undefined
+            });
+          }
         }
         
         // For major coins (BTC, ETH, etc.), try the opposite category as fallback
