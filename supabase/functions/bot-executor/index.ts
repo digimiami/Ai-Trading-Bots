@@ -640,24 +640,52 @@ class MarketDataFetcher {
           try {
             const apiUrl = `https://api.bybit.com/v5/market/tickers?category=${bybitCategory}&symbol=${symbolVariant}`;
             console.log(`🔍 Fetching price for ${symbolVariant} (${bybitCategory}): ${apiUrl}`);
-            const response = await fetch(apiUrl);
+            
+            const response = await fetch(apiUrl, {
+              method: 'GET',
+              headers: {
+                'Accept': 'application/json'
+              }
+            });
+            
+            if (!response.ok) {
+              console.warn(`⚠️ Bybit API HTTP error for ${symbolVariant}: ${response.status} ${response.statusText}`);
+              const errorText = await response.text();
+              console.warn(`⚠️ Response body: ${errorText.substring(0, 200)}`);
+              continue; // Try next variant
+            }
+            
             const data = await response.json();
+            
+            // Log full API response for debugging major coins
+            const isMajorCoin = ['BTC', 'ETH', 'BNB', 'SOL'].some(coin => symbolVariant.startsWith(coin));
+            if (isMajorCoin) {
+              console.log(`📊 Bybit API response for ${symbolVariant}:`, {
+                retCode: data.retCode,
+                retMsg: data.retMsg,
+                hasResult: !!data.result,
+                listLength: data.result?.list?.length || 0,
+                firstItem: data.result?.list?.[0] ? {
+                  symbol: data.result.list[0].symbol,
+                  lastPrice: data.result.list[0].lastPrice
+                } : null
+              });
+            }
+            
+            // Check for API errors
+            if (data.retCode !== 0 && data.retCode !== undefined) {
+              console.warn(`⚠️ Bybit API error for ${symbolVariant}: retCode=${data.retCode}, retMsg=${data.retMsg}`);
+              continue; // Try next variant
+            }
             
             // Log API response for debugging
             if (!data.result || !data.result.list || data.result.list.length === 0) {
               console.warn(`⚠️ Bybit API returned no data for ${symbolVariant} (${bybitCategory}):`, {
                 retCode: data.retCode,
                 retMsg: data.retMsg,
-                result: data.result
+                result: data.result,
+                fullResponse: isMajorCoin ? JSON.stringify(data).substring(0, 500) : undefined
               });
-            }
-            
-            // Better error handling for API response
-            if (!data.result) {
-              continue; // Try next variant
-            }
-            
-            if (!data.result.list || !Array.isArray(data.result.list) || data.result.list.length === 0) {
               continue; // Try next variant
             }
             
@@ -666,11 +694,19 @@ class MarketDataFetcher {
             if (price > 0 && isFinite(price)) {
               if (symbolVariant !== symbol) {
                 console.log(`✅ Found price using symbol variant: ${symbolVariant} (original: ${symbol})`);
+              } else {
+                console.log(`✅ Found price for ${symbolVariant}: $${price}`);
               }
               return price;
+            } else {
+              console.warn(`⚠️ Invalid price parsed for ${symbolVariant}: ${price} (raw: ${data.result.list[0]?.lastPrice})`);
             }
           } catch (err) {
-            console.warn(`⚠️ Error trying symbol variant ${symbolVariant}:`, err);
+            console.error(`❌ Error fetching price for ${symbolVariant}:`, err);
+            console.error(`   Error details:`, {
+              message: err instanceof Error ? err.message : String(err),
+              stack: err instanceof Error ? err.stack : undefined
+            });
             continue; // Try next variant
           }
         }
