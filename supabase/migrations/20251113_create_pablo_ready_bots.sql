@@ -107,7 +107,7 @@ INSERT INTO public.pablo_ready_bots (
   order_index
 ) VALUES (
   'Trendline Breakout Strategy',
-  'Advanced trendline breakout strategy using linear regression with volume confirmation. Features multiple take profits and trailing stop loss.',
+  'Advanced trendline breakout strategy using linear regression with volume confirmation. Optimized for SOLUSDT on Daily timeframe.',
   'bybit',
   'SOLUSDT',
   'futures',
@@ -120,11 +120,11 @@ INSERT INTO public.pablo_ready_bots (
     "trendline_length": 30,
     "volume_multiplier": 1.5,
     "trade_direction": "both",
-    "enable_tp": true,
+    "enable_tp": false,
     "tp1_pct": 1.0,
     "tp2_pct": 2.0,
     "tp3_pct": 3.0,
-    "enable_trail_sl": true,
+    "enable_trail_sl": false,
     "trail_offset_pct": 5.8,
     "risk_per_trade_pct": 1.0,
     "max_trades_per_day": 10,

@@ -341,13 +341,13 @@ export default function PabloReadyPage() {
                       {bot.strategy_config && (
                         <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
                           <div className="flex flex-wrap gap-2">
-                            {bot.strategy_config.enable_tp && (
+                            {bot.strategy_config.enable_tp === true && (
                               <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200">
                                 <i className="ri-target-line mr-1"></i>
                                 Multi TP
                               </span>
                             )}
-                            {bot.strategy_config.enable_trail_sl && (
+                            {bot.strategy_config.enable_trail_sl === true && (
                               <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-200">
                                 <i className="ri-line-chart-line mr-1"></i>
                                 Trailing SL
