@@ -141,11 +141,20 @@ export default function BotsPage() {
     });
   }, [isWebhookView, bots, webhookSignals, webhookSignalsLoading]);
 
-  const buildSamplePayload = (bot: TradingBot) => {
+  const buildSamplePayload = (bot: TradingBot): string => {
     return JSON.stringify({
-      secret: bot.webhookSecret || 'YOUR_TRADINGVIEW_WEBHOOK_SECRET',
+      secret: bot.webhookSecret || bot.webhook_secret || 'YOUR_TRADINGVIEW_WEBHOOK_SECRET',
       botId: bot.id,
-      side: 'buy',
+      action: '{{strategy.order.action}}', // Can be: 'buy', 'sell', 'long', 'short'
+      marketPosition: '{{strategy.market_position}}',
+      prevMarketPosition: '{{strategy.prev_market_position}}',
+      marketPositionSize: '{{strategy.market_position_size}}',
+      prevMarketPositionSize: '{{strategy.prev_market_position_size}}',
+      instrument: '{{ticker}}',
+      timestamp: '{{timenow}}',
+      maxLag: '300',
+      investmentType: 'base',
+      amount: '{{strategy.order.contracts}}',
       mode: bot.paperTrading ? 'paper' : 'real',
       reason: 'TradingView alert signal'
     }, null, 2);
