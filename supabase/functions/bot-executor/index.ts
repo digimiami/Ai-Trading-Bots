@@ -1574,17 +1574,28 @@ class BotExecutor {
   
   public async executeTrade(bot: any, tradeSignal: any): Promise<void> {
     try {
+      console.log(`\n🚀 === EXECUTING REAL TRADE ===`);
+      console.log(`📊 Bot: ${bot.name} (${bot.id})`);
+      console.log(`📈 Symbol: ${bot.symbol}`);
+      console.log(`📊 Side: ${tradeSignal.side}`);
+      console.log(`💰 Trade Amount: ${bot.trade_amount || bot.tradeAmount}`);
+      console.log(`🏦 Exchange: ${bot.exchange}`);
+      
       // Get trading type with fallback (handle both camelCase and snake_case)
       const tradingType = bot.tradingType || bot.trading_type || 'futures';
+      console.log(`📊 Trading Type: ${tradingType}`);
       
+      console.log(`🔍 Fetching current price for ${bot.symbol}...`);
       const currentPrice = await MarketDataFetcher.fetchPrice(bot.symbol, bot.exchange, tradingType);
       
       // Validate price before proceeding
       if (!currentPrice || currentPrice === 0 || !isFinite(currentPrice)) {
-        throw new Error(`Invalid or unavailable price for ${bot.symbol} (${tradingType}). The symbol may not exist on ${bot.exchange} or may not be available for ${tradingType} trading. Please verify the symbol name and trading type.`);
+        const errorMsg = `Invalid or unavailable price for ${bot.symbol} (${tradingType}). The symbol may not exist on ${bot.exchange} or may not be available for ${tradingType} trading. Please verify the symbol name and trading type.`;
+        console.error(`❌ ${errorMsg}`);
+        throw new Error(errorMsg);
       }
       
-      console.log(`💰 Current price for ${bot.symbol}: $${currentPrice}`);
+      console.log(`✅ Current price for ${bot.symbol}: $${currentPrice}`);
       
       const tradeAmountRaw = this.calculateTradeAmount(bot, currentPrice);
       
@@ -1612,6 +1623,14 @@ class BotExecutor {
       console.log(`✅ Validated order params for ${bot.symbol}: qty=${tradeAmount}, price=$${normalizedPrice}`);
       
       // Place actual order on exchange with retry logic
+      console.log(`\n📤 === PLACING ORDER ON BYBIT ===`);
+      console.log(`📊 Symbol: ${bot.symbol}`);
+      console.log(`📈 Side: ${tradeSignal.side}`);
+      console.log(`💰 Quantity: ${tradeAmount}`);
+      console.log(`💵 Price: $${normalizedPrice}`);
+      console.log(`🏦 Exchange: ${bot.exchange}`);
+      console.log(`📊 Trading Type: ${tradingType}`);
+      
       let orderResult;
       let lastError;
       const maxRetries = 3;
@@ -1619,11 +1638,18 @@ class BotExecutor {
       
       while (retryCount < maxRetries) {
         try {
+          console.log(`\n🔄 Attempt ${retryCount + 1}/${maxRetries}: Placing order...`);
           orderResult = await this.placeOrder(bot, tradeSignal, tradeAmount, normalizedPrice);
+          console.log(`✅ Order placed successfully!`);
+          console.log(`📋 Order Result:`, JSON.stringify(orderResult, null, 2));
           break; // Success, exit retry loop
         } catch (error: any) {
           lastError = error;
           retryCount++;
+          
+          const errorMsg = error.message || String(error);
+          console.error(`❌ Order placement failed (attempt ${retryCount}/${maxRetries}):`, errorMsg);
+          console.error(`📋 Full error:`, error);
           
           // Don't retry on certain errors (insufficient balance, regulatory, etc.)
           const nonRetryableErrors = [
@@ -1636,16 +1662,17 @@ class BotExecutor {
           ];
           
           const isNonRetryable = nonRetryableErrors.some(msg => 
-            error.message?.toLowerCase().includes(msg.toLowerCase())
+            errorMsg.toLowerCase().includes(msg.toLowerCase())
           );
           
           if (isNonRetryable || retryCount >= maxRetries) {
+            console.error(`❌ Order placement failed permanently. Error: ${errorMsg}`);
             throw error; // Don't retry, throw immediately
           }
           
           // Wait before retry (exponential backoff)
           const waitTime = Math.min(1000 * Math.pow(2, retryCount - 1), 5000); // 1s, 2s, 4s max
-          console.log(`⚠️ Order placement failed (attempt ${retryCount}/${maxRetries}), retrying in ${waitTime}ms...`);
+          console.log(`⏳ Retrying in ${waitTime}ms...`);
           await new Promise(resolve => setTimeout(resolve, waitTime));
         }
       }
