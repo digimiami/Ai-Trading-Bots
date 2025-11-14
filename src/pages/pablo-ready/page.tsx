@@ -95,28 +95,6 @@ export default function PabloReadyPage() {
     }
   };
 
-  const handleUseBot = async (bot: PabloReadyBot) => {
-    // Navigate to create bot page with pre-filled data
-    const params = new URLSearchParams({
-      template: 'pablo-ready',
-      botId: bot.id,
-      name: bot.name,
-      exchange: bot.exchange,
-      symbol: bot.symbol,
-      tradingType: bot.trading_type,
-      leverage: bot.leverage.toString(),
-      riskLevel: bot.risk_level,
-      tradeAmount: bot.trade_amount.toString(),
-      stopLoss: bot.stop_loss.toString(),
-      takeProfit: bot.take_profit.toString(),
-      timeframe: bot.timeframe,
-      strategy: JSON.stringify(bot.strategy),
-      strategyConfig: JSON.stringify(bot.strategy_config),
-    });
-
-    navigate(`/create-bot?${params.toString()}`);
-  };
-
   const handleQuickStart = async (bot: PabloReadyBot) => {
     if (!user) {
       navigate('/auth');
@@ -487,17 +465,6 @@ export default function PabloReadyPage() {
                               Start Bot
                             </>
                           )}
-                        </Button>
-
-                        {/* Alternative: Use This Bot (for customization) */}
-                        <Button
-                          onClick={() => handleUseBot(bot)}
-                          className="w-full"
-                          variant="secondary"
-                          size="sm"
-                        >
-                          <i className="ri-settings-3-line mr-2"></i>
-                          Customize & Create
                         </Button>
                       </div>
                     )}
