@@ -803,7 +803,6 @@ class MarketDataFetcher {
         }
         
         // For major coins (BTC, ETH, etc.), try the opposite category as fallback
-        const isMajorCoin = ['BTC', 'ETH', 'BNB', 'SOL'].some(coin => symbol.toUpperCase().startsWith(coin));
         if (isMajorCoin && bybitCategory === 'linear') {
           console.log(`🔄 Trying spot category as fallback for major coin ${symbol}...`);
           try {
