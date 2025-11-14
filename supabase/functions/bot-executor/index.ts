@@ -1790,7 +1790,22 @@ class BotExecutor {
       
       // Validate price before proceeding
       if (!currentPrice || currentPrice === 0 || !isFinite(currentPrice)) {
-        const errorMsg = `Invalid or unavailable price for ${bot.symbol} (${tradingType}). The symbol may not exist on ${bot.exchange} or may not be available for ${tradingType} trading. Please verify the symbol name and trading type.`;
+        const isMajorCoin = ['BTC', 'ETH', 'BNB', 'SOL'].some(coin => bot.symbol.toUpperCase().startsWith(coin));
+        let errorMsg = `Invalid or unavailable price for ${bot.symbol} (${tradingType}).`;
+        
+        if (isMajorCoin) {
+          errorMsg += ` Major coins like ${bot.symbol} should be available for ${tradingType} trading on ${bot.exchange}. This might be a temporary API issue. Please verify:`;
+          errorMsg += `\n1. The symbol "${bot.symbol}" exists on ${bot.exchange} for ${tradingType} trading`;
+          errorMsg += `\n2. Your API connection to ${bot.exchange} is working`;
+          errorMsg += `\n3. Try again in a few moments (may be a temporary API issue)`;
+        } else {
+          errorMsg += ` The symbol may not exist on ${bot.exchange} or may not be available for ${tradingType} trading.`;
+          if (tradingType === 'futures' || tradingType === 'linear') {
+            errorMsg += ` For futures trading, some symbols may require a different format (e.g., 1000PEPEUSDT instead of PEPEUSDT).`;
+          }
+          errorMsg += ` Please verify the symbol name and trading type on ${bot.exchange}.`;
+        }
+        
         console.error(`❌ ${errorMsg}`);
         throw new Error(errorMsg);
       }
