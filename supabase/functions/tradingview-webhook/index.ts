@@ -273,18 +273,57 @@ serve(async (req) => {
       try {
         payload = JSON.parse(rawBody);
       } catch {
-        // If not JSON, try to extract key-value pairs from text
-        console.warn("⚠️ Plain text payload, attempting to parse as JSON or extract fields");
-        try {
-          payload = JSON.parse(rawBody.replace(/'/g, "\""));
-        } catch {
-          // Last resort: create a minimal payload from text
+        // If not JSON, try to extract JSON from text (might be embedded)
+        console.warn("⚠️ Plain text payload, attempting to extract JSON or parse fields");
+        
+        // Try to find JSON object in the text (handles cases like "Q-T{...}rend BUY")
+        const jsonMatch = rawBody.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          try {
+            payload = JSON.parse(jsonMatch[0]);
+            console.log("✅ Extracted JSON from plain text:", { hasBotId: !!(payload.botId || payload.bot_id) });
+          } catch {
+            // Try with quote replacement
+            try {
+              payload = JSON.parse(jsonMatch[0].replace(/'/g, "\""));
+              console.log("✅ Extracted JSON (with quote fix) from plain text");
+            } catch {
+              // Continue to text extraction
+            }
+          }
+        }
+        
+        // If still no payload, try to extract from text patterns
+        if (!payload || (!payload.botId && !payload.bot_id)) {
+          // Try to extract botId from URL query parameters as fallback
+          const url = new URL(req.url);
+          const urlBotId = url.searchParams.get("botId") || url.searchParams.get("bot_id");
+          
+          // Extract side from text
+          const textLower = rawBody.toLowerCase();
+          const extractedSide = textLower.includes("buy") || textLower.includes("long") ? "buy" : 
+                               textLower.includes("sell") || textLower.includes("short") ? "sell" : undefined;
+          
+          // Try to extract botId from text if it looks like a UUID
+          const uuidPattern = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+          const textBotId = rawBody.match(uuidPattern)?.[0];
+          
           payload = {
             raw_text: rawBody,
-            side: rawBody.toLowerCase().includes("buy") || rawBody.toLowerCase().includes("long") ? "buy" : 
-                  rawBody.toLowerCase().includes("sell") || rawBody.toLowerCase().includes("short") ? "sell" : undefined
+            side: extractedSide,
+            botId: urlBotId || textBotId || undefined,
+            bot_id: urlBotId || textBotId || undefined
           } as TradingViewPayload;
-          console.warn("⚠️ Created minimal payload from plain text:", payload);
+          
+          if (urlBotId || textBotId) {
+            console.log(`✅ Extracted botId from ${urlBotId ? 'URL' : 'text'}: ${urlBotId || textBotId}`);
+          } else {
+            console.warn("⚠️ Created minimal payload from plain text (no botId found):", {
+              hasSide: !!extractedSide,
+              textLength: rawBody.length,
+              preview: rawBody.substring(0, 100)
+            });
+          }
         }
       }
     } else {
@@ -292,7 +331,17 @@ serve(async (req) => {
       try {
         payload = JSON.parse(rawBody);
       } catch {
-        payload = JSON.parse(rawBody.replace(/'/g, "\""));
+        // Try to extract JSON from text if it's embedded
+        const jsonMatch = rawBody.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          try {
+            payload = JSON.parse(jsonMatch[0]);
+          } catch {
+            payload = JSON.parse(jsonMatch[0].replace(/'/g, "\""));
+          }
+        } else {
+          payload = JSON.parse(rawBody.replace(/'/g, "\""));
+        }
       }
     }
     
