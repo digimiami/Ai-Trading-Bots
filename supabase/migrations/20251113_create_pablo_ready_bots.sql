@@ -147,3 +147,63 @@ INSERT INTO public.pablo_ready_bots (
   1
 ) ON CONFLICT DO NOTHING;
 
+-- Insert SOL bot: Trendline Breakout Strategy (Daily timeframe)
+INSERT INTO public.pablo_ready_bots (
+  name,
+  description,
+  exchange,
+  symbol,
+  trading_type,
+  leverage,
+  risk_level,
+  strategy,
+  strategy_config,
+  trade_amount,
+  stop_loss,
+  take_profit,
+  timeframe,
+  enabled,
+  featured,
+  order_index
+) VALUES (
+  'Trendline Breakout Strategy - SOL',
+  'Trendline breakout strategy optimized for SOLUSDT on Daily timeframe. Uses linear regression with volume confirmation, multiple take profits, and trailing stop loss.',
+  'bybit',
+  'SOLUSDT',
+  'futures',
+  3,
+  'medium',
+  '{"type": "trendline_breakout", "name": "Trendline Breakout Strategy"}',
+  '{
+    "bias_mode": "both",
+    "regime_mode": "auto",
+    "trendline_length": 30,
+    "volume_multiplier": 1.5,
+    "trade_direction": "both",
+    "enable_tp": true,
+    "tp1_pct": 1.0,
+    "tp2_pct": 2.0,
+    "tp3_pct": 3.0,
+    "enable_trail_sl": true,
+    "trail_offset_pct": 5.8,
+    "risk_per_trade_pct": 1.0,
+    "max_trades_per_day": 10,
+    "max_concurrent": 2,
+    "sl_atr_mult": 2.0,
+    "tp1_r": 1.0,
+    "tp2_r": 2.0,
+    "tp3_r": 3.0,
+    "tp1_size": 0.33,
+    "tp2_size": 0.33,
+    "tp3_size": 0.34,
+    "atr_period": 14
+  }'::jsonb,
+  100,
+  2.0,
+  3.0,
+  '1d',
+  true,
+  true,
+  2
+) ON CONFLICT DO NOTHING;
+

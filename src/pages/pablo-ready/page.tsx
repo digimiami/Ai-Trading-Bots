@@ -6,6 +6,7 @@ import Navigation from '../../components/feature/Navigation';
 import Card from '../../components/base/Card';
 import Button from '../../components/base/Button';
 import { useAuth } from '../../hooks/useAuth';
+import { useBots } from '../../hooks/useBots';
 
 interface PabloReadyBot {
   id: string;
@@ -30,13 +31,46 @@ interface PabloReadyBot {
 export default function PabloReadyPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { createBot, startBot } = useBots();
   const [bots, setBots] = useState<PabloReadyBot[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [startingBot, setStartingBot] = useState<string | null>(null);
+  const [botConfigs, setBotConfigs] = useState<Record<string, {
+    paperTrading: boolean;
+    tradeAmount: number;
+  }>>({});
+  const [botPerformance, setBotPerformance] = useState<Record<string, {
+    pnl: number;
+    pnlPercentage: number;
+    totalTrades: number;
+    winRate: number;
+    wins: number;
+    losses: number;
+  }>>({});
 
   useEffect(() => {
     fetchBots();
   }, []);
+
+  useEffect(() => {
+    // Initialize bot configs with defaults
+    if (bots.length > 0) {
+      const configs: Record<string, { paperTrading: boolean; tradeAmount: number }> = {};
+      bots.forEach(bot => {
+        if (!botConfigs[bot.id]) {
+          configs[bot.id] = {
+            paperTrading: false,
+            tradeAmount: bot.trade_amount || 100
+          };
+        }
+      });
+      if (Object.keys(configs).length > 0) {
+        setBotConfigs(prev => ({ ...prev, ...configs }));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bots]);
 
   const fetchBots = async () => {
     try {
@@ -82,6 +116,116 @@ export default function PabloReadyPage() {
 
     navigate(`/create-bot?${params.toString()}`);
   };
+
+  const handleQuickStart = async (bot: PabloReadyBot) => {
+    if (!user) {
+      navigate('/auth');
+      return;
+    }
+
+    try {
+      setStartingBot(bot.id);
+      const config = botConfigs[bot.id] || { paperTrading: false, tradeAmount: bot.trade_amount || 100 };
+
+      // Create bot with Pablo Ready template
+      const botData = {
+        name: `${bot.name} - ${bot.symbol}`,
+        exchange: bot.exchange as 'bybit' | 'okx',
+        symbol: bot.symbol,
+        tradingType: bot.trading_type as 'spot' | 'futures',
+        leverage: bot.leverage,
+        riskLevel: bot.risk_level as 'low' | 'medium' | 'high',
+        tradeAmount: config.tradeAmount,
+        stopLoss: bot.stop_loss,
+        takeProfit: bot.take_profit,
+        timeframe: bot.timeframe,
+        strategy: bot.strategy,
+        strategyConfig: bot.strategy_config,
+        paperTrading: config.paperTrading,
+        status: 'stopped' as const,
+        pnl: 0,
+        pnlPercentage: 0,
+        totalTrades: 0,
+        winRate: 0
+      };
+
+      const createdBot = await createBot(botData);
+      
+      // Start the bot
+      if (createdBot) {
+        await startBot(createdBot.id);
+        alert(`✅ Bot "${createdBot.name}" created and started successfully!`);
+        navigate('/bots');
+      }
+    } catch (error: any) {
+      console.error('Error starting bot:', error);
+      alert(`❌ Failed to start bot: ${error?.message || error}`);
+    } finally {
+      setStartingBot(null);
+    }
+  };
+
+  const updateBotConfig = (botId: string, field: 'paperTrading' | 'tradeAmount', value: boolean | number) => {
+    setBotConfigs(prev => ({
+      ...prev,
+      [botId]: {
+        ...prev[botId],
+        [field]: value
+      }
+    }));
+  };
+
+  // Fetch performance for existing bots (can be called when needed)
+  useEffect(() => {
+    if (user && bots.length > 0) {
+      const fetchAllPerformance = async () => {
+        try {
+          const { data: userBots } = await supabase
+            .from('trading_bots')
+            .select('id, pnl, pnl_percentage, total_trades, win_rate, symbol')
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false });
+
+          if (userBots) {
+            const performance: Record<string, {
+              pnl: number;
+              pnlPercentage: number;
+              totalTrades: number;
+              winRate: number;
+              wins: number;
+              losses: number;
+            }> = {};
+
+            bots.forEach(pabloBot => {
+              // Find matching bot by symbol
+              const matchingBot = userBots.find(ub => ub.symbol === pabloBot.symbol);
+              if (matchingBot) {
+                const winRate = matchingBot.win_rate || 0;
+                const totalTrades = matchingBot.total_trades || 0;
+                const wins = Math.round(totalTrades * (winRate / 100));
+                const losses = totalTrades - wins;
+
+                performance[pabloBot.id] = {
+                  pnl: matchingBot.pnl || 0,
+                  pnlPercentage: matchingBot.pnl_percentage || 0,
+                  totalTrades,
+                  winRate,
+                  wins,
+                  losses
+                };
+              }
+            });
+
+            setBotPerformance(prev => ({ ...prev, ...performance }));
+          }
+        } catch (error) {
+          console.error('Error fetching bot performance:', error);
+        }
+      };
+
+      fetchAllPerformance();
+    }
+  }, [user, bots]);
 
   if (loading) {
     return (
@@ -242,18 +386,125 @@ export default function PabloReadyPage() {
                       )}
                     </div>
 
-                    {/* Action Button */}
-                    <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-                      {user ? (
+                    {/* Quick Start Configuration */}
+                    {user && (
+                      <div className="pt-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
+                        {/* Paper/Real Toggle */}
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                            Trading Mode
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => updateBotConfig(bot.id, 'paperTrading', false)}
+                              className={`px-3 py-1 rounded text-xs font-medium transition ${
+                                !botConfigs[bot.id]?.paperTrading
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+                              }`}
+                            >
+                              Real
+                            </button>
+                            <button
+                              onClick={() => updateBotConfig(bot.id, 'paperTrading', true)}
+                              className={`px-3 py-1 rounded text-xs font-medium transition ${
+                                botConfigs[bot.id]?.paperTrading
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+                              }`}
+                            >
+                              Paper
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Trade Amount Input */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Trade Amount ($)
+                          </label>
+                          <input
+                            type="number"
+                            min="10"
+                            step="10"
+                            value={botConfigs[bot.id]?.tradeAmount || bot.trade_amount || 100}
+                            onChange={(e) => updateBotConfig(bot.id, 'tradeAmount', parseFloat(e.target.value) || 100)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+                          />
+                        </div>
+
+                        {/* Performance Metrics */}
+                        {botPerformance[bot.id] && (
+                          <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div>
+                                <span className="text-gray-500 dark:text-gray-400">PnL</span>
+                                <p className={`font-semibold ${
+                                  botPerformance[bot.id].pnl >= 0
+                                    ? 'text-green-600 dark:text-green-400'
+                                    : 'text-red-600 dark:text-red-400'
+                                }`}>
+                                  ${botPerformance[bot.id].pnl.toFixed(2)} ({botPerformance[bot.id].pnlPercentage.toFixed(2)}%)
+                                </p>
+                              </div>
+                              <div>
+                                <span className="text-gray-500 dark:text-gray-400">Win Rate</span>
+                                <p className="font-semibold text-gray-900 dark:text-white">
+                                  {botPerformance[bot.id].winRate.toFixed(1)}%
+                                </p>
+                              </div>
+                              <div>
+                                <span className="text-gray-500 dark:text-gray-400">Total Trades</span>
+                                <p className="font-semibold text-gray-900 dark:text-white">
+                                  {botPerformance[bot.id].totalTrades}
+                                </p>
+                              </div>
+                              <div>
+                                <span className="text-gray-500 dark:text-gray-400">Win/Loss</span>
+                                <p className="font-semibold text-gray-900 dark:text-white">
+                                  {botPerformance[bot.id].wins}/{botPerformance[bot.id].losses}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Start Button */}
+                        <Button
+                          onClick={() => handleQuickStart(bot)}
+                          className="w-full"
+                          size="sm"
+                          disabled={startingBot === bot.id}
+                        >
+                          {startingBot === bot.id ? (
+                            <>
+                              <i className="ri-loader-4-line animate-spin mr-2"></i>
+                              Starting...
+                            </>
+                          ) : (
+                            <>
+                              <i className="ri-play-line mr-2"></i>
+                              Start Bot
+                            </>
+                          )}
+                        </Button>
+
+                        {/* Alternative: Use This Bot (for customization) */}
                         <Button
                           onClick={() => handleUseBot(bot)}
                           className="w-full"
+                          variant="secondary"
                           size="sm"
                         >
-                          <i className="ri-add-circle-line mr-2"></i>
-                          Use This Bot
+                          <i className="ri-settings-3-line mr-2"></i>
+                          Customize & Create
                         </Button>
-                      ) : (
+                      </div>
+                    )}
+
+                    {/* Sign In Prompt */}
+                    {!user && (
+                      <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
                         <Button
                           onClick={() => navigate('/auth')}
                           className="w-full"
@@ -263,8 +514,8 @@ export default function PabloReadyPage() {
                           <i className="ri-login-box-line mr-2"></i>
                           Sign In to Use
                         </Button>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 </Card>
               ))}
