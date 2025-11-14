@@ -48,6 +48,9 @@ export default function PabloReadyPage() {
     wins: number;
     losses: number;
   }>>({});
+  const [botLogs, setBotLogs] = useState<Record<string, any[]>>({});
+  const [expandedLogs, setExpandedLogs] = useState<Record<string, boolean>>({});
+  const [loadingLogs, setLoadingLogs] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     fetchBots();
@@ -120,7 +123,7 @@ export default function PabloReadyPage() {
         strategy: bot.strategy,
         strategyConfig: bot.strategy_config,
         paperTrading: config.paperTrading,
-        status: 'stopped' as const,
+        status: 'running' as const, // Start bot immediately as running
         pnl: 0,
         pnlPercentage: 0,
         totalTrades: 0,
@@ -129,9 +132,12 @@ export default function PabloReadyPage() {
 
       const createdBot = await createBot(botData);
       
-      // Start the bot
+      // Bot is already set to 'running' status, but ensure it's started
       if (createdBot) {
-        await startBot(createdBot.id);
+        // If status wasn't set to running, start it explicitly
+        if (createdBot.status !== 'running') {
+          await startBot(createdBot.id);
+        }
         alert(`✅ Bot "${createdBot.name}" created and started successfully!`);
         navigate('/bots');
       }
@@ -153,14 +159,14 @@ export default function PabloReadyPage() {
     }));
   };
 
-  // Fetch performance for existing bots (can be called when needed)
+  // Fetch performance and logs for existing bots
   useEffect(() => {
     if (user && bots.length > 0) {
-      const fetchAllPerformance = async () => {
+      const fetchAllData = async () => {
         try {
           const { data: userBots } = await supabase
             .from('trading_bots')
-            .select('id, pnl, pnl_percentage, total_trades, win_rate, symbol')
+            .select('id, pnl, pnl_percentage, total_trades, win_rate, symbol, name')
             .eq('user_id', user.id)
             .order('created_at', { ascending: false });
 
@@ -174,9 +180,15 @@ export default function PabloReadyPage() {
               losses: number;
             }> = {};
 
+            const logsMap: Record<string, any[]> = {};
+
             bots.forEach(pabloBot => {
-              // Find matching bot by symbol
-              const matchingBot = userBots.find(ub => ub.symbol === pabloBot.symbol);
+              // Find matching bot by symbol and name pattern
+              const matchingBot = userBots.find(ub => 
+                ub.symbol === pabloBot.symbol && 
+                (ub.name.includes(pabloBot.name) || ub.name.includes(pabloBot.symbol))
+              );
+              
               if (matchingBot) {
                 const winRate = matchingBot.win_rate || 0;
                 const totalTrades = matchingBot.total_trades || 0;
@@ -191,19 +203,130 @@ export default function PabloReadyPage() {
                   wins,
                   losses
                 };
+
+                // Fetch logs for this bot
+                fetchBotLogs(pabloBot.id, matchingBot.id);
               }
             });
 
             setBotPerformance(prev => ({ ...prev, ...performance }));
           }
         } catch (error) {
-          console.error('Error fetching bot performance:', error);
+          console.error('Error fetching bot data:', error);
         }
       };
 
-      fetchAllPerformance();
+      fetchAllData();
+      
+      // Refresh logs every 10 seconds
+      const interval = setInterval(async () => {
+        if (user && bots.length > 0) {
+          try {
+            const { data: userBots } = await supabase
+              .from('trading_bots')
+              .select('id, symbol, name')
+              .eq('user_id', user.id);
+
+            if (userBots) {
+              bots.forEach(pabloBot => {
+                const matchingBot = userBots.find(ub => 
+                  ub.symbol === pabloBot.symbol && 
+                  (ub.name.includes(pabloBot.name) || ub.name.includes(pabloBot.symbol))
+                );
+                if (matchingBot) {
+                  fetchBotLogs(pabloBot.id, matchingBot.id);
+                }
+              });
+            }
+          } catch (error) {
+            console.error('Error refreshing logs:', error);
+          }
+        }
+      }, 10000);
+
+      return () => clearInterval(interval);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, bots]);
+
+  const fetchBotLogs = async (pabloBotId: string, userBotId: string) => {
+    if (loadingLogs[pabloBotId]) return;
+    
+    try {
+      setLoadingLogs(prev => ({ ...prev, [pabloBotId]: true }));
+      
+      const { data: logs, error } = await supabase
+        .from('bot_activity_logs')
+        .select('*')
+        .eq('bot_id', userBotId)
+        .order('timestamp', { ascending: false })
+        .limit(20);
+
+      if (error) throw error;
+
+      setBotLogs(prev => ({
+        ...prev,
+        [pabloBotId]: logs || []
+      }));
+    } catch (error) {
+      console.error('Error fetching bot logs:', error);
+    } finally {
+      setLoadingLogs(prev => ({ ...prev, [pabloBotId]: false }));
+    }
+  };
+
+  const toggleLogs = (botId: string) => {
+    setExpandedLogs(prev => ({
+      ...prev,
+      [botId]: !prev[botId]
+    }));
+
+    // Fetch logs when expanding if not already loaded
+    if (!expandedLogs[botId] && !botLogs[botId]) {
+      // Find matching user bot
+      supabase
+        .from('trading_bots')
+        .select('id, symbol, name')
+        .eq('user_id', user?.id)
+        .then(({ data }) => {
+          if (data) {
+            const pabloBot = bots.find(b => b.id === botId);
+            if (pabloBot) {
+              const matchingBot = data.find(ub => 
+                ub.symbol === pabloBot.symbol && 
+                (ub.name.includes(pabloBot.name) || ub.name.includes(pabloBot.symbol))
+              );
+              if (matchingBot) {
+                fetchBotLogs(botId, matchingBot.id);
+              }
+            }
+          }
+        });
+    }
+  };
+
+  const formatLogTime = (timestamp: string) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return date.toLocaleDateString();
+  };
+
+  const getLogLevelColor = (level: string) => {
+    switch (level?.toLowerCase()) {
+      case 'error': return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200';
+      case 'warning': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200';
+      case 'success': return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200';
+      case 'info': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200';
+      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300';
+    }
+  };
 
   if (loading) {
     return (
@@ -466,6 +589,67 @@ export default function PabloReadyPage() {
                             </>
                           )}
                         </Button>
+
+                        {/* Bot Logs Section */}
+                        {user && (
+                          <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
+                            <button
+                              onClick={() => toggleLogs(bot.id)}
+                              className="w-full flex items-center justify-between text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400"
+                            >
+                              <span className="flex items-center gap-2">
+                                <i className="ri-file-list-line"></i>
+                                Activity Logs
+                                {botLogs[bot.id] && botLogs[bot.id].length > 0 && (
+                                  <span className="px-2 py-0.5 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200 rounded text-xs">
+                                    {botLogs[bot.id].length}
+                                  </span>
+                                )}
+                              </span>
+                              <i className={`ri-arrow-${expandedLogs[bot.id] ? 'up' : 'down'}-s-line`}></i>
+                            </button>
+
+                            {expandedLogs[bot.id] && (
+                              <div className="mt-3 max-h-64 overflow-y-auto space-y-2">
+                                {loadingLogs[bot.id] ? (
+                                  <div className="text-center py-4 text-gray-500 text-sm">
+                                    <i className="ri-loader-4-line animate-spin text-lg mb-1"></i>
+                                    <p>Loading logs...</p>
+                                  </div>
+                                ) : botLogs[bot.id] && botLogs[bot.id].length > 0 ? (
+                                  botLogs[bot.id].map((log: any, idx: number) => (
+                                    <div
+                                      key={log.id || idx}
+                                      className="p-2 bg-gray-50 dark:bg-gray-800 rounded text-xs"
+                                    >
+                                      <div className="flex items-start justify-between mb-1">
+                                        <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${getLogLevelColor(log.level)}`}>
+                                          {log.level || 'info'}
+                                        </span>
+                                        <span className="text-gray-500 dark:text-gray-400 text-xs">
+                                          {formatLogTime(log.timestamp)}
+                                        </span>
+                                      </div>
+                                      <p className="text-gray-700 dark:text-gray-300 text-xs mt-1">
+                                        {log.message}
+                                      </p>
+                                      {log.category && (
+                                        <span className="text-gray-500 dark:text-gray-400 text-xs mt-1 block">
+                                          Category: {log.category}
+                                        </span>
+                                      )}
+                                    </div>
+                                  ))
+                                ) : (
+                                  <div className="text-center py-4 text-gray-500 dark:text-gray-400 text-sm">
+                                    <i className="ri-file-list-line text-lg mb-1"></i>
+                                    <p>No logs yet. Bot will show activity here once it starts trading.</p>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
 
