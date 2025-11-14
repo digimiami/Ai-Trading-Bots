@@ -141,21 +141,29 @@ export default function BotsPage() {
     });
   }, [isWebhookView, bots, webhookSignals, webhookSignalsLoading]);
 
+  /**
+   * Builds the comprehensive TradingView webhook payload format for a bot.
+   * This format includes all TradingView strategy variables that will be automatically
+   * replaced by TradingView when the alert fires.
+   * 
+   * Note: When testing webhooks manually, replace template variables with actual values
+   * (e.g., use 'buy' instead of '{{strategy.order.action}}').
+   */
   const buildSamplePayload = (bot: TradingBot): string => {
     return JSON.stringify({
       secret: bot.webhookSecret || bot.webhook_secret || 'YOUR_TRADINGVIEW_WEBHOOK_SECRET',
       botId: bot.id,
-      action: '{{strategy.order.action}}', // Can be: 'buy', 'sell', 'long', 'short'
-      marketPosition: '{{strategy.market_position}}',
-      prevMarketPosition: '{{strategy.prev_market_position}}',
-      marketPositionSize: '{{strategy.market_position_size}}',
-      prevMarketPositionSize: '{{strategy.prev_market_position_size}}',
-      instrument: '{{ticker}}',
-      timestamp: '{{timenow}}',
-      maxLag: '300',
-      investmentType: 'base',
-      amount: '{{strategy.order.contracts}}',
-      mode: bot.paperTrading ? 'paper' : 'real',
+      action: '{{strategy.order.action}}', // TradingView will replace with: 'buy', 'sell', 'long', 'short'
+      marketPosition: '{{strategy.market_position}}', // Current market position: 'long', 'short', 'flat'
+      prevMarketPosition: '{{strategy.prev_market_position}}', // Previous market position
+      marketPositionSize: '{{strategy.market_position_size}}', // Current position size
+      prevMarketPositionSize: '{{strategy.prev_market_position_size}}', // Previous position size
+      instrument: '{{ticker}}', // Trading pair symbol (e.g., BTCUSDT)
+      timestamp: '{{timenow}}', // Alert timestamp
+      maxLag: '300', // Maximum lag in seconds
+      investmentType: 'base', // Investment type: 'base' or 'quote'
+      amount: '{{strategy.order.contracts}}', // Number of contracts/size
+      mode: bot.paperTrading ? 'paper' : 'real', // Trading mode
       reason: 'TradingView alert signal'
     }, null, 2);
   };
