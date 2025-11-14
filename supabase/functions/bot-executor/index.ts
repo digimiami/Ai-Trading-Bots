@@ -1861,7 +1861,27 @@ class BotExecutor {
 
       for (const signal of pendingSignals) {
         const signalId = signal.id;
-        console.log(`🔄 Processing manual signal ${signalId}: ${signal.side} (${signal.mode})`);
+        const alertEmoji = signal.side === 'buy' ? '🟢' : '🔴';
+        const alertType = signal.side.toUpperCase() + ' ALERT';
+        console.log(`📬 ${alertEmoji} Processing ${alertType} signal ${signalId} for bot ${bot.id} (${bot.name}): ${signal.side} (${signal.mode})`);
+        
+        // Log to bot_activity_logs when signal is received by bot-executor
+        await this.addBotLog(bot.id, {
+          level: 'info',
+          category: 'trade',
+          message: `${alertEmoji} ${alertType} RECEIVED: Processing TradingView webhook signal (${signal.mode === 'paper' ? 'PAPER' : 'REAL'} mode)`,
+          details: {
+            signal_id: signalId,
+            side: signal.side,
+            mode: signal.mode,
+            reason: signal.reason,
+            size_multiplier: signal.size_multiplier,
+            source: 'manual_trade_signal',
+            alert_type: alertType,
+            received_at: signal.created_at,
+            timestamp: TimeSync.getCurrentTimeISO()
+          }
+        });
 
         try {
           if (signal.status === 'pending') {
