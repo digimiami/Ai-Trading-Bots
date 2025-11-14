@@ -48,9 +48,17 @@ In your TradingView alert, use the following JSON message format. TradingView wi
   "secret": "REPLACE_WITH_TRADINGVIEW_WEBHOOK_SECRET",
   "botId": "e0f9c1e2-1234-5678-9abc-def012345678",
   "action": "{{strategy.order.action}}",
-  "mode": "real",
-  "size_multiplier": 1.0,
-  "reason": "TradingView {{strategy.order.comment}}"
+  "marketPosition": "{{strategy.market_position}}",
+  "prevMarketPosition": "{{strategy.prev_market_position}}",
+  "marketPositionSize": "{{strategy.market_position_size}}",
+  "prevMarketPositionSize": "{{strategy.prev_market_position_size}}",
+  "instrument": "{{ticker}}",
+  "timestamp": "{{timenow}}",
+  "maxLag": "300",
+  "investmentType": "base",
+  "amount": "{{strategy.order.contracts}}",
+  "mode": "paper",
+  "reason": "TradingView alert signal"
 }
 ```
 
@@ -81,6 +89,15 @@ You can also use these field names (all are supported):
   "secret": "your_webhook_secret_here",
   "botId": "your_bot_id_here",
   "action": "{{strategy.order.action}}",
+  "marketPosition": "{{strategy.market_position}}",
+  "prevMarketPosition": "{{strategy.prev_market_position}}",
+  "marketPositionSize": "{{strategy.market_position_size}}",
+  "prevMarketPositionSize": "{{strategy.prev_market_position_size}}",
+  "instrument": "{{ticker}}",
+  "timestamp": "{{timenow}}",
+  "maxLag": "300",
+  "investmentType": "base",
+  "amount": "{{strategy.order.contracts}}",
   "mode": "real",
   "reason": "Long entry: {{strategy.order.comment}}"
 }
@@ -92,6 +109,15 @@ You can also use these field names (all are supported):
   "secret": "your_webhook_secret_here",
   "botId": "your_bot_id_here",
   "action": "{{strategy.order.action}}",
+  "marketPosition": "{{strategy.market_position}}",
+  "prevMarketPosition": "{{strategy.prev_market_position}}",
+  "marketPositionSize": "{{strategy.market_position_size}}",
+  "prevMarketPositionSize": "{{strategy.prev_market_position_size}}",
+  "instrument": "{{ticker}}",
+  "timestamp": "{{timenow}}",
+  "maxLag": "300",
+  "investmentType": "base",
+  "amount": "{{strategy.order.contracts}}",
   "mode": "real",
   "reason": "Short entry: {{strategy.order.comment}}"
 }
@@ -104,10 +130,21 @@ You can also use these field names (all are supported):
 | `secret` | ✅ | Must equal the bot's webhook secret (shown in the UI) or the legacy global secret if still used. |
 | `botId` | ✅ | UUID of the Pablo trading bot to control. |
 | `action` / `side` / `signal` | ✅ | Use `{{strategy.order.action}}` for automatic buy/sell/long/short detection. Accepts: `buy`, `sell`, `long`, `short`, `enter_long`, `enter_short`, `entry_long`, `entry_short`. |
+| `marketPosition` | Optional | TradingView variable: `{{strategy.market_position}}` - Current market position (long/short/flat). |
+| `prevMarketPosition` | Optional | TradingView variable: `{{strategy.prev_market_position}}` - Previous market position. |
+| `marketPositionSize` | Optional | TradingView variable: `{{strategy.market_position_size}}` - Current position size. |
+| `prevMarketPositionSize` | Optional | TradingView variable: `{{strategy.prev_market_position_size}}` - Previous position size. |
+| `instrument` / `ticker` / `symbol` | Optional | TradingView variable: `{{ticker}}` - The trading pair symbol (e.g., BTCUSDT). |
+| `timestamp` / `timenow` | Optional | TradingView variable: `{{timenow}}` - Timestamp when the alert was triggered. |
+| `maxLag` | Optional | Maximum lag in milliseconds (e.g., "300"). |
+| `investmentType` | Optional | Investment type (e.g., "base"). |
+| `amount` | Optional | TradingView variable: `{{strategy.order.contracts}}` - Number of contracts/shares. Used for position sizing if provided. |
 | `mode` | Optional | `real` or `paper`. Defaults to `real`; `paper` forces a paper trade even if the bot is live. |
 | `size_multiplier` | Optional | Multiplies the bot's configured trade amount (e.g. `1.5` increases size by 50%). |
 | `reason` / `note` / `strategy` | Optional | Stored with the signal and visible in bot activity logs. Can use TradingView variables like `{{strategy.order.comment}}`. |
 | `trigger_execution` | Optional | Overrides the bot-level default. When omitted, the webhook uses the "Immediate Execution" toggle from the UI. Set `false` to queue without triggering the executor. |
+
+**Note:** All TradingView strategy variables are stored in the `manual_trade_signals.metadata` field for reference, even if they're not directly used for trade execution.
 
 ## 5. Testing
 
