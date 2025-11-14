@@ -7,6 +7,7 @@ import Button from '../../components/base/Button';
 import Card from '../../components/base/Card';
 import { useAuth } from '../../hooks/useAuth';
 import { useAdmin } from '../../hooks/useAdmin';
+import { supabase } from '../../lib/supabase';
 
 interface User {
   id: string;
@@ -118,6 +119,8 @@ export default function AdminPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [invitationCodes, setInvitationCodes] = useState<InvitationCode[]>([]);
   const [allBots, setAllBots] = useState<TradingBot[]>([]);
+  const [pabloReadyBots, setPabloReadyBots] = useState<any[]>([]);
+  const [pabloReadyLoading, setPabloReadyLoading] = useState(false);
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
   const [tradingAnalytics, setTradingAnalytics] = useState<TradingAnalytics | null>(null);
   const [financialOverview, setFinancialOverview] = useState<FinancialOverview | null>(null);
@@ -162,6 +165,41 @@ export default function AdminPage() {
     loadData();
   }, [user, authLoading, navigate]);
 
+  const fetchPabloReadyBots = async () => {
+    try {
+      setPabloReadyLoading(true);
+      const { data, error } = await supabase
+        .from('pablo_ready_bots')
+        .select('*')
+        .order('order_index', { ascending: true })
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      setPabloReadyBots(data || []);
+    } catch (error: any) {
+      console.error('Error fetching Pablo Ready bots:', error);
+      alert(`Failed to load Pablo Ready bots: ${error?.message || error}`);
+    } finally {
+      setPabloReadyLoading(false);
+    }
+  };
+
+  const togglePabloReadyBot = async (botId: string, enabled: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('pablo_ready_bots')
+        .update({ enabled: !enabled })
+        .eq('id', botId);
+      
+      if (error) throw error;
+      await fetchPabloReadyBots();
+      alert(`✅ Bot ${enabled ? 'disabled' : 'enabled'} successfully`);
+    } catch (error: any) {
+      console.error('Error toggling Pablo Ready bot:', error);
+      alert(`❌ Failed to ${enabled ? 'disable' : 'enable'} bot: ${error?.message || error}`);
+    }
+  };
+
   const loadData = async () => {
     try {
       console.log('🔄 Loading admin data...');
@@ -203,6 +241,11 @@ export default function AdminPage() {
       setUserActivity(activityData || []);
       setSystemLogs(logsData || []);
       setRiskMetrics(riskData);
+      
+      // Load Pablo Ready bots if on that tab
+      if (activeTab === 'pablo-ready') {
+        await fetchPabloReadyBots();
+      }
     } catch (error) {
       console.error('❌ Error loading admin data:', error);
       console.error('❌ Error details:', error.message);
@@ -368,6 +411,7 @@ export default function AdminPage() {
     { id: 'overview', label: 'Overview', icon: 'ri-dashboard-line' },
     { id: 'users', label: 'Users', icon: 'ri-user-line' },
     { id: 'bots', label: 'Trading Bots', icon: 'ri-robot-line' },
+    { id: 'pablo-ready', label: 'Pablo Ready', icon: 'ri-star-line' },
     { id: 'analytics', label: 'Analytics', icon: 'ri-bar-chart-line' },
     { id: 'financial', label: 'Financial', icon: 'ri-money-dollar-circle-line' },
     { id: 'monitoring', label: 'Monitoring', icon: 'ri-eye-line' },
@@ -390,7 +434,12 @@ export default function AdminPage() {
               <Button
                 key={tab.id}
                 variant={activeTab === tab.id ? 'primary' : 'secondary'}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  if (tab.id === 'pablo-ready') {
+                    fetchPabloReadyBots();
+                  }
+                }}
                 className="flex items-center gap-2"
               >
                 <i className={tab.icon}></i>
@@ -780,6 +829,122 @@ export default function AdminPage() {
                         </div>
                       </div>
                     </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </div>
+        )}
+
+        {/* Pablo Ready Tab */}
+        {activeTab === 'pablo-ready' && (
+          <div className="space-y-6">
+            <Card className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Pablo Ready Bots</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    Manage pre-configured bots available to all users
+                  </p>
+                </div>
+                <Button
+                  onClick={fetchPabloReadyBots}
+                  variant="secondary"
+                  size="sm"
+                  disabled={pabloReadyLoading}
+                >
+                  <i className="ri-refresh-line mr-2"></i>
+                  Refresh
+                </Button>
+              </div>
+
+              {pabloReadyLoading ? (
+                <div className="text-center py-8">
+                  <i className="ri-loader-4-line animate-spin text-2xl text-gray-400"></i>
+                  <p className="text-sm text-gray-500 mt-2">Loading bots...</p>
+                </div>
+              ) : pabloReadyBots.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <i className="ri-robot-line text-4xl mb-2"></i>
+                  <p>No Pablo Ready bots found</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {pabloReadyBots.map((bot) => (
+                    <Card
+                      key={bot.id}
+                      className={`p-4 border-2 ${
+                        bot.enabled
+                          ? 'border-green-200 bg-green-50/50 dark:border-green-900/40 dark:bg-green-900/10'
+                          : 'border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/50'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
+                              {bot.name}
+                            </h4>
+                            {bot.featured && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200">
+                                <i className="ri-star-fill mr-1"></i>
+                                Featured
+                              </span>
+                            )}
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                                bot.enabled
+                                  ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200'
+                                  : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                              }`}
+                            >
+                              {bot.enabled ? 'Enabled' : 'Disabled'}
+                            </span>
+                          </div>
+                          {bot.description && (
+                            <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
+                              {bot.description}
+                            </p>
+                          )}
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                            <div>
+                              <span className="text-gray-500 dark:text-gray-400 block text-xs mb-1">Exchange</span>
+                              <span className="font-medium text-gray-900 dark:text-white capitalize">
+                                {bot.exchange}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500 dark:text-gray-400 block text-xs mb-1">Symbol</span>
+                              <span className="font-medium text-gray-900 dark:text-white">
+                                {bot.symbol}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500 dark:text-gray-400 block text-xs mb-1">Type</span>
+                              <span className="font-medium text-gray-900 dark:text-white capitalize">
+                                {bot.trading_type}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500 dark:text-gray-400 block text-xs mb-1">Leverage</span>
+                              <span className="font-medium text-gray-900 dark:text-white">
+                                {bot.leverage}x
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="ml-4">
+                          <Button
+                            onClick={() => togglePabloReadyBot(bot.id, bot.enabled)}
+                            variant={bot.enabled ? 'danger' : 'primary'}
+                            size="sm"
+                          >
+                            <i className={`mr-2 ${bot.enabled ? 'ri-eye-off-line' : 'ri-eye-line'}`}></i>
+                            {bot.enabled ? 'Disable' : 'Enable'}
+                          </Button>
+                        </div>
+                      </div>
+                    </Card>
                   ))}
                 </div>
               )}

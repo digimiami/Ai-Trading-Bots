@@ -7,6 +7,7 @@ import Card from '../../components/base/Card';
 import Header from '../../components/feature/Header';
 import type { TradingStrategy, AdvancedStrategyConfig } from '../../types/trading';
 import { useBots } from '../../hooks/useBots';
+import { supabase } from '../../lib/supabase';
 import PairRecommendations from '../../components/bot/PairRecommendations';
 import type { PairRecommendation } from '../../services/pairRecommendations';
 import { STRATEGY_PRESETS, type StrategyPreset } from '../../constants/strategyPresets';
@@ -25,7 +26,11 @@ export default function CreateBotPage() {
   const backtestData = location.state as any;
   const isFromBacktest = backtestData?.fromBacktest === true;
   
-  // Get initial values from URL params (for navigation from Futures Pairs Finder)
+  // Check if coming from Pablo Ready template
+  const isFromPabloReady = searchParams.get('template') === 'pablo-ready';
+  const pabloReadyBotId = searchParams.get('botId');
+  
+  // Get initial values from URL params (for navigation from Futures Pairs Finder or Pablo Ready)
   const urlSymbol = searchParams.get('symbol') || 'BTCUSDT';
   const urlExchange = (searchParams.get('exchange') || 'bybit') as 'bybit' | 'okx';
   const urlTradingType = (searchParams.get('tradingType') || 'spot') as 'spot' | 'futures';
@@ -35,9 +40,11 @@ export default function CreateBotPage() {
   const urlStopLoss = searchParams.get('stopLoss') ? parseFloat(searchParams.get('stopLoss')!) : 2.0;
   const urlTakeProfit = searchParams.get('takeProfit') ? parseFloat(searchParams.get('takeProfit')!) : 4.0;
   const urlTimeframe = (searchParams.get('timeframe') || '1h') as '1m' | '5m' | '15m' | '1h' | '2h' | '3h' | '4h' | '1d' | '1w';
+  const urlStrategy = searchParams.get('strategy');
+  const urlStrategyConfig = searchParams.get('strategyConfig');
   
   const [formData, setFormData] = useState({
-    name: isFromBacktest && backtestData?.botName ? backtestData.botName : '',
+    name: isFromBacktest && backtestData?.botName ? backtestData.botName : (isFromPabloReady && searchParams.get('name') ? searchParams.get('name')! : ''),
     exchange: isFromBacktest && backtestData?.backtestConfig?.exchange ? backtestData.backtestConfig.exchange : urlExchange,
     tradingType: isFromBacktest && backtestData?.backtestConfig?.tradingType ? backtestData.backtestConfig.tradingType : urlTradingType,
     symbol: isFromBacktest && backtestData?.backtestConfig?.symbols?.[0] ? backtestData.backtestConfig.symbols[0] : urlSymbol,
@@ -72,6 +79,72 @@ export default function CreateBotPage() {
   const [customSymbolError, setCustomSymbolError] = useState<string>('');
   const [useMultiplePairs, setUseMultiplePairs] = useState<boolean>(false);
   const [customPairs, setCustomPairs] = useState<string>('');
+
+  // Load Pablo Ready bot data if template is provided
+  useEffect(() => {
+    if (isFromPabloReady && pabloReadyBotId) {
+      const loadPabloReadyBot = async () => {
+        try {
+          const { data, error } = await supabase
+            .from('pablo_ready_bots')
+            .select('*')
+            .eq('id', pabloReadyBotId)
+            .eq('enabled', true)
+            .single();
+
+          if (error) throw error;
+
+          if (data) {
+            // Parse strategy and config from URL params or database
+            let parsedStrategy = data.strategy || {};
+            let parsedConfig = data.strategy_config || {};
+
+            if (urlStrategy) {
+              try {
+                parsedStrategy = JSON.parse(urlStrategy);
+              } catch (e) {
+                console.warn('Failed to parse strategy from URL');
+              }
+            }
+
+            if (urlStrategyConfig) {
+              try {
+                parsedConfig = JSON.parse(urlStrategyConfig);
+              } catch (e) {
+                console.warn('Failed to parse strategy config from URL');
+              }
+            }
+
+            setFormData(prev => ({
+              ...prev,
+              name: searchParams.get('name') || data.name || prev.name,
+              exchange: (searchParams.get('exchange') || data.exchange || prev.exchange) as 'bybit' | 'okx',
+              tradingType: (searchParams.get('tradingType') || data.trading_type || prev.tradingType) as 'spot' | 'futures',
+              symbol: searchParams.get('symbol') || data.symbol || prev.symbol,
+              timeframe: (searchParams.get('timeframe') || data.timeframe || prev.timeframe) as any,
+              leverage: searchParams.get('leverage') ? parseInt(searchParams.get('leverage')!) : (data.leverage || prev.leverage),
+              riskLevel: (searchParams.get('riskLevel') || data.risk_level || prev.riskLevel) as 'low' | 'medium' | 'high',
+              tradeAmount: searchParams.get('tradeAmount') ? parseFloat(searchParams.get('tradeAmount')!) : (data.trade_amount || prev.tradeAmount),
+              stopLoss: searchParams.get('stopLoss') ? parseFloat(searchParams.get('stopLoss')!) : (data.stop_loss || prev.stopLoss),
+              takeProfit: searchParams.get('takeProfit') ? parseFloat(searchParams.get('takeProfit')!) : (data.take_profit || prev.takeProfit),
+            }));
+
+            // Set strategy and config
+            if (parsedStrategy && Object.keys(parsedStrategy).length > 0) {
+              setStrategy(parsedStrategy as TradingStrategy);
+            }
+            if (parsedConfig && Object.keys(parsedConfig).length > 0) {
+              setAdvancedConfig(parsedConfig as AdvancedStrategyConfig);
+            }
+          }
+        } catch (error: any) {
+          console.error('Failed to load Pablo Ready bot:', error);
+        }
+      };
+
+      loadPabloReadyBot();
+    }
+  }, [isFromPabloReady, pabloReadyBotId]);
 
   const [strategy, setStrategy] = useState<TradingStrategy>(
     isFromBacktest && backtestData?.backtestStrategy

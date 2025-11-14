@@ -1374,7 +1374,7 @@ class BotExecutor {
         }
       }
       console.log('Bot strategy:', JSON.stringify(strategy, null, 2));
-      const shouldTrade = this.evaluateStrategy(strategy, { price: currentPrice, rsi, adx }, bot);
+      const shouldTrade = await this.evaluateStrategy(strategy, { price: currentPrice, rsi, adx }, bot);
       
       console.log('Strategy evaluation result:', JSON.stringify(shouldTrade, null, 2));
       
@@ -1417,8 +1417,13 @@ class BotExecutor {
     }
   }
   
-  private evaluateStrategy(strategy: any, marketData: any, bot: any = null): any {
+  private async evaluateStrategy(strategy: any, marketData: any, bot: any = null): Promise<any> {
     const { rsi, adx, price, mlPrediction } = marketData;
+    
+    // Check if this is a trendline breakout strategy
+    if (strategy.type === 'trendline_breakout' || strategy.name === 'Trendline Breakout Strategy') {
+      return await this.evaluateTrendlineBreakoutStrategy(strategy, marketData, bot);
+    }
     
     // Initialize signals array to collect all strategy signals
     const signals: any[] = [];
@@ -1570,6 +1575,148 @@ class BotExecutor {
       reason: 'No trading signals detected (all strategy parameters checked)',
       confidence: 0
     };
+  }
+
+  /**
+   * Evaluate Trendline Breakout Strategy
+   * Based on Pine Script: Trendline Breakout Strategy with volume confirmation
+   */
+  private async evaluateTrendlineBreakoutStrategy(strategy: any, marketData: any, bot: any): Promise<any> {
+    try {
+      // Get strategy config from bot
+      let strategyConfig: any = {};
+      if (bot?.strategy_config) {
+        if (typeof bot.strategy_config === 'string') {
+          strategyConfig = JSON.parse(bot.strategy_config);
+        } else {
+          strategyConfig = bot.strategy_config;
+        }
+      }
+
+      const trendlineLength = strategyConfig.trendline_length || 30;
+      const volumeMultiplier = strategyConfig.volume_multiplier || 1.5;
+      const tradeDirection = strategyConfig.trade_direction || 'both';
+      const timeframe = bot.timeframe || bot.timeFrame || '1h';
+      const symbol = bot.symbol;
+      const exchange = bot.exchange;
+      const tradingType = bot.tradingType || bot.trading_type || 'futures';
+
+      // Fetch klines data (need at least trendlineLength + 1 candles)
+      const klines = await MarketDataFetcher.fetchKlines(symbol, exchange, timeframe, trendlineLength + 10);
+      
+      if (klines.length < trendlineLength + 1) {
+        return {
+          shouldTrade: false,
+          reason: `Insufficient klines data (${klines.length} < ${trendlineLength + 1})`,
+          confidence: 0
+        };
+      }
+
+      // Extract closes and volumes
+      const closes = klines.map(k => k[4]); // close price
+      const volumes = klines.map(k => k[5]); // volume
+      const currentPrice = closes[closes.length - 1];
+      const currentVolume = volumes[volumes.length - 1];
+
+      // Calculate linear regression trendline (simple linear regression)
+      const trendline = this.calculateLinearRegression(closes.slice(-trendlineLength - 1, -1), trendlineLength);
+      const previousTrendline = this.calculateLinearRegression(closes.slice(-trendlineLength - 2, -2), trendlineLength);
+      const currentTrendline = this.calculateLinearRegression(closes.slice(-trendlineLength, closes.length), trendlineLength);
+
+      // Calculate average volume
+      const avgVolume = volumes.slice(-trendlineLength).reduce((a, b) => a + b, 0) / trendlineLength;
+
+      // Check volume confirmation
+      const volumeConfirmed = currentVolume > avgVolume * volumeMultiplier;
+
+      if (!volumeConfirmed) {
+        return {
+          shouldTrade: false,
+          reason: `Volume not confirmed (${currentVolume.toFixed(2)} < ${(avgVolume * volumeMultiplier).toFixed(2)})`,
+          confidence: 0
+        };
+      }
+
+      // Check for crossover/crossunder
+      const prevPrice = closes[closes.length - 2];
+      const prevTrendline = trendline;
+
+      const longCond = (tradeDirection === 'both' || tradeDirection === 'Long Only') &&
+                       prevPrice <= prevTrendline && currentPrice > currentTrendline;
+      
+      const shortCond = (tradeDirection === 'both' || tradeDirection === 'Short Only') &&
+                        prevPrice >= prevTrendline && currentPrice < currentTrendline;
+
+      if (longCond) {
+        return {
+          shouldTrade: true,
+          side: 'buy',
+          reason: `Trendline breakout LONG: Price crossed above trendline with volume confirmation`,
+          confidence: 0.8,
+          entryPrice: currentPrice,
+          trendline: currentTrendline
+        };
+      }
+
+      if (shortCond) {
+        return {
+          shouldTrade: true,
+          side: 'sell',
+          reason: `Trendline breakout SHORT: Price crossed below trendline with volume confirmation`,
+          confidence: 0.8,
+          entryPrice: currentPrice,
+          trendline: currentTrendline
+        };
+      }
+
+      return {
+        shouldTrade: false,
+        reason: 'No trendline breakout detected',
+        confidence: 0
+      };
+    } catch (error: any) {
+      console.error('Error evaluating trendline breakout strategy:', error);
+      return {
+        shouldTrade: false,
+        reason: `Strategy evaluation error: ${error?.message || error}`,
+        confidence: 0
+      };
+    }
+  }
+
+  /**
+   * Calculate linear regression value for the last point
+   * Returns the predicted value for the next period
+   */
+  private calculateLinearRegression(data: number[], length: number): number {
+    if (data.length < length) {
+      return data[data.length - 1]; // Fallback to last value
+    }
+
+    const n = length;
+    let sumX = 0;
+    let sumY = 0;
+    let sumXY = 0;
+    let sumX2 = 0;
+
+    // Use last 'length' values
+    const values = data.slice(-length);
+
+    for (let i = 0; i < values.length; i++) {
+      const x = i;
+      const y = values[i];
+      sumX += x;
+      sumY += y;
+      sumXY += x * y;
+      sumX2 += x * x;
+    }
+
+    // Calculate slope and intercept
+    const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+    const intercept = (sumY - slope * sumX) / n;
+
+    // Return predicted value for next period (x = n)
+    return slope * n + intercept;
   }
   
   public async executeTrade(bot: any, tradeSignal: any): Promise<void> {

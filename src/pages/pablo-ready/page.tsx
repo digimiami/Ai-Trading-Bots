@@ -1,0 +1,280 @@
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '../../lib/supabase';
+import Header from '../../components/feature/Header';
+import Navigation from '../../components/feature/Navigation';
+import Card from '../../components/base/Card';
+import Button from '../../components/base/Button';
+import { useAuth } from '../../hooks/useAuth';
+
+interface PabloReadyBot {
+  id: string;
+  name: string;
+  description: string | null;
+  exchange: string;
+  symbol: string;
+  trading_type: string;
+  leverage: number;
+  risk_level: string;
+  strategy: any;
+  strategy_config: any;
+  trade_amount: number;
+  stop_loss: number;
+  take_profit: number;
+  timeframe: string;
+  enabled: boolean;
+  featured: boolean;
+  order_index: number;
+}
+
+export default function PabloReadyPage() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [bots, setBots] = useState<PabloReadyBot[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchBots();
+  }, []);
+
+  const fetchBots = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const { data, error: fetchError } = await supabase
+        .from('pablo_ready_bots')
+        .select('*')
+        .eq('enabled', true)
+        .order('order_index', { ascending: true })
+        .order('created_at', { ascending: false });
+
+      if (fetchError) throw fetchError;
+
+      setBots(data || []);
+    } catch (err: any) {
+      console.error('Error fetching Pablo Ready bots:', err);
+      setError(err?.message || 'Failed to load bots');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUseBot = async (bot: PabloReadyBot) => {
+    // Navigate to create bot page with pre-filled data
+    const params = new URLSearchParams({
+      template: 'pablo-ready',
+      botId: bot.id,
+      name: bot.name,
+      exchange: bot.exchange,
+      symbol: bot.symbol,
+      tradingType: bot.trading_type,
+      leverage: bot.leverage.toString(),
+      riskLevel: bot.risk_level,
+      tradeAmount: bot.trade_amount.toString(),
+      stopLoss: bot.stop_loss.toString(),
+      takeProfit: bot.take_profit.toString(),
+      timeframe: bot.timeframe,
+      strategy: JSON.stringify(bot.strategy),
+      strategyConfig: JSON.stringify(bot.strategy_config),
+    });
+
+    navigate(`/create-bot?${params.toString()}`);
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <Header title="Pablo Ready" />
+        <div className="pt-24 pb-20 px-4">
+          <Card className="p-6 text-center">
+            <p className="text-gray-600 dark:text-gray-300">Loading Pablo Ready bots...</p>
+          </Card>
+        </div>
+        <Navigation />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <Header title="Pablo Ready" />
+        <div className="pt-24 pb-20 px-4">
+          <Card className="p-6 border border-red-200 bg-red-50 dark:border-red-900/40 dark:bg-red-900/20">
+            <p className="text-red-700 dark:text-red-200">{error}</p>
+            <Button className="mt-4" onClick={fetchBots} size="sm">
+              Retry
+            </Button>
+          </Card>
+        </div>
+        <Navigation />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 pb-24">
+      <Header
+        title="Pablo Ready"
+        subtitle="Pre-configured trading bots ready to deploy. Choose a bot and start trading instantly."
+        rightAction={
+          <Button variant="secondary" size="sm" onClick={() => navigate('/bots')}>
+            My Bots
+          </Button>
+        }
+      />
+
+      <main className="px-4 pt-24 pb-16">
+        <div className="mx-auto max-w-6xl space-y-6">
+          {bots.length === 0 ? (
+            <Card className="p-10 text-center">
+              <div className="text-gray-400 dark:text-gray-500 mb-4">
+                <i className="ri-robot-line text-5xl"></i>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                No Pablo Ready bots available
+              </h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Check back soon for new pre-configured bots.
+              </p>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {bots.map((bot) => (
+                <Card
+                  key={bot.id}
+                  className="group overflow-hidden border border-gray-200/70 bg-white/90 shadow-sm transition hover:-translate-y-1 hover:border-blue-300 hover:shadow-lg dark:border-gray-700 dark:bg-gray-900/90"
+                >
+                  <div className="p-6 space-y-4">
+                    {/* Header */}
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
+                            {bot.name}
+                          </h3>
+                          {bot.featured && (
+                            <span className="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-semibold text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200">
+                              <i className="ri-star-fill mr-1"></i>
+                              Featured
+                            </span>
+                          )}
+                        </div>
+                        {bot.description && (
+                          <p className="text-sm text-gray-500 dark:text-gray-300 mt-1">
+                            {bot.description}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Bot Details */}
+                    <div className="space-y-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                      <div className="grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                          <span className="text-gray-500 dark:text-gray-400 block text-xs mb-1">Exchange</span>
+                          <span className="font-medium text-gray-900 dark:text-white capitalize">
+                            {bot.exchange}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500 dark:text-gray-400 block text-xs mb-1">Symbol</span>
+                          <span className="font-medium text-gray-900 dark:text-white">
+                            {bot.symbol}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500 dark:text-gray-400 block text-xs mb-1">Type</span>
+                          <span className="font-medium text-gray-900 dark:text-white capitalize">
+                            {bot.trading_type}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500 dark:text-gray-400 block text-xs mb-1">Leverage</span>
+                          <span className="font-medium text-gray-900 dark:text-white">
+                            {bot.leverage}x
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500 dark:text-gray-400 block text-xs mb-1">Risk Level</span>
+                          <span className={`font-medium capitalize ${
+                            bot.risk_level === 'low' ? 'text-green-600 dark:text-green-400' :
+                            bot.risk_level === 'medium' ? 'text-yellow-600 dark:text-yellow-400' :
+                            'text-red-600 dark:text-red-400'
+                          }`}>
+                            {bot.risk_level}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500 dark:text-gray-400 block text-xs mb-1">Timeframe</span>
+                          <span className="font-medium text-gray-900 dark:text-white">
+                            {bot.timeframe}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Strategy Features */}
+                      {bot.strategy_config && (
+                        <div className="pt-3 border-t border-gray-200 dark:border-gray-700">
+                          <div className="flex flex-wrap gap-2">
+                            {bot.strategy_config.enable_tp && (
+                              <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200">
+                                <i className="ri-target-line mr-1"></i>
+                                Multi TP
+                              </span>
+                            )}
+                            {bot.strategy_config.enable_trail_sl && (
+                              <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-200">
+                                <i className="ri-line-chart-line mr-1"></i>
+                                Trailing SL
+                              </span>
+                            )}
+                            {bot.strategy_config.volume_multiplier && (
+                              <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200">
+                                <i className="ri-bar-chart-line mr-1"></i>
+                                Volume Filter
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action Button */}
+                    <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                      {user ? (
+                        <Button
+                          onClick={() => handleUseBot(bot)}
+                          className="w-full"
+                          size="sm"
+                        >
+                          <i className="ri-add-circle-line mr-2"></i>
+                          Use This Bot
+                        </Button>
+                      ) : (
+                        <Button
+                          onClick={() => navigate('/auth')}
+                          className="w-full"
+                          variant="secondary"
+                          size="sm"
+                        >
+                          <i className="ri-login-box-line mr-2"></i>
+                          Sign In to Use
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+      </main>
+
+      <Navigation />
+    </div>
+  );
+}
+

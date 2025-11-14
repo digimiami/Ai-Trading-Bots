@@ -26,6 +26,7 @@ const FuturesPairsFinder = lazy(() => import('../pages/futures-pairs-finder/page
 const Admin = lazy(() => import('../pages/admin/page'));
 const Onboarding = lazy(() => import('../pages/onboarding/page'));
 const Help = lazy(() => import('../pages/help/page'));
+const PabloReady = lazy(() => import('../pages/pablo-ready/page'));
 const NotFound = lazy(() => import('../pages/NotFound'));
 const Privacy = lazy(() => import('../pages/legal/privacy'));
 const Terms = lazy(() => import('../pages/legal/terms'));
@@ -118,6 +119,10 @@ const routes: RouteObject[] = [
   {
     path: '/admin',
     element: <Admin />
+  },
+  {
+    path: '/pablo-ready',
+    element: <PabloReady />
   },
   {
     path: '/ai-ml/dashboard',
