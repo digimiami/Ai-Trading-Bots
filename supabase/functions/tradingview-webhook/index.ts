@@ -414,8 +414,18 @@ serve(async (req) => {
     payload.signal_key ||
     "";
 
-  if (!botId) {
-    console.warn("⚠️ No botId found in payload:", payload);
+  if (!botId && !signalToken) {
+    const errorMessage = payload.raw_text 
+      ? "TradingView alert is sending plain text instead of JSON. Please configure your TradingView alert to send JSON format with botId. See TRADINGVIEW_WEBHOOK_SETUP.md for the correct payload format."
+      : "botId or signalToken is required in the webhook payload";
+    
+    console.warn("⚠️ No botId or signalToken found in payload:", {
+      hasBotId: !!(payload.botId || payload.bot_id),
+      hasSignalToken: !!signalToken,
+      payloadKeys: Object.keys(payload),
+      rawTextPreview: payload.raw_text ? payload.raw_text.substring(0, 200) : undefined,
+      contentType: req.headers.get("content-type")
+    });
     
     // Update webhook call record with error
     if (webhookCallId) {
@@ -425,12 +435,12 @@ serve(async (req) => {
           .update({
             parsed_payload: payload,
             status: "failed",
-            error_message: "botId is required",
+            error_message: errorMessage,
             response_status: 400,
             processed_at: new Date().toISOString()
           })
           .eq("id", webhookCallId);
-        console.log("📝 Updated webhook call record (no botId):", webhookCallId);
+        console.log("📝 Updated webhook call record (no botId/signalToken):", webhookCallId);
       } catch (recordError) {
         console.error("❌ Failed to update webhook call record:", recordError);
       }
@@ -443,7 +453,7 @@ serve(async (req) => {
             raw_payload: { raw: rawBody, metadata: requestMetadata },
             parsed_payload: payload,
             status: "failed",
-            error_message: "botId is required",
+            error_message: errorMessage,
             response_status: 400
           })
           .select()
@@ -454,7 +464,11 @@ serve(async (req) => {
       }
     }
     
-    return new Response(JSON.stringify({ error: "botId is required" }), {
+    return new Response(JSON.stringify({ 
+      error: errorMessage,
+      hint: "Please configure your TradingView alert to send JSON format. Example: {\"secret\":\"...\",\"botId\":\"...\",\"action\":\"{{strategy.order.action}}\",...}",
+      receivedPayload: payload.raw_text ? { type: "plain_text", preview: payload.raw_text.substring(0, 100) } : { keys: Object.keys(payload) }
+    }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
