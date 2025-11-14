@@ -90,11 +90,19 @@ function resolveSideFromAction(payload: TradingViewPayload): "buy" | "sell" | nu
 
   for (const raw of candidates) {
     if (!raw) continue;
+    
+    // Skip TradingView template variables that haven't been replaced
+    if (typeof raw === "string" && (raw.includes("{{") || raw.includes("}}"))) {
+      continue;
+    }
+    
     const action = raw.toLowerCase();
     if (["buy", "long", "enter_long", "entry_long"].includes(action)) return "buy";
     if (["sell", "short", "enter_short", "entry_short", "sellshort"].includes(action)) return "sell";
     if (["close", "exit", "flat"].includes(action)) {
       const prev = (payload.prevMarketPosition || payload.prev_market_position || "").toLowerCase();
+      // Skip if prevMarketPosition is also a template variable
+      if (prev.includes("{{") || prev.includes("}}")) continue;
       if (prev === "long") return "sell";
       if (prev === "short") return "buy";
     }
@@ -105,6 +113,12 @@ function resolveSideFromAction(payload: TradingViewPayload): "buy" | "sell" | nu
 
 function normalizeSide(rawSide: string | undefined): "buy" | "sell" | null {
   if (!rawSide) return null;
+  
+  // Skip TradingView template variables that haven't been replaced
+  if (typeof rawSide === "string" && (rawSide.includes("{{") || rawSide.includes("}}"))) {
+    return null;
+  }
+  
   const side = rawSide.toLowerCase();
   if (side === "buy" || side === "long") return "buy";
   if (side === "sell" || side === "short") return "sell";
