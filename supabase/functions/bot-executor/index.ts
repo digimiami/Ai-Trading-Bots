@@ -1626,15 +1626,30 @@ class BotExecutor {
       // Calculate average volume
       const avgVolume = volumes.slice(-trendlineLength).reduce((a, b) => a + b, 0) / trendlineLength;
 
+      // For daily timeframe, use a more lenient volume multiplier (1.2x instead of 1.5x)
+      // Daily candles have less frequent volume spikes, so we need to be more flexible
+      const effectiveVolumeMultiplier = (timeframe === '1d' || timeframe === '1D') 
+        ? Math.max(volumeMultiplier * 0.8, 1.1) // Reduce by 20% but minimum 1.1x
+        : volumeMultiplier;
+
       // Check volume confirmation
-      const volumeConfirmed = currentVolume > avgVolume * volumeMultiplier;
+      // For daily timeframe, be more lenient - allow if volume is at least 1.1x average
+      let volumeConfirmed = currentVolume > avgVolume * effectiveVolumeMultiplier;
+      let volumeConfidence = 1.0;
 
       if (!volumeConfirmed) {
-        return {
-          shouldTrade: false,
-          reason: `Volume not confirmed (${currentVolume.toFixed(2)} < ${(avgVolume * volumeMultiplier).toFixed(2)})`,
-          confidence: 0
-        };
+        // For daily timeframe, allow trade if volume is at least 1.1x average (with lower confidence)
+        if ((timeframe === '1d' || timeframe === '1D') && currentVolume > avgVolume * 1.1) {
+          volumeConfirmed = true;
+          volumeConfidence = 0.7; // Lower confidence for slightly below threshold
+          console.log(`Daily timeframe: Volume slightly below threshold but acceptable (${currentVolume.toFixed(2)} > ${(avgVolume * 1.1).toFixed(2)})`);
+        } else {
+          return {
+            shouldTrade: false,
+            reason: `Volume not confirmed (${currentVolume.toFixed(2)} < ${(avgVolume * effectiveVolumeMultiplier).toFixed(2)})`,
+            confidence: 0
+          };
+        }
       }
 
       // Check for crossover/crossunder
@@ -1652,7 +1667,7 @@ class BotExecutor {
           shouldTrade: true,
           side: 'buy',
           reason: `Trendline breakout LONG: Price crossed above trendline with volume confirmation`,
-          confidence: 0.8,
+          confidence: 0.8 * volumeConfidence,
           entryPrice: currentPrice,
           trendline: currentTrendline
         };
@@ -1663,7 +1678,7 @@ class BotExecutor {
           shouldTrade: true,
           side: 'sell',
           reason: `Trendline breakout SHORT: Price crossed below trendline with volume confirmation`,
-          confidence: 0.8,
+          confidence: 0.8 * volumeConfidence,
           entryPrice: currentPrice,
           trendline: currentTrendline
         };
