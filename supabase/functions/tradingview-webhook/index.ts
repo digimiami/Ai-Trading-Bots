@@ -41,6 +41,13 @@ type TradingViewPayload = {
   prev_market_position?: string;
   marketPositionSize?: number | string;
   market_position_size?: number | string;
+  prevMarketPositionSize?: number | string;
+  prev_market_position_size?: number | string;
+  timestamp?: string;
+  timenow?: string;
+  maxLag?: number | string;
+  investmentType?: string;
+  investment_type?: string;
 };
 
 function resolveAmountFromPayload(payload: TradingViewPayload): number | null {
@@ -49,7 +56,9 @@ function resolveAmountFromPayload(payload: TradingViewPayload): number | null {
     payload.size,
     payload.size_multiplier,
     payload.marketPositionSize,
-    payload.market_position_size
+    payload.market_position_size,
+    payload.prevMarketPositionSize,
+    payload.prev_market_position_size
   ];
 
   for (const candidate of candidates) {
@@ -57,6 +66,10 @@ function resolveAmountFromPayload(payload: TradingViewPayload): number | null {
       return candidate;
     }
     if (typeof candidate === "string") {
+      // Skip TradingView template variables that haven't been replaced
+      if (candidate.includes("{{") || candidate.includes("}}")) {
+        continue;
+      }
       const parsed = parseFloat(candidate);
       if (Number.isFinite(parsed)) {
         return parsed;
@@ -687,7 +700,20 @@ serve(async (req) => {
           signalToken: signalToken || null,
           templateId: template?.id || null,
           sourcePayloadId: payload.id || payload.signal_id || null,
-          requestedAmount: resolvedAmount
+          requestedAmount: resolvedAmount,
+          // TradingView strategy variables
+          action: payload.action,
+          marketPosition: payload.marketPosition || payload.market_position,
+          prevMarketPosition: payload.prevMarketPosition || payload.prev_market_position,
+          marketPositionSize: payload.marketPositionSize || payload.market_position_size,
+          prevMarketPositionSize: payload.prevMarketPositionSize || payload.prev_market_position_size,
+          instrument: payload.instrument || payload.ticker || payload.symbol,
+          timestamp: payload.timestamp || payload.timenow,
+          maxLag: payload.maxLag,
+          investmentType: payload.investmentType || payload.investment_type,
+          amount: payload.amount,
+          // Store full sanitized payload for reference
+          fullPayload: sanitizedPayload
         }
       })
       .select()

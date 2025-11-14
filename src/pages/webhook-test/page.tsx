@@ -77,11 +77,20 @@ export default function WebhookTestPage() {
         const botSecret = bot.webhook_secret || bot.webhookSecret || '';
         setWebhookSecret(botSecret);
         
-        // Generate test payload (using 'action' field with TradingView format)
+        // Generate test payload (using TradingView strategy variables format)
         const payload = {
           secret: botSecret,
           botId: bot.id,
-          action: 'buy', // Can be: 'buy', 'sell', 'long', 'short' (TradingView uses {{strategy.order.action}})
+          action: 'buy', // {{strategy.order.action}} - Can be: 'buy', 'sell', 'long', 'short'
+          marketPosition: 'long', // {{strategy.market_position}}
+          prevMarketPosition: 'flat', // {{strategy.prev_market_position}}
+          marketPositionSize: '1.0', // {{strategy.market_position_size}}
+          prevMarketPositionSize: '0.0', // {{strategy.prev_market_position_size}}
+          instrument: 'BTCUSDT', // {{ticker}}
+          timestamp: new Date().toISOString(), // {{timenow}}
+          maxLag: '300',
+          investmentType: 'base',
+          amount: '1.0', // {{strategy.order.contracts}}
           mode: 'paper',
           reason: 'Test webhook from testing interface'
         };
