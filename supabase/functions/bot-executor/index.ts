@@ -638,8 +638,19 @@ class MarketDataFetcher {
         
         for (const symbolVariant of symbolVariants) {
           try {
-            const response = await fetch(`https://api.bybit.com/v5/market/tickers?category=${bybitCategory}&symbol=${symbolVariant}`);
+            const apiUrl = `https://api.bybit.com/v5/market/tickers?category=${bybitCategory}&symbol=${symbolVariant}`;
+            console.log(`🔍 Fetching price for ${symbolVariant} (${bybitCategory}): ${apiUrl}`);
+            const response = await fetch(apiUrl);
             const data = await response.json();
+            
+            // Log API response for debugging
+            if (!data.result || !data.result.list || data.result.list.length === 0) {
+              console.warn(`⚠️ Bybit API returned no data for ${symbolVariant} (${bybitCategory}):`, {
+                retCode: data.retCode,
+                retMsg: data.retMsg,
+                result: data.result
+              });
+            }
             
             // Better error handling for API response
             if (!data.result) {
@@ -1827,7 +1838,7 @@ class BotExecutor {
 
   private async processManualSignals(bot: any): Promise<number> {
     try {
-      console.log(`🔍 Checking for manual trade signals for bot ${bot.id}...`);
+      console.log(`🔍 Checking for manual trade signals for bot ${bot.id} (${bot.name})...`);
       const { data: pendingSignals, error } = await this.supabaseClient
         .from('manual_trade_signals')
         .select('*')
