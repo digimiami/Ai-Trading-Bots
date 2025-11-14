@@ -5064,6 +5064,12 @@ serve(async (req) => {
 
     switch (bodyAction) {
       case 'execute_bot':
+        console.log(`\n🚀 === EXECUTE_BOT ACTION TRIGGERED ===`);
+        console.log(`📅 Timestamp: ${new Date().toISOString()}`);
+        console.log(`🔍 Bot ID: ${botId}`);
+        console.log(`🔐 Auth mode: ${isCron ? 'CRON (service role)' : 'User (' + user?.id + ')'}`);
+        console.log(`🔐 Is internal call: ${isInternalCall}`);
+        
         const { data: bot } = await supabaseClient
           .from('trading_bots')
           .select('*')
@@ -5076,11 +5082,24 @@ serve(async (req) => {
           .single()
         
         if (!bot) {
+          console.error(`❌ Bot not found: ${botId}`);
           throw new Error('Bot not found')
         }
         
+        console.log(`✅ Bot found: ${bot.name} (${bot.id}) - Status: ${bot.status}`);
+        console.log(`📊 Bot details:`, {
+          name: bot.name,
+          exchange: bot.exchange,
+          symbol: bot.symbol,
+          status: bot.status,
+          paper_trading: bot.paper_trading,
+          user_id: bot.user_id
+        });
+        
         const executor = new BotExecutor(supabaseClient, isCron ? { id: bot.user_id } : user)
+        console.log(`🤖 Starting bot execution...`);
         await executor.executeBot(bot)
+        console.log(`✅ Bot execution completed successfully`);
         
         return new Response(JSON.stringify({ success: true, message: 'Bot executed' }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
