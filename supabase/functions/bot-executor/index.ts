@@ -1855,7 +1855,22 @@ class BotExecutor {
       console.log(`📊 Trading Type: ${tradingType}`);
       
       console.log(`🔍 Fetching current price for ${bot.symbol}...`);
-      const currentPrice = await MarketDataFetcher.fetchPrice(bot.symbol, bot.exchange, tradingType);
+      
+      // Fetch price and capture detailed error info for logging
+      let priceFetchError: any = null;
+      let currentPrice: number;
+      
+      try {
+        currentPrice = await MarketDataFetcher.fetchPrice(bot.symbol, bot.exchange, tradingType);
+      } catch (err: any) {
+        // Capture error details for logging
+        priceFetchError = {
+          message: err?.message || String(err),
+          stack: err?.stack,
+          name: err?.name
+        };
+        currentPrice = 0;
+      }
       
       // Validate price before proceeding
       if (!currentPrice || currentPrice === 0 || !isFinite(currentPrice)) {
@@ -1876,6 +1891,29 @@ class BotExecutor {
         }
         
         console.error(`❌ ${errorMsg}`);
+        
+        // Log detailed error to bot_activity_logs with API diagnostic info
+        await this.addBotLog(bot.id, {
+          level: 'error',
+          category: 'trade',
+          message: `Trade execution failed: ${errorMsg}`,
+          details: {
+            side: tradeSignal?.side || 'unknown',
+            error: errorMsg,
+            symbol: bot.symbol,
+            exchange: bot.exchange,
+            tradingType: tradingType,
+            priceFetchError: priceFetchError,
+            errorType: 'Error',
+            timestamp: TimeSync.getCurrentTimeISO(),
+            diagnostic: {
+              symbolVariants: MarketDataFetcher.normalizeSymbol(bot.symbol, bot.exchange, tradingType),
+              apiUrl: `https://api.bybit.com/v5/market/tickers?category=${tradingType === 'futures' ? 'linear' : tradingType}&symbol=${bot.symbol}`,
+              note: 'Check Supabase Edge Function logs for detailed Bybit API responses'
+            }
+          }
+        });
+        
         throw new Error(errorMsg);
       }
       
