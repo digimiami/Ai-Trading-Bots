@@ -57,8 +57,13 @@ jobs:
             fi
           }
           
-          # Deploy each function with error handling and timeout
-          deploy_function bot-executor || echo "⚠️ bot-executor deployment failed"
+          # Deploy critical functions first (bot-executor and tradingview-webhook)
+          echo "🎯 Deploying critical functions first..."
+          deploy_function bot-executor || echo "❌ CRITICAL: bot-executor deployment failed"
+          deploy_function tradingview-webhook || echo "❌ CRITICAL: tradingview-webhook deployment failed"
+          
+          # Deploy other functions
+          echo "📦 Deploying remaining functions..."
           deploy_function bot-management || echo "⚠️ bot-management deployment failed"
           deploy_function admin-management-enhanced || echo "⚠️ admin-management-enhanced deployment failed"
           deploy_function trading-engine || echo "⚠️ trading-engine deployment failed"
@@ -74,7 +79,6 @@ jobs:
           deploy_function check-ai-keys || echo "⚠️ check-ai-keys deployment failed"
           deploy_function paper-trading || echo "⚠️ paper-trading deployment failed"
           deploy_function backtest-engine || echo "⚠️ backtest-engine deployment failed"
-          deploy_function tradingview-webhook || echo "⚠️ tradingview-webhook deployment failed"
           
           echo "✅ Edge functions deployment completed!"
       
