@@ -871,6 +871,10 @@ class MarketDataFetcher {
         }
         
         console.warn(`⚠️ Symbol ${symbol} not found in ${bybitCategory} category on Bybit. Tried variants: ${symbolVariants.join(', ')}`);
+        
+        // Store API responses in a global variable accessible from executeTrade
+        (globalThis as any).__lastBybitApiResponses = apiResponses;
+        
         return 0;
       } else if (exchange === 'okx') {
         // Try different symbol variants for OKX
