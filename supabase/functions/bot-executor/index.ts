@@ -5815,6 +5815,12 @@ class PaperTradingExecutor {
 }
 
 serve(async (req) => {
+  // Log ALL incoming requests immediately
+  console.log(`\n📥 [bot-executor] INCOMING REQUEST: ${req.method} ${new URL(req.url).pathname}`);
+  console.log(`   Timestamp: ${new Date().toISOString()}`);
+  console.log(`   User-Agent: ${req.headers.get('user-agent') || 'unknown'}`);
+  console.log(`   Origin: ${req.headers.get('origin') || 'unknown'}\n`);
+  
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
