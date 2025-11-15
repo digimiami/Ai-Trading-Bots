@@ -1027,6 +1027,25 @@ class MarketDataFetcher {
         
         console.warn(`⚠️ Symbol ${symbol} not found in ${bybitCategory} category on Bybit. Tried variants: ${symbolVariants.join(', ')}`);
         
+        // Log all API responses for debugging
+        if (apiResponses.length > 0) {
+          console.error(`❌ Price fetch failed for ${symbol}. API Response Summary:`);
+          apiResponses.forEach((resp: any, idx: number) => {
+            console.error(`   Attempt ${idx + 1} (${resp.symbolVariant || 'unknown'}):`, {
+              httpStatus: resp.httpStatus,
+              retCode: resp.retCode,
+              retMsg: resp.retMsg,
+              isHtml: resp.isHtml,
+              htmlTitle: resp.htmlTitle,
+              fetchError: resp.fetchError,
+              parseError: resp.parseError,
+              listLength: resp.listLength
+            });
+          });
+        } else {
+          console.error(`❌ Price fetch failed for ${symbol} - No API responses captured (possible network issue)`);
+        }
+        
         // Store API responses in a global variable accessible from executeTrade
         (globalThis as any).__lastBybitApiResponses = apiResponses;
         
