@@ -2687,6 +2687,17 @@ class BotExecutor {
       source?: string;
     }
   ): Promise<{ mode: 'real' | 'paper' }> {
+    console.log(`\n🚀 === EXECUTING MANUAL TRADE ===`);
+    console.log(`   Bot ID: ${bot.id}`);
+    console.log(`   Bot Name: ${bot.name}`);
+    console.log(`   Symbol: ${bot.symbol}`);
+    console.log(`   Exchange: ${bot.exchange}`);
+    console.log(`   Trading Type: ${bot.tradingType || bot.trading_type || 'futures'}`);
+    console.log(`   Side: ${params.side}`);
+    console.log(`   Mode: ${params.mode || (bot.paper_trading ? 'paper' : 'real')}`);
+    console.log(`   Source: ${params.source || 'webhook'}`);
+    console.log(`   Timestamp: ${TimeSync.getCurrentTimeISO()}\n`);
+    
     const effectiveSide = (params.side || '').toLowerCase();
     if (!['buy', 'sell', 'long', 'short'].includes(effectiveSide)) {
       throw new Error(`Invalid manual trade side: ${params.side}`);
@@ -2715,6 +2726,7 @@ class BotExecutor {
       if (Number.isFinite(parsedMultiplier) && parsedMultiplier > 0) {
         const baseAmount = Number(bot.trade_amount || bot.tradeAmount || 100);
         botSnapshot.trade_amount = baseAmount * parsedMultiplier;
+        console.log(`💰 Size multiplier applied: ${parsedMultiplier}x (base: ${baseAmount}, adjusted: ${botSnapshot.trade_amount})`);
       }
     }
 
@@ -2737,12 +2749,30 @@ class BotExecutor {
       }
     });
 
-    if (effectiveMode === 'paper') {
-      const paperExecutor = new PaperTradingExecutor(this.supabaseClient, this.user);
-      await paperExecutor.executePaperTrade(botSnapshot, tradeSignal);
-      await paperExecutor.updatePaperPositions(bot.id);
-    } else {
-      await this.executeTrade(botSnapshot, tradeSignal);
+    try {
+      if (effectiveMode === 'paper') {
+        console.log(`📝 Executing PAPER trade for ${bot.symbol}...`);
+        const paperExecutor = new PaperTradingExecutor(this.supabaseClient, this.user);
+        await paperExecutor.executePaperTrade(botSnapshot, tradeSignal);
+        await paperExecutor.updatePaperPositions(bot.id);
+        console.log(`✅ PAPER trade executed successfully`);
+      } else {
+        console.log(`💵 Executing REAL trade for ${bot.symbol}...`);
+        await this.executeTrade(botSnapshot, tradeSignal);
+        console.log(`✅ REAL trade executed successfully`);
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`\n❌ === MANUAL TRADE EXECUTION FAILED ===`);
+      console.error(`   Bot ID: ${bot.id}`);
+      console.error(`   Bot Name: ${bot.name}`);
+      console.error(`   Symbol: ${bot.symbol}`);
+      console.error(`   Error: ${errorMessage}`);
+      if (error instanceof Error && error.stack) {
+        console.error(`   Stack: ${error.stack.substring(0, 500)}`);
+      }
+      console.error(`\n`);
+      throw error;
     }
 
     return { mode: effectiveMode };
