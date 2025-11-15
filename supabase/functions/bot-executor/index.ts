@@ -1336,9 +1336,16 @@ class BotExecutor {
       
       // If bot is stopped and no manual signals, skip execution
       if (bot.status !== 'running') {
-        console.log(`⏸️ Bot ${bot.name} is ${bot.status}, skipping execution`);
+        console.log(`⏸️ Bot ${botName} is ${bot.status}, skipping execution`);
+        const executionTime = Date.now() - executionStartTime;
+        console.log(`\n⏸️ === BOT EXECUTION SKIPPED ===`);
+        console.log(`   Bot ID: ${botId}`);
+        console.log(`   Reason: Bot status is '${bot.status}'`);
+        console.log(`   Execution Time: ${executionTime}ms\n`);
         return;
       }
+      
+      console.log(`✅ Step 2: Bot ${botName} is running, proceeding with execution...`);
 
       // ⚠️ CRITICAL: Check paper trading mode FIRST before any real API calls
       const isPaperTrading = bot.paper_trading === true;
