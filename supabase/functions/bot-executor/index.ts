@@ -641,6 +641,7 @@ class MarketDataFetcher {
         
         for (const symbolVariant of symbolVariants) {
           try {
+            // Use the correct Bybit V5 API endpoint format
             const apiUrl = `https://api.bybit.com/v5/market/tickers?category=${bybitCategory}&symbol=${symbolVariant}`;
             console.log(`🔍 Fetching price for ${symbolVariant} (${bybitCategory}): ${apiUrl}`);
             
@@ -648,7 +649,9 @@ class MarketDataFetcher {
               method: 'GET',
               headers: {
                 'Accept': 'application/json',
-                'User-Agent': 'PabloTradingBot/1.0'
+                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (compatible; PabloTradingBot/1.0)',
+                'Referer': 'https://www.bybit.com'
               },
               // Add timeout to prevent hanging
               signal: AbortSignal.timeout(10000) // 10 second timeout
