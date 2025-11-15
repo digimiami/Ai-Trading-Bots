@@ -647,11 +647,40 @@ class MarketDataFetcher {
             const response = await fetch(apiUrl, {
               method: 'GET',
               headers: {
-                'Accept': 'application/json'
-              }
+                'Accept': 'application/json',
+                'User-Agent': 'PabloTradingBot/1.0'
+              },
+              // Add timeout to prevent hanging
+              signal: AbortSignal.timeout(10000) // 10 second timeout
+            }).catch((fetchError: any) => {
+              // Handle fetch errors (network, timeout, etc.)
+              console.error(`❌ Fetch error for ${symbolVariant}:`, fetchError);
+              apiResponses.push({
+                symbolVariant,
+                apiUrl,
+                fetchError: fetchError.message || String(fetchError),
+                errorType: fetchError.name || 'FetchError',
+                note: 'Network error, timeout, or connection issue'
+              });
+              return null;
             });
             
-            const responseText = await response.text();
+            if (!response) {
+              continue; // Fetch failed, try next variant
+            }
+            
+            const responseText = await response.text().catch((textError: any) => {
+              console.error(`❌ Failed to read response text for ${symbolVariant}:`, textError);
+              apiResponses.push({
+                symbolVariant,
+                apiUrl,
+                httpStatus: response.status,
+                httpStatusText: response.statusText,
+                textError: textError.message || String(textError)
+              });
+              return '';
+            });
+            
             let data: any;
             
             try {
@@ -2175,11 +2204,28 @@ class BotExecutor {
         // Get API responses from fetchPrice if available
         const apiResponses = (globalThis as any).__lastBybitApiResponses || [];
         
+        // Create summary of API responses for error message
+        let apiSummary = '';
+        if (apiResponses.length > 0) {
+          const summaries = apiResponses.map((resp: any, idx: number) => {
+            if (resp.fetchError) {
+              return `Attempt ${idx + 1} (${resp.symbolVariant}): Network error - ${resp.fetchError}`;
+            } else if (resp.parseError) {
+              return `Attempt ${idx + 1} (${resp.symbolVariant}): Parse error - ${resp.parseError}`;
+            } else {
+              return `Attempt ${idx + 1} (${resp.symbolVariant}): HTTP ${resp.httpStatus}, retCode=${resp.retCode}, retMsg="${resp.retMsg || 'N/A'}", listLength=${resp.listLength || 0}`;
+            }
+          });
+          apiSummary = `\n\nAPI Response Summary:\n${summaries.join('\n')}`;
+        } else {
+          apiSummary = '\n\n⚠️ No API responses captured - check Edge Function logs';
+        }
+        
         // Log detailed error to bot_activity_logs with API diagnostic info
         await this.addBotLog(bot.id, {
           level: 'error',
           category: 'trade',
-          message: `Trade execution failed: ${errorMsg}`,
+          message: `Trade execution failed: ${errorMsg}${apiSummary}`,
           details: {
             side: tradeSignal?.side || 'unknown',
             error: errorMsg,
