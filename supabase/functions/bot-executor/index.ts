@@ -2236,8 +2236,10 @@ class BotExecutor {
           const summaries = apiResponses.map((resp: any, idx: number) => {
             if (resp.fetchError) {
               return `Attempt ${idx + 1} (${resp.symbolVariant}): Network error - ${resp.fetchError}`;
+            } else if (resp.isHtml) {
+              return `Attempt ${idx + 1} (${resp.symbolVariant}): HTTP ${resp.httpStatus} - HTML error page "${resp.htmlTitle || 'Unknown'}" (${resp.note || 'Bybit returned HTML instead of JSON'})`;
             } else if (resp.parseError) {
-              return `Attempt ${idx + 1} (${resp.symbolVariant}): Parse error - ${resp.parseError}`;
+              return `Attempt ${idx + 1} (${resp.symbolVariant}): HTTP ${resp.httpStatus} - Parse error: ${resp.parseError}`;
             } else {
               return `Attempt ${idx + 1} (${resp.symbolVariant}): HTTP ${resp.httpStatus}, retCode=${resp.retCode}, retMsg="${resp.retMsg || 'N/A'}", listLength=${resp.listLength || 0}`;
             }
