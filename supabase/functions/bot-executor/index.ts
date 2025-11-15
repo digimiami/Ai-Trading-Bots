@@ -708,12 +708,29 @@ class MarketDataFetcher {
             const isHtml = responseText.trim().startsWith('<!DOCTYPE') || responseText.trim().startsWith('<html') || responseText.trim().startsWith('<');
             
             if (isHtml) {
-              console.error(`❌ Bybit API returned HTML instead of JSON for ${symbolVariant} (likely error page)`);
+              console.error(`❌ Bybit API returned HTML instead of JSON for ${symbolVariant} (likely error page) - Attempt ${attempt + 1}/3`);
               // Extract title or first meaningful line from HTML
               const titleMatch = responseText.match(/<title[^>]*>([^<]+)<\/title>/i);
               const title = titleMatch ? titleMatch[1] : 'Unknown error page';
               
-              apiResponses.push({
+              // Check if it's a rate limit (429) or temporary error (5xx) - retry
+              if (response.status === 429 || (response.status >= 500 && response.status < 600)) {
+                console.log(`⚠️ Rate limit or server error (HTTP ${response.status}) - will retry...`);
+                lastError = {
+                  symbolVariant,
+                  apiUrl,
+                  httpStatus: response.status,
+                  httpStatusText: response.statusText,
+                  isHtml: true,
+                  htmlTitle: title,
+                  attempt: attempt + 1,
+                  retryable: true
+                };
+                continue; // Retry this variant
+              }
+              
+              // Non-retryable HTML error - log and try next variant
+              lastError = {
                 symbolVariant,
                 apiUrl,
                 httpStatus: response.status,
@@ -722,9 +739,10 @@ class MarketDataFetcher {
                 isHtml: true,
                 htmlTitle: title,
                 htmlPreview: responseText.substring(0, 200),
+                attempt: attempt + 1,
                 note: `Bybit returned HTML error page (HTTP ${response.status}). This could indicate: rate limiting, IP blocking, or API endpoint issue.`
-              });
-              continue; // Try next variant
+              };
+              break; // Try next variant (not retryable)
             }
             
             let data: any;
@@ -732,8 +750,8 @@ class MarketDataFetcher {
             try {
               data = JSON.parse(responseText);
             } catch (parseError) {
-              console.error(`❌ Failed to parse Bybit API response for ${symbolVariant}:`, parseError);
-              apiResponses.push({
+              console.error(`❌ Failed to parse Bybit API response for ${symbolVariant} (Attempt ${attempt + 1}/3):`, parseError);
+              lastError = {
                 symbolVariant,
                 apiUrl,
                 httpStatus: response.status,
@@ -742,9 +760,10 @@ class MarketDataFetcher {
                 rawResponse: responseText.substring(0, 500),
                 parseError: parseError instanceof Error ? parseError.message : String(parseError),
                 isHtml: isHtml,
+                attempt: attempt + 1,
                 note: isHtml ? 'Response appears to be HTML (error page) instead of JSON' : 'JSON parse failed'
-              });
-              continue;
+              };
+              continue; // Retry
             }
             
             // Store response for error reporting
@@ -761,9 +780,27 @@ class MarketDataFetcher {
             });
             
             if (!response.ok) {
-              console.warn(`⚠️ Bybit API HTTP error for ${symbolVariant}: ${response.status} ${response.statusText}`);
-              console.warn(`⚠️ Response body: ${responseText.substring(0, 500)}`);
-              continue; // Try next variant
+              console.warn(`⚠️ Bybit API HTTP error for ${symbolVariant} (Attempt ${attempt + 1}/3): ${response.status} ${response.statusText}`);
+              // Retry on 429 or 5xx errors
+              if (response.status === 429 || (response.status >= 500 && response.status < 600)) {
+                lastError = {
+                  symbolVariant,
+                  apiUrl,
+                  httpStatus: response.status,
+                  httpStatusText: response.statusText,
+                  attempt: attempt + 1,
+                  retryable: true
+                };
+                continue; // Retry
+              }
+              lastError = {
+                symbolVariant,
+                apiUrl,
+                httpStatus: response.status,
+                httpStatusText: response.statusText,
+                attempt: attempt + 1
+              };
+              break; // Try next variant
             }
             
             // Log full API response for debugging major coins
@@ -781,7 +818,15 @@ class MarketDataFetcher {
               } else {
                 console.warn(`⚠️ Bybit API error for ${symbolVariant}: retCode=${data.retCode}, retMsg=${data.retMsg}`);
               }
-              continue; // Try next variant
+              lastError = {
+                symbolVariant,
+                apiUrl,
+                httpStatus: response.status,
+                retCode: data.retCode,
+                retMsg: data.retMsg,
+                attempt: attempt + 1
+              };
+              break; // Try next variant
             }
             
             // Log API response for debugging
@@ -801,7 +846,15 @@ class MarketDataFetcher {
                   result: data.result
                 });
               }
-              continue; // Try next variant
+              lastError = {
+                symbolVariant,
+                apiUrl,
+                httpStatus: response.status,
+                retCode: data.retCode,
+                retMsg: data.retMsg,
+                attempt: attempt + 1
+              };
+              break; // Try next variant
             }
             
             // Log successful response for major coins
@@ -831,16 +884,40 @@ class MarketDataFetcher {
               return price;
             } else {
               console.warn(`⚠️ Invalid price parsed for ${symbolVariant}: ${price} (raw: ${data.result.list[0]?.lastPrice})`);
+              lastError = {
+                symbolVariant,
+                apiUrl,
+                httpStatus: response.status,
+                retCode: data.retCode,
+                invalidPrice: price,
+                attempt: attempt + 1
+              };
+              break; // Try next variant
             }
           } catch (err) {
-            console.error(`❌ Error fetching price for ${symbolVariant}:`, err);
-            console.error(`   Error details:`, {
-              message: err instanceof Error ? err.message : String(err),
-              stack: err instanceof Error ? err.stack : undefined
-            });
-            continue; // Try next variant
+            console.error(`❌ Error fetching price for ${symbolVariant} (Attempt ${attempt + 1}/3):`, err);
+            lastError = {
+              symbolVariant,
+              apiUrl,
+              error: err instanceof Error ? err.message : String(err),
+              attempt: attempt + 1
+            };
+            // If it's a network error, retry; otherwise try next variant
+            if (err instanceof TypeError && err.message.includes('fetch')) {
+              continue; // Retry
+            }
+            break; // Try next variant
           }
+          
+          // If we got here, the attempt succeeded but price was invalid - try next variant
+          break;
         }
+        
+        // If all retries failed for this variant, log the last error
+        if (lastError && !lastError.retryable) {
+          apiResponses.push(lastError);
+        }
+      }
         
         // If all variants failed, try fetching all tickers and searching
         const isMajorCoin = ['BTC', 'ETH', 'BNB', 'SOL'].some(coin => symbol.toUpperCase().startsWith(coin));
