@@ -1768,24 +1768,37 @@ class BotExecutor {
       // Calculate average volume
       const avgVolume = volumes.slice(-trendlineLength).reduce((a, b) => a + b, 0) / trendlineLength;
 
-      // For daily timeframe, use a more lenient volume multiplier (1.2x instead of 1.5x)
-      // Daily candles have less frequent volume spikes, so we need to be more flexible
-      const effectiveVolumeMultiplier = (timeframe === '1d' || timeframe === '1D') 
-        ? Math.max(volumeMultiplier * 0.8, 1.1) // Reduce by 20% but minimum 1.1x
-        : volumeMultiplier;
-
-      // Check volume confirmation
-      // For daily timeframe, be more lenient - allow if volume is at least 1.1x average
-      let volumeConfirmed = currentVolume > avgVolume * effectiveVolumeMultiplier;
+      // For daily timeframe, make volume confirmation much more lenient or optional
+      // Daily candles have less frequent volume spikes, so strict volume requirements block too many trades
+      const isDaily = (timeframe === '1d' || timeframe === '1D');
+      
+      let volumeConfirmed = true;
       let volumeConfidence = 1.0;
 
-      if (!volumeConfirmed) {
-        // For daily timeframe, allow trade if volume is at least 1.1x average (with lower confidence)
-        if ((timeframe === '1d' || timeframe === '1D') && currentVolume > avgVolume * 1.1) {
-          volumeConfirmed = true;
-          volumeConfidence = 0.7; // Lower confidence for slightly below threshold
-          console.log(`Daily timeframe: Volume slightly below threshold but acceptable (${currentVolume.toFixed(2)} > ${(avgVolume * 1.1).toFixed(2)})`);
+      if (isDaily) {
+        // For daily timeframe: only require volume to be at least 80% of average (very lenient)
+        // This allows trades during normal market conditions without requiring volume spikes
+        const dailyVolumeThreshold = avgVolume * 0.8;
+        
+        if (currentVolume < dailyVolumeThreshold) {
+          // Still allow trade but with lower confidence if volume is very low (< 50% of average)
+          if (currentVolume < avgVolume * 0.5) {
+            volumeConfidence = 0.6; // Lower confidence for very low volume
+            console.log(`Daily timeframe: Very low volume (${currentVolume.toFixed(2)} < ${(avgVolume * 0.5).toFixed(2)}), proceeding with reduced confidence`);
+          } else {
+            volumeConfidence = 0.8; // Slightly reduced confidence for below 80% threshold
+            console.log(`Daily timeframe: Volume below 80% threshold but acceptable (${currentVolume.toFixed(2)} > ${(avgVolume * 0.5).toFixed(2)})`);
+          }
         } else {
+          // Volume is good, full confidence
+          volumeConfidence = 1.0;
+        }
+      } else {
+        // For other timeframes, use the configured volume multiplier
+        const effectiveVolumeMultiplier = volumeMultiplier;
+        volumeConfirmed = currentVolume > avgVolume * effectiveVolumeMultiplier;
+
+        if (!volumeConfirmed) {
           return {
             shouldTrade: false,
             reason: `Volume not confirmed (${currentVolume.toFixed(2)} < ${(avgVolume * effectiveVolumeMultiplier).toFixed(2)})`,
