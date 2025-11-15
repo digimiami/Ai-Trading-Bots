@@ -621,6 +621,9 @@ class MarketDataFetcher {
   }
   
   static async fetchPrice(symbol: string, exchange: string, tradingType: string = 'spot'): Promise<number> {
+    // Store API responses for error reporting
+    const apiResponses: any[] = [];
+    
     try {
       if (exchange === 'bybit') {
         // Map tradingType to Bybit category: futures -> linear, spot -> spot
@@ -648,14 +651,42 @@ class MarketDataFetcher {
               }
             });
             
-            if (!response.ok) {
-              console.warn(`⚠️ Bybit API HTTP error for ${symbolVariant}: ${response.status} ${response.statusText}`);
-              const errorText = await response.text();
-              console.warn(`⚠️ Response body: ${errorText.substring(0, 200)}`);
-              continue; // Try next variant
+            const responseText = await response.text();
+            let data: any;
+            
+            try {
+              data = JSON.parse(responseText);
+            } catch (parseError) {
+              console.error(`❌ Failed to parse Bybit API response for ${symbolVariant}:`, parseError);
+              apiResponses.push({
+                symbolVariant,
+                apiUrl,
+                httpStatus: response.status,
+                httpStatusText: response.statusText,
+                rawResponse: responseText.substring(0, 500),
+                parseError: parseError instanceof Error ? parseError.message : String(parseError)
+              });
+              continue;
             }
             
-            const data = await response.json();
+            // Store response for error reporting
+            apiResponses.push({
+              symbolVariant,
+              apiUrl,
+              httpStatus: response.status,
+              httpStatusText: response.statusText,
+              retCode: data.retCode,
+              retMsg: data.retMsg,
+              hasResult: !!data.result,
+              listLength: data.result?.list?.length || 0,
+              fullResponse: JSON.stringify(data).substring(0, 1000)
+            });
+            
+            if (!response.ok) {
+              console.warn(`⚠️ Bybit API HTTP error for ${symbolVariant}: ${response.status} ${response.statusText}`);
+              console.warn(`⚠️ Response body: ${responseText.substring(0, 500)}`);
+              continue; // Try next variant
+            }
             
             // Log full API response for debugging major coins
             const isMajorCoin = ['BTC', 'ETH', 'BNB', 'SOL'].some(coin => symbolVariant.startsWith(coin));
@@ -1892,6 +1923,9 @@ class BotExecutor {
         
         console.error(`❌ ${errorMsg}`);
         
+        // Get API responses from fetchPrice if available
+        const apiResponses = (globalThis as any).__lastBybitApiResponses || [];
+        
         // Log detailed error to bot_activity_logs with API diagnostic info
         await this.addBotLog(bot.id, {
           level: 'error',
@@ -1909,10 +1943,14 @@ class BotExecutor {
             diagnostic: {
               symbolVariants: MarketDataFetcher.normalizeSymbol(bot.symbol, bot.exchange, tradingType),
               apiUrl: `https://api.bybit.com/v5/market/tickers?category=${tradingType === 'futures' ? 'linear' : tradingType}&symbol=${bot.symbol}`,
-              note: 'Check Supabase Edge Function logs for detailed Bybit API responses'
+              apiResponses: apiResponses.length > 0 ? apiResponses : 'No API responses captured',
+              note: apiResponses.length > 0 ? 'See apiResponses above for actual Bybit API responses' : 'Check Supabase Edge Function logs for detailed Bybit API responses'
             }
           }
         });
+        
+        // Clear the stored responses
+        (globalThis as any).__lastBybitApiResponses = null;
         
         throw new Error(errorMsg);
       }
