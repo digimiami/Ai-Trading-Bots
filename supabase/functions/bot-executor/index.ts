@@ -1318,8 +1318,23 @@ class BotExecutor {
   }
   
   async executeBot(bot: any): Promise<void> {
+    const executionStartTime = Date.now();
+    const botId = bot.id;
+    const botName = bot.name || 'Unknown';
+    const botSymbol = bot.symbol || 'Unknown';
+    
+    console.log(`\n🚀 === EXECUTING BOT ===`);
+    console.log(`   Bot ID: ${botId}`);
+    console.log(`   Bot Name: ${botName}`);
+    console.log(`   Symbol: ${botSymbol}`);
+    console.log(`   Exchange: ${bot.exchange || 'Unknown'}`);
+    console.log(`   Trading Type: ${bot.trading_type || bot.tradingType || 'Unknown'}`);
+    console.log(`   Status: ${bot.status || 'Unknown'}`);
+    console.log(`   Paper Trading: ${bot.paper_trading ? 'YES' : 'NO'}`);
+    console.log(`   Timestamp: ${new Date().toISOString()}\n`);
+    
     try {
-      console.log(`🤖 Executing bot: ${bot.name} (${bot.id}) - Status: ${bot.status}`);
+      console.log(`🔍 Step 1: Checking for manual trade signals for bot ${botId}...`);
       
       // Process manual signals FIRST, regardless of bot status
       // This allows webhook-triggered trades even when bot is stopped
