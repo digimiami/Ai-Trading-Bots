@@ -681,6 +681,29 @@ class MarketDataFetcher {
               return '';
             });
             
+            // Check if response is HTML (error page) instead of JSON
+            const isHtml = responseText.trim().startsWith('<!DOCTYPE') || responseText.trim().startsWith('<html') || responseText.trim().startsWith('<');
+            
+            if (isHtml) {
+              console.error(`❌ Bybit API returned HTML instead of JSON for ${symbolVariant} (likely error page)`);
+              // Extract title or first meaningful line from HTML
+              const titleMatch = responseText.match(/<title[^>]*>([^<]+)<\/title>/i);
+              const title = titleMatch ? titleMatch[1] : 'Unknown error page';
+              
+              apiResponses.push({
+                symbolVariant,
+                apiUrl,
+                httpStatus: response.status,
+                httpStatusText: response.statusText,
+                contentType: response.headers.get('content-type') || 'unknown',
+                isHtml: true,
+                htmlTitle: title,
+                htmlPreview: responseText.substring(0, 200),
+                note: `Bybit returned HTML error page (HTTP ${response.status}). This could indicate: rate limiting, IP blocking, or API endpoint issue.`
+              });
+              continue; // Try next variant
+            }
+            
             let data: any;
             
             try {
@@ -692,8 +715,11 @@ class MarketDataFetcher {
                 apiUrl,
                 httpStatus: response.status,
                 httpStatusText: response.statusText,
+                contentType: response.headers.get('content-type') || 'unknown',
                 rawResponse: responseText.substring(0, 500),
-                parseError: parseError instanceof Error ? parseError.message : String(parseError)
+                parseError: parseError instanceof Error ? parseError.message : String(parseError),
+                isHtml: isHtml,
+                note: isHtml ? 'Response appears to be HTML (error page) instead of JSON' : 'JSON parse failed'
               });
               continue;
             }
