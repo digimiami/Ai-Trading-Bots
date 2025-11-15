@@ -39,6 +39,7 @@ export default function PabloReadyPage() {
   const [botConfigs, setBotConfigs] = useState<Record<string, {
     paperTrading: boolean;
     tradeAmount: number;
+    customPair?: string;
   }>>({});
   const [botPerformance, setBotPerformance] = useState<Record<string, {
     pnl: number;
@@ -59,12 +60,13 @@ export default function PabloReadyPage() {
   useEffect(() => {
     // Initialize bot configs with defaults
     if (bots.length > 0) {
-      const configs: Record<string, { paperTrading: boolean; tradeAmount: number }> = {};
+      const configs: Record<string, { paperTrading: boolean; tradeAmount: number; customPair?: string }> = {};
       bots.forEach(bot => {
         if (!botConfigs[bot.id]) {
           configs[bot.id] = {
             paperTrading: false,
-            tradeAmount: bot.trade_amount || 100
+            tradeAmount: bot.trade_amount || 100,
+            customPair: bot.symbol === 'CUSTOM' ? '' : undefined
           };
         }
       });
@@ -108,11 +110,34 @@ export default function PabloReadyPage() {
       setStartingBot(bot.id);
       const config = botConfigs[bot.id] || { paperTrading: false, tradeAmount: bot.trade_amount || 100 };
 
+      // Check if bot allows custom pair and validate input
+      const allowsCustomPair = bot.strategy?.allows_custom_pair === true || bot.symbol === 'CUSTOM';
+      const symbolToUse = allowsCustomPair 
+        ? (config.customPair?.trim().toUpperCase() || bot.symbol)
+        : bot.symbol;
+
+      // Validate custom pair if provided
+      if (allowsCustomPair && !config.customPair?.trim()) {
+        alert('❌ Please enter a trading pair (e.g., BTCUSDT, ETHUSDT)');
+        setStartingBot(null);
+        return;
+      }
+
+      if (allowsCustomPair && config.customPair) {
+        // Validate pair format
+        const pairRegex = /^[A-Z0-9]{2,20}USDT$/;
+        if (!pairRegex.test(config.customPair.trim().toUpperCase())) {
+          alert('❌ Invalid pair format. Please use format like BTCUSDT, ETHUSDT, SOLUSDT');
+          setStartingBot(null);
+          return;
+        }
+      }
+
       // Create bot with Pablo Ready template
       const botData = {
-        name: `${bot.name} - ${bot.symbol}`,
+        name: `${bot.name} - ${symbolToUse}`,
         exchange: bot.exchange as 'bybit' | 'okx',
-        symbol: bot.symbol,
+        symbol: symbolToUse,
         tradingType: bot.trading_type as 'spot' | 'futures',
         leverage: bot.leverage,
         riskLevel: bot.risk_level as 'low' | 'medium' | 'high',
@@ -149,7 +174,7 @@ export default function PabloReadyPage() {
     }
   };
 
-  const updateBotConfig = (botId: string, field: 'paperTrading' | 'tradeAmount', value: boolean | number) => {
+  const updateBotConfig = (botId: string, field: 'paperTrading' | 'tradeAmount' | 'customPair', value: boolean | number | string) => {
     setBotConfigs(prev => ({
       ...prev,
       [botId]: {
@@ -427,7 +452,7 @@ export default function PabloReadyPage() {
                         <div>
                           <span className="text-gray-500 dark:text-gray-400 block text-xs mb-1">Symbol</span>
                           <span className="font-medium text-gray-900 dark:text-white">
-                            {bot.symbol}
+                            {bot.symbol === 'CUSTOM' ? 'Custom (User Input)' : bot.symbol}
                           </span>
                         </div>
                         <div>
@@ -518,6 +543,25 @@ export default function PabloReadyPage() {
                             </button>
                           </div>
                         </div>
+
+                        {/* Custom Pair Input (if bot allows it) */}
+                        {(bot.strategy?.allows_custom_pair === true || bot.symbol === 'CUSTOM') && (
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                              Trading Pair <span className="text-red-500">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="e.g., BTCUSDT, ETHUSDT, SOLUSDT"
+                              value={botConfigs[bot.id]?.customPair || ''}
+                              onChange={(e) => updateBotConfig(bot.id, 'customPair', e.target.value.toUpperCase())}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+                            />
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                              Enter the trading pair you want to follow (must end with USDT)
+                            </p>
+                          </div>
+                        )}
 
                         {/* Trade Amount Input */}
                         <div>
