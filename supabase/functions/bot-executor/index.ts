@@ -1340,13 +1340,20 @@ class BotExecutor {
       // This allows webhook-triggered trades even when bot is stopped
       const manualProcessed = await this.processManualSignals(bot);
       if (manualProcessed > 0) {
-        console.log(`📬 Processed ${manualProcessed} manual trade signal(s) for bot ${bot.name}`);
+        console.log(`✅ Step 1 Complete: Processed ${manualProcessed} manual trade signal(s) for bot ${botName}`);
         // If we processed manual signals, we can return early if bot is stopped
         // Manual signals are handled independently of bot status
         if (bot.status !== 'running') {
-          console.log(`ℹ️ Bot ${bot.name} is ${bot.status}, but manual signals were processed. Skipping regular execution.`);
+          console.log(`ℹ️ Bot ${botName} is ${bot.status}, but manual signals were processed. Skipping regular execution.`);
+          const executionTime = Date.now() - executionStartTime;
+          console.log(`\n✅ === BOT EXECUTION COMPLETE ===`);
+          console.log(`   Bot ID: ${botId}`);
+          console.log(`   Execution Time: ${executionTime}ms`);
+          console.log(`   Manual Signals Processed: ${manualProcessed}\n`);
           return;
         }
+      } else {
+        console.log(`ℹ️ Step 1 Complete: No manual trade signals found for bot ${botId}`);
       }
       
       // If bot is stopped and no manual signals, skip execution
@@ -1711,9 +1718,19 @@ class BotExecutor {
       }
       
     } catch (error) {
-      console.error(`Bot execution error for ${bot.name}:`, error);
+      const executionTime = Date.now() - executionStartTime;
       const errorMessage = error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : undefined;
+      
+      console.error(`\n❌ === BOT EXECUTION ERROR ===`);
+      console.error(`   Bot ID: ${botId}`);
+      console.error(`   Bot Name: ${botName}`);
+      console.error(`   Error: ${errorMessage}`);
+      console.error(`   Execution Time: ${executionTime}ms`);
+      if (errorStack) {
+        console.error(`   Stack: ${errorStack.substring(0, 500)}`);
+      }
+      console.error(`\n`);
       
       await this.addBotLog(bot.id, {
         level: 'error',
@@ -1727,12 +1744,20 @@ class BotExecutor {
           botName: bot.name,
           symbol: bot.symbol,
           exchange: bot.exchange,
+          executionTimeMs: executionTime,
           timestamp: TimeSync.getCurrentTimeISO()
         }
       });
       
       // Re-throw to be caught by Promise.allSettled in execute_all_bots
       throw error;
+    } finally {
+      const executionTime = Date.now() - executionStartTime;
+      console.log(`\n✅ === BOT EXECUTION COMPLETE ===`);
+      console.log(`   Bot ID: ${botId}`);
+      console.log(`   Bot Name: ${botName}`);
+      console.log(`   Execution Time: ${executionTime}ms`);
+      console.log(`   Timestamp: ${new Date().toISOString()}\n`);
     }
   }
   
