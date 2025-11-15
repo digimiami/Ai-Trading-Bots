@@ -639,23 +639,42 @@ class MarketDataFetcher {
         // Try different symbol variants
         const symbolVariants = this.normalizeSymbol(symbol, exchange, tradingType);
         
-        for (const symbolVariant of symbolVariants) {
-          try {
-            // Use the correct Bybit V5 API endpoint format
-            const apiUrl = `https://api.bybit.com/v5/market/tickers?category=${bybitCategory}&symbol=${symbolVariant}`;
-            console.log(`🔍 Fetching price for ${symbolVariant} (${bybitCategory}): ${apiUrl}`);
+        for (let variantIndex = 0; variantIndex < symbolVariants.length; variantIndex++) {
+          const symbolVariant = symbolVariants[variantIndex];
+          
+          // Add delay between attempts to avoid rate limiting (except for first attempt)
+          if (variantIndex > 0) {
+            const delayMs = Math.min(500 * variantIndex, 2000); // 500ms, 1000ms, 1500ms, 2000ms max
+            console.log(`⏳ Waiting ${delayMs}ms before trying next symbol variant (rate limit protection)...`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+          }
+          
+          // Retry logic for each variant (3 attempts with exponential backoff)
+          let lastError: any = null;
+          for (let attempt = 0; attempt < 3; attempt++) {
+            if (attempt > 0) {
+              const retryDelay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // 1s, 2s, 4s max
+              console.log(`⏳ Retry attempt ${attempt + 1}/3 for ${symbolVariant} after ${retryDelay}ms delay...`);
+              await new Promise(resolve => setTimeout(resolve, retryDelay));
+            }
             
-            const response = await fetch(apiUrl, {
-              method: 'GET',
-              headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (compatible; PabloTradingBot/1.0)',
-                'Referer': 'https://www.bybit.com'
-              },
-              // Add timeout to prevent hanging
-              signal: AbortSignal.timeout(10000) // 10 second timeout
-            }).catch((fetchError: any) => {
+            try {
+              // Use the correct Bybit V5 API endpoint format
+              const apiUrl = `https://api.bybit.com/v5/market/tickers?category=${bybitCategory}&symbol=${symbolVariant}`;
+              console.log(`🔍 Fetching price for ${symbolVariant} (${bybitCategory}) - Attempt ${attempt + 1}/3: ${apiUrl}`);
+              
+              const response = await fetch(apiUrl, {
+                method: 'GET',
+                headers: {
+                  'Accept': 'application/json',
+                  'Content-Type': 'application/json',
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                  'Referer': 'https://www.bybit.com',
+                  'Origin': 'https://www.bybit.com'
+                },
+                // Add timeout to prevent hanging
+                signal: AbortSignal.timeout(10000) // 10 second timeout
+              }).catch((fetchError: any) => {
               // Handle fetch errors (network, timeout, etc.)
               console.error(`❌ Fetch error for ${symbolVariant}:`, fetchError);
               apiResponses.push({
@@ -666,11 +685,12 @@ class MarketDataFetcher {
                 note: 'Network error, timeout, or connection issue'
               });
               return null;
-            });
-            
-            if (!response) {
-              continue; // Fetch failed, try next variant
-            }
+              });
+              
+              if (!response) {
+                lastError = { fetchError: 'Network error', attempt: attempt + 1 };
+                continue; // Retry
+              }
             
             const responseText = await response.text().catch((textError: any) => {
               console.error(`❌ Failed to read response text for ${symbolVariant}:`, textError);
@@ -837,8 +857,8 @@ class MarketDataFetcher {
             const errorText = await allTickersResponse.text();
             console.warn(`⚠️ Error response: ${errorText.substring(0, 200)}`);
           } else {
-            const allTickersData = await allTickersResponse.json();
-            
+          const allTickersData = await allTickersResponse.json();
+          
             if (isMajorCoin) {
               console.log(`📊 All tickers response for ${bybitCategory}:`, {
                 retCode: allTickersData.retCode,
@@ -850,15 +870,15 @@ class MarketDataFetcher {
             
             if (allTickersData.retCode === 0 && allTickersData.result?.list) {
               // Search for exact match first
-              for (const symbolVariant of symbolVariants) {
-                const ticker = allTickersData.result.list.find((t: any) => t.symbol === symbolVariant);
-                if (ticker && ticker.lastPrice) {
-                  const price = parseFloat(ticker.lastPrice);
-                  if (price > 0 && isFinite(price)) {
-                    console.log(`✅ Found price using symbol variant from all tickers: ${symbolVariant} (original: ${symbol})`);
-                    return price;
-                  }
+            for (const symbolVariant of symbolVariants) {
+              const ticker = allTickersData.result.list.find((t: any) => t.symbol === symbolVariant);
+              if (ticker && ticker.lastPrice) {
+                const price = parseFloat(ticker.lastPrice);
+                if (price > 0 && isFinite(price)) {
+                  console.log(`✅ Found price using symbol variant from all tickers: ${symbolVariant} (original: ${symbol})`);
+                  return price;
                 }
+              }
               }
               
               // For major coins, also try case-insensitive search
