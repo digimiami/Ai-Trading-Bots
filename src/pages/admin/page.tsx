@@ -121,6 +121,9 @@ export default function AdminPage() {
   const [allBots, setAllBots] = useState<TradingBot[]>([]);
   const [pabloReadyBots, setPabloReadyBots] = useState<any[]>([]);
   const [pabloReadyLoading, setPabloReadyLoading] = useState(false);
+  const [editingBotId, setEditingBotId] = useState<string | null>(null);
+  const [editingBotName, setEditingBotName] = useState<string>('');
+  const [deletingBotId, setDeletingBotId] = useState<string | null>(null);
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
   const [tradingAnalytics, setTradingAnalytics] = useState<TradingAnalytics | null>(null);
   const [financialOverview, setFinancialOverview] = useState<FinancialOverview | null>(null);
@@ -197,6 +200,62 @@ export default function AdminPage() {
     } catch (error: any) {
       console.error('Error toggling Pablo Ready bot:', error);
       alert(`❌ Failed to ${enabled ? 'disable' : 'enable'} bot: ${error?.message || error}`);
+    }
+  };
+
+  const startEditingBotName = (bot: any) => {
+    setEditingBotId(bot.id);
+    setEditingBotName(bot.name);
+  };
+
+  const cancelEditingBotName = () => {
+    setEditingBotId(null);
+    setEditingBotName('');
+  };
+
+  const saveBotName = async (botId: string) => {
+    if (!editingBotName.trim()) {
+      alert('❌ Bot name cannot be empty');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('pablo_ready_bots')
+        .update({ name: editingBotName.trim() })
+        .eq('id', botId);
+      
+      if (error) throw error;
+      await fetchPabloReadyBots();
+      setEditingBotId(null);
+      setEditingBotName('');
+      alert('✅ Bot name updated successfully');
+    } catch (error: any) {
+      console.error('Error updating bot name:', error);
+      alert(`❌ Failed to update bot name: ${error?.message || error}`);
+    }
+  };
+
+  const deletePabloReadyBot = async (botId: string, botName: string) => {
+    if (!confirm(`⚠️ Are you sure you want to delete "${botName}"?\n\nThis action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      setDeletingBotId(botId);
+      const { error } = await supabase
+        .from('pablo_ready_bots')
+        .delete()
+        .eq('id', botId);
+      
+      if (error) throw error;
+      await fetchPabloReadyBots();
+      alert(`✅ Bot "${botName}" deleted successfully`);
+    } catch (error: any) {
+      console.error('Error deleting Pablo Ready bot:', error);
+      alert(`❌ Failed to delete bot: ${error?.message || error}`);
+    } finally {
+      setDeletingBotId(null);
     }
   };
 
@@ -882,9 +941,51 @@ export default function AdminPage() {
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <div className="flex items-center gap-3 mb-2">
-                            <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
-                              {bot.name}
-                            </h4>
+                            {editingBotId === bot.id ? (
+                              <div className="flex items-center gap-2 flex-1">
+                                <input
+                                  type="text"
+                                  value={editingBotName}
+                                  onChange={(e) => setEditingBotName(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      saveBotName(bot.id);
+                                    } else if (e.key === 'Escape') {
+                                      cancelEditingBotName();
+                                    }
+                                  }}
+                                  className="flex-1 px-3 py-1 border border-blue-500 rounded-lg text-lg font-semibold focus:ring-2 focus:ring-blue-500 focus:outline-none dark:bg-gray-800 dark:text-white"
+                                  autoFocus
+                                />
+                                <button
+                                  onClick={() => saveBotName(bot.id)}
+                                  className="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm"
+                                  title="Save (Enter)"
+                                >
+                                  <i className="ri-check-line"></i>
+                                </button>
+                                <button
+                                  onClick={cancelEditingBotName}
+                                  className="px-3 py-1 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition text-sm"
+                                  title="Cancel (Esc)"
+                                >
+                                  <i className="ri-close-line"></i>
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
+                                  {bot.name}
+                                </h4>
+                                <button
+                                  onClick={() => startEditingBotName(bot)}
+                                  className="p-1 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 transition"
+                                  title="Edit name"
+                                >
+                                  <i className="ri-edit-line text-sm"></i>
+                                </button>
+                              </>
+                            )}
                             {bot.featured && (
                               <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200">
                                 <i className="ri-star-fill mr-1"></i>
@@ -933,7 +1034,7 @@ export default function AdminPage() {
                             </div>
                           </div>
                         </div>
-                        <div className="ml-4">
+                        <div className="ml-4 flex flex-col gap-2">
                           <Button
                             onClick={() => togglePabloReadyBot(bot.id, bot.enabled)}
                             variant={bot.enabled ? 'danger' : 'primary'}
@@ -941,6 +1042,24 @@ export default function AdminPage() {
                           >
                             <i className={`mr-2 ${bot.enabled ? 'ri-eye-off-line' : 'ri-eye-line'}`}></i>
                             {bot.enabled ? 'Disable' : 'Enable'}
+                          </Button>
+                          <Button
+                            onClick={() => deletePabloReadyBot(bot.id, bot.name)}
+                            variant="danger"
+                            size="sm"
+                            disabled={deletingBotId === bot.id}
+                          >
+                            {deletingBotId === bot.id ? (
+                              <>
+                                <i className="ri-loader-4-line animate-spin mr-2"></i>
+                                Deleting...
+                              </>
+                            ) : (
+                              <>
+                                <i className="ri-delete-bin-line mr-2"></i>
+                                Delete
+                              </>
+                            )}
                           </Button>
                         </div>
                       </div>
