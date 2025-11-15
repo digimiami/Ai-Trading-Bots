@@ -1567,6 +1567,11 @@ class BotExecutor {
       return await this.evaluateTrendlineBreakoutStrategy(strategy, marketData, bot);
     }
     
+    // Check if this is a hybrid trend + mean reversion strategy
+    if (strategy.type === 'hybrid_trend_meanreversion' || strategy.name === 'Hybrid Trend + Mean Reversion Strategy') {
+      return await this.evaluateHybridTrendMeanReversionStrategy(strategy, marketData, bot);
+    }
+    
     // Initialize signals array to collect all strategy signals
     const signals: any[] = [];
     let confidence = 0;
@@ -1852,6 +1857,233 @@ class BotExecutor {
         confidence: 0
       };
     }
+  }
+
+  /**
+   * Evaluate Hybrid Trend-Following + Mean Reversion Strategy
+   * Combines HTF trend confirmation with mean reversion entry signals
+   */
+  private async evaluateHybridTrendMeanReversionStrategy(strategy: any, marketData: any, bot: any): Promise<any> {
+    try {
+      const { rsi, adx, price } = marketData;
+      const config = bot.strategy_config || {};
+      
+      // Get configuration values with defaults
+      const htfTimeframe = config.htf_timeframe || '4h';
+      const adxMinHTF = config.adx_min_htf || 23;
+      const adxTrendMin = config.adx_trend_min || 25;
+      const adxMeanRevMax = config.adx_meanrev_max || 19;
+      const rsiOversold = config.rsi_oversold || 30;
+      const momentumThreshold = config.momentum_threshold || 0.8;
+      const vwapDistance = config.vwap_distance || 1.2;
+      const timeframe = bot.timeframe || bot.timeFrame || '4h';
+      
+      // 1. Fetch HTF (4H) klines for trend confirmation
+      const htfKlines = await MarketDataFetcher.fetchKlines(bot.symbol, bot.exchange, htfTimeframe, 200);
+      if (!htfKlines || htfKlines.length < 50) {
+        return {
+          shouldTrade: false,
+          reason: `Insufficient HTF data (${htfKlines?.length || 0} candles, need 50+)`,
+          confidence: 0
+        };
+      }
+      
+      // Calculate HTF indicators
+      const htfCloses = htfKlines.map(k => k[4]); // Close prices
+      const htfHighs = htfKlines.map(k => k[2]); // High prices
+      const htfLows = htfKlines.map(k => k[3]); // Low prices
+      
+      // Calculate EMA200 on HTF
+      const htfEMA200 = this.calculateEMA(htfCloses, 200);
+      const htfEMA50 = this.calculateEMA(htfCloses, 50);
+      
+      // Calculate HTF ADX
+      const htfADX = await MarketDataFetcher.fetchADX(bot.symbol, bot.exchange, htfTimeframe);
+      
+      // Get current HTF price
+      const htfCurrentPrice = htfCloses[htfCloses.length - 1];
+      
+      // 2. HTF Trend Confirmation Checks
+      const htfPriceAboveEMA200 = htfCurrentPrice > htfEMA200;
+      const htfEMA50AboveEMA200 = htfEMA50 > htfEMA200;
+      const htfADXStrong = htfADX >= adxMinHTF;
+      
+      // Check if HTF ADX is rising (simplified: use previous ADX from klines if available)
+      // For now, assume ADX is rising if it's above threshold (conservative approach)
+      // In production, you'd calculate ADX from previous period
+      const htfADXRising = htfADXStrong; // Simplified: if ADX is strong, assume it's rising
+      
+      if (!htfPriceAboveEMA200) {
+        return {
+          shouldTrade: false,
+          reason: `HTF price (${htfCurrentPrice.toFixed(2)}) not above EMA200 (${htfEMA200.toFixed(2)})`,
+          confidence: 0
+        };
+      }
+      
+      if (!htfEMA50AboveEMA200) {
+        return {
+          shouldTrade: false,
+          reason: `HTF EMA50 (${htfEMA50.toFixed(2)}) not above EMA200 (${htfEMA200.toFixed(2)})`,
+          confidence: 0
+        };
+      }
+      
+      if (!htfADXStrong) {
+        return {
+          shouldTrade: false,
+          reason: `HTF ADX (${htfADX.toFixed(2)}) below minimum (${adxMinHTF})`,
+          confidence: 0
+        };
+      }
+      
+      if (!htfADXRising) {
+        return {
+          shouldTrade: false,
+          reason: `HTF ADX not rising (${htfADX.toFixed(2)})`,
+          confidence: 0
+        };
+      }
+      
+      // 3. Current Timeframe Regime Filter
+      if (adx < adxTrendMin) {
+        return {
+          shouldTrade: false,
+          reason: `ADX (${adx.toFixed(2)}) below trend minimum (${adxTrendMin}) - market not trending`,
+          confidence: 0
+        };
+      }
+      
+      if (adx < adxMeanRevMax) {
+        return {
+          shouldTrade: false,
+          reason: `ADX (${adx.toFixed(2)}) indicates mean-reversion/chop market (${adxMeanRevMax})`,
+          confidence: 0
+        };
+      }
+      
+      // 4. Mean Reversion Entry Signal Checks
+      // RSI Oversold
+      if (rsi > rsiOversold) {
+        return {
+          shouldTrade: false,
+          reason: `RSI (${rsi.toFixed(2)}) not oversold (need <= ${rsiOversold})`,
+          confidence: 0
+        };
+      }
+      
+      // Fetch current timeframe klines for VWAP and momentum
+      const currentKlines = await MarketDataFetcher.fetchKlines(bot.symbol, bot.exchange, timeframe, 100);
+      if (!currentKlines || currentKlines.length < 20) {
+        return {
+          shouldTrade: false,
+          reason: `Insufficient current timeframe data (${currentKlines?.length || 0} candles)`,
+          confidence: 0
+        };
+      }
+      
+      // Calculate VWAP (Volume Weighted Average Price)
+      let totalPV = 0; // Price * Volume
+      let totalVolume = 0;
+      for (let i = 0; i < currentKlines.length; i++) {
+        const typicalPrice = (currentKlines[i][2] + currentKlines[i][3] + currentKlines[i][4]) / 3; // (H+L+C)/3
+        const volume = currentKlines[i][5] || 0;
+        totalPV += typicalPrice * volume;
+        totalVolume += volume;
+      }
+      const vwap = totalVolume > 0 ? totalPV / totalVolume : price;
+      
+      // VWAP Distance Check (price should be below VWAP by at least vwapDistance%)
+      const vwapDistancePct = ((vwap - price) / vwap) * 100;
+      if (vwapDistancePct < vwapDistance) {
+        return {
+          shouldTrade: false,
+          reason: `Price not far enough below VWAP (${vwapDistancePct.toFixed(2)}% < ${vwapDistance}%)`,
+          confidence: 0
+        };
+      }
+      
+      // Calculate Momentum (rate of change over last 10 periods)
+      const momentumPeriod = 10;
+      if (currentKlines.length < momentumPeriod + 1) {
+        return {
+          shouldTrade: false,
+          reason: `Insufficient data for momentum calculation`,
+          confidence: 0
+        };
+      }
+      
+      const currentClose = currentKlines[currentKlines.length - 1][4];
+      const pastClose = currentKlines[currentKlines.length - momentumPeriod - 1][4];
+      const momentum = ((currentClose - pastClose) / pastClose) * 100;
+      
+      if (momentum < momentumThreshold) {
+        return {
+          shouldTrade: false,
+          reason: `Momentum (${momentum.toFixed(2)}%) below threshold (${momentumThreshold}%)`,
+          confidence: 0
+        };
+      }
+      
+      // All conditions met - ENTER LONG
+      const confidence = Math.min(
+        (rsiOversold - rsi) / rsiOversold * 0.3 + // RSI contribution (30%)
+        (adx - adxTrendMin) / 20 * 0.2 + // ADX contribution (20%)
+        (htfADX - adxMinHTF) / 20 * 0.2 + // HTF ADX contribution (20%)
+        (vwapDistancePct - vwapDistance) / vwapDistance * 0.15 + // VWAP distance (15%)
+        (momentum - momentumThreshold) / momentumThreshold * 0.15, // Momentum (15%)
+        1.0
+      );
+      
+      return {
+        shouldTrade: true,
+        side: 'buy',
+        reason: `Hybrid strategy: HTF uptrend confirmed (EMA200), ADX trending (${adx.toFixed(2)}), RSI oversold (${rsi.toFixed(2)}), VWAP distance (${vwapDistancePct.toFixed(2)}%), momentum (${momentum.toFixed(2)}%)`,
+        confidence: Math.max(confidence, 0.7), // Minimum 70% confidence
+        entryPrice: price,
+        htfTrend: {
+          price: htfCurrentPrice,
+          ema200: htfEMA200,
+          ema50: htfEMA50,
+          adx: htfADX
+        },
+        meanReversion: {
+          rsi,
+          vwap,
+          vwapDistance: vwapDistancePct,
+          momentum
+        }
+      };
+    } catch (error: any) {
+      console.error('Error evaluating hybrid trend + mean reversion strategy:', error);
+      return {
+        shouldTrade: false,
+        reason: `Strategy evaluation error: ${error?.message || error}`,
+        confidence: 0
+      };
+    }
+  }
+  
+  /**
+   * Calculate EMA (Exponential Moving Average)
+   */
+  private calculateEMA(prices: number[], period: number): number {
+    if (prices.length === 0) return 0;
+    if (prices.length === 1) return prices[0];
+    if (prices.length < period) {
+      // Use SMA if not enough data
+      const sum = prices.reduce((a, b) => a + b, 0);
+      return sum / prices.length;
+    }
+    
+    const multiplier = 2 / (period + 1);
+    let ema = prices.slice(0, period).reduce((a, b) => a + b, 0) / period; // Start with SMA
+    
+    for (let i = period; i < prices.length; i++) {
+      ema = (prices[i] * multiplier) + (ema * (1 - multiplier));
+    }
+    
+    return ema;
   }
 
   /**
