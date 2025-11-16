@@ -3071,8 +3071,17 @@ class BotExecutor {
       }
       
       // Decrypt API keys
-      const apiKey = this.decrypt(apiKeys.api_key);
-      const apiSecret = this.decrypt(apiKeys.api_secret);
+      let apiKey: string;
+      let apiSecret: string;
+      try {
+        apiKey = this.decrypt(apiKeys.api_key);
+        apiSecret = this.decrypt(apiKeys.api_secret);
+        console.log(`🔑 API key decrypted successfully. Length: ${apiKey.length}, First 10 chars: ${apiKey.substring(0, 10)}...`);
+        console.log(`🔑 API secret decrypted successfully. Length: ${apiSecret.length}, First 10 chars: ${apiSecret.substring(0, 10)}...`);
+      } catch (decryptError: any) {
+        console.error(`❌ Failed to decrypt API keys:`, decryptError);
+        throw new Error(`Failed to decrypt API keys. Please re-enter your ${bot.exchange} API keys in your account settings. Error: ${decryptError?.message || decryptError}`);
+      }
       const passphrase = apiKeys.passphrase ? this.decrypt(apiKeys.api_secret) : '';
       
       const tradingType = bot.tradingType || bot.trading_type || 'spot';
@@ -3109,6 +3118,13 @@ class BotExecutor {
   
   private async placeBybitOrder(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string, side: string, amount: number, price: number, tradingType: string = 'spot', bot: any = null): Promise<any> {
     const baseUrl = isTestnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com';
+    
+    console.log(`🔑 Bybit Order Details:`);
+    console.log(`   Base URL: ${baseUrl} (isTestnet: ${isTestnet})`);
+    console.log(`   API Key length: ${apiKey.length}, starts with: ${apiKey.substring(0, 8)}...`);
+    console.log(`   API Secret length: ${apiSecret.length}, starts with: ${apiSecret.substring(0, 8)}...`);
+    console.log(`   Symbol: ${symbol}, Side: ${side}, Amount: ${amount}, Price: ${price}`);
+    console.log(`   Trading Type: ${tradingType}`);
     
     try {
       const timestamp = Date.now().toString();
