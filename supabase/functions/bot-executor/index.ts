@@ -6392,14 +6392,14 @@ serve(async (req) => {
         }
         
         console.log('📊 Querying database for running bots...');
-        const { data: bots, error: queryError } = await query;
+        const { data: bots, error: botsQueryError } = await query;
         
-        if (queryError) {
-          console.error('❌ Database query error:', queryError);
+        if (botsQueryError) {
+          console.error('❌ Database query error:', botsQueryError);
           return new Response(JSON.stringify({ 
             success: false, 
             error: 'Database query failed',
-            details: queryError.message 
+            details: botsQueryError.message 
           }), {
             status: 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
