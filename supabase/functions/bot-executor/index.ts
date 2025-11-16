@@ -6195,19 +6195,47 @@ serve(async (req) => {
         console.log(`🔐 Auth mode: ${isCron ? 'CRON (service role)' : 'User (' + user?.id + ')'}`);
         console.log(`🔐 Is internal call: ${isInternalCall}`);
         
-        const { data: bot } = await supabaseClient
+        // Check if user is admin (for non-cron calls)
+        let isAdmin = false;
+        if (!isCron && user?.id) {
+          const { data: userProfile } = await supabaseClient
+            .from('users')
+            .select('role')
+            .eq('id', user.id)
+            .single();
+          isAdmin = userProfile?.role === 'admin';
+          console.log(`👤 User role check: ${userProfile?.role || 'unknown'} (isAdmin: ${isAdmin})`);
+        }
+        
+        // Build query - admins and cron can access any bot, regular users only their own
+        let botQuery = supabaseClient
           .from('trading_bots')
           .select('*')
-          .eq('id', botId)
-          .eq('user_id', isCron ? (await (async () => {
-            // Fetch bot to get user_id when running via cron
-            const { data: b } = await supabaseClient.from('trading_bots').select('user_id').eq('id', botId).single()
-            return b?.user_id || 'unknown'
-          })()) : user.id)
-          .single()
+          .eq('id', botId);
+        
+        if (!isCron && !isAdmin && user?.id) {
+          // Regular user: only their own bots
+          botQuery = botQuery.eq('user_id', user.id);
+        } else if (isCron) {
+          // Cron: fetch bot first to get user_id, then filter (for RLS)
+          const { data: botForUserId } = await supabaseClient
+            .from('trading_bots')
+            .select('user_id')
+            .eq('id', botId)
+            .single();
+          if (botForUserId?.user_id) {
+            botQuery = botQuery.eq('user_id', botForUserId.user_id);
+          }
+        }
+        // Admin: no user_id filter needed (RLS policy allows admins to see all bots)
+        
+        const { data: bot } = await botQuery.single();
         
         if (!bot) {
           console.error(`❌ Bot not found: ${botId}`);
+          console.error(`   User ID: ${user?.id || 'none'}`);
+          console.error(`   Is Admin: ${isAdmin}`);
+          console.error(`   Is Cron: ${isCron}`);
           throw new Error('Bot not found')
         }
         
@@ -6221,7 +6249,11 @@ serve(async (req) => {
           user_id: bot.user_id
         });
         
-        const executor = new BotExecutor(supabaseClient, isCron ? { id: bot.user_id } : user)
+        // Use bot owner's user_id for executor (not admin's user_id)
+        // This ensures API keys are fetched for the bot owner, not the admin
+        const executorUserId = isCron || isAdmin ? bot.user_id : user.id;
+        console.log(`🔑 Executor will use user_id: ${executorUserId} (bot owner: ${bot.user_id}, caller: ${user?.id || 'cron'})`);
+        const executor = new BotExecutor(supabaseClient, { id: executorUserId })
         console.log(`🤖 Starting bot execution...`);
         await executor.executeBot(bot)
         console.log(`✅ Bot execution completed successfully`);

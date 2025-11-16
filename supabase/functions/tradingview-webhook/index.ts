@@ -877,6 +877,10 @@ serve(async (req) => {
           console.warn(`⚠️ CRON_SECRET not set - using service role key. Ensure bot-executor accepts this.`);
         }
         
+        console.log(`📤 Sending POST to bot-executor: ${supabaseUrl}/functions/v1/bot-executor`);
+        console.log(`📋 Request body:`, JSON.stringify({ action: "execute_bot", botId: bot.id }));
+        console.log(`🔐 Headers:`, Object.keys(headers).join(', '));
+        
         const triggerFetch = await fetch(`${supabaseUrl}/functions/v1/bot-executor`, {
           method: "POST",
           headers,
@@ -887,16 +891,39 @@ serve(async (req) => {
         });
 
         const triggerText = await triggerFetch.text();
+        const triggerJson = (() => {
+          try {
+            return JSON.parse(triggerText);
+          } catch {
+            return { raw: triggerText };
+          }
+        })();
+        
         triggerResponse = {
           ok: triggerFetch.ok,
           status: triggerFetch.status,
           message: triggerText
         };
         
+        console.log(`📥 bot-executor response:`, {
+          status: triggerFetch.status,
+          statusText: triggerFetch.statusText,
+          ok: triggerFetch.ok,
+          headers: Object.fromEntries(triggerFetch.headers.entries()),
+          body: triggerJson,
+          bodyLength: triggerText.length
+        });
+        
         if (triggerFetch.ok) {
           console.log(`✅ Bot execution triggered successfully for bot ${bot.id}`);
         } else {
           console.error(`❌ Bot execution trigger failed: ${triggerFetch.status} - ${triggerText}`);
+          console.error(`📋 Full response details:`, {
+            status: triggerFetch.status,
+            statusText: triggerFetch.statusText,
+            body: triggerJson,
+            headers: Object.fromEntries(triggerFetch.headers.entries())
+          });
         }
       } catch (triggerError) {
         console.error("⚠️ Failed to trigger immediate bot execution:", triggerError);
