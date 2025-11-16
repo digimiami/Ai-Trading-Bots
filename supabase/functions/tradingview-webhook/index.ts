@@ -861,10 +861,10 @@ serve(async (req) => {
 
     if (shouldTrigger) {
       try {
-        // Send x-cron-secret, Authorization, and apikey headers for maximum compatibility
-        // x-cron-secret is for our custom authentication
-        // Authorization is for Supabase's built-in authentication middleware
+        // Send x-cron-secret and apikey headers for authentication
+        // x-cron-secret is for our custom internal authentication
         // apikey is required by Supabase Edge Functions for public access
+        // NOTE: Do NOT send Authorization header with service role key - it's not a JWT and will cause "Invalid JWT" errors
         const headers: Record<string, string> = {
           "Content-Type": "application/json"
         };
@@ -874,18 +874,10 @@ serve(async (req) => {
           console.log(`🚀 Triggering immediate bot execution for bot ${bot.id} using x-cron-secret...`);
         }
         
-        // Always include Authorization header with service role key for Supabase auth
-        if (serviceRoleKey) {
-          headers["Authorization"] = `Bearer ${serviceRoleKey}`;
-          console.log(`🔐 Also sending Authorization header with service role key for Supabase auth`);
-        } else {
-          console.warn(`⚠️ SUPABASE_SERVICE_ROLE_KEY not set - authentication may fail`);
-        }
-        
         // Add apikey header (required by Supabase Edge Functions for public access)
         if (supabaseAnonKey) {
           headers["apikey"] = supabaseAnonKey;
-          console.log(`🔑 Also sending apikey header for Supabase Edge Function access`);
+          console.log(`🔑 Sending apikey header for Supabase Edge Function access`);
         } else {
           console.warn(`⚠️ SUPABASE_ANON_KEY not set - function access may fail`);
         }
