@@ -2971,7 +2971,12 @@ class BotExecutor {
 
         try {
           if (signal.status === 'pending') {
-            await this.supabaseClient
+            // Use service role client to bypass RLS
+            const serviceRoleClient = createClient(
+              Deno.env.get('SUPABASE_URL') ?? '',
+              Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+            );
+            await serviceRoleClient
               .from('manual_trade_signals')
               .update({ status: 'processing' })
               .eq('id', signalId)
