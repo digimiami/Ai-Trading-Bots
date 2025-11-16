@@ -720,6 +720,49 @@ class MarketDataFetcher {
             // Check if response is HTML (error page) instead of JSON
             const isHtml = responseText.trim().startsWith('<!DOCTYPE') || responseText.trim().startsWith('<html') || responseText.trim().startsWith('<');
             
+            // Handle HTTP 403 Forbidden specifically (rate limiting, IP blocking, Cloudflare)
+            if (response.status === 403) {
+              const waitTime = Math.min(2000 * Math.pow(2, attempt), 10000); // Exponential backoff: 2s, 4s, 8s, max 10s
+              console.warn(`⚠️ HTTP 403 Forbidden for ${symbolVariant} (Attempt ${attempt + 1}/3). This may be rate limiting or IP blocking. Waiting ${waitTime}ms before retry...`);
+              
+              if (attempt < 2) {
+                // Extract title from HTML if available
+                const titleMatch = responseText.match(/<title[^>]*>([^<]+)<\/title>/i);
+                const title = titleMatch ? titleMatch[1] : 'ERROR: The request could not be satisfied';
+                
+                lastError = {
+                  symbolVariant,
+                  apiUrl,
+                  httpStatus: 403,
+                  httpStatusText: 'Forbidden',
+                  isHtml: isHtml,
+                  htmlTitle: title,
+                  attempt: attempt + 1,
+                  retryable: true,
+                  waitTime: waitTime,
+                  note: `HTTP 403 Forbidden. Possible causes: rate limiting, IP blocking, or Cloudflare protection. Retrying with ${waitTime}ms delay.`
+                };
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+                continue; // Retry with backoff
+              } else {
+                // Last attempt failed
+                const titleMatch = responseText.match(/<title[^>]*>([^<]+)<\/title>/i);
+                const title = titleMatch ? titleMatch[1] : 'ERROR: The request could not be satisfied';
+                lastError = {
+                  symbolVariant,
+                  apiUrl,
+                  httpStatus: 403,
+                  httpStatusText: 'Forbidden',
+                  isHtml: isHtml,
+                  htmlTitle: title,
+                  htmlPreview: responseText.substring(0, 200),
+                  attempt: attempt + 1,
+                  note: `HTTP 403 Forbidden after ${attempt + 1} attempts. Possible causes: rate limiting, IP blocking, or Cloudflare protection.`
+                };
+                break; // Try next variant
+              }
+            }
+            
             if (isHtml) {
               console.error(`❌ Bybit API returned HTML instead of JSON for ${symbolVariant} (likely error page) - Attempt ${attempt + 1}/3`);
               // Extract title or first meaningful line from HTML
@@ -794,15 +837,21 @@ class MarketDataFetcher {
             
             if (!response.ok) {
               console.warn(`⚠️ Bybit API HTTP error for ${symbolVariant} (Attempt ${attempt + 1}/3): ${response.status} ${response.statusText}`);
-              // Retry on 429 or 5xx errors
-              if (response.status === 429 || (response.status >= 500 && response.status < 600)) {
+              // Retry on 403, 429, or 5xx errors with exponential backoff
+              if (response.status === 403 || response.status === 429 || (response.status >= 500 && response.status < 600)) {
+                const waitTime = Math.min(2000 * Math.pow(2, attempt), 10000); // 2s, 4s, 8s, max 10s
+                if (attempt < 2) {
+                  console.log(`⏳ Waiting ${waitTime}ms before retry (HTTP ${response.status})...`);
+                  await new Promise(resolve => setTimeout(resolve, waitTime));
+                }
                 lastError = {
                   symbolVariant,
                   apiUrl,
                   httpStatus: response.status,
                   httpStatusText: response.statusText,
                   attempt: attempt + 1,
-                  retryable: true
+                  retryable: true,
+                  waitTime: waitTime
                 };
                 continue; // Retry
               }
@@ -3067,6 +3116,20 @@ class BotExecutor {
       if (apiKeysError || !apiKeys) {
         const errorMsg = apiKeysError?.message || 'No API keys found';
         console.error(`❌ API keys fetch failed for user ${botOwnerUserId}, exchange ${bot.exchange}:`, errorMsg);
+        
+        // Log to bot activity logs for visibility
+        await this.addBotLog(bot.id, {
+          level: 'error',
+          category: 'trade',
+          message: `API keys not found for ${bot.exchange}. Please configure your ${bot.exchange} API keys in account settings.`,
+          details: {
+            user_id: botOwnerUserId,
+            exchange: bot.exchange,
+            error: errorMsg,
+            action_required: 'Configure API keys in account settings'
+          }
+        });
+        
         throw new Error(`No API keys found for ${bot.exchange}. Please configure your ${bot.exchange} API keys in your account settings. User ID: ${botOwnerUserId}`);
       }
       
@@ -3076,11 +3139,34 @@ class BotExecutor {
       try {
         apiKey = this.decrypt(apiKeys.api_key);
         apiSecret = this.decrypt(apiKeys.api_secret);
+        
+        // Validate API key format (basic check)
+        if (!apiKey || apiKey.length < 10) {
+          throw new Error('API key appears to be invalid (too short or empty)');
+        }
+        if (!apiSecret || apiSecret.length < 10) {
+          throw new Error('API secret appears to be invalid (too short or empty)');
+        }
+        
         console.log(`🔑 API key decrypted successfully. Length: ${apiKey.length}, First 10 chars: ${apiKey.substring(0, 10)}...`);
         console.log(`🔑 API secret decrypted successfully. Length: ${apiSecret.length}, First 10 chars: ${apiSecret.substring(0, 10)}...`);
       } catch (decryptError: any) {
-        console.error(`❌ Failed to decrypt API keys:`, decryptError);
-        throw new Error(`Failed to decrypt API keys. Please re-enter your ${bot.exchange} API keys in your account settings. Error: ${decryptError?.message || decryptError}`);
+        console.error(`❌ Failed to decrypt or validate API keys:`, decryptError);
+        
+        // Log to bot activity logs
+        await this.addBotLog(bot.id, {
+          level: 'error',
+          category: 'trade',
+          message: `Failed to decrypt or validate API keys for ${bot.exchange}. Please re-enter your API keys.`,
+          details: {
+            user_id: botOwnerUserId,
+            exchange: bot.exchange,
+            error: decryptError?.message || String(decryptError),
+            action_required: 'Re-enter API keys in account settings'
+          }
+        });
+        
+        throw new Error(`Failed to decrypt or validate API keys. Please re-enter your ${bot.exchange} API keys in your account settings. Error: ${decryptError?.message || decryptError}`);
       }
       const passphrase = apiKeys.passphrase ? this.decrypt(apiKeys.api_secret) : '';
       
@@ -3277,7 +3363,34 @@ class BotExecutor {
         console.error(`=== END ERROR ===\n`);
         
         // Handle specific error codes with better messages
-        if (data.retCode === 10001) {
+        if (data.retCode === 10003) {
+          // API key is invalid
+          console.error(`❌ Bybit API key is invalid (Code: 10003) for ${symbol}`);
+          console.error(`📋 RetMsg: ${data.retMsg}`);
+          
+          // Log to bot activity logs with actionable message
+          await this.addBotLog(bot.id, {
+            level: 'error',
+            category: 'trade',
+            message: `Bybit API key is invalid (Code: 10003). Please verify and update your Bybit API keys in account settings.`,
+            details: {
+              symbol: symbol,
+              retCode: 10003,
+              retMsg: data.retMsg,
+              exchange: 'bybit',
+              action_required: 'Update Bybit API keys in account settings. Ensure keys are valid and have trading permissions.',
+              troubleshooting: [
+                '1. Go to Bybit → API Management',
+                '2. Verify your API key is active and has trading permissions',
+                '3. Check if API key has expired or been revoked',
+                '4. Re-enter API key and secret in your account settings',
+                '5. Ensure testnet flag matches your Bybit account type'
+              ]
+            }
+          });
+          
+          throw new Error(`Bybit API key is invalid (Code: 10003). Please verify and update your Bybit API keys in your account settings. The API key may have expired, been revoked, or may not have trading permissions.`);
+        } else if (data.retCode === 10001) {
           const constraints = getQuantityConstraints(symbol);
           console.error(`❌ Bybit API error for ${symbol}:`, data.retMsg);
           
