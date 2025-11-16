@@ -151,6 +151,7 @@ serve(async (req) => {
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+  const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   const tradingViewSecret = Deno.env.get("TRADINGVIEW_WEBHOOK_SECRET") ?? "";
   const cronSecret = Deno.env.get("CRON_SECRET");
@@ -860,9 +861,10 @@ serve(async (req) => {
 
     if (shouldTrigger) {
       try {
-        // Send both x-cron-secret and Authorization headers for maximum compatibility
+        // Send x-cron-secret, Authorization, and apikey headers for maximum compatibility
         // x-cron-secret is for our custom authentication
         // Authorization is for Supabase's built-in authentication middleware
+        // apikey is required by Supabase Edge Functions for public access
         const headers: Record<string, string> = {
           "Content-Type": "application/json"
         };
@@ -878,6 +880,14 @@ serve(async (req) => {
           console.log(`🔐 Also sending Authorization header with service role key for Supabase auth`);
         } else {
           console.warn(`⚠️ SUPABASE_SERVICE_ROLE_KEY not set - authentication may fail`);
+        }
+        
+        // Add apikey header (required by Supabase Edge Functions for public access)
+        if (supabaseAnonKey) {
+          headers["apikey"] = supabaseAnonKey;
+          console.log(`🔑 Also sending apikey header for Supabase Edge Function access`);
+        } else {
+          console.warn(`⚠️ SUPABASE_ANON_KEY not set - function access may fail`);
         }
         
         console.log(`📤 Sending POST to webhook-executor: ${supabaseUrl}/functions/v1/webhook-executor`);
