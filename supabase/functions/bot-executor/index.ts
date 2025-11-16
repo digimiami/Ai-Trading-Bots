@@ -5270,12 +5270,16 @@ class BotExecutor {
   private async addBotLog(botId: string, log: any): Promise<void> {
     // Store log in database instead of localStorage
     try {
+      // Sanitize category to satisfy DB CHECK constraint
+      const allowedCategories = ['system','market','trade','strategy','error','warning','info'];
+      const sanitizedCategory = allowedCategories.includes(log.category) ? log.category : 'system';
+      
       const { data, error } = await this.supabaseClient
         .from('bot_activity_logs')
         .insert({
           bot_id: botId,
           level: log.level,
-          category: log.category,
+          category: sanitizedCategory,
           message: log.message,
           details: log.details,
           timestamp: TimeSync.getCurrentTimeISO()
