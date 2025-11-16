@@ -3017,11 +3017,16 @@ class BotExecutor {
 
   private async placeOrder(bot: any, tradeSignal: any, amount: number, price: number): Promise<any> {
     try {
+      // CRITICAL: Use bot owner's user_id for API keys, not the executor's user (which might be admin)
+      // This ensures real trades use the bot owner's API keys, not the admin's
+      const botOwnerUserId = bot.user_id || bot.userId || this.user.id;
+      console.log(`🔑 Fetching API keys for bot owner: ${botOwnerUserId} (bot.user_id: ${bot.user_id}, executor.user.id: ${this.user.id})`);
+      
       // Get API keys for the exchange
       const { data: apiKeys } = await this.supabaseClient
         .from('api_keys')
         .select('api_key, api_secret, passphrase, is_testnet')
-        .eq('user_id', this.user.id)
+        .eq('user_id', botOwnerUserId)
         .eq('exchange', bot.exchange)
         .eq('is_active', true)
         .single();

@@ -124,6 +124,7 @@ export default function AdminPage() {
   const [editingBotId, setEditingBotId] = useState<string | null>(null);
   const [editingBotName, setEditingBotName] = useState<string>('');
   const [deletingBotId, setDeletingBotId] = useState<string | null>(null);
+  const [testingBotId, setTestingBotId] = useState<Record<string, 'real' | 'paper' | null>>({});
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
   const [tradingAnalytics, setTradingAnalytics] = useState<TradingAnalytics | null>(null);
   const [financialOverview, setFinancialOverview] = useState<FinancialOverview | null>(null);
@@ -429,6 +430,104 @@ export default function AdminPage() {
       loadData();
     } catch (error) {
       console.error('Error controlling bot:', error);
+    }
+  };
+
+  const handleTestTrade = async (botId: string, mode: 'real' | 'paper') => {
+    if (!user) {
+      alert('❌ You must be logged in to test trades');
+      return;
+    }
+
+    const confirmMessage = mode === 'real' 
+      ? `⚠️ WARNING: This will execute a REAL trade using live funds!\n\nBot: ${allBots.find(b => b.id === botId)?.name || botId}\n\nAre you sure you want to proceed?`
+      : `Test PAPER trade for bot: ${allBots.find(b => b.id === botId)?.name || botId}\n\nThis will execute a paper trade (no real funds).`;
+
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      setTestingBotId(prev => ({ ...prev, [botId]: mode }));
+
+      // Get bot details
+      const { data: botData, error: botError } = await supabase
+        .from('trading_bots')
+        .select('id, user_id, name, symbol, exchange, trading_type, status')
+        .eq('id', botId)
+        .single();
+
+      if (botError || !botData) {
+        throw new Error(`Failed to fetch bot: ${botError?.message || 'Bot not found'}`);
+      }
+
+      if (botData.status !== 'running') {
+        throw new Error(`Bot is not running. Current status: ${botData.status}`);
+      }
+
+      // Create manual trade signal
+      const { data: signalData, error: signalError } = await supabase
+        .from('manual_trade_signals')
+        .insert({
+          bot_id: botId,
+          user_id: botData.user_id,
+          mode: mode,
+          side: 'buy',
+          size_multiplier: 1.0,
+          reason: `Admin test trade (${mode.toUpperCase()})`,
+          status: 'pending'
+        })
+        .select()
+        .single();
+
+      if (signalError || !signalData) {
+        throw new Error(`Failed to create test signal: ${signalError?.message || 'Unknown error'}`);
+      }
+
+      console.log(`✅ Test signal created: ${signalData.id}`);
+
+      // Trigger bot executor immediately
+      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL;
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('No active session found');
+      }
+
+      const triggerResponse = await fetch(`${supabaseUrl}/functions/v1/bot-executor`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+          'x-cron-secret': import.meta.env.VITE_CRON_SECRET || ''
+        },
+        body: JSON.stringify({
+          action: 'execute_bot',
+          bot_id: botId
+        })
+      });
+
+      const triggerText = await triggerResponse.text();
+      
+      if (!triggerResponse.ok) {
+        console.warn(`⚠️ Bot executor trigger returned ${triggerResponse.status}: ${triggerText}`);
+        // Don't fail the test - the signal is created and will be processed by the next cron run
+      } else {
+        console.log(`✅ Bot executor triggered successfully`);
+      }
+
+      alert(`✅ Test ${mode.toUpperCase()} trade signal created!\n\nSignal ID: ${signalData.id}\n\nThe bot executor will process this trade shortly. Check the bot logs for execution details.`);
+      
+      // Refresh data after a short delay
+      setTimeout(() => {
+        loadData();
+      }, 2000);
+
+    } catch (error: any) {
+      console.error('Error creating test trade:', error);
+      alert(`❌ Failed to create test trade: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setTestingBotId(prev => ({ ...prev, [botId]: null }));
     }
   };
 
@@ -866,6 +965,7 @@ export default function AdminPage() {
                             variant="secondary"
                             onClick={() => handleBotControl(bot.id, 'running')}
                             disabled={bot.status === 'running'}
+                            title="Start bot"
                           >
                             <i className="ri-play-line"></i>
                           </Button>
@@ -874,6 +974,7 @@ export default function AdminPage() {
                             variant="secondary"
                             onClick={() => handleBotControl(bot.id, 'paused')}
                             disabled={bot.status === 'paused'}
+                            title="Pause bot"
                           >
                             <i className="ri-pause-line"></i>
                           </Button>
@@ -882,9 +983,52 @@ export default function AdminPage() {
                             variant="secondary"
                             onClick={() => handleBotControl(bot.id, 'stopped')}
                             disabled={bot.status === 'stopped'}
+                            title="Stop bot"
                           >
                             <i className="ri-stop-line"></i>
                           </Button>
+                          <div className="ml-2 border-l border-gray-300 pl-2 flex space-x-1">
+                            <Button
+                              size="sm"
+                              variant="primary"
+                              onClick={() => handleTestTrade(bot.id, 'paper')}
+                              disabled={bot.status !== 'running' || testingBotId[bot.id] === 'paper'}
+                              title="Test Paper Trade"
+                              className="bg-blue-600 hover:bg-blue-700"
+                            >
+                              {testingBotId[bot.id] === 'paper' ? (
+                                <>
+                                  <i className="ri-loader-4-line animate-spin mr-1"></i>
+                                  Testing...
+                                </>
+                              ) : (
+                                <>
+                                  <i className="ri-file-paper-line mr-1"></i>
+                                  Paper
+                                </>
+                              )}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="danger"
+                              onClick={() => handleTestTrade(bot.id, 'real')}
+                              disabled={bot.status !== 'running' || testingBotId[bot.id] === 'real'}
+                              title="Test Real Trade (WARNING: Uses Live Funds!)"
+                              className="bg-red-600 hover:bg-red-700"
+                            >
+                              {testingBotId[bot.id] === 'real' ? (
+                                <>
+                                  <i className="ri-loader-4-line animate-spin mr-1"></i>
+                                  Testing...
+                                </>
+                              ) : (
+                                <>
+                                  <i className="ri-money-dollar-circle-line mr-1"></i>
+                                  Real
+                                </>
+                              )}
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     </div>
