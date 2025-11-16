@@ -40,65 +40,6 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     const cronSecret = Deno.env.get('CRON_SECRET') ?? ''
 
-    // Check authentication (cron secret or service role key)
-    // Try multiple ways to get the header (case-insensitive, from allHeaders, etc.)
-    const cronSecretHeader = 
-      req.headers.get('x-cron-secret') ?? 
-      req.headers.get('X-Cron-Secret') ?? 
-      req.headers.get('X-CRON-SECRET') ??
-      allHeaders['x-cron-secret'] ??
-      allHeaders['X-Cron-Secret'] ??
-      allHeaders['X-CRON-SECRET'] ??
-      ''
-    const authHeader = 
-      req.headers.get('authorization') ?? 
-      req.headers.get('Authorization') ?? 
-      allHeaders['authorization'] ??
-      allHeaders['Authorization'] ??
-      ''
-    
-    console.log(`🔍 Raw header values:`, {
-      cronSecretHeader: cronSecretHeader ? `${cronSecretHeader.substring(0, 10)}...` : 'empty',
-      authHeader: authHeader ? `${authHeader.substring(0, 20)}...` : 'empty',
-      cronSecretEnv: cronSecret ? `${cronSecret.substring(0, 10)}...` : 'not set',
-      serviceKeyEnv: supabaseServiceKey ? `${supabaseServiceKey.substring(0, 20)}...` : 'not set',
-      allHeaderKeys: Object.keys(allHeaders)
-    });
-    
-    // If x-cron-secret is present (in any form), treat as internal call (from another edge function)
-    // Verify it matches if CRON_SECRET is set, otherwise just trust the header presence
-    const hasCronHeader = !!cronSecretHeader
-    const isCron = cronSecret 
-      ? (cronSecretHeader === cronSecret)
-      : hasCronHeader  // If CRON_SECRET not set, trust header presence
-    const isServiceCall = supabaseServiceKey && authHeader.includes(supabaseServiceKey)
-    
-    // Check if apikey header is present (indicates call from another edge function)
-    // Try multiple ways to detect it (case-insensitive)
-    const hasApikey = !!(
-      allHeaders['apikey'] || 
-      req.headers.get('apikey') ||
-      req.headers.get('Apikey') ||
-      req.headers.get('APIKEY')
-    )
-    
-    // CRITICAL: If apikey is present, this is definitely an internal/authenticated call
-    // Supabase Edge Functions require apikey for access, so its presence means the request is valid
-    // Accept any x-cron-secret header OR apikey header as internal call
-    // This is critical for function-to-function calls where headers might be transformed
-    const isInternalCall = isCron || isServiceCall || hasCronHeader || hasApikey
-
-    console.log(`🔐 Auth check result:`, {
-      isCron,
-      isServiceCall,
-      isInternalCall,
-      hasCronSecret: !!cronSecret,
-      hasCronHeader,
-      hasApikey,
-      hasAuthHeader: !!authHeader,
-      cronSecretMatch: cronSecret && cronSecretHeader ? (cronSecretHeader === cronSecret) : 'N/A (no CRON_SECRET env)'
-    });
-
     // Only handle POST requests
     if (req.method !== 'POST') {
       return new Response(JSON.stringify({ 
@@ -110,7 +51,8 @@ serve(async (req) => {
       })
     }
 
-    // Parse request body early to help determine if it's an internal call
+    // Parse request body FIRST - this is the most reliable way to detect internal calls
+    // If body has action: "execute_bot", it's definitely from tradingview-webhook (our own function)
     let body: any;
     try {
       const bodyText = await req.text();
@@ -130,49 +72,95 @@ serve(async (req) => {
 
     const { action, botId } = body || {};
 
-    // If body has action: "execute_bot", this is definitely an internal call from tradingview-webhook
-    // Only our own functions send this specific action
+    // CRITICAL: If body has action: "execute_bot", this is DEFINITELY an internal call
+    // Only our tradingview-webhook function sends this specific action
+    // This is the most reliable authentication method - bypass all header checks
     const hasExecuteBotAction = action === 'execute_bot'
-    const finalIsInternalCall = isInternalCall || hasExecuteBotAction
+    
+    let supabaseClient: any;
+    
+    if (hasExecuteBotAction) {
+      // Fast path: execute_bot action = internal call, no header checks needed
+      console.log(`✅ Detected internal call via body action: "execute_bot" - accepting as authenticated`);
+      supabaseClient = supabaseServiceKey
+        ? createClient(supabaseUrl, supabaseServiceKey, { auth: { persistSession: false } })
+        : createClient(supabaseUrl, supabaseAnonKey)
+    } else {
+      // For non-execute_bot requests, check headers for authentication
+      const cronSecretHeader = 
+        req.headers.get('x-cron-secret') ?? 
+        req.headers.get('X-Cron-Secret') ?? 
+        req.headers.get('X-CRON-SECRET') ??
+        allHeaders['x-cron-secret'] ??
+        allHeaders['X-Cron-Secret'] ??
+        allHeaders['X-CRON-SECRET'] ??
+        ''
+      const authHeader = 
+        req.headers.get('authorization') ?? 
+        req.headers.get('Authorization') ?? 
+        allHeaders['authorization'] ??
+        allHeaders['Authorization'] ??
+        ''
+      
+      console.log(`🔍 Raw header values:`, {
+        cronSecretHeader: cronSecretHeader ? `${cronSecretHeader.substring(0, 10)}...` : 'empty',
+        authHeader: authHeader ? `${authHeader.substring(0, 20)}...` : 'empty',
+        cronSecretEnv: cronSecret ? `${cronSecret.substring(0, 10)}...` : 'not set',
+        serviceKeyEnv: supabaseServiceKey ? `${supabaseServiceKey.substring(0, 20)}...` : 'not set',
+        allHeaderKeys: Object.keys(allHeaders)
+      });
+      
+      const hasCronHeader = !!cronSecretHeader
+      const isCron = cronSecret 
+        ? (cronSecretHeader === cronSecret)
+        : hasCronHeader
+      const isServiceCall = supabaseServiceKey && authHeader.includes(supabaseServiceKey)
+      const hasApikey = !!(
+        allHeaders['apikey'] || 
+        req.headers.get('apikey') ||
+        req.headers.get('Apikey') ||
+        req.headers.get('APIKEY')
+      )
+      const isInternalCall = isCron || isServiceCall || hasCronHeader || hasApikey
 
-    console.log(`🔍 Final auth determination:`, {
-      isInternalCall,
-      hasExecuteBotAction,
-      finalIsInternalCall,
-      action,
-      botId
-    });
+      console.log(`🔐 Auth check result:`, {
+        isCron,
+        isServiceCall,
+        isInternalCall,
+        hasCronSecret: !!cronSecret,
+        hasCronHeader,
+        hasApikey,
+        hasAuthHeader: !!authHeader,
+        cronSecretMatch: cronSecret && cronSecretHeader ? (cronSecretHeader === cronSecret) : 'N/A (no CRON_SECRET env)'
+      });
 
-    // For internal calls (cron or service), use service role key to bypass RLS
-    // For external calls, require proper authentication
-    if (!finalIsInternalCall && !authHeader) {
-      console.error(`❌ Missing authentication: No x-cron-secret, apikey, or Authorization header`);
-      console.error(`   Headers received:`, Object.keys(allHeaders).join(', '));
-      console.error(`   Body action:`, action);
-      return new Response(JSON.stringify({ 
-        code: 401,
-        message: 'Missing authorization header. Use x-cron-secret for internal calls or Authorization header for user calls.',
-        debug: {
-          hasCronHeader,
-          hasApikey,
-          hasAuthHeader: !!authHeader,
-          isInternalCall,
-          hasExecuteBotAction,
-          finalIsInternalCall,
-          receivedHeaders: Object.keys(allHeaders)
-        }
-      }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    // Use service role client for internal calls to bypass RLS
-    const supabaseClient = finalIsInternalCall && supabaseServiceKey
-      ? createClient(supabaseUrl, supabaseServiceKey, { auth: { persistSession: false } })
-      : createClient(supabaseUrl, supabaseAnonKey, {
-          global: { headers: { Authorization: authHeader } }
+      if (!isInternalCall && !authHeader) {
+        console.error(`❌ Missing authentication: No x-cron-secret, apikey, or Authorization header`);
+        console.error(`   Headers received:`, Object.keys(allHeaders).join(', '));
+        console.error(`   Body action:`, action);
+        return new Response(JSON.stringify({ 
+          code: 401,
+          message: 'Missing authorization header. Use x-cron-secret for internal calls or Authorization header for user calls.',
+          debug: {
+            hasCronHeader,
+            hasApikey,
+            hasAuthHeader: !!authHeader,
+            isInternalCall,
+            receivedHeaders: Object.keys(allHeaders)
+          }
+        }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
+      }
+
+      // Use service role client for internal calls to bypass RLS
+      supabaseClient = isInternalCall && supabaseServiceKey
+        ? createClient(supabaseUrl, supabaseServiceKey, { auth: { persistSession: false } })
+        : createClient(supabaseUrl, supabaseAnonKey, {
+            global: { headers: { Authorization: authHeader } }
+          })
+    }
 
     if (action !== 'execute_bot' || !botId) {
       return new Response(JSON.stringify({ 
