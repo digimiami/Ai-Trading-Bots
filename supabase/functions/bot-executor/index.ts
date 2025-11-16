@@ -2652,27 +2652,45 @@ class BotExecutor {
         return raw || 'buy';
       })();
 
-      const { data: trade, error } = await this.supabaseClient
+      // Try inserting with entry_price; if schema lacks that column, retry without it
+      let insertPayload: any = {
+        user_id: this.user.id,
+        bot_id: bot.id,
+        exchange: bot.exchange,
+        symbol: bot.symbol,
+        side: normalizedSide,
+        size: tradeAmount,
+        amount: tradeAmount,
+        entry_price: normalizedPrice, // may not exist on some deployments
+        price: normalizedPrice,
+        status: normalizedTradeStatus,
+        exchange_order_id: orderResult.orderId || orderResult.exchangeResponse?.result?.orderId || null,
+        executed_at: TimeSync.getCurrentTimeISO(),
+        fee: estimatedFees,
+        pnl: 0
+      };
+
+      let insertResp = await this.supabaseClient
         .from('trades')
-        .insert({
-          user_id: this.user.id,
-          bot_id: bot.id,
-          exchange: bot.exchange,
-          symbol: bot.symbol,
-          side: normalizedSide,
-          size: tradeAmount,
-          amount: tradeAmount,
-          entry_price: normalizedPrice,
-          price: normalizedPrice,
-          status: normalizedTradeStatus,
-          exchange_order_id: orderResult.orderId || orderResult.exchangeResponse?.result?.orderId || null,
-          executed_at: TimeSync.getCurrentTimeISO(),
-          fee: estimatedFees,
-          pnl: 0
-        })
+        .insert(insertPayload as any)
         .select()
         .single();
-      
+
+      let trade = insertResp.data;
+      let error = insertResp.error;
+
+      if (error && /column .*entry_price/i.test(error.message || '')) {
+        console.warn('⚠️ trades.entry_price column not found, retrying insert without it');
+        const { entry_price, ...fallback } = insertPayload;
+        const retryResp = await this.supabaseClient
+          .from('trades')
+          .insert(fallback as any)
+          .select()
+          .single();
+        trade = retryResp.data;
+        error = retryResp.error;
+      }
+
       if (error) {
         console.error('❌ Database insert error:', error);
         throw error;
