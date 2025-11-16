@@ -659,33 +659,46 @@ class MarketDataFetcher {
             }
             
             try {
-              // Use the correct Bybit V5 API endpoint format
-              const apiUrl = `https://api.bybit.com/v5/market/tickers?category=${bybitCategory}&symbol=${symbolVariant}`;
-              console.log(`🔍 Fetching price for ${symbolVariant} (${bybitCategory}) - Attempt ${attempt + 1}/3: ${apiUrl}`);
+              // Try primary and alternate Bybit domains for resilience
+              const baseDomains = ['https://api.bybit.com', 'https://api.bytick.com'];
+              let response: Response | null = null;
+              let apiUrl = '';
               
-              const response = await fetch(apiUrl, {
-                method: 'GET',
-                headers: {
-                  'Accept': 'application/json',
-                  'Content-Type': 'application/json',
-                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                  'Referer': 'https://www.bybit.com',
-                  'Origin': 'https://www.bybit.com'
-                },
-                // Add timeout to prevent hanging
-                signal: AbortSignal.timeout(10000) // 10 second timeout
-              }).catch((fetchError: any) => {
-              // Handle fetch errors (network, timeout, etc.)
-              console.error(`❌ Fetch error for ${symbolVariant}:`, fetchError);
-              apiResponses.push({
-                symbolVariant,
-                apiUrl,
-                fetchError: fetchError.message || String(fetchError),
-                errorType: fetchError.name || 'FetchError',
-                note: 'Network error, timeout, or connection issue'
-              });
-              return null;
-              });
+              for (const base of baseDomains) {
+                apiUrl = `${base}/v5/market/tickers?category=${bybitCategory}&symbol=${symbolVariant}`;
+                console.log(`🔍 Fetching price for ${symbolVariant} (${bybitCategory}) - Attempt ${attempt + 1}/3 via ${base}: ${apiUrl}`);
+                response = await fetch(apiUrl, {
+                  method: 'GET',
+                  headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Referer': 'https://www.bybit.com',
+                    'Origin': 'https://www.bybit.com'
+                  },
+                  signal: AbortSignal.timeout(10000)
+                }).catch(() => null);
+                
+                // If first domain failed or returned non-2xx, try the alternate domain immediately
+                if (response && response.status !== 403) {
+                  break;
+                }
+              }
+              
+              // If still no response, record error
+              if (!response) {
+                // Handle fetch errors (network, timeout, etc.)
+                const fetchError = new Error('No response from Bybit tickers (both domains)');
+                console.error(`❌ Fetch error for ${symbolVariant}:`, fetchError);
+                apiResponses.push({
+                  symbolVariant,
+                  apiUrl,
+                  fetchError: fetchError.message || String(fetchError),
+                  errorType: 'FetchError',
+                  note: 'Network error, timeout, or connection issue'
+                });
+                return null;
+              }
               
               if (!response) {
                 lastError = { fetchError: 'Network error', attempt: attempt + 1 };
@@ -1023,6 +1036,42 @@ class MarketDataFetcher {
           } catch (err) {
             console.warn(`⚠️ Error trying linear fallback for ${symbol}:`, err);
           }
+        }
+        
+        // FINAL FALLBACK: Use top-of-book orderbook mid-price if tickers endpoints are blocked
+        try {
+          const orderbookDomains = ['https://api.bybit.com', 'https://api.bytick.com'];
+          for (const base of orderbookDomains) {
+            const obUrl = `${base}/v5/market/orderbook?category=${bybitCategory}&symbol=${symbol}&limit=1`;
+            console.log(`🛟 Trying orderbook fallback for ${symbol} (${bybitCategory}): ${obUrl}`);
+            const obResp = await fetch(obUrl, {
+              headers: {
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              },
+              signal: AbortSignal.timeout(8000)
+            }).catch(() => null);
+            if (!obResp) continue;
+            const obText = await obResp.text();
+            if (obText.trim().startsWith('<')) {
+              console.warn(`⚠️ Orderbook fallback returned HTML from ${base} - trying next domain`);
+              continue;
+            }
+            const obData = JSON.parse(obText);
+            if (obData.retCode === 0 && obData.result) {
+              // Bybit orderbook returns { a: [[price, qty], ...], b: [[price, qty], ...] }
+              const ask = parseFloat(obData.result.a?.[0]?.[0] || '0');
+              const bid = parseFloat(obData.result.b?.[0]?.[0] || '0');
+              const mid = (ask > 0 && bid > 0) ? (ask + bid) / 2 : (ask || bid || 0);
+              if (mid > 0 && isFinite(mid)) {
+                console.log(`✅ Orderbook fallback price for ${symbol}: $${mid.toFixed(8)} (bid=${bid}, ask=${ask})`);
+                return mid;
+              }
+            }
+          }
+        } catch (obErr) {
+          console.warn(`⚠️ Orderbook fallback failed for ${symbol}:`, obErr);
         }
         
         console.warn(`⚠️ Symbol ${symbol} not found in ${bybitCategory} category on Bybit. Tried variants: ${symbolVariants.join(', ')}`);
