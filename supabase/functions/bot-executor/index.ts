@@ -3048,8 +3048,15 @@ class BotExecutor {
       const botOwnerUserId = bot.user_id || bot.userId || this.user.id;
       console.log(`🔑 Fetching API keys for bot owner: ${botOwnerUserId} (bot.user_id: ${bot.user_id}, executor.user.id: ${this.user.id})`);
       
+      // Use service role client to bypass RLS when fetching API keys
+      // This ensures API keys can be fetched regardless of who triggered the bot execution
+      const serviceRoleClient = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      );
+      
       // Get API keys for the exchange
-      const { data: apiKeys } = await this.supabaseClient
+      const { data: apiKeys, error: apiKeysError } = await serviceRoleClient
         .from('api_keys')
         .select('api_key, api_secret, passphrase, is_testnet')
         .eq('user_id', botOwnerUserId)
@@ -3057,8 +3064,10 @@ class BotExecutor {
         .eq('is_active', true)
         .single();
       
-      if (!apiKeys) {
-        throw new Error(`No API keys found for ${bot.exchange}`);
+      if (apiKeysError || !apiKeys) {
+        const errorMsg = apiKeysError?.message || 'No API keys found';
+        console.error(`❌ API keys fetch failed for user ${botOwnerUserId}, exchange ${bot.exchange}:`, errorMsg);
+        throw new Error(`No API keys found for ${bot.exchange}. Please configure your ${bot.exchange} API keys in your account settings. User ID: ${botOwnerUserId}`);
       }
       
       // Decrypt API keys
@@ -5310,7 +5319,14 @@ class BotExecutor {
       const allowedCategories = ['system','market','trade','strategy','error','warning','info'];
       const sanitizedCategory = allowedCategories.includes(log.category) ? log.category : 'system';
       
-      const { data, error } = await this.supabaseClient
+      // Use service role client to bypass RLS when saving bot logs
+      // This ensures logs can be saved regardless of who triggered the bot execution
+      const serviceRoleClient = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      );
+      
+      const { data, error } = await serviceRoleClient
         .from('bot_activity_logs')
         .insert({
           bot_id: botId,
