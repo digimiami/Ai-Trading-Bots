@@ -6237,15 +6237,17 @@ serve(async (req) => {
         });
       }
       
-      const { action: bodyAction, botId } = body || {};
+      const { action: bodyAction, botId, bot_id } = body || {};
+      // Support both camelCase (botId) and snake_case (bot_id)
+      const effectiveBotId = botId || bot_id;
 
-      console.log(`🔍 POST request parsed: action=${bodyAction}, botId=${botId}`);
+      console.log(`🔍 POST request parsed: action=${bodyAction}, botId=${effectiveBotId} (from ${botId ? 'botId' : bot_id ? 'bot_id' : 'neither'})`);
 
       switch (bodyAction) {
       case 'execute_bot':
         console.log(`\n🚀 === EXECUTE_BOT ACTION TRIGGERED ===`);
         console.log(`📅 Timestamp: ${new Date().toISOString()}`);
-        console.log(`🔍 Bot ID: ${botId}`);
+        console.log(`🔍 Bot ID: ${effectiveBotId}`);
         console.log(`🔐 Auth mode: ${isCron ? 'CRON (service role)' : 'User (' + user?.id + ')'}`);
         console.log(`🔐 Is internal call: ${isInternalCall}`);
         
@@ -6275,11 +6277,16 @@ serve(async (req) => {
           }
         }
         
+        // Validate botId
+        if (!effectiveBotId) {
+          throw new Error('Bot ID is required (botId or bot_id must be provided)');
+        }
+        
         // Build query - admins and cron can access any bot, regular users only their own
         let botQuery = supabaseClient
           .from('trading_bots')
           .select('*')
-          .eq('id', botId);
+          .eq('id', effectiveBotId);
         
         if (!isCron && !isAdmin && user?.id) {
           // Regular user: only their own bots
@@ -6290,7 +6297,7 @@ serve(async (req) => {
           const { data: botForUserId } = await supabaseClient
             .from('trading_bots')
             .select('user_id')
-            .eq('id', botId)
+            .eq('id', effectiveBotId)
             .single();
           if (botForUserId?.user_id) {
             botQuery = botQuery.eq('user_id', botForUserId.user_id);
@@ -6309,12 +6316,12 @@ serve(async (req) => {
         botError = queryError;
         
         if (botError || !bot) {
-          console.error(`❌ Bot not found: ${botId}`);
+          console.error(`❌ Bot not found: ${effectiveBotId}`);
           console.error(`   User ID: ${user?.id || 'none'}`);
           console.error(`   Is Admin: ${isAdmin}`);
           console.error(`   Is Cron: ${isCron}`);
           console.error(`   Query Error: ${botError?.message || 'No error but bot is null'}`);
-          console.error(`   Query Details: ${JSON.stringify({ botId, isAdmin, isCron, userId: user?.id })}`);
+          console.error(`   Query Details: ${JSON.stringify({ botId: effectiveBotId, isAdmin, isCron, userId: user?.id })}`);
           
           // If admin and query failed, try with service role client as fallback
           if (isAdmin && botError) {
@@ -6327,7 +6334,7 @@ serve(async (req) => {
               const { data: adminBot, error: adminBotError } = await serviceRoleClient
                 .from('trading_bots')
                 .select('*')
-                .eq('id', botId)
+                .eq('id', effectiveBotId)
                 .single();
               
               if (adminBot && !adminBotError) {
