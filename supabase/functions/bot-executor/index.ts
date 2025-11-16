@@ -3293,6 +3293,10 @@ class BotExecutor {
           const errorMessage = slTpError instanceof Error ? slTpError.message : String(slTpError);
           
           if (errorMessage.includes('CRITICAL') || errorMessage.includes('safety protocol')) {
+            if (disableSlTpSafety) {
+              console.warn('⚠️ SL/TP critical error detected, but DISABLE_SLTPSAFETY=true. Keeping position open and continuing.');
+              break;
+            }
             // Position was closed for safety OR position is unprotected - this is critical
             console.error('🚨 CRITICAL: SL/TP failure - position protection failed');
             console.error(`   Error: ${errorMessage}`);
@@ -4055,6 +4059,28 @@ class BotExecutor {
         
         // CRITICAL SAFETY: If SL/TP fails, position has NO PROTECTION - must close immediately
         console.error(`   🚨 CRITICAL: Position is OPEN but WITHOUT protection!`);
+        if (disableSlTpSafety) {
+          console.warn('⚠️ DISABLE_SLTPSAFETY=true: Skipping automatic close of unprotected position. Position remains OPEN without SL/TP. Monitor manually.');
+          // Log and return without closing
+          if (bot) {
+            await this.addBotLog(bot.id, {
+              level: 'warning',
+              category: 'trade',
+              message: `⚠️ SL/TP failed for ${symbol}. Safety auto-close disabled by env. Position left OPEN without SL/TP.`,
+              details: {
+                symbol,
+                side: actualPositionSide,
+                entryPrice,
+                stopLoss: formattedStopLoss,
+                takeProfit: formattedTakeProfit,
+                bybitErrorCode: data.retCode,
+                error: data.retMsg,
+                note: 'Set SL/TP manually or use UI to manage risk.'
+              }
+            });
+          }
+          return;
+        }
         console.error(`   🛡️ SAFETY PROTOCOL: Attempting to close unprotected position immediately...`);
         
         // Log critical error to bot activity logs
@@ -4288,6 +4314,11 @@ class BotExecutor {
       const errorMessage = error instanceof Error ? error.message : String(error);
       
       if (errorMessage.includes('CRITICAL') || errorMessage.includes('safety protocol')) {
+        if (disableSlTpSafety) {
+          console.warn('⚠️ SL/TP critical error detected after safety block, but DISABLE_SLTPSAFETY=true. Continuing without abort.');
+          // still log error but don't throw
+          return;
+        }
         // This is a critical safety error - re-throw to prevent trade completion
         console.error('🚨 CRITICAL: SL/TP failure resulted in unprotected position - trade cannot proceed');
         throw error;
@@ -5947,6 +5978,9 @@ serve(async (req) => {
   try {
     const cronSecretHeader = req.headers.get('x-cron-secret') ?? ''
     const cronSecretEnv = Deno.env.get('CRON_SECRET') ?? ''
+    // Optional override to keep positions open even if SL/TP setup fails.
+    // Set DISABLE_SLTPSAFETY=true in environment to disable auto-close on SL/TP failure.
+    const disableSlTpSafety = (Deno.env.get('DISABLE_SLTPSAFETY') || '').toLowerCase() === 'true'
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     const authHeader = req.headers.get('Authorization') || req.headers.get('authorization') || ''
     
