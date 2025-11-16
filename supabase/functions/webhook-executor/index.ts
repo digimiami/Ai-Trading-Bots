@@ -135,7 +135,9 @@ serve(async (req) => {
         req.headers.get('Apikey') ||
         req.headers.get('APIKEY')
       )
-      const isInternalCall = isCron || isServiceCall || hasCronHeader || hasApikey
+      // If apikey is present, it's definitely an internal call (Supabase requires it for Edge Functions)
+      // Also accept if action is execute_bot (already checked above)
+      const isInternalCall = isCron || isServiceCall || hasCronHeader || hasApikey || hasExecuteBotAction
 
       console.log(`🔐 Auth check result:`, {
         isCron,
@@ -148,10 +150,13 @@ serve(async (req) => {
         cronSecretMatch: cronSecret && cronSecretHeader ? (cronSecretHeader === cronSecret) : 'N/A (no CRON_SECRET env)'
       });
 
+      // If apikey is present, always allow (Supabase requires it for Edge Functions)
       if (!isInternalCall && !authHeader) {
         console.error(`❌ Missing authentication: No x-cron-secret, apikey, or Authorization header`);
         console.error(`   Headers received:`, Object.keys(allHeaders).join(', '));
         console.error(`   Body action:`, action);
+        console.error(`   hasApikey:`, hasApikey);
+        console.error(`   hasExecuteBotAction:`, hasExecuteBotAction);
         return new Response(JSON.stringify({ 
           code: 401,
           message: 'Missing authorization header. Use x-cron-secret for internal calls or Authorization header for user calls.',
@@ -160,7 +165,9 @@ serve(async (req) => {
             hasApikey,
             hasAuthHeader: !!authHeader,
             isInternalCall,
-            receivedHeaders: Object.keys(allHeaders)
+            hasExecuteBotAction,
+            receivedHeaders: Object.keys(allHeaders),
+            bodyAction: action
           }
         }), {
           status: 401,
