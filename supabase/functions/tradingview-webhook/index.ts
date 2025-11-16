@@ -877,11 +877,11 @@ serve(async (req) => {
           console.warn(`⚠️ CRON_SECRET not set - using service role key. Ensure bot-executor accepts this.`);
         }
         
-        console.log(`📤 Sending POST to bot-executor: ${supabaseUrl}/functions/v1/bot-executor`);
+        console.log(`📤 Sending POST to webhook-executor: ${supabaseUrl}/functions/v1/webhook-executor`);
         console.log(`📋 Request body:`, JSON.stringify({ action: "execute_bot", botId: bot.id }));
         console.log(`🔐 Headers:`, Object.keys(headers).join(', '));
         
-        const triggerFetch = await fetch(`${supabaseUrl}/functions/v1/bot-executor`, {
+        const triggerFetch = await fetch(`${supabaseUrl}/functions/v1/webhook-executor`, {
           method: "POST",
           headers,
           body: JSON.stringify({
