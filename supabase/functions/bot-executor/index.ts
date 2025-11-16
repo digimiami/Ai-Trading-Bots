@@ -6218,16 +6218,30 @@ serve(async (req) => {
         console.log(`🔐 Auth mode: ${isCron ? 'CRON (service role)' : 'User (' + user?.id + ')'}`);
         console.log(`🔐 Is internal call: ${isInternalCall}`);
         
-        // Check if user is admin (for non-cron calls)
+        // Check if user is admin (for non-cron calls) - use service role to bypass RLS
         let isAdmin = false;
         if (!isCron && user?.id) {
-          const { data: userProfile } = await supabaseClient
-            .from('users')
-            .select('role')
-            .eq('id', user.id)
-            .single();
-          isAdmin = userProfile?.role === 'admin';
-          console.log(`👤 User role check: ${userProfile?.role || 'unknown'} (isAdmin: ${isAdmin})`);
+          try {
+            // Use service role client to check admin status (bypasses RLS)
+            const serviceRoleClient = createClient(
+              Deno.env.get('SUPABASE_URL') ?? '',
+              Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+            );
+            const { data: userProfile, error: userError } = await serviceRoleClient
+              .from('users')
+              .select('role')
+              .eq('id', user.id)
+              .single();
+            
+            if (userError) {
+              console.warn(`⚠️ Failed to check user role: ${userError.message}`);
+            } else {
+              isAdmin = userProfile?.role === 'admin';
+              console.log(`👤 User role check: ${userProfile?.role || 'unknown'} (isAdmin: ${isAdmin})`);
+            }
+          } catch (checkError) {
+            console.warn(`⚠️ Error checking admin status: ${checkError}`);
+          }
         }
         
         // Build query - admins and cron can access any bot, regular users only their own
@@ -6239,6 +6253,7 @@ serve(async (req) => {
         if (!isCron && !isAdmin && user?.id) {
           // Regular user: only their own bots
           botQuery = botQuery.eq('user_id', user.id);
+          console.log(`🔍 Regular user query: filtering by user_id=${user.id}`);
         } else if (isCron) {
           // Cron: fetch bot first to get user_id, then filter (for RLS)
           const { data: botForUserId } = await supabaseClient
@@ -6248,18 +6263,59 @@ serve(async (req) => {
             .single();
           if (botForUserId?.user_id) {
             botQuery = botQuery.eq('user_id', botForUserId.user_id);
+            console.log(`🔍 Cron query: filtering by user_id=${botForUserId.user_id}`);
           }
+        } else if (isAdmin) {
+          // Admin: no user_id filter needed (RLS policy allows admins to see all bots)
+          console.log(`🔍 Admin query: no user_id filter (RLS should allow access)`);
         }
-        // Admin: no user_id filter needed (RLS policy allows admins to see all bots)
         
-        const { data: bot } = await botQuery.single();
+        let bot: any = null;
+        let botError: any = null;
         
-        if (!bot) {
+        const { data: botData, error: queryError } = await botQuery.single();
+        bot = botData;
+        botError = queryError;
+        
+        if (botError || !bot) {
           console.error(`❌ Bot not found: ${botId}`);
           console.error(`   User ID: ${user?.id || 'none'}`);
           console.error(`   Is Admin: ${isAdmin}`);
           console.error(`   Is Cron: ${isCron}`);
-          throw new Error('Bot not found')
+          console.error(`   Query Error: ${botError?.message || 'No error but bot is null'}`);
+          console.error(`   Query Details: ${JSON.stringify({ botId, isAdmin, isCron, userId: user?.id })}`);
+          
+          // If admin and query failed, try with service role client as fallback
+          if (isAdmin && botError) {
+            console.log(`🔄 Admin fallback: trying with service role client...`);
+            try {
+              const serviceRoleClient = createClient(
+                Deno.env.get('SUPABASE_URL') ?? '',
+                Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+              );
+              const { data: adminBot, error: adminBotError } = await serviceRoleClient
+                .from('trading_bots')
+                .select('*')
+                .eq('id', botId)
+                .single();
+              
+              if (adminBot && !adminBotError) {
+                console.log(`✅ Admin fallback succeeded: found bot ${adminBot.name}`);
+                bot = adminBot; // Use the bot from service role query
+                botError = null; // Clear error
+              } else {
+                throw new Error(`Bot not found even with service role: ${adminBotError?.message || 'Unknown error'}`);
+              }
+            } catch (fallbackError) {
+              throw new Error(`Bot not found: ${fallbackError instanceof Error ? fallbackError.message : String(fallbackError)}`);
+            }
+          } else {
+            throw new Error(`Bot not found: ${botError?.message || 'Unknown error'}`);
+          }
+        }
+        
+        if (!bot) {
+          throw new Error('Bot not found after all attempts');
         }
         
         console.log(`✅ Bot found: ${bot.name} (${bot.id}) - Status: ${bot.status}`);
