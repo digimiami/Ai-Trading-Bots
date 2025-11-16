@@ -2839,11 +2839,21 @@ class BotExecutor {
     };
 
     // Determine effective mode: explicit mode param takes precedence over bot setting
+    // Normalize mode parameter (handle case/whitespace)
+    const normalizedParamMode = params.mode ? String(params.mode).toLowerCase().trim() : null;
+    
     const effectiveMode: 'real' | 'paper' =
-      params.mode === 'paper' ? 'paper' :
-      params.mode === 'real' ? 'real' :
+      normalizedParamMode === 'paper' ? 'paper' :
+      normalizedParamMode === 'real' ? 'real' :
       bot.paper_trading ? 'paper' :
       'real';
+    
+    // Debug logging for mode determination
+    console.log(`🔍 Mode determination:`);
+    console.log(`   params.mode (raw): ${params.mode} (type: ${typeof params.mode})`);
+    console.log(`   normalizedParamMode: ${normalizedParamMode}`);
+    console.log(`   bot.paper_trading: ${bot.paper_trading}`);
+    console.log(`   effectiveMode: ${effectiveMode}`);
 
     const botSnapshot = { ...bot };
     const multiplier = params.sizeMultiplier ?? null;
@@ -2961,11 +2971,16 @@ class BotExecutor {
           }
 
           console.log(`⚡ Executing manual trade: ${signal.side} for bot ${bot.name} (${signal.mode} mode)`);
+          // Normalize signal mode (handle case/whitespace/null)
+          const signalMode = signal.mode ? String(signal.mode).toLowerCase().trim() : null;
+          const finalMode: 'real' | 'paper' = signalMode === 'paper' ? 'paper' : 'real';
+          console.log(`🔍 Signal mode normalization: raw="${signal.mode}", normalized="${signalMode}", final="${finalMode}"`);
+          
           const result = await this.executeManualTrade(bot, {
             side: signal.side,
             reason: signal.reason || 'Manual trade signal',
             confidence: 1,
-            mode: signal.mode === 'paper' ? 'paper' : 'real',
+            mode: finalMode,
             sizeMultiplier: signal.size_multiplier ? Number(signal.size_multiplier) : undefined,
             source: 'manual_trade_signal'
           });
