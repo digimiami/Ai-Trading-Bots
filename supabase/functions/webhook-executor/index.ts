@@ -15,16 +15,20 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
+  // CRITICAL: Log immediately to confirm function is being called
+  console.log(`\n🚀 === WEBHOOK EXECUTOR CALLED ===`);
+  console.log(`📅 Timestamp: ${new Date().toISOString()}`);
+  console.log(`📋 Method: ${req.method}`);
+  console.log(`📋 URL: ${req.url}`);
+  
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
+    console.log(`✅ CORS preflight - returning OK`);
     return new Response('ok', { headers: corsHeaders })
   }
 
   const startTime = Date.now();
-  console.log(`\n🚀 === WEBHOOK EXECUTOR STARTED ===`);
-  console.log(`📅 Timestamp: ${new Date().toISOString()}`);
-  console.log(`📋 Method: ${req.method}`);
-  console.log(`📋 URL: ${req.url}`);
+  console.log(`🚀 === WEBHOOK EXECUTOR PROCESSING ===`);
   
   // Log all headers for debugging
   const allHeaders: Record<string, string> = {};
@@ -75,16 +79,19 @@ serve(async (req) => {
     // CRITICAL: If body has action: "execute_bot", this is DEFINITELY an internal call
     // Only our tradingview-webhook function sends this specific action
     // This is the most reliable authentication method - bypass all header checks
+    console.log(`🔍 Checking body action:`, { action, botId, actionType: typeof action, actionEquals: action === 'execute_bot' });
     const hasExecuteBotAction = action === 'execute_bot'
+    console.log(`🔍 hasExecuteBotAction:`, hasExecuteBotAction);
     
     let supabaseClient: any;
     
     if (hasExecuteBotAction) {
       // Fast path: execute_bot action = internal call, no header checks needed
-      console.log(`✅ Detected internal call via body action: "execute_bot" - accepting as authenticated`);
+      console.log(`✅✅✅ DETECTED INTERNAL CALL VIA BODY ACTION: "execute_bot" - BYPASSING ALL HEADER CHECKS ✅✅✅`);
       supabaseClient = supabaseServiceKey
         ? createClient(supabaseUrl, supabaseServiceKey, { auth: { persistSession: false } })
         : createClient(supabaseUrl, supabaseAnonKey)
+      console.log(`✅ Supabase client created with service role key`);
     } else {
       // For non-execute_bot requests, check headers for authentication
       const cronSecretHeader = 
