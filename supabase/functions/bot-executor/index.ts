@@ -2134,7 +2134,12 @@ class BotExecutor {
       // In production, you'd calculate ADX from previous period
       const htfADXRising = htfADXStrong; // Simplified: if ADX is strong, assume it's rising
       
-      if (!htfPriceAboveEMA200) {
+      // If HTF price is below EMA200, optionally allow SHORT entries when bias allows
+      const allowShorts =
+        (config.bias_mode === 'both' || config.bias_mode === 'auto') &&
+        config.require_price_vs_trend !== 'above';
+
+      if (!htfPriceAboveEMA200 && !allowShorts) {
         return {
           shouldTrade: false,
           reason: `HTF price (${htfCurrentPrice.toFixed(2)}) not above EMA200 (${htfEMA200.toFixed(2)})`,
@@ -2142,7 +2147,7 @@ class BotExecutor {
         };
       }
       
-      if (!htfEMA50AboveEMA200) {
+      if (!htfEMA50AboveEMA200 && !allowShorts) {
         return {
           shouldTrade: false,
           reason: `HTF EMA50 (${htfEMA50.toFixed(2)}) not above EMA200 (${htfEMA200.toFixed(2)})`,
@@ -2183,15 +2188,7 @@ class BotExecutor {
         };
       }
       
-      // 4. Mean Reversion Entry Signal Checks
-      // RSI Oversold
-      if (rsi > rsiOversold) {
-        return {
-          shouldTrade: false,
-          reason: `RSI (${rsi.toFixed(2)}) not oversold (need <= ${rsiOversold})`,
-          confidence: 0
-        };
-      }
+      // 4. Mean Reversion Entry Signal Checks (LONG or SHORT branch)
       
       // Fetch current timeframe klines for VWAP and momentum
       const currentKlines = await MarketDataFetcher.fetchKlines(bot.symbol, bot.exchange, timeframe, 100);
@@ -2214,15 +2211,8 @@ class BotExecutor {
       }
       const vwap = totalVolume > 0 ? totalPV / totalVolume : price;
       
-      // VWAP Distance Check (price should be below VWAP by at least vwapDistance%)
+      // Compute VWAP distance: positive if price below VWAP, negative if above
       const vwapDistancePct = ((vwap - price) / vwap) * 100;
-      if (vwapDistancePct < vwapDistance) {
-        return {
-          shouldTrade: false,
-          reason: `Price not far enough below VWAP (${vwapDistancePct.toFixed(2)}% < ${vwapDistance}%)`,
-          confidence: 0
-        };
-      }
       
       // Calculate Momentum (rate of change over last 10 periods)
       const momentumPeriod = 10;
@@ -2237,43 +2227,105 @@ class BotExecutor {
       const currentClose = currentKlines[currentKlines.length - 1][4];
       const pastClose = currentKlines[currentKlines.length - momentumPeriod - 1][4];
       const momentum = ((currentClose - pastClose) / pastClose) * 100;
-      
-      if (momentum < momentumThreshold) {
+
+      // Branch 4A: LONG entries (HTF uptrend)
+      if (htfPriceAboveEMA200) {
+        // Require RSI oversold and price sufficiently below VWAP and positive momentum
+        if (rsi > rsiOversold) {
+          return {
+            shouldTrade: false,
+            reason: `RSI (${rsi.toFixed(2)}) not oversold (need <= ${rsiOversold})`,
+            confidence: 0
+          };
+        }
+        if (vwapDistancePct < vwapDistance) {
+          return {
+            shouldTrade: false,
+            reason: `Price not far enough below VWAP (${vwapDistancePct.toFixed(2)}% < ${vwapDistance}%)`,
+            confidence: 0
+          };
+        }
+        if (momentum < momentumThreshold) {
+          return {
+            shouldTrade: false,
+            reason: `Momentum (${momentum.toFixed(2)}%) below threshold (${momentumThreshold}%)`,
+            confidence: 0
+          };
+        }
+
+        const confidence = Math.min(
+          (rsiOversold - rsi) / rsiOversold * 0.3 +
+          (adx - adxTrendMin) / 20 * 0.2 +
+          (htfADX - adxMinHTF) / 20 * 0.2 +
+          (vwapDistancePct - vwapDistance) / vwapDistance * 0.15 +
+          (momentum - momentumThreshold) / momentumThreshold * 0.15,
+          1.0
+        );
+
         return {
-          shouldTrade: false,
-          reason: `Momentum (${momentum.toFixed(2)}%) below threshold (${momentumThreshold}%)`,
-          confidence: 0
+          shouldTrade: true,
+          side: 'buy',
+          reason: `Hybrid LONG: HTF uptrend (EMA200), ADX ${adx.toFixed(2)}, RSI ${rsi.toFixed(2)}, VWAP Δ ${vwapDistancePct.toFixed(2)}%, momentum ${momentum.toFixed(2)}%`,
+          confidence: Math.max(confidence, 0.7),
+          entryPrice: price,
+          htfTrend: { price: htfCurrentPrice, ema200: htfEMA200, ema50: htfEMA50, adx: htfADX },
+          meanReversion: { rsi, vwap, vwapDistance: vwapDistancePct, momentum }
         };
       }
-      
-      // All conditions met - ENTER LONG
-      const confidence = Math.min(
-        (rsiOversold - rsi) / rsiOversold * 0.3 + // RSI contribution (30%)
-        (adx - adxTrendMin) / 20 * 0.2 + // ADX contribution (20%)
-        (htfADX - adxMinHTF) / 20 * 0.2 + // HTF ADX contribution (20%)
-        (vwapDistancePct - vwapDistance) / vwapDistance * 0.15 + // VWAP distance (15%)
-        (momentum - momentumThreshold) / momentumThreshold * 0.15, // Momentum (15%)
-        1.0
-      );
-      
-      return {
-        shouldTrade: true,
-        side: 'buy',
-        reason: `Hybrid strategy: HTF uptrend confirmed (EMA200), ADX trending (${adx.toFixed(2)}), RSI oversold (${rsi.toFixed(2)}), VWAP distance (${vwapDistancePct.toFixed(2)}%), momentum (${momentum.toFixed(2)}%)`,
-        confidence: Math.max(confidence, 0.7), // Minimum 70% confidence
-        entryPrice: price,
-        htfTrend: {
-          price: htfCurrentPrice,
-          ema200: htfEMA200,
-          ema50: htfEMA50,
-          adx: htfADX
-        },
-        meanReversion: {
-          rsi,
-          vwap,
-          vwapDistance: vwapDistancePct,
-          momentum
+
+      // Branch 4B: SHORT entries (HTF downtrend) if allowed
+      if (allowShorts) {
+        const rsiOverbought = config.rsi_overbought || 70;
+        const vwapAbovePct = ((price - vwap) / vwap) * 100; // price above VWAP in %
+        const momentumDown = -momentum; // negative momentum magnitude
+
+        if (rsi < rsiOverbought) {
+          return {
+            shouldTrade: false,
+            reason: `RSI (${rsi.toFixed(2)}) not overbought (need >= ${rsiOverbought}) for short`,
+            confidence: 0
+          };
         }
+        if (vwapAbovePct < vwapDistance) {
+          return {
+            shouldTrade: false,
+            reason: `Price not far enough above VWAP (${vwapAbovePct.toFixed(2)}% < ${vwapDistance}%) for short`,
+            confidence: 0
+          };
+        }
+        if (momentumDown < momentumThreshold) {
+          return {
+            shouldTrade: false,
+            reason: `Downward momentum (${(-momentum).toFixed(2)}%) below threshold (${momentumThreshold}%) for short`,
+            confidence: 0
+          };
+        }
+
+        const confidence = Math.min(
+          (rsi - rsiOverbought) / rsiOverbought * 0.3 +
+          (adx - adxTrendMin) / 20 * 0.2 +
+          (htfADX - adxMinHTF) / 20 * 0.2 +
+          (vwapAbovePct - vwapDistance) / vwapDistance * 0.15 +
+          (momentumDown - momentumThreshold) / momentumThreshold * 0.15,
+          1.0
+        );
+
+        return {
+          shouldTrade: true,
+          side: 'sell',
+          reason: `Hybrid SHORT: HTF downtrend (EMA200), ADX ${adx.toFixed(2)}, RSI ${rsi.toFixed(2)}, VWAP Δ +${vwapAbovePct.toFixed(2)}%, momentum -${momentumDown.toFixed(2)}%`,
+          confidence: Math.max(confidence, 0.7),
+          entryPrice: price,
+          htfTrend: { price: htfCurrentPrice, ema200: htfEMA200, ema50: htfEMA50, adx: htfADX },
+          meanReversion: { rsi, vwap, vwapDistance: -vwapAbovePct, momentum: -momentumDown }
+        };
+      }
+
+      // If we reach here in downtrend and shorts not allowed
+      return {
+        shouldTrade: false,
+        reason: 'HTF downtrend and shorts disabled by config',
+        confidence: 0
       };
     } catch (error: any) {
       console.error('Error evaluating hybrid trend + mean reversion strategy:', error);
