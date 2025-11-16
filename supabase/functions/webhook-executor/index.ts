@@ -24,7 +24,15 @@ serve(async (req) => {
   console.log(`\n🚀 === WEBHOOK EXECUTOR STARTED ===`);
   console.log(`📅 Timestamp: ${new Date().toISOString()}`);
   console.log(`📋 Method: ${req.method}`);
-  console.log(`📋 URL: ${req.url}\n`);
+  console.log(`📋 URL: ${req.url}`);
+  
+  // Log all headers for debugging
+  const allHeaders: Record<string, string> = {};
+  req.headers.forEach((value, key) => {
+    allHeaders[key] = value;
+  });
+  console.log(`📋 All headers:`, JSON.stringify(allHeaders, null, 2));
+  console.log(``);
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
@@ -33,8 +41,16 @@ serve(async (req) => {
     const cronSecret = Deno.env.get('CRON_SECRET') ?? ''
 
     // Check authentication (cron secret or service role key)
-    const cronSecretHeader = req.headers.get('x-cron-secret') ?? ''
-    const authHeader = req.headers.get('authorization') ?? ''
+    // Try both lowercase and original case for header names
+    const cronSecretHeader = req.headers.get('x-cron-secret') ?? req.headers.get('X-Cron-Secret') ?? ''
+    const authHeader = req.headers.get('authorization') ?? req.headers.get('Authorization') ?? ''
+    
+    console.log(`🔍 Raw header values:`, {
+      cronSecretHeader: cronSecretHeader ? `${cronSecretHeader.substring(0, 10)}...` : 'empty',
+      authHeader: authHeader ? `${authHeader.substring(0, 20)}...` : 'empty',
+      cronSecretEnv: cronSecret ? `${cronSecret.substring(0, 10)}...` : 'not set',
+      serviceKeyEnv: supabaseServiceKey ? `${supabaseServiceKey.substring(0, 20)}...` : 'not set'
+    });
     
     // If x-cron-secret is present, treat as internal call (from another edge function)
     // Verify it matches if CRON_SECRET is set, otherwise just trust the header presence
@@ -42,15 +58,16 @@ serve(async (req) => {
     const isCron = cronSecret 
       ? (cronSecretHeader === cronSecret)
       : hasCronHeader  // If CRON_SECRET not set, trust header presence
-    const isServiceCall = authHeader.includes(supabaseServiceKey)
+    const isServiceCall = supabaseServiceKey && authHeader.includes(supabaseServiceKey)
     const isInternalCall = isCron || isServiceCall || hasCronHeader  // Accept any x-cron-secret header
 
-    console.log(`🔐 Auth check:`, {
+    console.log(`🔐 Auth check result:`, {
       isCron,
       isServiceCall,
       isInternalCall,
       hasCronSecret: !!cronSecret,
       hasCronHeader,
+      hasAuthHeader: !!authHeader,
       cronSecretMatch: cronSecret && cronSecretHeader ? (cronSecretHeader === cronSecret) : 'N/A (no CRON_SECRET env)'
     });
 
@@ -58,9 +75,16 @@ serve(async (req) => {
     // For external calls, require proper authentication
     if (!isInternalCall && !authHeader) {
       console.error(`❌ Missing authentication: No x-cron-secret or Authorization header`);
+      console.error(`   Headers received:`, Object.keys(allHeaders).join(', '));
       return new Response(JSON.stringify({ 
         code: 401,
-        message: 'Missing authorization header. Use x-cron-secret for internal calls or Authorization header for user calls.'
+        message: 'Missing authorization header. Use x-cron-secret for internal calls or Authorization header for user calls.',
+        debug: {
+          hasCronHeader,
+          hasAuthHeader: !!authHeader,
+          isInternalCall,
+          receivedHeaders: Object.keys(allHeaders)
+        }
       }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
