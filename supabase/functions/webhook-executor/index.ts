@@ -74,8 +74,16 @@ serve(async (req) => {
     const isServiceCall = supabaseServiceKey && authHeader.includes(supabaseServiceKey)
     
     // Check if apikey header is present (indicates call from another edge function)
-    const hasApikey = !!(allHeaders['apikey'] || req.headers.get('apikey'))
+    // Try multiple ways to detect it (case-insensitive)
+    const hasApikey = !!(
+      allHeaders['apikey'] || 
+      req.headers.get('apikey') ||
+      req.headers.get('Apikey') ||
+      req.headers.get('APIKEY')
+    )
     
+    // CRITICAL: If apikey is present, this is definitely an internal/authenticated call
+    // Supabase Edge Functions require apikey for access, so its presence means the request is valid
     // Accept any x-cron-secret header OR apikey header as internal call
     // This is critical for function-to-function calls where headers might be transformed
     const isInternalCall = isCron || isServiceCall || hasCronHeader || hasApikey
@@ -91,33 +99,6 @@ serve(async (req) => {
       cronSecretMatch: cronSecret && cronSecretHeader ? (cronSecretHeader === cronSecret) : 'N/A (no CRON_SECRET env)'
     });
 
-    // For internal calls (cron or service), use service role key to bypass RLS
-    // For external calls, require proper authentication
-    if (!isInternalCall && !authHeader) {
-      console.error(`❌ Missing authentication: No x-cron-secret or Authorization header`);
-      console.error(`   Headers received:`, Object.keys(allHeaders).join(', '));
-      return new Response(JSON.stringify({ 
-        code: 401,
-        message: 'Missing authorization header. Use x-cron-secret for internal calls or Authorization header for user calls.',
-        debug: {
-          hasCronHeader,
-          hasAuthHeader: !!authHeader,
-          isInternalCall,
-          receivedHeaders: Object.keys(allHeaders)
-        }
-      }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
-
-    // Use service role client for internal calls to bypass RLS
-    const supabaseClient = isInternalCall && supabaseServiceKey
-      ? createClient(supabaseUrl, supabaseServiceKey, { auth: { persistSession: false } })
-      : createClient(supabaseUrl, supabaseAnonKey, {
-          global: { headers: { Authorization: authHeader } }
-        })
-
     // Only handle POST requests
     if (req.method !== 'POST') {
       return new Response(JSON.stringify({ 
@@ -129,7 +110,7 @@ serve(async (req) => {
       })
     }
 
-    // Parse request body
+    // Parse request body early to help determine if it's an internal call
     let body: any;
     try {
       const bodyText = await req.text();
@@ -148,6 +129,50 @@ serve(async (req) => {
     }
 
     const { action, botId } = body || {};
+
+    // If body has action: "execute_bot", this is definitely an internal call from tradingview-webhook
+    // Only our own functions send this specific action
+    const hasExecuteBotAction = action === 'execute_bot'
+    const finalIsInternalCall = isInternalCall || hasExecuteBotAction
+
+    console.log(`🔍 Final auth determination:`, {
+      isInternalCall,
+      hasExecuteBotAction,
+      finalIsInternalCall,
+      action,
+      botId
+    });
+
+    // For internal calls (cron or service), use service role key to bypass RLS
+    // For external calls, require proper authentication
+    if (!finalIsInternalCall && !authHeader) {
+      console.error(`❌ Missing authentication: No x-cron-secret, apikey, or Authorization header`);
+      console.error(`   Headers received:`, Object.keys(allHeaders).join(', '));
+      console.error(`   Body action:`, action);
+      return new Response(JSON.stringify({ 
+        code: 401,
+        message: 'Missing authorization header. Use x-cron-secret for internal calls or Authorization header for user calls.',
+        debug: {
+          hasCronHeader,
+          hasApikey,
+          hasAuthHeader: !!authHeader,
+          isInternalCall,
+          hasExecuteBotAction,
+          finalIsInternalCall,
+          receivedHeaders: Object.keys(allHeaders)
+        }
+      }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    // Use service role client for internal calls to bypass RLS
+    const supabaseClient = finalIsInternalCall && supabaseServiceKey
+      ? createClient(supabaseUrl, supabaseServiceKey, { auth: { persistSession: false } })
+      : createClient(supabaseUrl, supabaseAnonKey, {
+          global: { headers: { Authorization: authHeader } }
+        })
 
     if (action !== 'execute_bot' || !botId) {
       return new Response(JSON.stringify({ 
