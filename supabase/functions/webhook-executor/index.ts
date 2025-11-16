@@ -16,7 +16,9 @@ const corsHeaders = {
 
 serve(async (req) => {
   // CRITICAL: Log immediately to confirm function is being called
+  // Using multiple log statements to ensure at least one appears
   console.log(`\n🚀 === WEBHOOK EXECUTOR CALLED ===`);
+  console.log(`🚀 WEBHOOK EXECUTOR START`);
   console.log(`📅 Timestamp: ${new Date().toISOString()}`);
   console.log(`📋 Method: ${req.method}`);
   console.log(`📋 URL: ${req.url}`);
@@ -57,11 +59,16 @@ serve(async (req) => {
 
     // Parse request body FIRST - this is the most reliable way to detect internal calls
     // If body has action: "execute_bot", it's definitely from tradingview-webhook (our own function)
+    console.log(`🔍 About to parse request body...`);
     let body: any;
     try {
+      console.log(`🔍 Calling req.text()...`);
       const bodyText = await req.text();
       console.log(`📦 POST body (raw, first 500 chars):`, bodyText.substring(0, 500));
+      console.log(`📦 POST body length:`, bodyText.length);
+      console.log(`🔍 About to parse JSON...`);
       body = JSON.parse(bodyText);
+      console.log(`✅ POST body parsed successfully!`);
       console.log(`✅ POST body parsed:`, { action: body?.action, botId: body?.botId });
     } catch (parseError: any) {
       console.error(`❌ Failed to parse POST body:`, parseError);
