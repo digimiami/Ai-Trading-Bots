@@ -494,26 +494,57 @@ export default function AdminPage() {
         throw new Error('No active session found');
       }
 
-      const triggerResponse = await fetch(`${supabaseUrl}/functions/v1/bot-executor`, {
+      const requestUrl = `${supabaseUrl}/functions/v1/bot-executor`;
+      const requestBody = {
+        action: 'execute_bot',
+        bot_id: botId
+      };
+      
+      console.log(`🚀 Triggering bot executor:`, {
+        url: requestUrl,
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-          'x-cron-secret': import.meta.env.VITE_CRON_SECRET || ''
-        },
-        body: JSON.stringify({
-          action: 'execute_bot',
-          bot_id: botId
-        })
+        botId: botId,
+        action: 'execute_bot',
+        mode: mode
       });
 
-      const triggerText = await triggerResponse.text();
-      
-      if (!triggerResponse.ok) {
-        console.warn(`⚠️ Bot executor trigger returned ${triggerResponse.status}: ${triggerText}`);
+      try {
+        const triggerResponse = await fetch(requestUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+            'x-cron-secret': import.meta.env.VITE_CRON_SECRET || ''
+          },
+          body: JSON.stringify(requestBody)
+        });
+
+        const triggerText = await triggerResponse.text();
+        
+        console.log(`📥 Bot executor response:`, {
+          status: triggerResponse.status,
+          statusText: triggerResponse.statusText,
+          ok: triggerResponse.ok,
+          body: triggerText.substring(0, 200)
+        });
+        
+        if (!triggerResponse.ok) {
+          console.error(`❌ Bot executor trigger failed:`, {
+            status: triggerResponse.status,
+            statusText: triggerResponse.statusText,
+            body: triggerText
+          });
+          // Don't fail the test - the signal is created and will be processed by the next cron run
+        } else {
+          console.log(`✅ Bot executor triggered successfully`);
+        }
+      } catch (fetchError: any) {
+        console.error(`❌ Failed to trigger bot executor:`, {
+          error: fetchError.message,
+          stack: fetchError.stack,
+          name: fetchError.name
+        });
         // Don't fail the test - the signal is created and will be processed by the next cron run
-      } else {
-        console.log(`✅ Bot executor triggered successfully`);
       }
 
       alert(`✅ Test ${mode.toUpperCase()} trade signal created!\n\nSignal ID: ${signalData.id}\n\nThe bot executor will process this trade shortly. Check the bot logs for execution details.`);
