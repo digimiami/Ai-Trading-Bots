@@ -2917,7 +2917,15 @@ class BotExecutor {
   private async processManualSignals(bot: any): Promise<number> {
     try {
       console.log(`🔍 Checking for manual trade signals for bot ${bot.id} (${bot.name})...`);
-      const { data: pendingSignals, error } = await this.supabaseClient
+      
+      // Use service role client to bypass RLS when querying manual trade signals
+      // This ensures bot-executor can read signals regardless of who triggered it
+      const serviceRoleClient = createClient(
+        Deno.env.get('SUPABASE_URL') ?? '',
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      );
+      
+      const { data: pendingSignals, error } = await serviceRoleClient
         .from('manual_trade_signals')
         .select('*')
         .eq('bot_id', bot.id)
@@ -2985,7 +2993,7 @@ class BotExecutor {
             source: 'manual_trade_signal'
           });
 
-          await this.supabaseClient
+          await serviceRoleClient
             .from('manual_trade_signals')
             .update({
               status: 'completed',
@@ -3014,7 +3022,7 @@ class BotExecutor {
             }
           });
 
-          await this.supabaseClient
+          await serviceRoleClient
             .from('manual_trade_signals')
             .update({
               status: 'failed',
