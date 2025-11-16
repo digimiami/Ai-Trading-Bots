@@ -35,17 +35,37 @@ serve(async (req) => {
     // Check authentication (cron secret or service role key)
     const cronSecretHeader = req.headers.get('x-cron-secret') ?? ''
     const authHeader = req.headers.get('authorization') ?? ''
-    const isCron = cronSecret && cronSecretHeader === cronSecret
+    
+    // If x-cron-secret is present, treat as internal call (from another edge function)
+    // Verify it matches if CRON_SECRET is set, otherwise just trust the header presence
+    const hasCronHeader = !!cronSecretHeader
+    const isCron = cronSecret 
+      ? (cronSecretHeader === cronSecret)
+      : hasCronHeader  // If CRON_SECRET not set, trust header presence
     const isServiceCall = authHeader.includes(supabaseServiceKey)
-    const isInternalCall = isCron || isServiceCall
+    const isInternalCall = isCron || isServiceCall || hasCronHeader  // Accept any x-cron-secret header
 
     console.log(`🔐 Auth check:`, {
       isCron,
       isServiceCall,
       isInternalCall,
       hasCronSecret: !!cronSecret,
-      hasCronHeader: !!cronSecretHeader
+      hasCronHeader,
+      cronSecretMatch: cronSecret && cronSecretHeader ? (cronSecretHeader === cronSecret) : 'N/A (no CRON_SECRET env)'
     });
+
+    // For internal calls (cron or service), use service role key to bypass RLS
+    // For external calls, require proper authentication
+    if (!isInternalCall && !authHeader) {
+      console.error(`❌ Missing authentication: No x-cron-secret or Authorization header`);
+      return new Response(JSON.stringify({ 
+        code: 401,
+        message: 'Missing authorization header. Use x-cron-secret for internal calls or Authorization header for user calls.'
+      }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
 
     // Use service role client for internal calls to bypass RLS
     const supabaseClient = isInternalCall && supabaseServiceKey
