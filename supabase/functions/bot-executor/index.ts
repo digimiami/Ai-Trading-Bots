@@ -2463,7 +2463,9 @@ class BotExecutor {
       let currentPrice: number;
       
       try {
+        console.log(`🔍 [executeTrade] Starting price fetch for ${bot.symbol} (${tradingType})...`);
         currentPrice = await MarketDataFetcher.fetchPrice(bot.symbol, bot.exchange, tradingType);
+        console.log(`✅ [executeTrade] Price fetch completed: $${currentPrice} for ${bot.symbol}`);
       } catch (err: any) {
         // Capture error details for logging
         priceFetchError = {
@@ -2472,10 +2474,12 @@ class BotExecutor {
           name: err?.name
         };
         currentPrice = 0;
+        console.error(`❌ [executeTrade] Price fetch failed for ${bot.symbol}:`, priceFetchError);
       }
       
       // Validate price before proceeding
       if (!currentPrice || currentPrice === 0 || !isFinite(currentPrice)) {
+        console.error(`❌ [executeTrade] Price validation failed: currentPrice=${currentPrice}, isFinite=${isFinite(currentPrice)}`);
         const isMajorCoin = ['BTC', 'ETH', 'BNB', 'SOL'].some(coin => bot.symbol.toUpperCase().startsWith(coin));
         let errorMsg = `Invalid or unavailable price for ${bot.symbol} (${tradingType}).`;
         
@@ -2573,7 +2577,8 @@ class BotExecutor {
       console.log(`✅ Validated order params for ${bot.symbol}: qty=${tradeAmount}, price=$${normalizedPrice}`);
       
       // Place actual order on exchange with retry logic
-      console.log(`\n📤 === PLACING ORDER ON BYBIT ===`);
+      console.log(`\n🚀 [executeTrade] About to place order on Bybit...`);
+      console.log(`📤 === PLACING ORDER ON BYBIT ===`);
       console.log(`📊 Symbol: ${bot.symbol}`);
       console.log(`📈 Side: ${tradeSignal.side}`);
       console.log(`💰 Quantity: ${tradeAmount}`);
