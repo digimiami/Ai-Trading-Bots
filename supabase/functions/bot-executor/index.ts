@@ -6214,33 +6214,34 @@ serve(async (req) => {
     }
 
     // Handle POST requests
-    console.log(`\n📥 [bot-executor] POST REQUEST RECEIVED`);
-    console.log(`📋 Content-Type: ${req.headers.get('content-type')}`);
-    console.log(`🔐 x-cron-secret header: ${req.headers.get('x-cron-secret') ? 'present' : 'missing'}`);
-    console.log(`🔐 Authorization header: ${req.headers.get('authorization') ? 'present' : 'missing'}`);
-    
-    let body: any;
-    try {
-      const bodyText = await req.text();
-      console.log(`📦 POST body (raw, first 500 chars):`, bodyText.substring(0, 500));
-      body = JSON.parse(bodyText);
-      console.log(`✅ POST body parsed successfully:`, { action: body?.action, botId: body?.botId });
-    } catch (parseError: any) {
-      console.error(`❌ Failed to parse POST body:`, parseError);
-      return new Response(JSON.stringify({ 
-        error: 'Invalid JSON in request body',
-        details: parseError?.message || String(parseError)
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-    
-    const { action: bodyAction, botId } = body || {};
+    if (req.method === 'POST') {
+      console.log(`\n📥 [bot-executor] POST REQUEST RECEIVED`);
+      console.log(`📋 Content-Type: ${req.headers.get('content-type')}`);
+      console.log(`🔐 x-cron-secret header: ${req.headers.get('x-cron-secret') ? 'present' : 'missing'}`);
+      console.log(`🔐 Authorization header: ${req.headers.get('authorization') ? 'present' : 'missing'}`);
+      
+      let body: any;
+      try {
+        const bodyText = await req.text();
+        console.log(`📦 POST body (raw, first 500 chars):`, bodyText.substring(0, 500));
+        body = JSON.parse(bodyText);
+        console.log(`✅ POST body parsed successfully:`, { action: body?.action, botId: body?.botId });
+      } catch (parseError: any) {
+        console.error(`❌ Failed to parse POST body:`, parseError);
+        return new Response(JSON.stringify({ 
+          error: 'Invalid JSON in request body',
+          details: parseError?.message || String(parseError)
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+      
+      const { action: bodyAction, botId } = body || {};
 
-    console.log(`🔍 POST request parsed: action=${bodyAction}, botId=${botId}`);
+      console.log(`🔍 POST request parsed: action=${bodyAction}, botId=${botId}`);
 
-    switch (bodyAction) {
+      switch (bodyAction) {
       case 'execute_bot':
         console.log(`\n🚀 === EXECUTE_BOT ACTION TRIGGERED ===`);
         console.log(`📅 Timestamp: ${new Date().toISOString()}`);
@@ -6540,6 +6541,7 @@ serve(async (req) => {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
+      }
     }
 
   } catch (error) {
