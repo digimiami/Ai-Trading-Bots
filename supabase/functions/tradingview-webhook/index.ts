@@ -860,8 +860,9 @@ serve(async (req) => {
 
     if (shouldTrigger) {
       try {
-        // Always try to use x-cron-secret if available (preferred method)
-        // If not available, we'll still try but it may fail if CRON_SECRET is not set in bot-executor
+        // Send both x-cron-secret and Authorization headers for maximum compatibility
+        // x-cron-secret is for our custom authentication
+        // Authorization is for Supabase's built-in authentication middleware
         const headers: Record<string, string> = {
           "Content-Type": "application/json"
         };
@@ -869,12 +870,14 @@ serve(async (req) => {
         if (cronSecret) {
           headers["x-cron-secret"] = cronSecret;
           console.log(`🚀 Triggering immediate bot execution for bot ${bot.id} using x-cron-secret...`);
-        } else {
-          // Fallback: Use service role key as Authorization header
-          // Note: This requires bot-executor to accept service role key
+        }
+        
+        // Always include Authorization header with service role key for Supabase auth
+        if (serviceRoleKey) {
           headers["Authorization"] = `Bearer ${serviceRoleKey}`;
-          console.log(`🚀 Triggering immediate bot execution for bot ${bot.id} using service role key...`);
-          console.warn(`⚠️ CRON_SECRET not set - using service role key. Ensure bot-executor accepts this.`);
+          console.log(`🔐 Also sending Authorization header with service role key for Supabase auth`);
+        } else {
+          console.warn(`⚠️ SUPABASE_SERVICE_ROLE_KEY not set - authentication may fail`);
         }
         
         console.log(`📤 Sending POST to webhook-executor: ${supabaseUrl}/functions/v1/webhook-executor`);
@@ -905,7 +908,7 @@ serve(async (req) => {
           message: triggerText
         };
         
-        console.log(`📥 bot-executor response:`, {
+        console.log(`📥 webhook-executor response:`, {
           status: triggerFetch.status,
           statusText: triggerFetch.statusText,
           ok: triggerFetch.ok,
