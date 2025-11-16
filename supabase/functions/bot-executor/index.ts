@@ -3295,7 +3295,8 @@ class BotExecutor {
           if (errorMessage.includes('CRITICAL') || errorMessage.includes('safety protocol')) {
             if (disableSlTpSafety) {
               console.warn('⚠️ SL/TP critical error detected, but DISABLE_SLTPSAFETY=true. Keeping position open and continuing.');
-              break;
+              // Do not abort; continue without SL/TP (position remains open).
+              // Intentionally no return/break here so we can fall through to normal completion.
             }
             // Position was closed for safety OR position is unprotected - this is critical
             console.error('🚨 CRITICAL: SL/TP failure - position protection failed');
