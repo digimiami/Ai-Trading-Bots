@@ -5981,22 +5981,44 @@ class PaperTradingExecutor {
 
 serve(async (req) => {
   // Handle CORS preflight requests FIRST, before any other processing
+  // This MUST be the very first thing to avoid any errors that could break CORS
   if (req.method === 'OPTIONS') {
-    console.log(`📥 [bot-executor] CORS preflight request received`);
-    return new Response(null, { 
-      status: 204,
-      headers: {
-        ...corsHeaders,
-        'Access-Control-Max-Age': '86400', // Cache preflight for 24 hours
-      }
-    });
+    try {
+      console.log(`📥 [bot-executor] CORS preflight request received`);
+      return new Response(null, { 
+        status: 204,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret',
+          'Access-Control-Max-Age': '86400', // Cache preflight for 24 hours
+        }
+      });
+    } catch (error) {
+      // Even if there's an error, return CORS headers
+      console.error(`❌ Error in OPTIONS handler:`, error);
+      return new Response(null, { 
+        status: 204,
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret',
+        }
+      });
+    }
   }
   
-  // Log ALL incoming requests immediately
-  console.log(`\n📥 [bot-executor] INCOMING REQUEST: ${req.method} ${new URL(req.url).pathname}`);
-  console.log(`   Timestamp: ${new Date().toISOString()}`);
-  console.log(`   User-Agent: ${req.headers.get('user-agent') || 'unknown'}`);
-  console.log(`   Origin: ${req.headers.get('origin') || 'unknown'}\n`);
+  // Log ALL incoming requests immediately (but safely handle URL parsing)
+  try {
+    const url = new URL(req.url);
+    console.log(`\n📥 [bot-executor] INCOMING REQUEST: ${req.method} ${url.pathname}`);
+    console.log(`   Timestamp: ${new Date().toISOString()}`);
+    console.log(`   User-Agent: ${req.headers.get('user-agent') || 'unknown'}`);
+    console.log(`   Origin: ${req.headers.get('origin') || 'unknown'}\n`);
+  } catch (urlError) {
+    console.error(`❌ Error parsing URL:`, urlError);
+    // Continue anyway - URL parsing error shouldn't block the request
+  }
 
   try {
     const cronSecretHeader = req.headers.get('x-cron-secret') ?? ''
