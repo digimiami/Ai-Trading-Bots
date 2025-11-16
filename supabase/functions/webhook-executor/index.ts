@@ -41,25 +41,44 @@ serve(async (req) => {
     const cronSecret = Deno.env.get('CRON_SECRET') ?? ''
 
     // Check authentication (cron secret or service role key)
-    // Try both lowercase and original case for header names
-    const cronSecretHeader = req.headers.get('x-cron-secret') ?? req.headers.get('X-Cron-Secret') ?? ''
-    const authHeader = req.headers.get('authorization') ?? req.headers.get('Authorization') ?? ''
+    // Try multiple ways to get the header (case-insensitive, from allHeaders, etc.)
+    const cronSecretHeader = 
+      req.headers.get('x-cron-secret') ?? 
+      req.headers.get('X-Cron-Secret') ?? 
+      req.headers.get('X-CRON-SECRET') ??
+      allHeaders['x-cron-secret'] ??
+      allHeaders['X-Cron-Secret'] ??
+      allHeaders['X-CRON-SECRET'] ??
+      ''
+    const authHeader = 
+      req.headers.get('authorization') ?? 
+      req.headers.get('Authorization') ?? 
+      allHeaders['authorization'] ??
+      allHeaders['Authorization'] ??
+      ''
     
     console.log(`🔍 Raw header values:`, {
       cronSecretHeader: cronSecretHeader ? `${cronSecretHeader.substring(0, 10)}...` : 'empty',
       authHeader: authHeader ? `${authHeader.substring(0, 20)}...` : 'empty',
       cronSecretEnv: cronSecret ? `${cronSecret.substring(0, 10)}...` : 'not set',
-      serviceKeyEnv: supabaseServiceKey ? `${supabaseServiceKey.substring(0, 20)}...` : 'not set'
+      serviceKeyEnv: supabaseServiceKey ? `${supabaseServiceKey.substring(0, 20)}...` : 'not set',
+      allHeaderKeys: Object.keys(allHeaders)
     });
     
-    // If x-cron-secret is present, treat as internal call (from another edge function)
+    // If x-cron-secret is present (in any form), treat as internal call (from another edge function)
     // Verify it matches if CRON_SECRET is set, otherwise just trust the header presence
     const hasCronHeader = !!cronSecretHeader
     const isCron = cronSecret 
       ? (cronSecretHeader === cronSecret)
       : hasCronHeader  // If CRON_SECRET not set, trust header presence
     const isServiceCall = supabaseServiceKey && authHeader.includes(supabaseServiceKey)
-    const isInternalCall = isCron || isServiceCall || hasCronHeader  // Accept any x-cron-secret header
+    
+    // Check if apikey header is present (indicates call from another edge function)
+    const hasApikey = !!(allHeaders['apikey'] || req.headers.get('apikey'))
+    
+    // Accept any x-cron-secret header OR apikey header as internal call
+    // This is critical for function-to-function calls where headers might be transformed
+    const isInternalCall = isCron || isServiceCall || hasCronHeader || hasApikey
 
     console.log(`🔐 Auth check result:`, {
       isCron,
@@ -67,6 +86,7 @@ serve(async (req) => {
       isInternalCall,
       hasCronSecret: !!cronSecret,
       hasCronHeader,
+      hasApikey,
       hasAuthHeader: !!authHeader,
       cronSecretMatch: cronSecret && cronSecretHeader ? (cronSecretHeader === cronSecret) : 'N/A (no CRON_SECRET env)'
     });
