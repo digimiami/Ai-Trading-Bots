@@ -2838,8 +2838,10 @@ class BotExecutor {
       confidence: params.confidence ?? 1
     };
 
+    // Determine effective mode: explicit mode param takes precedence over bot setting
     const effectiveMode: 'real' | 'paper' =
       params.mode === 'paper' ? 'paper' :
+      params.mode === 'real' ? 'real' :
       bot.paper_trading ? 'paper' :
       'real';
 
