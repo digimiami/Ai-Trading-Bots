@@ -285,14 +285,13 @@ SELECT
   COALESCE(pt.exit_price, pt.entry_price)::numeric as price,
   pt.entry_price::numeric as entry_price,
   pt.status,
-  pt.error_message,
+  NULL as error_message,
   pt.created_at,
   pt.executed_at
 FROM paper_trading_trades pt
 LEFT JOIN users u ON pt.user_id = u.id
 LEFT JOIN trading_bots tb ON pt.bot_id = tb.id
 WHERE pt.status IN ('pending', 'failed', 'cancelled')
-   OR pt.error_message IS NOT NULL
 
 ORDER BY created_at DESC
 LIMIT 50;
