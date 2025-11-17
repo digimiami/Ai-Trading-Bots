@@ -133,6 +133,7 @@ export default function AdminPage() {
   const [riskMetrics, setRiskMetrics] = useState<RiskMetrics | null>(null);
   const [latestTrades, setLatestTrades] = useState<any[]>([]);
   const [latestTradesLoading, setLatestTradesLoading] = useState(false);
+  const [latestTradesFilter, setLatestTradesFilter] = useState<'all' | 'real' | 'paper'>('all');
   const [loading, setLoading] = useState(true);
   const [showCreateUser, setShowCreateUser] = useState(false);
   const [showCreateInvitation, setShowCreateInvitation] = useState(false);
@@ -1383,18 +1384,29 @@ export default function AdminPage() {
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Latest Trades</h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    View the 50 most recent trades across all users (Real & Paper)
+                    View the 50 most recent trades across all users
                   </p>
                 </div>
-                <Button
-                  onClick={fetchLatestTrades}
-                  variant="secondary"
-                  size="sm"
-                  disabled={latestTradesLoading}
-                >
-                  <i className="ri-refresh-line mr-2"></i>
-                  Refresh
-                </Button>
+                <div className="flex items-center gap-3">
+                  <select
+                    value={latestTradesFilter}
+                    onChange={(e) => setLatestTradesFilter(e.target.value as 'all' | 'real' | 'paper')}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+                  >
+                    <option value="all">All Trades</option>
+                    <option value="real">Real Trades Only</option>
+                    <option value="paper">Paper Trades Only</option>
+                  </select>
+                  <Button
+                    onClick={fetchLatestTrades}
+                    variant="secondary"
+                    size="sm"
+                    disabled={latestTradesLoading}
+                  >
+                    <i className="ri-refresh-line mr-2"></i>
+                    Refresh
+                  </Button>
+                </div>
               </div>
 
               {latestTradesLoading ? (
@@ -1408,26 +1420,44 @@ export default function AdminPage() {
                   <p>No trades found</p>
                   <p className="text-sm mt-1">Trades will appear here once users start trading</p>
                 </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-100 dark:bg-gray-800">
-                      <tr>
-                        <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">Type</th>
-                        <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">User</th>
-                        <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">Bot</th>
-                        <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">Symbol</th>
-                        <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">Side</th>
-                        <th className="px-4 py-3 text-right font-semibold text-gray-700 dark:text-gray-300">Amount</th>
-                        <th className="px-4 py-3 text-right font-semibold text-gray-700 dark:text-gray-300">Price</th>
-                        <th className="px-4 py-3 text-right font-semibold text-gray-700 dark:text-gray-300">PnL</th>
-                        <th className="px-4 py-3 text-right font-semibold text-gray-700 dark:text-gray-300">Fee</th>
-                        <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">Status</th>
-                        <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">Time</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                      {latestTrades.map((trade) => (
+              ) : (() => {
+                // Filter trades based on selected filter
+                const filteredTrades = latestTrades.filter(trade => {
+                  if (latestTradesFilter === 'all') return true;
+                  if (latestTradesFilter === 'real') return trade.trade_type === 'REAL';
+                  if (latestTradesFilter === 'paper') return trade.trade_type === 'PAPER';
+                  return true;
+                });
+
+                if (filteredTrades.length === 0) {
+                  return (
+                    <div className="text-center py-8 text-gray-500">
+                      <i className="ri-exchange-line text-4xl mb-2"></i>
+                      <p>No {latestTradesFilter === 'real' ? 'real' : latestTradesFilter === 'paper' ? 'paper' : ''} trades found</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-100 dark:bg-gray-800">
+                        <tr>
+                          <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">Type</th>
+                          <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">User</th>
+                          <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">Bot</th>
+                          <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">Symbol</th>
+                          <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">Side</th>
+                          <th className="px-4 py-3 text-right font-semibold text-gray-700 dark:text-gray-300">Amount</th>
+                          <th className="px-4 py-3 text-right font-semibold text-gray-700 dark:text-gray-300">Price</th>
+                          <th className="px-4 py-3 text-right font-semibold text-gray-700 dark:text-gray-300">PnL</th>
+                          <th className="px-4 py-3 text-right font-semibold text-gray-700 dark:text-gray-300">Fee</th>
+                          <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">Status</th>
+                          <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">Time</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                        {filteredTrades.map((trade) => (
                         <tr key={`${trade.trade_type}-${trade.trade_id}`} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                           <td className="px-4 py-3">
                             <span className={`px-2 py-1 rounded text-xs font-medium ${
@@ -1499,11 +1529,12 @@ export default function AdminPage() {
                             )}
                           </td>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
             </Card>
           </div>
         )}
