@@ -1340,11 +1340,11 @@ export default function AdminPage() {
                   >
                     <option value="all">All Users</option>
                     {users.length === 0 ? (
-                      <option value="" disabled>No users available</option>
+                      <option value="" disabled>Loading users...</option>
                     ) : (
                       users.map((user) => (
                         <option key={user.id} value={user.id}>
-                          {user.email}
+                          {user.email || `User ${user.id.substring(0, 8)}...`}
                         </option>
                       ))
                     )}
