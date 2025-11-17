@@ -95,9 +95,18 @@ function AppRoutes() {
   );
 }
 
+// Define base path - use window global or Vite's BASE_URL or default to '/'
+declare global {
+  interface Window {
+    __BASE_PATH__?: string;
+  }
+}
+
+const BASE_PATH = (typeof window !== 'undefined' && window.__BASE_PATH__) || import.meta.env.BASE_URL || '/';
+
 function App() {
   return (
-    <BrowserRouter basename={__BASE_PATH__}>
+    <BrowserRouter basename={BASE_PATH}>
       <AppRoutes />
     </BrowserRouter>
   );

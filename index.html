@@ -15,6 +15,10 @@
   </head>
   <body class="bg-gray-50 dark:bg-gray-900">
     <div id="root"></div>
+    <script>
+      // Define __BASE_PATH__ before loading the app
+      window.__BASE_PATH__ = window.__BASE_PATH__ || '/';
+    </script>
     <script type="module" src="/src/main.tsx"></script>
     <script 
       src="https://readdy.ai/api/public/assistant/widget?projectId=01f35e8f-3cad-44dd-986e-ceb29e52b9b5"
