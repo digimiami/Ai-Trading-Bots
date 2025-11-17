@@ -27,6 +27,7 @@ const Admin = lazy(() => import('../pages/admin/page'));
 const Onboarding = lazy(() => import('../pages/onboarding/page'));
 const Help = lazy(() => import('../pages/help/page'));
 const PabloReady = lazy(() => import('../pages/pablo-ready/page'));
+const MarketDashboard = lazy(() => import('../pages/market-dashboard/page'));
 const NotFound = lazy(() => import('../pages/NotFound'));
 const Privacy = lazy(() => import('../pages/legal/privacy'));
 const Terms = lazy(() => import('../pages/legal/terms'));
@@ -123,6 +124,10 @@ const routes: RouteObject[] = [
   {
     path: '/pablo-ready',
     element: <PabloReady />
+  },
+  {
+    path: '/market-dashboard',
+    element: <MarketDashboard />
   },
   {
     path: '/ai-ml/dashboard',

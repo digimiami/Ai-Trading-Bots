@@ -1,3 +1,7 @@
+-- ⚠️ IMPORTANT: Run RUN_WEBHOOK_ONLY_MIGRATION.sql FIRST!
+-- This script requires the webhook_only column to exist.
+-- If you get "column does not exist" error, run RUN_WEBHOOK_ONLY_MIGRATION.sql first.
+
 -- Enable webhook-only mode for TradingView bots
 -- This makes bots only trade via webhooks (TradingView alerts), skipping scheduled executions
 

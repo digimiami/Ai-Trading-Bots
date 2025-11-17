@@ -2117,6 +2117,29 @@ class BotExecutor {
       console.log(`   Full Result:`, JSON.stringify(shouldTrade, null, 2));
       console.log(`=== END STRATEGY RESULT ===\n`);
       
+      // Apply bias_mode filter to all strategies (safety check)
+      if (shouldTrade?.shouldTrade && shouldTrade?.side) {
+        const config = bot.strategy_config || {};
+        const biasMode = config.bias_mode;
+        const signalSide = shouldTrade.side.toLowerCase();
+        
+        if (biasMode === 'long-only' && (signalSide === 'sell' || signalSide === 'short')) {
+          console.log(`🚫 Bias mode filter: Blocking ${signalSide} trade (bias_mode: long-only)`);
+          shouldTrade = {
+            shouldTrade: false,
+            reason: `Bias mode 'long-only' blocks ${signalSide} trades`,
+            confidence: 0
+          };
+        } else if (biasMode === 'short-only' && (signalSide === 'buy' || signalSide === 'long')) {
+          console.log(`🚫 Bias mode filter: Blocking ${signalSide} trade (bias_mode: short-only)`);
+          shouldTrade = {
+            shouldTrade: false,
+            reason: `Bias mode 'short-only' blocks ${signalSide} trades`,
+            confidence: 0
+          };
+        }
+      }
+      
       // Log strategy result to bot activity logs
       await this.addBotLog(bot.id, {
         level: shouldTrade?.shouldTrade ? 'info' : 'info',
@@ -2636,6 +2659,7 @@ class BotExecutor {
       // 2. HTF Trend Confirmation Checks
       const htfPriceAboveEMA200 = htfCurrentPrice > htfEMA200;
       const htfEMA50AboveEMA200 = htfEMA50 > htfEMA200;
+      const htfEMA50BelowEMA200 = htfEMA50 < htfEMA200;
       const htfADXStrong = htfADX >= adxMinHTF;
       
       // Check if HTF ADX is rising (simplified: use previous ADX from klines if available)
@@ -2648,18 +2672,50 @@ class BotExecutor {
         (config.bias_mode === 'both' || config.bias_mode === 'auto') &&
         config.require_price_vs_trend !== 'above';
 
-      if (!htfPriceAboveEMA200 && !allowShorts) {
+      // Check bias_mode restrictions
+      if (config.bias_mode === 'long-only' && !htfPriceAboveEMA200) {
         return {
           shouldTrade: false,
-          reason: `HTF price (${htfCurrentPrice.toFixed(2)}) not above EMA200 (${htfEMA200.toFixed(2)})`,
+          reason: `HTF price (${htfCurrentPrice.toFixed(2)}) not above EMA200 (${htfEMA200.toFixed(2)}) - long-only mode`,
           confidence: 0
         };
       }
       
-      if (!htfEMA50AboveEMA200 && !allowShorts) {
+      if (config.bias_mode === 'short-only' && htfPriceAboveEMA200) {
         return {
           shouldTrade: false,
-          reason: `HTF EMA50 (${htfEMA50.toFixed(2)}) not above EMA200 (${htfEMA200.toFixed(2)})`,
+          reason: `HTF price (${htfCurrentPrice.toFixed(2)}) above EMA200 (${htfEMA200.toFixed(2)}) - short-only mode`,
+          confidence: 0
+        };
+      }
+
+      // For LONG trades (uptrend): require price and EMA50 above EMA200
+      if (htfPriceAboveEMA200) {
+        if (!htfEMA50AboveEMA200) {
+          return {
+            shouldTrade: false,
+            reason: `HTF EMA50 (${htfEMA50.toFixed(2)}) not above EMA200 (${htfEMA200.toFixed(2)}) - required for long entries`,
+            confidence: 0
+          };
+        }
+      }
+      
+      // For SHORT trades (downtrend): require price and EMA50 below EMA200 (when shorts allowed)
+      if (!htfPriceAboveEMA200 && allowShorts) {
+        if (!htfEMA50BelowEMA200) {
+          return {
+            shouldTrade: false,
+            reason: `HTF EMA50 (${htfEMA50.toFixed(2)}) not below EMA200 (${htfEMA200.toFixed(2)}) - required for short entries`,
+            confidence: 0
+          };
+        }
+      }
+      
+      // If price is below EMA200 and shorts are not allowed, block the trade
+      if (!htfPriceAboveEMA200 && !allowShorts) {
+        return {
+          shouldTrade: false,
+          reason: `HTF price (${htfCurrentPrice.toFixed(2)}) not above EMA200 (${htfEMA200.toFixed(2)}) and shorts disabled`,
           confidence: 0
         };
       }

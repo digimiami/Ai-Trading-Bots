@@ -16,6 +16,7 @@ export default function Navigation() {
     { path: '/dashboard', icon: 'ri-home-line', label: 'Home' },
     { path: '/academy', icon: 'ri-graduation-cap-line', label: 'Academy' },
     { path: '/pablo-ready', icon: 'ri-star-line', label: 'Pablo Ready' },
+    { path: '/market-dashboard', icon: 'ri-line-chart-line', label: 'Market' },
     { path: '/bots', icon: 'ri-robot-line', label: 'Bots' },
     { path: '/backtest', icon: 'ri-test-tube-line', label: 'Backtest' },
     { path: '/bot-activity', icon: 'ri-file-list-line', label: 'Activity' },
