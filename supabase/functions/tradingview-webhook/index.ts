@@ -861,10 +861,8 @@ serve(async (req) => {
 
     if (shouldTrigger) {
       try {
-        // Send x-cron-secret, apikey, and Authorization headers for authentication
-        // x-cron-secret is for our custom internal authentication
-        // apikey is required by Supabase Edge Functions for public access
-        // Authorization header with service role key is needed for webhook-executor to recognize internal calls
+        // Call bot-executor directly (same as bot-scheduler does)
+        // bot-executor supports execute_bot action and uses x-cron-secret for authentication
         const headers: Record<string, string> = {
           "Content-Type": "application/json"
         };
@@ -872,11 +870,11 @@ serve(async (req) => {
         if (cronSecret) {
           headers["x-cron-secret"] = cronSecret;
           console.log(`🚀 Triggering immediate bot execution for bot ${bot.id} using x-cron-secret...`);
+        } else {
+          console.warn(`⚠️ CRON_SECRET not set - bot-executor may reject the request`);
         }
         
-        // Add apikey header (required by Supabase Edge Functions for public access)
-        // The apikey header allows the function to be called, and the execute_bot action in the body
-        // will be detected by webhook-executor to bypass authentication checks
+        // Add apikey header (required by Supabase Edge Functions)
         if (supabaseAnonKey) {
           headers["apikey"] = supabaseAnonKey;
           console.log(`🔑 Sending apikey header for Supabase Edge Function access`);
@@ -884,15 +882,15 @@ serve(async (req) => {
           console.warn(`⚠️ SUPABASE_ANON_KEY not set - function access may fail`);
         }
         
-        // NOTE: Do NOT send Authorization header with service role key
-        // Service role keys are NOT JWTs and will cause "Invalid JWT" errors
-        // The webhook-executor will detect the "execute_bot" action in the body and bypass auth
+        // NOTE: bot-executor uses x-cron-secret to detect cron/internal calls
+        // When x-cron-secret matches CRON_SECRET env var, it uses service role client
+        // No Authorization header needed - x-cron-secret is sufficient
         
-        console.log(`📤 Sending POST to webhook-executor: ${supabaseUrl}/functions/v1/webhook-executor`);
+        console.log(`📤 Sending POST to bot-executor: ${supabaseUrl}/functions/v1/bot-executor`);
         console.log(`📋 Request body:`, JSON.stringify({ action: "execute_bot", botId: bot.id }));
         console.log(`🔐 Headers:`, Object.keys(headers).join(', '));
         
-        const triggerFetch = await fetch(`${supabaseUrl}/functions/v1/webhook-executor`, {
+        const triggerFetch = await fetch(`${supabaseUrl}/functions/v1/bot-executor`, {
           method: "POST",
           headers,
           body: JSON.stringify({
@@ -916,7 +914,7 @@ serve(async (req) => {
           message: triggerText
         };
         
-        console.log(`📥 webhook-executor response:`, {
+        console.log(`📥 bot-executor response:`, {
           status: triggerFetch.status,
           statusText: triggerFetch.statusText,
           ok: triggerFetch.ok,
