@@ -131,6 +131,8 @@ export default function AdminPage() {
   const [userActivity, setUserActivity] = useState<UserActivity[]>([]);
   const [systemLogs, setSystemLogs] = useState<any[]>([]);
   const [riskMetrics, setRiskMetrics] = useState<RiskMetrics | null>(null);
+  const [latestTrades, setLatestTrades] = useState<any[]>([]);
+  const [latestTradesLoading, setLatestTradesLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [showCreateUser, setShowCreateUser] = useState(false);
   const [showCreateInvitation, setShowCreateInvitation] = useState(false);
@@ -257,6 +259,117 @@ export default function AdminPage() {
       alert(`❌ Failed to delete bot: ${error?.message || error}`);
     } finally {
       setDeletingBotId(null);
+    }
+  };
+
+  const fetchLatestTrades = async () => {
+    try {
+      setLatestTradesLoading(true);
+      
+      // Fetch real trades
+      const { data: realTrades, error: realError } = await supabase
+        .from('trades')
+        .select(`
+          id,
+          user_id,
+          bot_id,
+          symbol,
+          side,
+          amount,
+          price,
+          status,
+          pnl,
+          fee,
+          executed_at,
+          created_at,
+          users:user_id(email),
+          trading_bots:bot_id(name)
+        `)
+        .not('executed_at', 'is', null)
+        .order('executed_at', { ascending: false })
+        .limit(50);
+      
+      if (realError) throw realError;
+      
+      // Fetch paper trades
+      const { data: paperTrades, error: paperError } = await supabase
+        .from('paper_trading_trades')
+        .select(`
+          id,
+          user_id,
+          bot_id,
+          symbol,
+          side,
+          quantity,
+          entry_price,
+          exit_price,
+          status,
+          pnl,
+          fees,
+          executed_at,
+          created_at,
+          users:user_id(email),
+          trading_bots:bot_id(name)
+        `)
+        .not('executed_at', 'is', null)
+        .order('executed_at', { ascending: false })
+        .limit(50);
+      
+      if (paperError) throw paperError;
+      
+      // Combine and format trades
+      const formattedRealTrades = (realTrades || []).map(trade => ({
+        trade_type: 'REAL',
+        trade_id: trade.id,
+        user_email: (trade.users as any)?.email || 'Unknown',
+        user_id: trade.user_id,
+        bot_name: (trade.trading_bots as any)?.name || 'Unknown Bot',
+        symbol: trade.symbol,
+        side: trade.side,
+        amount: trade.amount,
+        price: trade.price,
+        status: trade.status,
+        pnl: trade.pnl || 0,
+        fee: trade.fee || 0,
+        executed_at: trade.executed_at,
+        created_at: trade.created_at,
+        minutes_ago: trade.executed_at ? Math.floor((Date.now() - new Date(trade.executed_at).getTime()) / 60000) : null
+      }));
+      
+      const formattedPaperTrades = (paperTrades || []).map(trade => ({
+        trade_type: 'PAPER',
+        trade_id: trade.id,
+        user_email: (trade.users as any)?.email || 'Unknown',
+        user_id: trade.user_id,
+        bot_name: (trade.trading_bots as any)?.name || 'Unknown Bot',
+        symbol: trade.symbol,
+        side: trade.side,
+        amount: trade.quantity,
+        price: trade.exit_price || trade.entry_price,
+        status: trade.status,
+        pnl: trade.pnl || 0,
+        fee: trade.fees || 0,
+        executed_at: trade.executed_at,
+        created_at: trade.created_at,
+        minutes_ago: trade.executed_at ? Math.floor((Date.now() - new Date(trade.executed_at).getTime()) / 60000) : null
+      }));
+      
+      // Combine and sort by executed_at
+      const allTrades = [...formattedRealTrades, ...formattedPaperTrades]
+        .sort((a, b) => {
+          const timeA = a.executed_at ? new Date(a.executed_at).getTime() : 0;
+          const timeB = b.executed_at ? new Date(b.executed_at).getTime() : 0;
+          return timeB - timeA;
+        })
+        .slice(0, 50);
+      
+      setLatestTrades(allTrades);
+    } catch (error: any) {
+      console.error('Error fetching latest trades:', error);
+      alert(`Failed to load latest trades: ${error?.message || error}`);
+      setLatestTrades([]);
+    } finally {
+      setLatestTradesLoading(false);
     }
   };
 
@@ -601,6 +714,7 @@ export default function AdminPage() {
     { id: 'users', label: 'Users', icon: 'ri-user-line' },
     { id: 'bots', label: 'Trading Bots', icon: 'ri-robot-line' },
     { id: 'pablo-ready', label: 'Pablo Ready', icon: 'ri-star-line' },
+    { id: 'latest-trades', label: 'Latest Trades', icon: 'ri-exchange-line' },
     { id: 'analytics', label: 'Analytics', icon: 'ri-bar-chart-line' },
     { id: 'financial', label: 'Financial', icon: 'ri-money-dollar-circle-line' },
     { id: 'monitoring', label: 'Monitoring', icon: 'ri-eye-line' },
@@ -627,6 +741,8 @@ export default function AdminPage() {
                   setActiveTab(tab.id);
                   if (tab.id === 'pablo-ready') {
                     fetchPabloReadyBots();
+                  } else if (tab.id === 'latest-trades') {
+                    fetchLatestTrades();
                   }
                 }}
                 className="flex items-center gap-2"
@@ -1058,7 +1174,7 @@ export default function AdminPage() {
                                   Real
                                 </>
                               )}
-                            </Button>
+                          </Button>
                           </div>
                         </div>
                       </div>
@@ -1246,7 +1362,139 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Analytics Tab */}
+        {/* Latest Trades Tab */}
+        {activeTab === 'latest-trades' && (
+          <div className="space-y-6">
+            <Card className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Latest Trades</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    View the 50 most recent trades across all users (Real & Paper)
+                  </p>
+                </div>
+                <Button
+                  onClick={fetchLatestTrades}
+                  variant="secondary"
+                  size="sm"
+                  disabled={latestTradesLoading}
+                >
+                  <i className="ri-refresh-line mr-2"></i>
+                  Refresh
+                </Button>
+              </div>
+
+              {latestTradesLoading ? (
+                <div className="text-center py-8">
+                  <i className="ri-loader-4-line animate-spin text-2xl text-gray-400"></i>
+                  <p className="text-sm text-gray-500 mt-2">Loading trades...</p>
+                </div>
+              ) : latestTrades.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <i className="ri-exchange-line text-4xl mb-2"></i>
+                  <p>No trades found</p>
+                  <p className="text-sm mt-1">Trades will appear here once users start trading</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-100 dark:bg-gray-800">
+                      <tr>
+                        <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">Type</th>
+                        <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">User</th>
+                        <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">Bot</th>
+                        <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">Symbol</th>
+                        <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">Side</th>
+                        <th className="px-4 py-3 text-right font-semibold text-gray-700 dark:text-gray-300">Amount</th>
+                        <th className="px-4 py-3 text-right font-semibold text-gray-700 dark:text-gray-300">Price</th>
+                        <th className="px-4 py-3 text-right font-semibold text-gray-700 dark:text-gray-300">PnL</th>
+                        <th className="px-4 py-3 text-right font-semibold text-gray-700 dark:text-gray-300">Fee</th>
+                        <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">Status</th>
+                        <th className="px-4 py-3 text-left font-semibold text-gray-700 dark:text-gray-300">Time</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                      {latestTrades.map((trade) => (
+                        <tr key={`${trade.trade_type}-${trade.trade_id}`} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                          <td className="px-4 py-3">
+                            <span className={`px-2 py-1 rounded text-xs font-medium ${
+                              trade.trade_type === 'REAL'
+                                ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200'
+                                : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                            }`}>
+                              {trade.trade_type}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
+                            {trade.user_email}
+                          </td>
+                          <td className="px-4 py-3 text-gray-700 dark:text-gray-300">
+                            {trade.bot_name}
+                          </td>
+                          <td className="px-4 py-3 font-medium text-gray-900 dark:text-white">
+                            {trade.symbol}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`px-2 py-1 rounded text-xs font-medium ${
+                              trade.side === 'buy'
+                                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200'
+                                : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200'
+                            }`}>
+                              {trade.side.toUpperCase()}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">
+                            {typeof trade.amount === 'number' ? trade.amount.toFixed(4) : trade.amount}
+                          </td>
+                          <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">
+                            ${typeof trade.price === 'number' ? trade.price.toFixed(2) : trade.price}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <span className={`font-medium ${
+                              trade.pnl >= 0
+                                ? 'text-green-600 dark:text-green-400'
+                                : 'text-red-600 dark:text-red-400'
+                            }`}>
+                              ${typeof trade.pnl === 'number' ? trade.pnl.toFixed(2) : '0.00'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right text-gray-700 dark:text-gray-300">
+                            ${typeof trade.fee === 'number' ? trade.fee.toFixed(2) : '0.00'}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`px-2 py-1 rounded text-xs font-medium ${
+                              trade.status === 'filled' || trade.status === 'completed'
+                                ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200'
+                                : trade.status === 'pending'
+                                  ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200'
+                                  : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200'
+                            }`}>
+                              {trade.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-gray-500 dark:text-gray-400 text-xs">
+                            {trade.minutes_ago !== null ? (
+                              trade.minutes_ago < 60
+                                ? `${trade.minutes_ago}m ago`
+                                : trade.minutes_ago < 1440
+                                  ? `${Math.floor(trade.minutes_ago / 60)}h ago`
+                                  : `${Math.floor(trade.minutes_ago / 1440)}d ago`
+                            ) : trade.executed_at ? (
+                              new Date(trade.executed_at).toLocaleString()
+                            ) : (
+                              'N/A'
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          </div>
+        )}
+
         {activeTab === 'analytics' && (
           <div className="space-y-6">
             {loading ? (
