@@ -4078,6 +4078,22 @@ class BotExecutor {
         Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
       );
       
+      // First, check ALL signals (for debugging)
+      const { data: allSignals, error: allError } = await serviceRoleClient
+        .from('manual_trade_signals')
+        .select('id, status, created_at, side, mode')
+        .eq('bot_id', bot.id)
+        .gte('created_at', new Date(Date.now() - 3600000).toISOString()) // Last hour
+        .order('created_at', { ascending: false })
+        .limit(10);
+      
+      if (allSignals && allSignals.length > 0) {
+        console.log(`📊 Found ${allSignals.length} manual signal(s) in last hour for bot ${bot.id}:`, 
+          allSignals.map(s => ({ id: s.id, status: s.status, side: s.side, mode: s.mode, created: s.created_at })));
+      } else {
+        console.log(`ℹ️ No manual signals found in last hour for bot ${bot.id}`);
+      }
+      
       const { data: pendingSignals, error } = await serviceRoleClient
         .from('manual_trade_signals')
         .select('*')
@@ -4087,11 +4103,17 @@ class BotExecutor {
 
       if (error) {
         console.error(`❌ Failed to fetch manual trade signals for bot ${bot.id}:`, error);
+        await this.addBotLog(bot.id, {
+          level: 'error',
+          category: 'error',
+          message: `Failed to fetch manual trade signals: ${error.message}`,
+          details: { error: error.message, bot_id: bot.id }
+        });
         return 0;
       }
 
       if (!pendingSignals || pendingSignals.length === 0) {
-        console.log(`ℹ️ No pending manual trade signals for bot ${bot.id}`);
+        console.log(`ℹ️ No pending manual trade signals for bot ${bot.id} (status: pending or processing)`);
         return 0;
       }
 
@@ -7646,9 +7668,27 @@ serve(async (req) => {
         const executorUserId = isCron || isAdmin ? bot.user_id : user.id;
         console.log(`🔑 Executor will use user_id: ${executorUserId} (bot owner: ${bot.user_id}, caller: ${user?.id || 'cron'})`);
         const executor = new BotExecutor(supabaseClient, { id: executorUserId })
-        console.log(`🤖 Starting bot execution...`);
-        await executor.executeBot(bot)
-        console.log(`✅ Bot execution completed successfully`);
+        console.log(`🤖 Starting bot execution for bot ${bot.id} (${bot.name})...`);
+        console.log(`📊 Bot status: ${bot.status}, Paper trading: ${bot.paper_trading}, Webhook-only: ${bot.webhook_only}`);
+        
+        try {
+          await executor.executeBot(bot)
+          console.log(`✅ Bot execution completed successfully for bot ${bot.id}`);
+        } catch (execError) {
+          console.error(`❌ Bot execution failed for bot ${bot.id}:`, execError);
+          const errorMessage = execError instanceof Error ? execError.message : String(execError);
+          await executor.addBotLog(bot.id, {
+            level: 'error',
+            category: 'error',
+            message: `Bot execution failed: ${errorMessage}`,
+            details: { 
+              error: errorMessage,
+              errorType: execError instanceof Error ? execError.name : typeof execError,
+              source: 'execute_bot_action'
+            }
+          });
+          throw execError;
+        }
         
         return new Response(JSON.stringify({ success: true, message: 'Bot executed' }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
