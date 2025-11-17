@@ -42,23 +42,35 @@ export default function MarketDashboardPage() {
       const supabaseUrl = (import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '').replace('/rest/v1', '');
       const supabaseKey = import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || '';
       
+      console.log('📊 Fetching market data...', { 
+        hasUrl: !!supabaseUrl, 
+        hasKey: !!supabaseKey,
+        urlLength: supabaseUrl.length,
+        keyLength: supabaseKey.length
+      });
+      
       if (!supabaseUrl || !supabaseKey) {
-        console.error('Missing Supabase configuration');
+        console.error('❌ Missing Supabase configuration', { supabaseUrl: !!supabaseUrl, supabaseKey: !!supabaseKey });
         setLoading(false);
         return;
       }
       
-      const response = await fetch(`${supabaseUrl}/functions/v1/market-data?action=all`, {
+      const apiUrl = `${supabaseUrl}/functions/v1/market-data?action=all`;
+      console.log('🌐 Calling market data API:', apiUrl);
+      
+      const response = await fetch(apiUrl, {
         headers: {
           'apikey': supabaseKey,
           'Authorization': `Bearer ${supabaseKey}`
         }
       });
       
+      console.log('📡 API Response:', { status: response.status, statusText: response.statusText, ok: response.ok });
+      
       // Check if response is OK
       if (!response.ok) {
         const text = await response.text();
-        console.error('Market data API error:', response.status, text.substring(0, 200));
+        console.error('❌ Market data API error:', response.status, text.substring(0, 200));
         setLoading(false);
         return;
       }
@@ -67,20 +79,29 @@ export default function MarketDashboardPage() {
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
         const text = await response.text();
-        console.error('Market data API returned non-JSON response:', text.substring(0, 200));
+        console.error('❌ Market data API returned non-JSON response:', contentType, text.substring(0, 200));
         setLoading(false);
         return;
       }
       
       const data = await response.json();
+      console.log('✅ Market data received:', { 
+        hasMarketData: !!data.marketData, 
+        marketDataCount: data.marketData?.length || 0,
+        hasTopGainers: !!data.topGainers,
+        hasRapidChanges: !!data.rapidChanges
+      });
       
       if (data.marketData) {
         setMarketData(data.marketData);
         setTopGainers(data.topGainers || []);
         setRapidChanges(data.rapidChanges || []);
+        console.log('✅ Market data state updated:', data.marketData.length, 'items');
+      } else {
+        console.warn('⚠️ No marketData in response:', data);
       }
     } catch (error) {
-      console.error('Error fetching market data:', error);
+      console.error('❌ Error fetching market data:', error);
       // If it's a JSON parse error, the Edge Function might not be deployed
       if (error instanceof SyntaxError && error.message.includes('JSON')) {
         console.warn('⚠️ Market data Edge Function may not be deployed. Deploy it with: supabase functions deploy market-data');
