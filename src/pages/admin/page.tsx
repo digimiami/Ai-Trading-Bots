@@ -267,23 +267,23 @@ export default function AdminPage() {
     try {
       setLatestTradesLoading(true);
       
-      // Fetch real trades
+      // Fetch real trades for ALL users (no user_id filter)
       const { data: realTrades, error: realError } = await supabase
         .from('trades')
         .select('id, user_id, bot_id, symbol, side, amount, price, status, pnl, fee, executed_at, created_at')
         .not('executed_at', 'is', null)
         .order('executed_at', { ascending: false })
-        .limit(50);
+        .limit(100);
       
       if (realError) throw realError;
       
-      // Fetch paper trades
+      // Fetch paper trades for ALL users (no user_id filter)
       const { data: paperTrades, error: paperError } = await supabase
         .from('paper_trading_trades')
         .select('id, user_id, bot_id, symbol, side, quantity, entry_price, exit_price, status, pnl, fees, executed_at, created_at')
         .not('executed_at', 'is', null)
         .order('executed_at', { ascending: false })
-        .limit(50);
+        .limit(100);
       
       if (paperError) throw paperError;
       
@@ -368,14 +368,14 @@ export default function AdminPage() {
         minutes_ago: trade.executed_at ? Math.floor((Date.now() - new Date(trade.executed_at).getTime()) / 60000) : null
       }));
       
-      // Combine and sort by executed_at
+      // Combine and sort by executed_at (showing latest trades from ALL users)
       const allTrades = [...formattedRealTrades, ...formattedPaperTrades]
         .sort((a, b) => {
           const timeA = a.executed_at ? new Date(a.executed_at).getTime() : 0;
           const timeB = b.executed_at ? new Date(b.executed_at).getTime() : 0;
           return timeB - timeA;
         })
-        .slice(0, 50);
+        .slice(0, 100); // Show top 100 most recent trades across all users
       
       setLatestTrades(allTrades);
     } catch (error: any) {
@@ -1382,9 +1382,9 @@ export default function AdminPage() {
             <Card className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Latest Trades</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Latest Trades (All Users)</h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    View the 50 most recent trades across all users
+                    View the 100 most recent trades from all users across the platform
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
