@@ -4169,11 +4169,45 @@ class BotExecutor {
             source: 'manual_trade_signal'
           });
 
+          // Verify that a trade was actually created (for real mode)
+          let tradeCreated = false;
+          if (finalMode === 'real') {
+            // Check if a trade was created in the last 30 seconds
+            const { data: recentTrades } = await serviceRoleClient
+              .from('trades')
+              .select('id')
+              .eq('bot_id', bot.id)
+              .gte('created_at', new Date(Date.now() - 30000).toISOString())
+              .limit(1);
+            
+            tradeCreated = recentTrades && recentTrades.length > 0;
+            
+            if (!tradeCreated) {
+              console.warn(`⚠️ Manual trade signal ${signalId} completed but no trade was created in database`);
+              await this.addBotLog(bot.id, {
+                level: 'error',
+                category: 'trade',
+                message: `Manual trade signal completed but no trade created - possible silent failure`,
+                details: {
+                  signal_id: signalId,
+                  side: signal.side,
+                  mode: finalMode,
+                  bot_status: bot.status,
+                  paper_trading: bot.paper_trading,
+                  timestamp: TimeSync.getCurrentTimeISO()
+                }
+              });
+            }
+          } else {
+            // For paper trades, we don't check the trades table
+            tradeCreated = true;
+          }
+
           await serviceRoleClient
             .from('manual_trade_signals')
             .update({
-              status: 'completed',
-              error: null,
+              status: tradeCreated ? 'completed' : 'failed',
+              error: tradeCreated ? null : 'Trade execution completed but no trade was created in database',
               processed_at: TimeSync.getCurrentTimeISO(),
               mode: result.mode
             })
