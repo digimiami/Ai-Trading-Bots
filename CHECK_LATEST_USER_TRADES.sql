@@ -204,7 +204,11 @@ SELECT
   t.id as trade_id,
   u.email as user_email,
   tb.name as bot_name,
-  tb.strategy->>'type' as strategy_type,
+  CASE 
+    WHEN tb.strategy IS NULL THEN NULL
+    WHEN tb.strategy::text = '' THEN NULL
+    ELSE (tb.strategy::jsonb->>'type')
+  END as strategy_type,
   t.symbol,
   t.side,
   t.amount::numeric as amount,
@@ -226,7 +230,11 @@ SELECT
   pt.id as trade_id,
   u.email as user_email,
   tb.name as bot_name,
-  tb.strategy->>'type' as strategy_type,
+  CASE 
+    WHEN tb.strategy IS NULL THEN NULL
+    WHEN tb.strategy::text = '' THEN NULL
+    ELSE (tb.strategy::jsonb->>'type')
+  END as strategy_type,
   pt.symbol,
   pt.side,
   pt.quantity::numeric as amount,
