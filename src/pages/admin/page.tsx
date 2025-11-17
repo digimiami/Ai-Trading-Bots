@@ -652,6 +652,11 @@ export default function AdminPage() {
                   if (tab.id === 'pablo-ready') {
                     fetchPabloReadyBots();
                   } else if (tab.id === 'latest-trades') {
+                    // Ensure users are loaded before showing dropdown
+                    if (users.length === 0) {
+                      console.log('⚠️ Users not loaded yet, loading users first...');
+                      await loadData();
+                    }
                     fetchLatestTrades();
                   }
                 }}
@@ -1291,14 +1296,19 @@ export default function AdminPage() {
                       // Auto-refresh when user filter changes
                       setTimeout(() => fetchLatestTrades(), 100);
                     }}
-                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white min-w-[200px]"
+                    disabled={users.length === 0}
                   >
                     <option value="all">All Users</option>
-                    {users.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.email}
-                      </option>
-                    ))}
+                    {users.length === 0 ? (
+                      <option value="" disabled>Loading users...</option>
+                    ) : (
+                      users.map((user) => (
+                        <option key={user.id} value={user.id}>
+                          {user.email}
+                        </option>
+                      ))
+                    )}
                   </select>
                   <select
                     value={latestTradesFilter}
