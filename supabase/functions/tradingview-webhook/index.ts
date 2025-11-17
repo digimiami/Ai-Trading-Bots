@@ -875,6 +875,8 @@ serve(async (req) => {
         }
         
         // Add apikey header (required by Supabase Edge Functions for public access)
+        // The apikey header allows the function to be called, and the execute_bot action in the body
+        // will be detected by webhook-executor to bypass authentication checks
         if (supabaseAnonKey) {
           headers["apikey"] = supabaseAnonKey;
           console.log(`🔑 Sending apikey header for Supabase Edge Function access`);
@@ -882,15 +884,9 @@ serve(async (req) => {
           console.warn(`⚠️ SUPABASE_ANON_KEY not set - function access may fail`);
         }
         
-        // Add Authorization header with service role key for internal function-to-function calls
-        // This is required by Supabase Edge Functions for authenticated access
-        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-        if (supabaseServiceKey) {
-          headers["Authorization"] = `Bearer ${supabaseServiceKey}`;
-          console.log(`🔐 Sending Authorization header with service role key for internal call`);
-        } else {
-          console.warn(`⚠️ SUPABASE_SERVICE_ROLE_KEY not set - may cause authentication issues`);
-        }
+        // NOTE: Do NOT send Authorization header with service role key
+        // Service role keys are NOT JWTs and will cause "Invalid JWT" errors
+        // The webhook-executor will detect the "execute_bot" action in the body and bypass auth
         
         console.log(`📤 Sending POST to webhook-executor: ${supabaseUrl}/functions/v1/webhook-executor`);
         console.log(`📋 Request body:`, JSON.stringify({ action: "execute_bot", botId: bot.id }));
