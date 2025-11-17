@@ -861,10 +861,10 @@ serve(async (req) => {
 
     if (shouldTrigger) {
       try {
-        // Send x-cron-secret and apikey headers for authentication
+        // Send x-cron-secret, apikey, and Authorization headers for authentication
         // x-cron-secret is for our custom internal authentication
         // apikey is required by Supabase Edge Functions for public access
-        // NOTE: Do NOT send Authorization header with service role key - it's not a JWT and will cause "Invalid JWT" errors
+        // Authorization header with service role key is needed for webhook-executor to recognize internal calls
         const headers: Record<string, string> = {
           "Content-Type": "application/json"
         };
@@ -880,6 +880,16 @@ serve(async (req) => {
           console.log(`🔑 Sending apikey header for Supabase Edge Function access`);
         } else {
           console.warn(`⚠️ SUPABASE_ANON_KEY not set - function access may fail`);
+        }
+        
+        // Add Authorization header with service role key for internal function-to-function calls
+        // This is required by Supabase Edge Functions for authenticated access
+        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+        if (supabaseServiceKey) {
+          headers["Authorization"] = `Bearer ${supabaseServiceKey}`;
+          console.log(`🔐 Sending Authorization header with service role key for internal call`);
+        } else {
+          console.warn(`⚠️ SUPABASE_SERVICE_ROLE_KEY not set - may cause authentication issues`);
         }
         
         console.log(`📤 Sending POST to webhook-executor: ${supabaseUrl}/functions/v1/webhook-executor`);
