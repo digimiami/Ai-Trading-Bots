@@ -2839,47 +2839,66 @@ class BotExecutor {
       }
 
       // Branch 4B: SHORT entries (HTF downtrend) if allowed
-      if (allowShorts) {
+      if (allowShorts && !htfPriceAboveEMA200) {
         const rsiOverbought = config.rsi_overbought || 70;
         const vwapAbovePct = ((price - vwap) / vwap) * 100; // price above VWAP in %
         const momentumDown = -momentum; // negative momentum magnitude
+        
+        // More lenient conditions for shorts - allow if price is above VWAP OR if momentum is negative
+        // This allows shorts in downtrends even if price hasn't bounced above VWAP yet
+        const vwapDistanceShort = config.vwap_distance_short || (vwapDistance * 0.5); // 50% of long requirement
+        const momentumThresholdShort = config.momentum_threshold_short || (momentumThreshold * 0.5); // 50% of long requirement
 
-        if (rsi < rsiOverbought) {
+        // For shorts, we can be more flexible:
+        // Option 1: RSI overbought + price above VWAP (bounce in downtrend)
+        // Option 2: RSI overbought + negative momentum (continuing downtrend)
+        const condition1 = rsi >= rsiOverbought && vwapAbovePct >= vwapDistanceShort;
+        const condition2 = rsi >= rsiOverbought && momentumDown >= momentumThresholdShort;
+        
+        if (!condition1 && !condition2) {
+          // Provide detailed reason
+          const reasons = [];
+          if (rsi < rsiOverbought) {
+            reasons.push(`RSI ${rsi.toFixed(2)} < ${rsiOverbought} (overbought threshold)`);
+          }
+          if (vwapAbovePct < vwapDistanceShort && momentumDown < momentumThresholdShort) {
+            reasons.push(`Price-VWAP ${vwapAbovePct.toFixed(2)}% < ${vwapDistanceShort}% AND momentum ${momentumDown.toFixed(2)}% < ${momentumThresholdShort}%`);
+          }
           return {
             shouldTrade: false,
-            reason: `RSI (${rsi.toFixed(2)}) not overbought (need >= ${rsiOverbought}) for short`,
+            reason: `Short conditions not met: ${reasons.join(', ')}. Need: (RSI >= ${rsiOverbought} AND (VWAP >= ${vwapDistanceShort}% OR momentum >= ${momentumThresholdShort}%))`,
             confidence: 0
           };
         }
-        if (vwapAbovePct < vwapDistance) {
-          return {
-            shouldTrade: false,
-            reason: `Price not far enough above VWAP (${vwapAbovePct.toFixed(2)}% < ${vwapDistance}%) for short`,
-            confidence: 0
-          };
-        }
-        if (momentumDown < momentumThreshold) {
-          return {
-            shouldTrade: false,
-            reason: `Downward momentum (${(-momentum).toFixed(2)}%) below threshold (${momentumThreshold}%) for short`,
-            confidence: 0
-          };
-        }
 
-        const confidence = Math.min(
-          (rsi - rsiOverbought) / rsiOverbought * 0.3 +
-          (adx - adxTrendMin) / 20 * 0.2 +
-          (htfADX - adxMinHTF) / 20 * 0.2 +
-          (vwapAbovePct - vwapDistance) / vwapDistance * 0.15 +
-          (momentumDown - momentumThreshold) / momentumThreshold * 0.15,
-          1.0
-        );
-
+        // Calculate confidence based on which condition was met
+        let confidence = 0.6; // Base confidence
+        
+        if (condition1) {
+          // RSI overbought + price above VWAP (bounce short)
+          confidence += Math.min((rsi - rsiOverbought) / 30 * 0.2, 0.2); // RSI contribution
+          confidence += Math.min((vwapAbovePct - vwapDistanceShort) / vwapDistanceShort * 0.15, 0.15); // VWAP contribution
+        }
+        
+        if (condition2) {
+          // RSI overbought + negative momentum (trend continuation short)
+          confidence += Math.min((rsi - rsiOverbought) / 30 * 0.2, 0.2); // RSI contribution
+          confidence += Math.min((momentumDown - momentumThresholdShort) / momentumThresholdShort * 0.15, 0.15); // Momentum contribution
+        }
+        
+        // Add trend strength contributions
+        confidence += Math.min((adx - adxTrendMin) / 20 * 0.2, 0.2);
+        confidence += Math.min((htfADX - adxMinHTF) / 20 * 0.2, 0.2);
+        
+        confidence = Math.min(confidence, 1.0);
+        
+        const conditionType = condition1 && condition2 ? 'bounce+continuation' : condition1 ? 'bounce' : 'continuation';
+        
         return {
           shouldTrade: true,
           side: 'sell',
-          reason: `Hybrid SHORT: HTF downtrend (EMA200), ADX ${adx.toFixed(2)}, RSI ${rsi.toFixed(2)}, VWAP Δ +${vwapAbovePct.toFixed(2)}%, momentum -${momentumDown.toFixed(2)}%`,
-          confidence: Math.max(confidence, 0.7),
+          reason: `Hybrid SHORT (${conditionType}): HTF downtrend (price ${htfCurrentPrice.toFixed(4)} < EMA200 ${htfEMA200.toFixed(4)}), ADX ${adx.toFixed(2)}, RSI ${rsi.toFixed(2)}, VWAP Δ +${vwapAbovePct.toFixed(2)}%, momentum -${momentumDown.toFixed(2)}%`,
+          confidence: Math.max(confidence, 0.65),
           entryPrice: price,
           htfTrend: { price: htfCurrentPrice, ema200: htfEMA200, ema50: htfEMA50, adx: htfADX },
           meanReversion: { rsi, vwap, vwapDistance: -vwapAbovePct, momentum: -momentumDown }
