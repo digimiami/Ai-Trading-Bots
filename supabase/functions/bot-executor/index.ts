@@ -1959,13 +1959,25 @@ class BotExecutor {
       });
       
       // Execute trading strategy - handle potential double-encoding and malformed data
+      console.log(`\n🔍 [${bot.name}] === STARTING STRATEGY PARSING ===`);
       console.log(`📋 [${bot.name}] Parsing strategy configuration...`);
-      await this.addBotLog(bot.id, {
-        level: 'info',
-        category: 'strategy',
-        message: `📋 Parsing strategy configuration...`,
-        details: { step: 'strategy_parsing', bot_name: bot.name }
-      });
+      console.log(`📋 [${bot.name}] Bot strategy exists: ${!!bot.strategy}`);
+      console.log(`📋 [${bot.name}] Bot strategy type: ${typeof bot.strategy}`);
+      
+      try {
+        await this.addBotLog(bot.id, {
+          level: 'info',
+          category: 'strategy',
+          message: `📋 Parsing strategy configuration...`,
+          details: { step: 'strategy_parsing', bot_name: bot.name }
+        });
+      } catch (logError) {
+        console.error(`❌ Failed to log strategy parsing start:`, logError);
+        // Continue execution even if logging fails
+      }
+      
+      console.log(`📋 [${bot.name}] Strategy value type: ${typeof bot.strategy}`);
+      console.log(`📋 [${bot.name}] Strategy value (first 200 chars): ${typeof bot.strategy === 'string' ? bot.strategy.substring(0, 200) : JSON.stringify(bot.strategy).substring(0, 200)}`);
       
       let strategy = bot.strategy;
       if (typeof strategy === 'string') {
@@ -2015,18 +2027,27 @@ class BotExecutor {
           };
         }
       }
+      
+      console.log(`✅ [${bot.name}] Strategy parsing completed. Type: ${typeof strategy}`);
       console.log('Bot strategy:', JSON.stringify(strategy, null, 2));
-      await this.addBotLog(bot.id, {
-        level: 'info',
-        category: 'strategy',
-        message: `📋 Strategy parsed successfully`,
-        details: { 
-          step: 'strategy_parsed',
-          strategy_type: typeof strategy,
-          has_rsi: !!strategy?.rsiThreshold,
-          has_adx: !!strategy?.adxThreshold
-        }
-      });
+      
+      try {
+        await this.addBotLog(bot.id, {
+          level: 'info',
+          category: 'strategy',
+          message: `📋 Strategy parsed successfully`,
+          details: { 
+            step: 'strategy_parsed',
+            strategy_type: typeof strategy,
+            has_rsi: !!strategy?.rsiThreshold,
+            has_adx: !!strategy?.adxThreshold,
+            strategy_keys: strategy && typeof strategy === 'object' ? Object.keys(strategy).slice(0, 10) : null
+          }
+        });
+      } catch (logError) {
+        console.error(`❌ Failed to log strategy parsed:`, logError);
+        // Continue execution even if logging fails
+      }
       
       // Evaluate strategy with error handling
       console.log(`🔍 Evaluating strategy for ${bot.name} (${bot.symbol})...`);
