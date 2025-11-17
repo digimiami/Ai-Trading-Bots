@@ -39,8 +39,8 @@ export default function MarketDashboardPage() {
   // Fetch market data
   const fetchMarketData = async () => {
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.replace('/rest/v1', '') || '';
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+      const supabaseUrl = (import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '').replace('/rest/v1', '');
+      const supabaseKey = import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || '';
       
       if (!supabaseUrl || !supabaseKey) {
         console.error('Missing Supabase configuration');
@@ -93,8 +93,8 @@ export default function MarketDashboardPage() {
   // Fetch alerts
   const fetchAlerts = async () => {
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.replace('/rest/v1', '') || '';
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+      const supabaseUrl = (import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '').replace('/rest/v1', '');
+      const supabaseKey = import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || '';
       
       if (!supabaseUrl || !supabaseKey) {
         console.error('Missing Supabase configuration');
