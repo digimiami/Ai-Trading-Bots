@@ -647,7 +647,7 @@ export default function AdminPage() {
               <Button
                 key={tab.id}
                 variant={activeTab === tab.id ? 'primary' : 'secondary'}
-                onClick={() => {
+                onClick={async () => {
                   setActiveTab(tab.id);
                   if (tab.id === 'pablo-ready') {
                     fetchPabloReadyBots();
