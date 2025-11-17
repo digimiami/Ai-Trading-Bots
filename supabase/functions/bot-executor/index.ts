@@ -7602,10 +7602,42 @@ serve(async (req) => {
 
     // Handle POST requests
     if (req.method === 'POST') {
-      console.log(`\n📥 [bot-executor] POST REQUEST RECEIVED`);
+      // IMMEDIATE logging - before any async operations to ensure it's captured
+      const postStartTime = Date.now();
+      console.log(`\n🚨🚨🚨 [bot-executor] POST REQUEST RECEIVED 🚨🚨🚨`);
+      console.log(`📅 Timestamp: ${new Date().toISOString()}`);
       console.log(`📋 Content-Type: ${req.headers.get('content-type')}`);
       console.log(`🔐 x-cron-secret header: ${req.headers.get('x-cron-secret') ? 'present' : 'missing'}`);
       console.log(`🔐 Authorization header: ${req.headers.get('authorization') ? 'present' : 'missing'}`);
+      console.log(`🔐 apikey header: ${req.headers.get('apikey') ? 'present' : 'missing'}`);
+      console.log(`🌐 URL: ${req.url}`);
+      console.log(`📊 Method: ${req.method}`);
+      
+      // Log immediately to database for visibility (non-blocking)
+      try {
+        const serviceRoleClient = createClient(
+          Deno.env.get('SUPABASE_URL') ?? '',
+          Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+        );
+        await serviceRoleClient
+          .from('bot_activity_logs')
+          .insert({
+            bot_id: null, // Will be set after parsing body
+            level: 'info',
+            category: 'system',
+            message: '📥 POST request received by bot-executor',
+            details: {
+              content_type: req.headers.get('content-type'),
+              has_cron_secret: !!req.headers.get('x-cron-secret'),
+              has_authorization: !!req.headers.get('authorization'),
+              has_apikey: !!req.headers.get('apikey'),
+              url: req.url,
+              timestamp: new Date().toISOString()
+            }
+          });
+      } catch (logError) {
+        console.warn('⚠️ Failed to log POST request to database:', logError);
+      }
       
       let body: any;
       try {
