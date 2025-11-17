@@ -2240,6 +2240,30 @@ class BotExecutor {
       }
     }
     
+    // Check if this is an advanced dual-mode scalping strategy
+    if (strategy.type === 'advanced_scalping' || strategy.name === 'Advanced Dual-Mode Scalping Strategy' || strategy.name?.includes('Advanced Dual-Mode')) {
+      try {
+        console.log(`⚡ Evaluating Advanced Dual-Mode Scalping Strategy for ${bot?.name || 'bot'}...`);
+        const result = await this.evaluateAdvancedScalpingStrategy(strategy, marketData, bot);
+        if (!result || typeof result !== 'object') {
+          console.error('❌ Advanced scalping strategy returned invalid result:', result);
+          return {
+            shouldTrade: false,
+            reason: 'Strategy evaluation returned invalid result',
+            confidence: 0
+          };
+        }
+        return result;
+      } catch (error: any) {
+        console.error('❌ Error in advanced scalping strategy evaluation:', error);
+        return {
+          shouldTrade: false,
+          reason: `Strategy evaluation error: ${error?.message || String(error)}`,
+          confidence: 0
+        };
+      }
+    }
+    
     // Check if this is a scalping strategy
     if (strategy.type === 'scalping' || strategy.name === 'Scalping Strategy - Fast EMA Cloud' || strategy.name?.includes('Scalping')) {
       try {
@@ -3061,6 +3085,440 @@ class BotExecutor {
     // Calculate ATR as SMA of True Ranges
     const recentTRs = trueRanges.slice(-period);
     return recentTRs.reduce((a, b) => a + b, 0) / period;
+  }
+
+  private calculateSupertrend(highs: number[], lows: number[], closes: number[], period: number, multiplier: number): { value: number; trend: 'bullish' | 'bearish' } {
+    if (highs.length < period || lows.length < period || closes.length < period) {
+      return { value: closes[closes.length - 1] || 0, trend: 'bullish' };
+    }
+    
+    // Calculate ATR
+    const atr = this.calculateATR(highs, lows, closes, period);
+    
+    // Calculate HL2 (High + Low) / 2
+    const hl2 = (highs[highs.length - 1] + lows[lows.length - 1]) / 2;
+    
+    // Calculate Upper and Lower Bands
+    const upperBand = hl2 + (multiplier * atr);
+    const lowerBand = hl2 - (multiplier * atr);
+    
+    // Get previous Supertrend (simplified - in production, track previous values)
+    const prevClose = closes[closes.length - 2] || closes[closes.length - 1];
+    const prevUpperBand = (highs[highs.length - 2] + lows[lows.length - 2]) / 2 + (multiplier * atr);
+    const prevLowerBand = (highs[highs.length - 2] + lows[lows.length - 2]) / 2 - (multiplier * atr);
+    
+    // Determine trend
+    const currentPrice = closes[closes.length - 1];
+    let supertrendValue: number;
+    let trend: 'bullish' | 'bearish';
+    
+    // Simplified Supertrend calculation
+    // In production, you'd track previous Supertrend value
+    if (currentPrice > upperBand) {
+      trend = 'bullish';
+      supertrendValue = lowerBand;
+    } else if (currentPrice < lowerBand) {
+      trend = 'bearish';
+      supertrendValue = upperBand;
+    } else {
+      // Use previous trend to determine current
+      // For simplicity, use price vs HL2
+      if (currentPrice > hl2) {
+        trend = 'bullish';
+        supertrendValue = lowerBand;
+      } else {
+        trend = 'bearish';
+        supertrendValue = upperBand;
+      }
+    }
+    
+    return { value: supertrendValue, trend };
+  }
+
+  private calculateBollingerBands(closes: number[], period: number, stdDev: number): { upper: number; middle: number; lower: number; width: number } {
+    if (closes.length < period) {
+      const avg = closes.reduce((a, b) => a + b, 0) / closes.length;
+      return { upper: avg, middle: avg, lower: avg, width: 0 };
+    }
+    
+    const recentCloses = closes.slice(-period);
+    const sma = recentCloses.reduce((a, b) => a + b, 0) / period;
+    
+    // Calculate standard deviation
+    const variance = recentCloses.reduce((sum, price) => sum + Math.pow(price - sma, 2), 0) / period;
+    const std = Math.sqrt(variance);
+    
+    const upper = sma + (stdDev * std);
+    const lower = sma - (stdDev * std);
+    const width = ((upper - lower) / sma) * 100; // Width as percentage
+    
+    return { upper, middle: sma, lower, width };
+  }
+
+  private async evaluateAdvancedScalpingStrategy(strategy: any, marketData: any, bot: any): Promise<any> {
+    try {
+      const { rsi, adx, price } = marketData;
+      const config = bot.strategy_config || {};
+      
+      // Get configuration values with defaults
+      const timeframe = bot.timeframe || bot.timeFrame || '3m';
+      const htfTimeframe = config.htf_timeframe || '30m';
+      const supertrendPeriod = config.supertrend_period || 10;
+      const supertrendMultiplier = config.supertrend_multiplier || 3.0;
+      const scalpingMode = config.scalping_mode || 'auto'; // 'reversal', 'continuation', 'auto'
+      const emaFast = config.ema_fast || 9;
+      const emaSlow = config.ema_slow || 21;
+      const rsiOversold = config.rsi_oversold || 35;
+      const rsiOverbought = config.rsi_overbought || 65;
+      const rsiReversalZoneLow = config.rsi_reversal_zone_low || 30;
+      const rsiReversalZoneHigh = config.rsi_reversal_zone_high || 70;
+      const bbPeriod = config.bb_period || 20;
+      const bbStdDev = config.bb_stddev || 2.0;
+      const atrPeriod = config.atr_period || 14;
+      const atrSLMultiplier = config.atr_sl_multiplier || 1.2;
+      const volumeMultiplierReversal = config.volume_multiplier_reversal || 1.5;
+      const volumeMultiplierContinuation = config.volume_multiplier_continuation || 1.2;
+      const minVolatilityATRReversal = config.min_volatility_atr_reversal || 0.25;
+      const minVolatilityATRContinuation = config.min_volatility_atr_continuation || 0.3;
+      const maxVolatilityATR = config.max_volatility_atr || 2.0;
+      const bbWidthMin = config.bb_width_min || 0.5;
+      const bbWidthMax = config.bb_width_max || 3.0;
+      const adxMinContinuation = config.adx_min_continuation || 20;
+      const timeFilterEnabled = config.time_filter_enabled !== false;
+      const allowedHoursUTC = config.allowed_hours_utc || [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
+      const vwapPeriod = config.vwap_period || 20;
+      
+      // Validate timeframe
+      const validTimeframes = ['1m', '3m', '5m'];
+      if (!validTimeframes.includes(timeframe)) {
+        return {
+          shouldTrade: false,
+          reason: `Advanced scalping requires 1m, 3m, or 5m timeframe (current: ${timeframe})`,
+          confidence: 0
+        };
+      }
+      
+      // 1. Time Filter
+      if (timeFilterEnabled) {
+        const now = new Date();
+        const currentHourUTC = now.getUTCHours();
+        if (!allowedHoursUTC.includes(currentHourUTC)) {
+          return {
+            shouldTrade: false,
+            reason: `Time filter: Current hour (${currentHourUTC} UTC) not in allowed hours`,
+            confidence: 0
+          };
+        }
+      }
+      
+      // 2. Fetch HTF klines for Supertrend
+      const htfKlines = await MarketDataFetcher.fetchKlines(bot.symbol, bot.exchange, htfTimeframe, 100);
+      if (!htfKlines || htfKlines.length < 30) {
+        return {
+          shouldTrade: false,
+          reason: `Insufficient HTF data (${htfKlines?.length || 0} candles, need 30+)`,
+          confidence: 0
+        };
+      }
+      
+      const htfHighs = htfKlines.map(k => parseFloat(k[2]));
+      const htfLows = htfKlines.map(k => parseFloat(k[3]));
+      const htfCloses = htfKlines.map(k => parseFloat(k[4]));
+      const htfSupertrend = this.calculateSupertrend(htfHighs, htfLows, htfCloses, supertrendPeriod, supertrendMultiplier);
+      
+      // 3. Fetch current timeframe klines
+      const klines = await MarketDataFetcher.fetchKlines(bot.symbol, bot.exchange, timeframe, 100);
+      if (!klines || klines.length < 50) {
+        return {
+          shouldTrade: false,
+          reason: `Insufficient data (${klines?.length || 0} candles, need 50+)`,
+          confidence: 0
+        };
+      }
+      
+      const closes = klines.map(k => parseFloat(k[4]));
+      const highs = klines.map(k => parseFloat(k[2]));
+      const lows = klines.map(k => parseFloat(k[3]));
+      const volumes = klines.map(k => parseFloat(k[5]));
+      const currentPrice = closes[closes.length - 1];
+      const prevClose = closes[closes.length - 2] || currentPrice;
+      
+      // 4. Calculate indicators
+      const emaFastValue = this.calculateEMA(closes, emaFast);
+      const emaSlowValue = this.calculateEMA(closes, emaSlow);
+      const atr = this.calculateATR(highs, lows, closes, atrPeriod);
+      const atrPercent = (atr / currentPrice) * 100;
+      const bb = this.calculateBollingerBands(closes, bbPeriod, bbStdDev);
+      
+      // Calculate VWAP
+      let totalPV = 0;
+      let totalVolume = 0;
+      const vwapLookback = Math.min(vwapPeriod, klines.length);
+      for (let i = klines.length - vwapLookback; i < klines.length; i++) {
+        const typicalPrice = (highs[i] + lows[i] + closes[i]) / 3;
+        totalPV += typicalPrice * volumes[i];
+        totalVolume += volumes[i];
+      }
+      const vwap = totalVolume > 0 ? totalPV / totalVolume : currentPrice;
+      
+      // Volume analysis
+      const avgVolume = volumes.slice(-20).reduce((a, b) => a + b, 0) / 20;
+      const currentVolume = volumes[volumes.length - 1];
+      const volumeRatio = currentVolume / avgVolume;
+      
+      // RSI divergence check (simplified)
+      const rsiPrev = rsi; // In production, calculate previous RSI
+      const priceLowerLow = currentPrice < prevClose;
+      const rsiHigherLow = rsi > rsiPrev; // Simplified
+      
+      // 5. Volatility Filter
+      if (atrPercent < minVolatilityATRReversal && scalpingMode !== 'continuation') {
+        return {
+          shouldTrade: false,
+          reason: `Volatility too low: ATR ${atrPercent.toFixed(2)}% < minimum ${minVolatilityATRReversal}%`,
+          confidence: 0
+        };
+      }
+      if (atrPercent < minVolatilityATRContinuation && scalpingMode === 'continuation') {
+        return {
+          shouldTrade: false,
+          reason: `Volatility too low: ATR ${atrPercent.toFixed(2)}% < minimum ${minVolatilityATRContinuation}%`,
+          confidence: 0
+        };
+      }
+      if (atrPercent > maxVolatilityATR) {
+        return {
+          shouldTrade: false,
+          reason: `Volatility too high: ATR ${atrPercent.toFixed(2)}% > maximum ${maxVolatilityATR}%`,
+          confidence: 0
+        };
+      }
+      
+      // BB Width filter
+      if (bb.width < bbWidthMin || bb.width > bbWidthMax) {
+        return {
+          shouldTrade: false,
+          reason: `BB width ${bb.width.toFixed(2)}% outside range (${bbWidthMin}% - ${bbWidthMax}%)`,
+          confidence: 0
+        };
+      }
+      
+      // Determine which mode to use
+      const useReversalMode = scalpingMode === 'reversal' || (scalpingMode === 'auto' && (
+        (rsi < rsiOversold && htfSupertrend.trend === 'bullish') ||
+        (rsi > rsiOverbought && htfSupertrend.trend === 'bearish')
+      ));
+      
+      const useContinuationMode = scalpingMode === 'continuation' || (scalpingMode === 'auto' && !useReversalMode);
+      
+      // MODE A: REVERSAL SCALPING
+      if (useReversalMode) {
+        // LONG Reversal
+        if (htfSupertrend.trend === 'bullish' && rsi < rsiOversold) {
+          const priceBelowVWAP = currentPrice < vwap;
+          const priceAtLowerBB = currentPrice <= bb.lower || (currentPrice - bb.lower) / bb.lower < 0.001;
+          const volumeSpike = volumeRatio >= volumeMultiplierReversal;
+          const rsiInReversalZone = rsi >= rsiReversalZoneLow && rsi <= rsiOversold;
+          
+          if (priceBelowVWAP && (priceAtLowerBB || priceBelowVWAP) && volumeSpike && rsiInReversalZone) {
+            // Check for RSI bullish divergence or RSI crossing above reversal zone
+            const rsiCrossingUp = rsi > rsiReversalZoneLow && rsiPrev <= rsiReversalZoneLow;
+            
+            if (rsiCrossingUp || rsiHigherLow) {
+              let confidence = 0.65;
+              if (priceAtLowerBB) confidence += 0.1;
+              if (volumeRatio >= volumeMultiplierReversal * 1.2) confidence += 0.1;
+              if (rsiHigherLow) confidence += 0.1;
+              confidence = Math.min(confidence, 0.95);
+              
+              return {
+                shouldTrade: true,
+                side: 'buy',
+                reason: `Reversal LONG: HTF Supertrend bullish, RSI ${rsi.toFixed(2)} oversold bounce, price at lower BB/VWAP, volume ${volumeRatio.toFixed(2)}x`,
+                confidence: confidence,
+                entryPrice: currentPrice,
+                stopLoss: currentPrice - (atr * atrSLMultiplier),
+                takeProfit1: currentPrice + (atr * atrSLMultiplier * 1.0),
+                takeProfit2: currentPrice + (atr * atrSLMultiplier * 1.5),
+                takeProfit3: currentPrice + (atr * atrSLMultiplier * 2.0),
+                mode: 'reversal',
+                indicators: {
+                  htfSupertrend: htfSupertrend.trend,
+                  rsi: rsi,
+                  vwap: vwap,
+                  bbLower: bb.lower,
+                  volumeRatio: volumeRatio,
+                  atrPercent: atrPercent
+                }
+              };
+            }
+          }
+        }
+        
+        // SHORT Reversal
+        if (htfSupertrend.trend === 'bearish' && rsi > rsiOverbought) {
+          const priceAboveVWAP = currentPrice > vwap;
+          const priceAtUpperBB = currentPrice >= bb.upper || (bb.upper - currentPrice) / bb.upper < 0.001;
+          const volumeSpike = volumeRatio >= volumeMultiplierReversal;
+          const rsiInReversalZone = rsi >= rsiOverbought && rsi <= rsiReversalZoneHigh;
+          
+          if (priceAboveVWAP && (priceAtUpperBB || priceAboveVWAP) && volumeSpike && rsiInReversalZone) {
+            // Check for RSI bearish divergence or RSI crossing below reversal zone
+            const rsiCrossingDown = rsi < rsiReversalZoneHigh && rsiPrev >= rsiReversalZoneHigh;
+            
+            if (rsiCrossingDown || !rsiHigherLow) {
+              let confidence = 0.65;
+              if (priceAtUpperBB) confidence += 0.1;
+              if (volumeRatio >= volumeMultiplierReversal * 1.2) confidence += 0.1;
+              if (!rsiHigherLow) confidence += 0.1;
+              confidence = Math.min(confidence, 0.95);
+              
+              return {
+                shouldTrade: true,
+                side: 'sell',
+                reason: `Reversal SHORT: HTF Supertrend bearish, RSI ${rsi.toFixed(2)} overbought rejection, price at upper BB/VWAP, volume ${volumeRatio.toFixed(2)}x`,
+                confidence: confidence,
+                entryPrice: currentPrice,
+                stopLoss: currentPrice + (atr * atrSLMultiplier),
+                takeProfit1: currentPrice - (atr * atrSLMultiplier * 1.0),
+                takeProfit2: currentPrice - (atr * atrSLMultiplier * 1.5),
+                takeProfit3: currentPrice - (atr * atrSLMultiplier * 2.0),
+                mode: 'reversal',
+                indicators: {
+                  htfSupertrend: htfSupertrend.trend,
+                  rsi: rsi,
+                  vwap: vwap,
+                  bbUpper: bb.upper,
+                  volumeRatio: volumeRatio,
+                  atrPercent: atrPercent
+                }
+              };
+            }
+          }
+        }
+      }
+      
+      // MODE B: TREND CONTINUATION SCALPING
+      if (useContinuationMode) {
+        // ADX filter for continuation
+        if (adx < adxMinContinuation) {
+          return {
+            shouldTrade: false,
+            reason: `ADX (${adx.toFixed(2)}) below minimum (${adxMinContinuation}) for continuation`,
+            confidence: 0
+          };
+        }
+        
+        // LONG Continuation
+        if (htfSupertrend.trend === 'bullish') {
+          const priceAboveEMAs = currentPrice > emaFastValue && currentPrice > emaSlowValue;
+          const emaBullish = emaFastValue > emaSlowValue;
+          const priceAboveVWAP = currentPrice > vwap;
+          const rsiNeutral = rsi >= 40 && rsi <= 65;
+          const pricePullbackToEMA = (currentPrice <= emaFastValue * 1.002 && currentPrice >= emaFastValue * 0.998) ||
+                                      (currentPrice <= emaSlowValue * 1.002 && currentPrice >= emaSlowValue * 0.998);
+          const volumeGood = volumeRatio >= volumeMultiplierContinuation;
+          
+          if (priceAboveEMAs && emaBullish && priceAboveVWAP && rsiNeutral && (pricePullbackToEMA || priceAboveEMAs) && volumeGood) {
+            // Check for bounce from EMA
+            const priceBouncing = currentPrice > prevClose && prevClose <= emaFastValue;
+            
+            if (priceBouncing || pricePullbackToEMA) {
+              let confidence = 0.7;
+              if (pricePullbackToEMA) confidence += 0.1;
+              if (rsi > 50) confidence += 0.05;
+              if (volumeRatio >= volumeMultiplierContinuation * 1.2) confidence += 0.1;
+              confidence = Math.min(confidence, 0.95);
+              
+              return {
+                shouldTrade: true,
+                side: 'buy',
+                reason: `Continuation LONG: HTF Supertrend bullish, EMA pullback bounce, RSI ${rsi.toFixed(2)}, volume ${volumeRatio.toFixed(2)}x`,
+                confidence: confidence,
+                entryPrice: currentPrice,
+                stopLoss: currentPrice - (atr * atrSLMultiplier),
+                takeProfit1: currentPrice + (atr * atrSLMultiplier * 1.0),
+                takeProfit2: currentPrice + (atr * atrSLMultiplier * 1.5),
+                takeProfit3: currentPrice + (atr * atrSLMultiplier * 2.0),
+                mode: 'continuation',
+                indicators: {
+                  htfSupertrend: htfSupertrend.trend,
+                  emaFast: emaFastValue,
+                  emaSlow: emaSlowValue,
+                  rsi: rsi,
+                  adx: adx,
+                  vwap: vwap,
+                  volumeRatio: volumeRatio,
+                  atrPercent: atrPercent
+                }
+              };
+            }
+          }
+        }
+        
+        // SHORT Continuation
+        if (htfSupertrend.trend === 'bearish') {
+          const priceBelowEMAs = currentPrice < emaFastValue && currentPrice < emaSlowValue;
+          const emaBearish = emaFastValue < emaSlowValue;
+          const priceBelowVWAP = currentPrice < vwap;
+          const rsiNeutral = rsi >= 35 && rsi <= 60;
+          const pricePullbackToEMA = (currentPrice >= emaFastValue * 0.998 && currentPrice <= emaFastValue * 1.002) ||
+                                      (currentPrice >= emaSlowValue * 0.998 && currentPrice <= emaSlowValue * 1.002);
+          const volumeGood = volumeRatio >= volumeMultiplierContinuation;
+          
+          if (priceBelowEMAs && emaBearish && priceBelowVWAP && rsiNeutral && (pricePullbackToEMA || priceBelowEMAs) && volumeGood) {
+            // Check for rejection from EMA
+            const priceRejecting = currentPrice < prevClose && prevClose >= emaFastValue;
+            
+            if (priceRejecting || pricePullbackToEMA) {
+              let confidence = 0.7;
+              if (pricePullbackToEMA) confidence += 0.1;
+              if (rsi < 50) confidence += 0.05;
+              if (volumeRatio >= volumeMultiplierContinuation * 1.2) confidence += 0.1;
+              confidence = Math.min(confidence, 0.95);
+              
+              return {
+                shouldTrade: true,
+                side: 'sell',
+                reason: `Continuation SHORT: HTF Supertrend bearish, EMA pullback rejection, RSI ${rsi.toFixed(2)}, volume ${volumeRatio.toFixed(2)}x`,
+                confidence: confidence,
+                entryPrice: currentPrice,
+                stopLoss: currentPrice + (atr * atrSLMultiplier),
+                takeProfit1: currentPrice - (atr * atrSLMultiplier * 1.0),
+                takeProfit2: currentPrice - (atr * atrSLMultiplier * 1.5),
+                takeProfit3: currentPrice - (atr * atrSLMultiplier * 2.0),
+                mode: 'continuation',
+                indicators: {
+                  htfSupertrend: htfSupertrend.trend,
+                  emaFast: emaFastValue,
+                  emaSlow: emaSlowValue,
+                  rsi: rsi,
+                  adx: adx,
+                  vwap: vwap,
+                  volumeRatio: volumeRatio,
+                  atrPercent: atrPercent
+                }
+              };
+            }
+          }
+        }
+      }
+      
+      // No trade signal
+      return {
+        shouldTrade: false,
+        reason: `No signal: HTF ${htfSupertrend.trend}, RSI ${rsi.toFixed(2)}, mode ${scalpingMode}, volume ${volumeRatio.toFixed(2)}x`,
+        confidence: 0
+      };
+      
+    } catch (error: any) {
+      console.error('❌ Error in advanced scalping strategy:', error);
+      return {
+        shouldTrade: false,
+        reason: `Strategy error: ${error?.message || String(error)}`,
+        confidence: 0
+      };
+    }
   }
   
   /**
