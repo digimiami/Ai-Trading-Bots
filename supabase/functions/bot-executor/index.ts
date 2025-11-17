@@ -1484,6 +1484,20 @@ class BotExecutor {
         return;
       }
       
+      // Check if bot is in webhook-only mode (skip scheduled execution, but manual signals already processed above)
+      // Manual signals are processed first (above), so webhook-only bots can still trade via webhooks
+      if (bot.webhook_only === true) {
+        console.log(`🔗 Bot ${botName} is in webhook-only mode - skipping scheduled execution`);
+        console.log(`ℹ️ Manual signals were already processed above (if any)`);
+        const executionTime = Date.now() - executionStartTime;
+        console.log(`\n🔗 === BOT EXECUTION SKIPPED (WEBHOOK-ONLY MODE) ===`);
+        console.log(`   Bot ID: ${botId}`);
+        console.log(`   Reason: Bot is in webhook-only mode - only trades via webhooks`);
+        console.log(`   Manual Signals Processed: ${manualProcessed}`);
+        console.log(`   Execution Time: ${executionTime}ms\n`);
+        return;
+      }
+      
       console.log(`✅ Step 2: Bot ${botName} is running, proceeding with execution...`);
 
       // ⚠️ CRITICAL: Check paper trading mode FIRST before any real API calls
@@ -7655,6 +7669,8 @@ serve(async (req) => {
           .from('trading_bots')
           .select('*')
           .eq('status', 'running')
+          // Exclude webhook-only bots from scheduled execution (include null for backward compatibility)
+          .or('webhook_only.is.null,webhook_only.eq.false')
         if (!isCron) {
           query = query.eq('user_id', user.id)
         }
