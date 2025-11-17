@@ -266,14 +266,13 @@ SELECT
   t.amount::numeric as amount,
   t.price::numeric as price,
   t.status,
-  t.error_message,
+  NULL as error_message,
   t.created_at,
   t.executed_at
 FROM trades t
 LEFT JOIN users u ON t.user_id = u.id
 LEFT JOIN trading_bots tb ON t.bot_id = tb.id
 WHERE t.status IN ('pending', 'failed', 'cancelled')
-   OR t.error_message IS NOT NULL
 
 UNION ALL
 
