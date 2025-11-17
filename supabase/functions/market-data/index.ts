@@ -237,7 +237,8 @@ serve(async (req) => {
             atr,
             rsi,
             marketCap,
-            ...flows
+            inflow: flows.inflow,
+            outflow: flows.outflow
           }
         })
       )
@@ -299,7 +300,8 @@ serve(async (req) => {
           atr,
           rsi,
           marketCap,
-          ...flows,
+          inflow: flows.inflow,
+          outflow: flows.outflow,
           timestamp: new Date().toISOString()
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

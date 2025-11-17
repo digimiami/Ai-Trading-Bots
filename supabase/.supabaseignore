@@ -1,0 +1,9 @@
+# Ignore frontend files
+src/
+dist/
+node_modules/
+*.tsx
+*.jsx
+*.ts
+!functions/**/*.ts
+
