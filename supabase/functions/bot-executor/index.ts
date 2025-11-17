@@ -4024,6 +4024,8 @@ class BotExecutor {
             timestamp: TimeSync.getCurrentTimeISO()
           }
         });
+        // CRITICAL: Re-throw the error so executeManualTrade can catch it and mark signal as failed
+        throw error;
       }
     }
   }
