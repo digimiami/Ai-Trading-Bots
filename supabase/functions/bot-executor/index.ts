@@ -1671,37 +1671,79 @@ class BotExecutor {
       // ⚠️ REAL TRADING MODE - Existing code continues unchanged
       console.log(`💰 [REAL TRADING MODE] Bot: ${bot.name}`);
       
+      // 🔍 CRITICAL: Log to database immediately to track execution
+      await this.addBotLog(bot.id, {
+        level: 'info',
+        category: 'system',
+        message: `💰 REAL TRADING MODE - Execution started`,
+        details: { 
+          mode: 'real',
+          bot_name: bot.name,
+          symbol: bot.symbol,
+          exchange: bot.exchange,
+          timestamp: new Date().toISOString()
+        }
+      });
+      
       // ⏱️ COOLDOWN BARS CHECK - Check if enough bars have passed since last trade
       console.log(`⏱️ [${bot.name}] Checking cooldown bars...`);
+      await this.addBotLog(bot.id, {
+        level: 'info',
+        category: 'system',
+        message: `⏱️ Checking cooldown bars...`,
+        details: { step: 'cooldown_check', bot_name: bot.name }
+      });
+      
       const cooldownCheck = await this.checkCooldownBars(bot);
       console.log(`⏱️ [${bot.name}] Cooldown check result:`, JSON.stringify(cooldownCheck, null, 2));
+      
       if (!cooldownCheck.canTrade) {
         console.log(`⏸️ Cooldown active for ${bot.name}: ${cooldownCheck.reason}`);
         await this.addBotLog(bot.id, {
           level: 'info',
           category: 'system',
-          message: `Cooldown active: ${cooldownCheck.reason}`,
-          details: cooldownCheck
+          message: `⏸️ Cooldown active: ${cooldownCheck.reason}`,
+          details: { ...cooldownCheck, step: 'cooldown_check', stopped: true }
         });
         return; // Stop execution - wait for cooldown
       }
       console.log(`✅ [${bot.name}] Cooldown check passed - can trade`);
+      await this.addBotLog(bot.id, {
+        level: 'info',
+        category: 'system',
+        message: `✅ Cooldown check passed - can trade`,
+        details: { step: 'cooldown_check', passed: true }
+      });
       
       // 🕐 TRADING HOURS CHECK - Check if current hour is in allowed trading hours
       console.log(`🕐 [${bot.name}] Checking trading hours...`);
+      await this.addBotLog(bot.id, {
+        level: 'info',
+        category: 'system',
+        message: `🕐 Checking trading hours...`,
+        details: { step: 'trading_hours_check', bot_name: bot.name }
+      });
+      
       const tradingHoursCheck = this.checkTradingHours(bot);
       console.log(`🕐 [${bot.name}] Trading hours check result:`, JSON.stringify(tradingHoursCheck, null, 2));
+      
       if (!tradingHoursCheck.canTrade) {
         console.log(`🕐 Outside trading hours for ${bot.name}: ${tradingHoursCheck.reason}`);
         await this.addBotLog(bot.id, {
           level: 'info',
           category: 'system',
-          message: `Outside trading hours: ${tradingHoursCheck.reason}`,
-          details: tradingHoursCheck
+          message: `🕐 Outside trading hours: ${tradingHoursCheck.reason}`,
+          details: { ...tradingHoursCheck, step: 'trading_hours_check', stopped: true }
         });
         return; // Stop execution - outside allowed hours
       }
       console.log(`✅ [${bot.name}] Trading hours check passed - can trade`);
+      await this.addBotLog(bot.id, {
+        level: 'info',
+        category: 'system',
+        message: `✅ Trading hours check passed - can trade`,
+        details: { step: 'trading_hours_check', passed: true }
+      });
       
       // COMPREHENSIVE SETTINGS VALIDATION & LOGGING
       console.log(`\n📋 Bot Settings Validation:`);
@@ -1736,15 +1778,23 @@ class BotExecutor {
       
       // 🛡️ SAFETY CHECKS - Check before any trading
       console.log(`🛡️ [${bot.name}] Checking safety limits...`);
+      await this.addBotLog(bot.id, {
+        level: 'info',
+        category: 'system',
+        message: `🛡️ Checking safety limits...`,
+        details: { step: 'safety_check', bot_name: bot.name }
+      });
+      
       const safetyCheck = await this.checkSafetyLimits(bot);
       console.log(`🛡️ [${bot.name}] Safety check result:`, JSON.stringify(safetyCheck, null, 2));
+      
       if (!safetyCheck.canTrade) {
         console.warn(`⚠️ Trading blocked for ${bot.name}: ${safetyCheck.reason}`);
         await this.addBotLog(bot.id, {
           level: 'warning',
           category: 'system',
-          message: `Trading blocked: ${safetyCheck.reason}`,
-          details: safetyCheck
+          message: `⚠️ Trading blocked: ${safetyCheck.reason}`,
+          details: { ...safetyCheck, step: 'safety_check', stopped: true }
         });
         
         // Auto-pause bot if critical safety limit is breached
@@ -1754,9 +1804,22 @@ class BotExecutor {
         return; // Stop execution
       }
       console.log(`✅ [${bot.name}] Safety checks passed - can trade`);
+      await this.addBotLog(bot.id, {
+        level: 'info',
+        category: 'system',
+        message: `✅ Safety checks passed - can trade`,
+        details: { step: 'safety_check', passed: true }
+      });
       
       // Fetch market data
       console.log(`📊 [${bot.name}] Starting market data fetch...`);
+      await this.addBotLog(bot.id, {
+        level: 'info',
+        category: 'system',
+        message: `📊 Starting market data fetch...`,
+        details: { step: 'market_data_fetch', bot_name: bot.name, symbol: bot.symbol }
+      });
+      
       const tradingType = bot.tradingType || bot.trading_type || 'spot';
       console.log(`🤖 Bot ${bot.name} trading type: ${tradingType}`);
       
@@ -1770,28 +1833,69 @@ class BotExecutor {
       
       try {
         console.log(`📊 [${bot.name}] Fetching price for ${bot.symbol}...`);
+        await this.addBotLog(bot.id, {
+          level: 'info',
+          category: 'market',
+          message: `📊 Fetching price for ${bot.symbol}...`,
+          details: { step: 'fetch_price', symbol: bot.symbol, exchange: bot.exchange }
+        });
+        
         currentPrice = await MarketDataFetcher.fetchPrice(bot.symbol, bot.exchange, tradingType);
         console.log(`✅ [${bot.name}] Price fetched: ${currentPrice}`);
+        await this.addBotLog(bot.id, {
+          level: 'info',
+          category: 'market',
+          message: `✅ Price fetched: ${currentPrice}`,
+          details: { step: 'fetch_price', price: currentPrice, symbol: bot.symbol }
+        });
         
         console.log(`📊 [${bot.name}] Fetching RSI for ${bot.symbol}...`);
+        await this.addBotLog(bot.id, {
+          level: 'info',
+          category: 'market',
+          message: `📊 Fetching RSI for ${bot.symbol}...`,
+          details: { step: 'fetch_rsi', symbol: bot.symbol, timeframe }
+        });
+        
         rsi = await MarketDataFetcher.fetchRSI(bot.symbol, bot.exchange, timeframe);
         console.log(`✅ [${bot.name}] RSI fetched: ${rsi}`);
+        await this.addBotLog(bot.id, {
+          level: 'info',
+          category: 'market',
+          message: `✅ RSI fetched: ${rsi}`,
+          details: { step: 'fetch_rsi', rsi, symbol: bot.symbol }
+        });
         
         console.log(`📊 [${bot.name}] Fetching ADX for ${bot.symbol}...`);
+        await this.addBotLog(bot.id, {
+          level: 'info',
+          category: 'market',
+          message: `📊 Fetching ADX for ${bot.symbol}...`,
+          details: { step: 'fetch_adx', symbol: bot.symbol, timeframe }
+        });
+        
         adx = await MarketDataFetcher.fetchADX(bot.symbol, bot.exchange, timeframe);
         console.log(`✅ [${bot.name}] ADX fetched: ${adx}`);
+        await this.addBotLog(bot.id, {
+          level: 'info',
+          category: 'market',
+          message: `✅ ADX fetched: ${adx}`,
+          details: { step: 'fetch_adx', adx, symbol: bot.symbol }
+        });
       } catch (marketDataError: any) {
         console.error(`❌ [${bot.name}] Market data fetch failed:`, marketDataError);
         await this.addBotLog(bot.id, {
           level: 'error',
           category: 'market',
-          message: `Market data fetch error: ${marketDataError?.message || String(marketDataError)}`,
+          message: `❌ Market data fetch error: ${marketDataError?.message || String(marketDataError)}`,
           details: {
             error: marketDataError?.message || String(marketDataError),
             symbol: bot.symbol,
             exchange: bot.exchange,
             tradingType,
-            timeframe
+            timeframe,
+            step: 'market_data_fetch',
+            stopped: true
           }
         });
         throw marketDataError; // Re-throw to be caught by outer catch
