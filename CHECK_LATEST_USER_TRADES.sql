@@ -19,7 +19,7 @@ SELECT
   t.price::numeric as price,
   t.status,
   t.pnl::numeric as pnl,
-  t.fees::numeric as fees,
+  t.fee::numeric as fee,
   t.executed_at,
   t.created_at
 FROM trades t
@@ -69,7 +69,7 @@ WITH all_trades AS (
     t.price::numeric as price,
     t.status,
     t.pnl::numeric as pnl,
-    t.fees::numeric as fees,
+    t.fee::numeric as fee,
     t.executed_at,
     t.created_at,
     ROW_NUMBER() OVER (PARTITION BY u.id ORDER BY t.executed_at DESC) as rn
@@ -162,7 +162,7 @@ SELECT
   t.price::numeric as price,
   t.status,
   t.pnl::numeric as pnl,
-  t.fees::numeric as fees,
+  t.fee::numeric as fee,
   t.executed_at
 FROM trades t
 LEFT JOIN users u ON t.user_id = u.id
@@ -211,7 +211,7 @@ SELECT
   t.price::numeric as price,
   t.status,
   t.pnl::numeric as pnl,
-  t.fees::numeric as fees,
+  t.fee::numeric as fee,
   t.executed_at,
   EXTRACT(EPOCH FROM (NOW() - t.executed_at)) / 60 as minutes_ago
 FROM trades t
