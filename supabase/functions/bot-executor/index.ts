@@ -1672,7 +1672,9 @@ class BotExecutor {
       console.log(`💰 [REAL TRADING MODE] Bot: ${bot.name}`);
       
       // ⏱️ COOLDOWN BARS CHECK - Check if enough bars have passed since last trade
+      console.log(`⏱️ [${bot.name}] Checking cooldown bars...`);
       const cooldownCheck = await this.checkCooldownBars(bot);
+      console.log(`⏱️ [${bot.name}] Cooldown check result:`, JSON.stringify(cooldownCheck, null, 2));
       if (!cooldownCheck.canTrade) {
         console.log(`⏸️ Cooldown active for ${bot.name}: ${cooldownCheck.reason}`);
         await this.addBotLog(bot.id, {
@@ -1683,9 +1685,12 @@ class BotExecutor {
         });
         return; // Stop execution - wait for cooldown
       }
+      console.log(`✅ [${bot.name}] Cooldown check passed - can trade`);
       
       // 🕐 TRADING HOURS CHECK - Check if current hour is in allowed trading hours
+      console.log(`🕐 [${bot.name}] Checking trading hours...`);
       const tradingHoursCheck = this.checkTradingHours(bot);
+      console.log(`🕐 [${bot.name}] Trading hours check result:`, JSON.stringify(tradingHoursCheck, null, 2));
       if (!tradingHoursCheck.canTrade) {
         console.log(`🕐 Outside trading hours for ${bot.name}: ${tradingHoursCheck.reason}`);
         await this.addBotLog(bot.id, {
@@ -1696,6 +1701,7 @@ class BotExecutor {
         });
         return; // Stop execution - outside allowed hours
       }
+      console.log(`✅ [${bot.name}] Trading hours check passed - can trade`);
       
       // COMPREHENSIVE SETTINGS VALIDATION & LOGGING
       console.log(`\n📋 Bot Settings Validation:`);
@@ -1729,7 +1735,9 @@ class BotExecutor {
       });
       
       // 🛡️ SAFETY CHECKS - Check before any trading
+      console.log(`🛡️ [${bot.name}] Checking safety limits...`);
       const safetyCheck = await this.checkSafetyLimits(bot);
+      console.log(`🛡️ [${bot.name}] Safety check result:`, JSON.stringify(safetyCheck, null, 2));
       if (!safetyCheck.canTrade) {
         console.warn(`⚠️ Trading blocked for ${bot.name}: ${safetyCheck.reason}`);
         await this.addBotLog(bot.id, {
@@ -1745,8 +1753,10 @@ class BotExecutor {
         }
         return; // Stop execution
       }
+      console.log(`✅ [${bot.name}] Safety checks passed - can trade`);
       
       // Fetch market data
+      console.log(`📊 [${bot.name}] Starting market data fetch...`);
       const tradingType = bot.tradingType || bot.trading_type || 'spot';
       console.log(`🤖 Bot ${bot.name} trading type: ${tradingType}`);
       
@@ -1754,9 +1764,38 @@ class BotExecutor {
       const timeframe = bot.timeframe || bot.timeFrame || '1h';
       console.log(`📊 Using timeframe: ${timeframe} for ${bot.symbol}`);
       
-      const currentPrice = await MarketDataFetcher.fetchPrice(bot.symbol, bot.exchange, tradingType);
-      const rsi = await MarketDataFetcher.fetchRSI(bot.symbol, bot.exchange, timeframe);
-      const adx = await MarketDataFetcher.fetchADX(bot.symbol, bot.exchange, timeframe);
+      let currentPrice: number;
+      let rsi: number;
+      let adx: number;
+      
+      try {
+        console.log(`📊 [${bot.name}] Fetching price for ${bot.symbol}...`);
+        currentPrice = await MarketDataFetcher.fetchPrice(bot.symbol, bot.exchange, tradingType);
+        console.log(`✅ [${bot.name}] Price fetched: ${currentPrice}`);
+        
+        console.log(`📊 [${bot.name}] Fetching RSI for ${bot.symbol}...`);
+        rsi = await MarketDataFetcher.fetchRSI(bot.symbol, bot.exchange, timeframe);
+        console.log(`✅ [${bot.name}] RSI fetched: ${rsi}`);
+        
+        console.log(`📊 [${bot.name}] Fetching ADX for ${bot.symbol}...`);
+        adx = await MarketDataFetcher.fetchADX(bot.symbol, bot.exchange, timeframe);
+        console.log(`✅ [${bot.name}] ADX fetched: ${adx}`);
+      } catch (marketDataError: any) {
+        console.error(`❌ [${bot.name}] Market data fetch failed:`, marketDataError);
+        await this.addBotLog(bot.id, {
+          level: 'error',
+          category: 'market',
+          message: `Market data fetch error: ${marketDataError?.message || String(marketDataError)}`,
+          details: {
+            error: marketDataError?.message || String(marketDataError),
+            symbol: bot.symbol,
+            exchange: bot.exchange,
+            tradingType,
+            timeframe
+          }
+        });
+        throw marketDataError; // Re-throw to be caught by outer catch
+      }
       
       await this.addBotLog(bot.id, {
         level: 'info',
@@ -2014,6 +2053,30 @@ class BotExecutor {
         return result;
       } catch (error: any) {
         console.error('❌ Error in hybrid strategy evaluation:', error);
+        return {
+          shouldTrade: false,
+          reason: `Strategy evaluation error: ${error?.message || String(error)}`,
+          confidence: 0
+        };
+      }
+    }
+    
+    // Check if this is a scalping strategy
+    if (strategy.type === 'scalping' || strategy.name === 'Scalping Strategy - Fast EMA Cloud' || strategy.name?.includes('Scalping')) {
+      try {
+        console.log(`⚡ Evaluating Scalping Strategy for ${bot?.name || 'bot'}...`);
+        const result = await this.evaluateScalpingStrategy(strategy, marketData, bot);
+        if (!result || typeof result !== 'object') {
+          console.error('❌ Scalping strategy returned invalid result:', result);
+          return {
+            shouldTrade: false,
+            reason: 'Strategy evaluation returned invalid result',
+            confidence: 0
+          };
+        }
+        return result;
+      } catch (error: any) {
+        console.error('❌ Error in scalping strategy evaluation:', error);
         return {
           shouldTrade: false,
           reason: `Strategy evaluation error: ${error?.message || String(error)}`,
@@ -2564,6 +2627,261 @@ class BotExecutor {
         confidence: 0
       };
     }
+  }
+
+  private async evaluateScalpingStrategy(strategy: any, marketData: any, bot: any): Promise<any> {
+    try {
+      const { rsi, adx, price } = marketData;
+      const config = bot.strategy_config || {};
+      
+      // Get configuration values with defaults
+      const timeframe = bot.timeframe || bot.timeFrame || '3m';
+      const emaFast = config.ema_fast || 9;
+      const emaSlow = config.ema_slow || 21;
+      const rsiPeriod = config.rsi_period || 14;
+      const rsiOversold = config.rsi_oversold || 30;
+      const rsiOverbought = config.rsi_overbought || 70;
+      const atrPeriod = config.atr_period || 14;
+      const atrMultiplier = config.atr_multiplier || 1.5;
+      const adxMin = config.adx_min || 20;
+      const volumeMultiplier = config.volume_multiplier || 1.2;
+      const minVolatilityATR = config.min_volatility_atr || 0.3;
+      const minVolumeRequirement = config.min_volume_requirement || 1.2;
+      const timeFilterEnabled = config.time_filter_enabled !== false;
+      const allowedHoursUTC = config.allowed_hours_utc || [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
+      const vwapPeriod = config.vwap_period || 20;
+      
+      // Validate timeframe is suitable for scalping (1m, 3m, 5m)
+      const validTimeframes = ['1m', '3m', '5m'];
+      if (!validTimeframes.includes(timeframe)) {
+        return {
+          shouldTrade: false,
+          reason: `Scalping strategy requires 1m, 3m, or 5m timeframe (current: ${timeframe})`,
+          confidence: 0
+        };
+      }
+      
+      // 1. Time Filter - Avoid low liquidity zones
+      if (timeFilterEnabled) {
+        const now = new Date();
+        const currentHourUTC = now.getUTCHours();
+        if (!allowedHoursUTC.includes(currentHourUTC)) {
+          return {
+            shouldTrade: false,
+            reason: `Time filter: Current hour (${currentHourUTC} UTC) not in allowed hours`,
+            confidence: 0
+          };
+        }
+      }
+      
+      // 2. Fetch klines for indicators
+      const klines = await MarketDataFetcher.fetchKlines(bot.symbol, bot.exchange, timeframe, 100);
+      if (!klines || klines.length < 50) {
+        return {
+          shouldTrade: false,
+          reason: `Insufficient data (${klines?.length || 0} candles, need 50+)`,
+          confidence: 0
+        };
+      }
+      
+      const closes = klines.map(k => parseFloat(k[4]));
+      const highs = klines.map(k => parseFloat(k[2]));
+      const lows = klines.map(k => parseFloat(k[3]));
+      const volumes = klines.map(k => parseFloat(k[5]));
+      const currentPrice = closes[closes.length - 1];
+      
+      // 3. Calculate EMA Cloud (Fast EMA 9, Slow EMA 21)
+      const emaFastValue = this.calculateEMA(closes, emaFast);
+      const emaSlowValue = this.calculateEMA(closes, emaSlow);
+      const prevEmaFast = this.calculateEMA(closes.slice(0, -1), emaFast);
+      const prevEmaSlow = this.calculateEMA(closes.slice(0, -1), emaSlow);
+      
+      // 4. Calculate ATR for volatility filter
+      const atr = this.calculateATR(highs, lows, closes, atrPeriod);
+      const atrPercent = (atr / currentPrice) * 100;
+      
+      // Check minimum volatility requirement
+      if (atrPercent < minVolatilityATR) {
+        return {
+          shouldTrade: false,
+          reason: `Volatility too low: ATR ${atrPercent.toFixed(2)}% < minimum ${minVolatilityATR}%`,
+          confidence: 0
+        };
+      }
+      
+      // 5. Volume Confirmation - Avoid dead zones
+      const avgVolume = volumes.slice(-20).reduce((a, b) => a + b, 0) / 20;
+      const currentVolume = volumes[volumes.length - 1];
+      const volumeRatio = currentVolume / avgVolume;
+      
+      if (volumeRatio < minVolumeRequirement) {
+        return {
+          shouldTrade: false,
+          reason: `Volume too low: ${volumeRatio.toFixed(2)}x < minimum ${minVolumeRequirement}x`,
+          confidence: 0
+        };
+      }
+      
+      // 6. ADX for trend strength filter (avoid choppy markets)
+      if (adx < adxMin) {
+        return {
+          shouldTrade: false,
+          reason: `ADX (${adx.toFixed(2)}) below minimum (${adxMin}) - market too choppy`,
+          confidence: 0
+        };
+      }
+      
+      // 7. Calculate VWAP for intraday bias
+      let totalPV = 0;
+      let totalVolume = 0;
+      const vwapLookback = Math.min(vwapPeriod, klines.length);
+      for (let i = klines.length - vwapLookback; i < klines.length; i++) {
+        const typicalPrice = (highs[i] + lows[i] + closes[i]) / 3;
+        totalPV += typicalPrice * volumes[i];
+        totalVolume += volumes[i];
+      }
+      const vwap = totalVolume > 0 ? totalPV / totalVolume : currentPrice;
+      
+      // 8. Detect EMA Cloud Crossovers
+      const emaFastAboveSlow = emaFastValue > emaSlowValue;
+      const prevEmaFastAboveSlow = prevEmaFast > prevEmaSlow;
+      const emaBullishCross = !prevEmaFastAboveSlow && emaFastAboveSlow; // Fast crosses above slow
+      const emaBearishCross = prevEmaFastAboveSlow && !emaFastAboveSlow; // Fast crosses below slow
+      
+      // 9. LONG Entry Rules
+      if (emaBullishCross || (emaFastAboveSlow && currentPrice > emaFastValue)) {
+        // Additional filters for LONG
+        const priceAboveVWAP = currentPrice > vwap;
+        const rsiNotOverbought = rsi < rsiOverbought;
+        const rsiOversoldBounce = rsi < rsiOversold + 10 && rsi > rsiOversold - 5; // Micro reversal zone
+        
+        // Avoid fake breakouts: require price to be above both EMAs
+        const priceAboveBothEMAs = currentPrice > emaFastValue && currentPrice > emaSlowValue;
+        
+        // Avoid ranging phases: require ADX to show trend strength
+        const strongTrend = adx >= adxMin;
+        
+        if (priceAboveBothEMAs && priceAboveVWAP && rsiNotOverbought && strongTrend) {
+          // Calculate confidence based on multiple factors
+          let confidence = 0.6; // Base confidence
+          
+          if (emaBullishCross) confidence += 0.15; // Fresh crossover
+          if (rsiOversoldBounce) confidence += 0.1; // RSI micro reversal
+          if (volumeRatio >= volumeMultiplier) confidence += 0.1; // Strong volume
+          if (atrPercent >= minVolatilityATR * 1.5) confidence += 0.05; // Good volatility
+          
+          confidence = Math.min(confidence, 0.95);
+          
+          return {
+            shouldTrade: true,
+            side: 'buy',
+            reason: `Scalping LONG: EMA${emaFast} crossed above EMA${emaSlow}, price above VWAP, RSI ${rsi.toFixed(2)}, ADX ${adx.toFixed(2)}, volume ${volumeRatio.toFixed(2)}x`,
+            confidence: confidence,
+            entryPrice: currentPrice,
+            stopLoss: currentPrice - (atr * atrMultiplier),
+            takeProfit1: currentPrice + (atr * atrMultiplier * 1.5),
+            takeProfit2: currentPrice + (atr * atrMultiplier * 3.0),
+            indicators: {
+              emaFast: emaFastValue,
+              emaSlow: emaSlowValue,
+              rsi: rsi,
+              adx: adx,
+              atr: atr,
+              atrPercent: atrPercent,
+              vwap: vwap,
+              volumeRatio: volumeRatio
+            }
+          };
+        }
+      }
+      
+      // 10. SHORT Entry Rules
+      if (emaBearishCross || (emaFastAboveSlow === false && currentPrice < emaFastValue)) {
+        // Additional filters for SHORT
+        const priceBelowVWAP = currentPrice < vwap;
+        const rsiNotOversold = rsi > rsiOversold;
+        const rsiOverboughtRejection = rsi > rsiOverbought - 10 && rsi < rsiOverbought + 5; // Micro reversal zone
+        
+        // Avoid fake breakouts: require price to be below both EMAs
+        const priceBelowBothEMAs = currentPrice < emaFastValue && currentPrice < emaSlowValue;
+        
+        // Avoid ranging phases: require ADX to show trend strength
+        const strongTrend = adx >= adxMin;
+        
+        if (priceBelowBothEMAs && priceBelowVWAP && rsiNotOversold && strongTrend) {
+          // Calculate confidence based on multiple factors
+          let confidence = 0.6; // Base confidence
+          
+          if (emaBearishCross) confidence += 0.15; // Fresh crossover
+          if (rsiOverboughtRejection) confidence += 0.1; // RSI micro reversal
+          if (volumeRatio >= volumeMultiplier) confidence += 0.1; // Strong volume
+          if (atrPercent >= minVolatilityATR * 1.5) confidence += 0.05; // Good volatility
+          
+          confidence = Math.min(confidence, 0.95);
+          
+          return {
+            shouldTrade: true,
+            side: 'sell',
+            reason: `Scalping SHORT: EMA${emaFast} crossed below EMA${emaSlow}, price below VWAP, RSI ${rsi.toFixed(2)}, ADX ${adx.toFixed(2)}, volume ${volumeRatio.toFixed(2)}x`,
+            confidence: confidence,
+            entryPrice: currentPrice,
+            stopLoss: currentPrice + (atr * atrMultiplier),
+            takeProfit1: currentPrice - (atr * atrMultiplier * 1.5),
+            takeProfit2: currentPrice - (atr * atrMultiplier * 3.0),
+            indicators: {
+              emaFast: emaFastValue,
+              emaSlow: emaSlowValue,
+              rsi: rsi,
+              adx: adx,
+              atr: atr,
+              atrPercent: atrPercent,
+              vwap: vwap,
+              volumeRatio: volumeRatio
+            }
+          };
+        }
+      }
+      
+      // No trade signal
+      return {
+        shouldTrade: false,
+        reason: `No scalping signal: EMA cloud ${emaFastAboveSlow ? 'bullish' : 'bearish'}, RSI ${rsi.toFixed(2)}, ADX ${adx.toFixed(2)}, volume ${volumeRatio.toFixed(2)}x`,
+        confidence: 0
+      };
+      
+    } catch (error: any) {
+      console.error('❌ Error in scalping strategy:', error);
+      return {
+        shouldTrade: false,
+        reason: `Strategy error: ${error?.message || String(error)}`,
+        confidence: 0
+      };
+    }
+  }
+  
+  private calculateATR(highs: number[], lows: number[], closes: number[], period: number): number {
+    if (highs.length < period + 1 || lows.length < period + 1 || closes.length < period + 1) {
+      return 0;
+    }
+    
+    const trueRanges: number[] = [];
+    for (let i = 1; i < highs.length; i++) {
+      const tr = Math.max(
+        highs[i] - lows[i],
+        Math.abs(highs[i] - closes[i - 1]),
+        Math.abs(lows[i] - closes[i - 1])
+      );
+      trueRanges.push(tr);
+    }
+    
+    if (trueRanges.length < period) {
+      const avg = trueRanges.reduce((a, b) => a + b, 0) / trueRanges.length;
+      return avg;
+    }
+    
+    // Calculate ATR as SMA of True Ranges
+    const recentTRs = trueRanges.slice(-period);
+    return recentTRs.reduce((a, b) => a + b, 0) / period;
   }
   
   /**
