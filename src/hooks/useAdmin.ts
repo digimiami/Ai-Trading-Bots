@@ -192,6 +192,12 @@ export function useAdmin() {
     return data.logs || [];
   };
 
+  // NEW: Latest Trades (All Users)
+  const getLatestTrades = async (limit: number = 100) => {
+    const data = await callAdminFunction('getLatestTrades', { limit });
+    return data.trades || [];
+  };
+
   // NEW: Risk Monitoring
   const getRiskMetrics = async (): Promise<RiskMetrics> => {
     const data = await callAdminFunction('getRiskMetrics');
@@ -229,6 +235,8 @@ export function useAdmin() {
     getUserActivity,
     // System Administration
     getSystemLogs,
+    // Latest Trades
+    getLatestTrades,
     // Risk & Security
     getRiskMetrics,
     exportData

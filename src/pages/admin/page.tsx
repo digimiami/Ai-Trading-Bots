@@ -107,6 +107,7 @@ export default function AdminPage() {
     getFinancialOverview,
     getUserActivity,
     getSystemLogs,
+    getLatestTrades,
     getRiskMetrics,
     exportData,
     deleteUser,
@@ -267,117 +268,10 @@ export default function AdminPage() {
     try {
       setLatestTradesLoading(true);
       
-      // Fetch real trades for ALL users (no user_id filter)
-      const { data: realTrades, error: realError } = await supabase
-        .from('trades')
-        .select('id, user_id, bot_id, symbol, side, amount, price, status, pnl, fee, executed_at, created_at')
-        .not('executed_at', 'is', null)
-        .order('executed_at', { ascending: false })
-        .limit(100);
-      
-      if (realError) throw realError;
-      
-      // Fetch paper trades for ALL users (no user_id filter)
-      const { data: paperTrades, error: paperError } = await supabase
-        .from('paper_trading_trades')
-        .select('id, user_id, bot_id, symbol, side, quantity, entry_price, exit_price, status, pnl, fees, executed_at, created_at')
-        .not('executed_at', 'is', null)
-        .order('executed_at', { ascending: false })
-        .limit(100);
-      
-      if (paperError) throw paperError;
-      
-      // Collect unique user IDs and bot IDs
-      const userIds = new Set<string>();
-      const botIds = new Set<string>();
-      
-      (realTrades || []).forEach(trade => {
-        if (trade.user_id) userIds.add(trade.user_id);
-        if (trade.bot_id) botIds.add(trade.bot_id);
-      });
-      
-      (paperTrades || []).forEach(trade => {
-        if (trade.user_id) userIds.add(trade.user_id);
-        if (trade.bot_id) botIds.add(trade.bot_id);
-      });
-      
-      // Fetch user emails
-      const userEmailsMap = new Map<string, string>();
-      if (userIds.size > 0) {
-        const { data: users, error: usersError } = await supabase
-          .from('users')
-          .select('id, email')
-          .in('id', Array.from(userIds));
-        
-        if (!usersError && users) {
-          users.forEach(user => {
-            userEmailsMap.set(user.id, user.email || 'Unknown');
-          });
-        }
-      }
-      
-      // Fetch bot names
-      const botNamesMap = new Map<string, string>();
-      if (botIds.size > 0) {
-        const { data: bots, error: botsError } = await supabase
-          .from('trading_bots')
-          .select('id, name')
-          .in('id', Array.from(botIds));
-        
-        if (!botsError && bots) {
-          bots.forEach(bot => {
-            botNamesMap.set(bot.id, bot.name || 'Unknown Bot');
-          });
-        }
-      }
-      
-      // Combine and format trades
-      const formattedRealTrades = (realTrades || []).map(trade => ({
-        trade_type: 'REAL',
-        trade_id: trade.id,
-        user_email: userEmailsMap.get(trade.user_id) || 'Unknown',
-        user_id: trade.user_id,
-        bot_name: botNamesMap.get(trade.bot_id) || 'Unknown Bot',
-        symbol: trade.symbol,
-        side: trade.side,
-        amount: trade.amount,
-        price: trade.price,
-        status: trade.status,
-        pnl: trade.pnl || 0,
-        fee: trade.fee || 0,
-        executed_at: trade.executed_at,
-        created_at: trade.created_at,
-        minutes_ago: trade.executed_at ? Math.floor((Date.now() - new Date(trade.executed_at).getTime()) / 60000) : null
-      }));
-      
-      const formattedPaperTrades = (paperTrades || []).map(trade => ({
-        trade_type: 'PAPER',
-        trade_id: trade.id,
-        user_email: userEmailsMap.get(trade.user_id) || 'Unknown',
-        user_id: trade.user_id,
-        bot_name: botNamesMap.get(trade.bot_id) || 'Unknown Bot',
-        symbol: trade.symbol,
-        side: trade.side,
-        amount: trade.quantity,
-        price: trade.exit_price || trade.entry_price,
-        status: trade.status,
-        pnl: trade.pnl || 0,
-        fee: trade.fees || 0,
-        executed_at: trade.executed_at,
-        created_at: trade.created_at,
-        minutes_ago: trade.executed_at ? Math.floor((Date.now() - new Date(trade.executed_at).getTime()) / 60000) : null
-      }));
-      
-      // Combine and sort by executed_at (showing latest trades from ALL users)
-      const allTrades = [...formattedRealTrades, ...formattedPaperTrades]
-        .sort((a, b) => {
-          const timeA = a.executed_at ? new Date(a.executed_at).getTime() : 0;
-          const timeB = b.executed_at ? new Date(b.executed_at).getTime() : 0;
-          return timeB - timeA;
-        })
-        .slice(0, 100); // Show top 100 most recent trades across all users
-      
-      setLatestTrades(allTrades);
+      // Use admin Edge Function which uses service role key to bypass RLS
+      // This ensures we can see trades from ALL users
+      const trades = await getLatestTrades(100);
+      setLatestTrades(trades);
     } catch (error: any) {
       console.error('Error fetching latest trades:', error);
       alert(`Failed to load latest trades: ${error?.message || error}`);
