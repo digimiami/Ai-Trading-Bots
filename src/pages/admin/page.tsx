@@ -655,8 +655,18 @@ export default function AdminPage() {
                     // Ensure users are loaded before showing dropdown
                     if (users.length === 0) {
                       console.log('⚠️ Users not loaded yet, loading users first...');
-                      await loadData();
+                      // Load users directly to ensure they're available
+                      try {
+                        const usersData = await getUsers();
+                        console.log('✅ Users loaded:', usersData?.length || 0, 'users');
+                        if (usersData && usersData.length > 0) {
+                          setUsers(usersData);
+                        }
+                      } catch (error) {
+                        console.error('❌ Failed to load users:', error);
+                      }
                     }
+                    console.log('📊 Current users count:', users.length);
                     fetchLatestTrades();
                   }
                 }}
@@ -1292,16 +1302,16 @@ export default function AdminPage() {
                   <select
                     value={latestTradesUserFilter}
                     onChange={(e) => {
+                      console.log('📋 User filter changed:', e.target.value);
                       setLatestTradesUserFilter(e.target.value);
                       // Auto-refresh when user filter changes
                       setTimeout(() => fetchLatestTrades(), 100);
                     }}
                     className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white min-w-[200px]"
-                    disabled={users.length === 0}
                   >
                     <option value="all">All Users</option>
                     {users.length === 0 ? (
-                      <option value="" disabled>Loading users...</option>
+                      <option value="" disabled>No users available</option>
                     ) : (
                       users.map((user) => (
                         <option key={user.id} value={user.id}>
