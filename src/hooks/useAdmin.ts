@@ -192,9 +192,9 @@ export function useAdmin() {
     return data.logs || [];
   };
 
-  // NEW: Latest Trades (All Users)
-  const getLatestTrades = async (limit: number = 100) => {
-    const data = await callAdminFunction('getLatestTrades', { limit });
+  // NEW: Latest Trades (All Users or specific user)
+  const getLatestTrades = async (limit: number = 100, userId: string | null = null) => {
+    const data = await callAdminFunction('getLatestTrades', { limit, user_id: userId });
     return data.trades || [];
   };
 

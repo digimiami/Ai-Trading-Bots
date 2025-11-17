@@ -135,6 +135,7 @@ export default function AdminPage() {
   const [latestTrades, setLatestTrades] = useState<any[]>([]);
   const [latestTradesLoading, setLatestTradesLoading] = useState(false);
   const [latestTradesFilter, setLatestTradesFilter] = useState<'all' | 'real' | 'paper'>('all');
+  const [latestTradesUserFilter, setLatestTradesUserFilter] = useState<string>('all');
   const [loading, setLoading] = useState(true);
   const [showCreateUser, setShowCreateUser] = useState(false);
   const [showCreateInvitation, setShowCreateInvitation] = useState(false);
@@ -269,8 +270,9 @@ export default function AdminPage() {
       setLatestTradesLoading(true);
       
       // Use admin Edge Function which uses service role key to bypass RLS
-      // This ensures we can see trades from ALL users
-      const trades = await getLatestTrades(100);
+      // Pass user_id filter if a specific user is selected
+      const userId = latestTradesUserFilter === 'all' ? null : latestTradesUserFilter;
+      const trades = await getLatestTrades(100, userId);
       setLatestTrades(trades);
     } catch (error: any) {
       console.error('Error fetching latest trades:', error);
@@ -1276,12 +1278,28 @@ export default function AdminPage() {
             <Card className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Latest Trades (All Users)</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Latest Trades</h3>
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    View the 100 most recent trades from all users across the platform
+                    View the 100 most recent trades {latestTradesUserFilter === 'all' ? 'from all users' : `from ${users.find(u => u.id === latestTradesUserFilter)?.email || 'selected user'}`} across the platform
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
+                  <select
+                    value={latestTradesUserFilter}
+                    onChange={(e) => {
+                      setLatestTradesUserFilter(e.target.value);
+                      // Auto-refresh when user filter changes
+                      setTimeout(() => fetchLatestTrades(), 100);
+                    }}
+                    className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-800 dark:border-gray-600 dark:text-white"
+                  >
+                    <option value="all">All Users</option>
+                    {users.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.email}
+                      </option>
+                    ))}
+                  </select>
                   <select
                     value={latestTradesFilter}
                     onChange={(e) => setLatestTradesFilter(e.target.value as 'all' | 'real' | 'paper')}

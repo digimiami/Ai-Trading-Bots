@@ -833,28 +833,42 @@ serve(async (req) => {
 
       case 'getLatestTrades': {
         try {
-          const { limit = 100 } = params
+          const { limit = 100, user_id = null } = params
 
-          // Fetch real trades for ALL users (service role bypasses RLS)
-          const { data: realTrades, error: realError } = await supabaseClient
+          // Build query for real trades (service role bypasses RLS)
+          let realTradesQuery = supabaseClient
             .from('trades')
             .select('id, user_id, bot_id, symbol, side, amount, price, status, pnl, fee, executed_at, created_at')
             .not('executed_at', 'is', null)
             .order('executed_at', { ascending: false })
             .limit(limit)
 
+          // Filter by user_id if provided
+          if (user_id) {
+            realTradesQuery = realTradesQuery.eq('user_id', user_id)
+          }
+
+          const { data: realTrades, error: realError } = await realTradesQuery
+
           if (realError) {
             console.error('Error fetching real trades:', realError)
             throw realError
           }
 
-          // Fetch paper trades for ALL users (service role bypasses RLS)
-          const { data: paperTrades, error: paperError } = await supabaseClient
+          // Build query for paper trades (service role bypasses RLS)
+          let paperTradesQuery = supabaseClient
             .from('paper_trading_trades')
             .select('id, user_id, bot_id, symbol, side, quantity, entry_price, exit_price, status, pnl, fees, executed_at, created_at')
             .not('executed_at', 'is', null)
             .order('executed_at', { ascending: false })
             .limit(limit)
+
+          // Filter by user_id if provided
+          if (user_id) {
+            paperTradesQuery = paperTradesQuery.eq('user_id', user_id)
+          }
+
+          const { data: paperTrades, error: paperError } = await paperTradesQuery
 
           if (paperError) {
             console.error('Error fetching paper trades:', paperError)
