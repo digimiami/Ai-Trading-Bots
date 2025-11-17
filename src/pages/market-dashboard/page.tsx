@@ -39,7 +39,15 @@ export default function MarketDashboardPage() {
   // Fetch market data
   const fetchMarketData = async () => {
     try {
-      const response = await fetch('/api/market-data?action=all');
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.replace('/rest/v1', '') || '';
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+      
+      const response = await fetch(`${supabaseUrl}/functions/v1/market-data?action=all`, {
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`
+        }
+      });
       const data = await response.json();
       
       if (data.marketData) {

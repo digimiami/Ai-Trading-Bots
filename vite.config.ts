@@ -11,6 +11,13 @@ export default defineConfig({
     },
   },
   server: {
+    host: true,
+    allowedHosts: [
+      'pablobots.net',
+      'www.pablobots.net',
+      'localhost',
+      '127.0.0.1'
+    ],
     proxy: {
       '/api/market-data': {
         target: process.env.VITE_SUPABASE_URL?.replace('/rest/v1', '') || 'https://your-project.supabase.co',
@@ -27,5 +34,14 @@ export default defineConfig({
         },
       },
     },
+  },
+  preview: {
+    host: true,
+    allowedHosts: [
+      'pablobots.net',
+      'www.pablobots.net',
+      'localhost',
+      '127.0.0.1'
+    ],
   },
 })
