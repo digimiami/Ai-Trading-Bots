@@ -174,6 +174,29 @@ export default function AdminPage() {
     loadData();
   }, [user, authLoading, navigate]);
 
+  // Ensure users are loaded when Latest Trades tab is active
+  useEffect(() => {
+    if (activeTab === 'latest-trades' && users.length === 0) {
+      console.log('🔄 Latest Trades tab active but no users, loading users...');
+      const loadUsersForDropdown = async () => {
+        try {
+          const usersData = await getUsers();
+          console.log('✅ Users loaded in useEffect:', usersData?.length || 0, 'users');
+          console.log('📋 Users data sample:', usersData?.[0]);
+          if (usersData && usersData.length > 0) {
+            setUsers(usersData);
+            console.log('✅ Users state updated with', usersData.length, 'users');
+          } else {
+            console.warn('⚠️ getUsers() returned empty array or null');
+          }
+        } catch (error) {
+          console.error('❌ Failed to load users in useEffect:', error);
+        }
+      };
+      loadUsersForDropdown();
+    }
+  }, [activeTab]); // Only depend on activeTab to avoid infinite loops
+
   const fetchPabloReadyBots = async () => {
     try {
       setPabloReadyLoading(true);
@@ -653,20 +676,26 @@ export default function AdminPage() {
                     fetchPabloReadyBots();
                   } else if (tab.id === 'latest-trades') {
                     // Ensure users are loaded before showing dropdown
+                    console.log('🔍 Latest Trades tab clicked. Current users count:', users.length);
                     if (users.length === 0) {
                       console.log('⚠️ Users not loaded yet, loading users first...');
                       // Load users directly to ensure they're available
                       try {
                         const usersData = await getUsers();
-                        console.log('✅ Users loaded:', usersData?.length || 0, 'users');
+                        console.log('✅ Users loaded from getUsers():', usersData?.length || 0, 'users');
+                        console.log('📋 Users data:', usersData);
                         if (usersData && usersData.length > 0) {
                           setUsers(usersData);
+                          console.log('✅ Users state updated');
+                        } else {
+                          console.warn('⚠️ No users returned from getUsers()');
                         }
                       } catch (error) {
                         console.error('❌ Failed to load users:', error);
                       }
+                    } else {
+                      console.log('✅ Users already loaded:', users.length, 'users');
                     }
-                    console.log('📊 Current users count:', users.length);
                     fetchLatestTrades();
                   }
                 }}

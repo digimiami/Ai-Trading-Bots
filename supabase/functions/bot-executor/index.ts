@@ -1767,6 +1767,42 @@ class BotExecutor {
       
       console.log(`📊 Bot ${bot.name} market data: Price=${currentPrice}, RSI=${rsi.toFixed(2)}, ADX=${adx.toFixed(2)}`);
       
+      // Validate market data before strategy evaluation
+      if (!currentPrice || currentPrice === 0 || !isFinite(currentPrice)) {
+        console.error(`❌ Invalid price for ${bot.symbol}: ${currentPrice}. Skipping strategy evaluation.`);
+        await this.addBotLog(bot.id, {
+          level: 'error',
+          category: 'market',
+          message: `Invalid price data: ${currentPrice}. Cannot evaluate strategy.`,
+          details: { price: currentPrice, symbol: bot.symbol }
+        });
+        return;
+      }
+      
+      if (!isFinite(rsi) || rsi < 0 || rsi > 100) {
+        console.error(`❌ Invalid RSI for ${bot.symbol}: ${rsi}. Skipping strategy evaluation.`);
+        await this.addBotLog(bot.id, {
+          level: 'error',
+          category: 'market',
+          message: `Invalid RSI data: ${rsi}. Cannot evaluate strategy.`,
+          details: { rsi, symbol: bot.symbol }
+        });
+        return;
+      }
+      
+      if (!isFinite(adx) || adx < 0) {
+        console.error(`❌ Invalid ADX for ${bot.symbol}: ${adx}. Skipping strategy evaluation.`);
+        await this.addBotLog(bot.id, {
+          level: 'error',
+          category: 'market',
+          message: `Invalid ADX data: ${adx}. Cannot evaluate strategy.`,
+          details: { adx, symbol: bot.symbol }
+        });
+        return;
+      }
+      
+      console.log(`✅ Market data validated. Proceeding with strategy evaluation...`);
+      
       // Execute trading strategy - handle potential double-encoding and malformed data
       let strategy = bot.strategy;
       if (typeof strategy === 'string') {
@@ -1817,21 +1853,68 @@ class BotExecutor {
         }
       }
       console.log('Bot strategy:', JSON.stringify(strategy, null, 2));
-      const shouldTrade = await this.evaluateStrategy(strategy, { price: currentPrice, rsi, adx }, bot);
       
-      console.log('Strategy evaluation result:', JSON.stringify(shouldTrade, null, 2));
-      
-      if (shouldTrade.shouldTrade) {
-        console.log('Trading conditions met - executing trade');
-        await this.executeTrade(bot, shouldTrade);
-      } else {
-        console.log('Trading conditions not met:', shouldTrade.reason);
+      // Evaluate strategy with error handling
+      let shouldTrade: any;
+      try {
+        console.log(`🔍 Evaluating strategy for ${bot.name} (${bot.symbol})...`);
+        shouldTrade = await this.evaluateStrategy(strategy, { price: currentPrice, rsi, adx }, bot);
+        console.log(`✅ Strategy evaluation completed for ${bot.name}`);
+      } catch (strategyError: any) {
+        const errorMsg = strategyError?.message || String(strategyError);
+        console.error(`❌ Strategy evaluation failed for ${bot.name}:`, errorMsg);
         await this.addBotLog(bot.id, {
-          level: 'info',
+          level: 'error',
           category: 'strategy',
-          message: `Strategy conditions not met: ${shouldTrade.reason}`,
-          details: shouldTrade
+          message: `Strategy evaluation error: ${errorMsg}`,
+          details: { 
+            error: errorMsg,
+            strategy: strategy,
+            marketData: { price: currentPrice, rsi, adx }
+          }
         });
+        throw strategyError; // Re-throw to be caught by outer catch
+      }
+      
+      console.log(`\n📊 === STRATEGY EVALUATION RESULT ===`);
+      console.log(`   Bot: ${bot.name} (${bot.symbol})`);
+      console.log(`   Should Trade: ${shouldTrade?.shouldTrade ? 'YES ✅' : 'NO ❌'}`);
+      console.log(`   Side: ${shouldTrade?.side || 'N/A'}`);
+      console.log(`   Reason: ${shouldTrade?.reason || 'N/A'}`);
+      console.log(`   Confidence: ${shouldTrade?.confidence || 0}`);
+      console.log(`   Full Result:`, JSON.stringify(shouldTrade, null, 2));
+      console.log(`=== END STRATEGY RESULT ===\n`);
+      
+      // Log strategy result to bot activity logs
+      await this.addBotLog(bot.id, {
+        level: shouldTrade?.shouldTrade ? 'info' : 'info',
+        category: 'strategy',
+        message: shouldTrade?.shouldTrade 
+          ? `✅ Strategy signal: ${shouldTrade.side.toUpperCase()} - ${shouldTrade.reason || 'Trading conditions met'}`
+          : `⏸️ Strategy signal: ${shouldTrade?.reason || 'Trading conditions not met'}`,
+        details: {
+          shouldTrade: shouldTrade?.shouldTrade,
+          side: shouldTrade?.side,
+          reason: shouldTrade?.reason,
+          confidence: shouldTrade?.confidence,
+          marketData: { price: currentPrice, rsi, adx }
+        }
+      });
+      
+      if (shouldTrade?.shouldTrade) {
+        console.log(`🚀 Trading conditions met - executing ${shouldTrade.side.toUpperCase()} trade for ${bot.name}`);
+        try {
+          await this.executeTrade(bot, shouldTrade);
+          console.log(`✅ Trade execution completed for ${bot.name}`);
+        } catch (tradeError: any) {
+          const tradeErrorMsg = tradeError?.message || String(tradeError);
+          console.error(`❌ Trade execution failed for ${bot.name}:`, tradeErrorMsg);
+          // Error is already logged in executeTrade, just re-throw
+          throw tradeError;
+        }
+      } else {
+        console.log(`⏸️ Trading conditions not met for ${bot.name}: ${shouldTrade?.reason || 'Unknown reason'}`);
+        // Already logged above, no need to log again
       }
       
     } catch (error) {
@@ -1881,14 +1964,62 @@ class BotExecutor {
   private async evaluateStrategy(strategy: any, marketData: any, bot: any = null): Promise<any> {
     const { rsi, adx, price, mlPrediction } = marketData;
     
+    // Validate strategy object
+    if (!strategy || typeof strategy !== 'object') {
+      console.error('❌ Invalid strategy object:', strategy);
+      return {
+        shouldTrade: false,
+        reason: 'Invalid strategy configuration',
+        confidence: 0
+      };
+    }
+    
     // Check if this is a trendline breakout strategy
     if (strategy.type === 'trendline_breakout' || strategy.name === 'Trendline Breakout Strategy') {
-      return await this.evaluateTrendlineBreakoutStrategy(strategy, marketData, bot);
+      try {
+        console.log(`📈 Evaluating Trendline Breakout Strategy for ${bot?.name || 'bot'}...`);
+        const result = await this.evaluateTrendlineBreakoutStrategy(strategy, marketData, bot);
+        if (!result || typeof result !== 'object') {
+          console.error('❌ Trendline breakout strategy returned invalid result:', result);
+          return {
+            shouldTrade: false,
+            reason: 'Strategy evaluation returned invalid result',
+            confidence: 0
+          };
+        }
+        return result;
+      } catch (error: any) {
+        console.error('❌ Error in trendline breakout strategy evaluation:', error);
+        return {
+          shouldTrade: false,
+          reason: `Strategy evaluation error: ${error?.message || String(error)}`,
+          confidence: 0
+        };
+      }
     }
     
     // Check if this is a hybrid trend + mean reversion strategy
     if (strategy.type === 'hybrid_trend_meanreversion' || strategy.name === 'Hybrid Trend + Mean Reversion Strategy') {
-      return await this.evaluateHybridTrendMeanReversionStrategy(strategy, marketData, bot);
+      try {
+        console.log(`📈 Evaluating Hybrid Trend + Mean Reversion Strategy for ${bot?.name || 'bot'}...`);
+        const result = await this.evaluateHybridTrendMeanReversionStrategy(strategy, marketData, bot);
+        if (!result || typeof result !== 'object') {
+          console.error('❌ Hybrid strategy returned invalid result:', result);
+          return {
+            shouldTrade: false,
+            reason: 'Strategy evaluation returned invalid result',
+            confidence: 0
+          };
+        }
+        return result;
+      } catch (error: any) {
+        console.error('❌ Error in hybrid strategy evaluation:', error);
+        return {
+          shouldTrade: false,
+          reason: `Strategy evaluation error: ${error?.message || String(error)}`,
+          confidence: 0
+        };
+      }
     }
     
     // Initialize signals array to collect all strategy signals
@@ -2706,7 +2837,7 @@ class BotExecutor {
         return raw || 'buy';
       })();
 
-      // Try inserting with entry_price; if schema lacks that column, retry without it
+      // Insert trade record - use 'price' column (entry_price may not exist in all deployments)
       let insertPayload: any = {
         user_id: this.user.id,
         bot_id: bot.id,
@@ -2715,8 +2846,7 @@ class BotExecutor {
         side: normalizedSide,
         size: tradeAmount,
         amount: tradeAmount,
-        entry_price: normalizedPrice, // may not exist on some deployments
-        price: normalizedPrice,
+        price: normalizedPrice, // Primary column for entry price
         status: normalizedTradeStatus,
         exchange_order_id: orderResult.orderId || orderResult.exchangeResponse?.result?.orderId || null,
         executed_at: TimeSync.getCurrentTimeISO(),
@@ -2724,6 +2854,8 @@ class BotExecutor {
         pnl: 0
       };
 
+      // Try inserting with entry_price if column exists (for backward compatibility)
+      // But use price as primary since that's what the migration uses
       let insertResp = await this.supabaseClient
         .from('trades')
         .insert(insertPayload as any)
@@ -2733,12 +2865,14 @@ class BotExecutor {
       let trade = insertResp.data;
       let error = insertResp.error;
 
+      // If entry_price error occurs, it means the column doesn't exist - that's fine, we're using 'price'
+      // But if there's a different error, try adding entry_price for backward compatibility
       if (error && /column .*entry_price/i.test(error.message || '')) {
-        console.warn('⚠️ trades.entry_price column not found, retrying insert without it');
-        const { entry_price, ...fallback } = insertPayload;
+        console.warn('⚠️ trades.entry_price column not found, using price column only (this is expected)');
+        // Already using price, so this shouldn't happen, but just in case
         const retryResp = await this.supabaseClient
           .from('trades')
-          .insert(fallback as any)
+          .insert(insertPayload as any)
           .select()
           .single();
         trade = retryResp.data;
@@ -2747,7 +2881,8 @@ class BotExecutor {
 
       if (error) {
         console.error('❌ Database insert error:', error);
-        throw error;
+        console.error('   Insert payload:', JSON.stringify(insertPayload, null, 2));
+        throw new Error(`Trade execution failed: ${error.message}`);
       }
       
       console.log('✅ Trade recorded successfully:', trade);
