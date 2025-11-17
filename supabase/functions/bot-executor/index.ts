@@ -1945,8 +1945,28 @@ class BotExecutor {
       }
       
       console.log(`✅ Market data validated. Proceeding with strategy evaluation...`);
+      await this.addBotLog(bot.id, {
+        level: 'info',
+        category: 'system',
+        message: `✅ Market data validated. Proceeding with strategy evaluation...`,
+        details: { 
+          step: 'market_data_validated',
+          price: currentPrice,
+          rsi,
+          adx,
+          symbol: bot.symbol
+        }
+      });
       
       // Execute trading strategy - handle potential double-encoding and malformed data
+      console.log(`📋 [${bot.name}] Parsing strategy configuration...`);
+      await this.addBotLog(bot.id, {
+        level: 'info',
+        category: 'strategy',
+        message: `📋 Parsing strategy configuration...`,
+        details: { step: 'strategy_parsing', bot_name: bot.name }
+      });
+      
       let strategy = bot.strategy;
       if (typeof strategy === 'string') {
         try {
@@ -1996,13 +2016,47 @@ class BotExecutor {
         }
       }
       console.log('Bot strategy:', JSON.stringify(strategy, null, 2));
+      await this.addBotLog(bot.id, {
+        level: 'info',
+        category: 'strategy',
+        message: `📋 Strategy parsed successfully`,
+        details: { 
+          step: 'strategy_parsed',
+          strategy_type: typeof strategy,
+          has_rsi: !!strategy?.rsiThreshold,
+          has_adx: !!strategy?.adxThreshold
+        }
+      });
       
       // Evaluate strategy with error handling
+      console.log(`🔍 Evaluating strategy for ${bot.name} (${bot.symbol})...`);
+      await this.addBotLog(bot.id, {
+        level: 'info',
+        category: 'strategy',
+        message: `🔍 Evaluating strategy...`,
+        details: { 
+          step: 'strategy_evaluation_start',
+          bot_name: bot.name,
+          symbol: bot.symbol,
+          market_data: { price: currentPrice, rsi, adx }
+        }
+      });
+      
       let shouldTrade: any;
       try {
-        console.log(`🔍 Evaluating strategy for ${bot.name} (${bot.symbol})...`);
         shouldTrade = await this.evaluateStrategy(strategy, { price: currentPrice, rsi, adx }, bot);
         console.log(`✅ Strategy evaluation completed for ${bot.name}`);
+        await this.addBotLog(bot.id, {
+          level: 'info',
+          category: 'strategy',
+          message: `✅ Strategy evaluation completed`,
+          details: { 
+            step: 'strategy_evaluation_complete',
+            should_trade: shouldTrade?.shouldTrade,
+            side: shouldTrade?.side,
+            reason: shouldTrade?.reason
+          }
+        });
       } catch (strategyError: any) {
         const errorMsg = strategyError?.message || String(strategyError);
         console.error(`❌ Strategy evaluation failed for ${bot.name}:`, errorMsg);
