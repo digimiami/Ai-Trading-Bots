@@ -269,22 +269,7 @@ export default function AdminPage() {
       // Fetch real trades
       const { data: realTrades, error: realError } = await supabase
         .from('trades')
-        .select(`
-          id,
-          user_id,
-          bot_id,
-          symbol,
-          side,
-          amount,
-          price,
-          status,
-          pnl,
-          fee,
-          executed_at,
-          created_at,
-          users:user_id(email),
-          trading_bots:bot_id(name)
-        `)
+        .select('id, user_id, bot_id, symbol, side, amount, price, status, pnl, fee, executed_at, created_at')
         .not('executed_at', 'is', null)
         .order('executed_at', { ascending: false })
         .limit(50);
@@ -294,36 +279,64 @@ export default function AdminPage() {
       // Fetch paper trades
       const { data: paperTrades, error: paperError } = await supabase
         .from('paper_trading_trades')
-        .select(`
-          id,
-          user_id,
-          bot_id,
-          symbol,
-          side,
-          quantity,
-          entry_price,
-          exit_price,
-          status,
-          pnl,
-          fees,
-          executed_at,
-          created_at,
-          users:user_id(email),
-          trading_bots:bot_id(name)
-        `)
+        .select('id, user_id, bot_id, symbol, side, quantity, entry_price, exit_price, status, pnl, fees, executed_at, created_at')
         .not('executed_at', 'is', null)
         .order('executed_at', { ascending: false })
         .limit(50);
       
       if (paperError) throw paperError;
       
+      // Collect unique user IDs and bot IDs
+      const userIds = new Set<string>();
+      const botIds = new Set<string>();
+      
+      (realTrades || []).forEach(trade => {
+        if (trade.user_id) userIds.add(trade.user_id);
+        if (trade.bot_id) botIds.add(trade.bot_id);
+      });
+      
+      (paperTrades || []).forEach(trade => {
+        if (trade.user_id) userIds.add(trade.user_id);
+        if (trade.bot_id) botIds.add(trade.bot_id);
+      });
+      
+      // Fetch user emails
+      const userEmailsMap = new Map<string, string>();
+      if (userIds.size > 0) {
+        const { data: users, error: usersError } = await supabase
+          .from('users')
+          .select('id, email')
+          .in('id', Array.from(userIds));
+        
+        if (!usersError && users) {
+          users.forEach(user => {
+            userEmailsMap.set(user.id, user.email || 'Unknown');
+          });
+        }
+      }
+      
+      // Fetch bot names
+      const botNamesMap = new Map<string, string>();
+      if (botIds.size > 0) {
+        const { data: bots, error: botsError } = await supabase
+          .from('trading_bots')
+          .select('id, name')
+          .in('id', Array.from(botIds));
+        
+        if (!botsError && bots) {
+          bots.forEach(bot => {
+            botNamesMap.set(bot.id, bot.name || 'Unknown Bot');
+          });
+        }
+      }
+      
       // Combine and format trades
       const formattedRealTrades = (realTrades || []).map(trade => ({
         trade_type: 'REAL',
         trade_id: trade.id,
-        user_email: (trade.users as any)?.email || 'Unknown',
+        user_email: userEmailsMap.get(trade.user_id) || 'Unknown',
         user_id: trade.user_id,
-        bot_name: (trade.trading_bots as any)?.name || 'Unknown Bot',
+        bot_name: botNamesMap.get(trade.bot_id) || 'Unknown Bot',
         symbol: trade.symbol,
         side: trade.side,
         amount: trade.amount,
@@ -339,9 +352,9 @@ export default function AdminPage() {
       const formattedPaperTrades = (paperTrades || []).map(trade => ({
         trade_type: 'PAPER',
         trade_id: trade.id,
-        user_email: (trade.users as any)?.email || 'Unknown',
+        user_email: userEmailsMap.get(trade.user_id) || 'Unknown',
         user_id: trade.user_id,
-        bot_name: (trade.trading_bots as any)?.name || 'Unknown Bot',
+        bot_name: botNamesMap.get(trade.bot_id) || 'Unknown Bot',
         symbol: trade.symbol,
         side: trade.side,
         amount: trade.quantity,
