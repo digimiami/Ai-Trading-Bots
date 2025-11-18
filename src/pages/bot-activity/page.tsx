@@ -197,14 +197,35 @@ export default function BotActivityPage() {
                       onClick={() => {
                         setShowDownloadMenu(false);
                         // Export as JSON
+                        const now = new Date();
                         const recentActivityData = {
-                          generated_at: new Date().toISOString(),
+                          report_title: 'Recent Activity Report',
+                          generated_at: now.toISOString(),
+                          generated_at_readable: now.toLocaleString(),
+                          metadata: {
+                            total_bots: activities.length,
+                            report_version: '1.1',
+                            export_format: 'JSON',
+                          },
                           summary: {
                             total_bots: activities.length,
-                            executing: activities.filter(a => a.executionState === 'executing').length,
-                            analyzing: activities.filter(a => a.executionState === 'analyzing').length,
-                            waiting: activities.filter(a => a.executionState === 'waiting').length,
-                            errors: activities.filter(a => a.executionState === 'error').length,
+                            by_status: {
+                              running: activities.filter(a => a.status === 'running').length,
+                              paused: activities.filter(a => a.status === 'paused').length,
+                              stopped: activities.filter(a => a.status === 'stopped').length,
+                            },
+                            by_execution_state: {
+                              executing: activities.filter(a => a.executionState === 'executing').length,
+                              analyzing: activities.filter(a => a.executionState === 'analyzing').length,
+                              waiting: activities.filter(a => a.executionState === 'waiting').length,
+                              idle: activities.filter(a => a.executionState === 'idle').length,
+                              error: activities.filter(a => a.executionState === 'error').length,
+                            },
+                            totals: {
+                              total_errors: activities.reduce((sum, a) => sum + a.errorCount, 0),
+                              total_success: activities.reduce((sum, a) => sum + a.successCount, 0),
+                              total_logs: activities.reduce((sum, a) => sum + a.logs.length, 0),
+                            },
                           },
                           activities_by_state: {
                             executing: activities
@@ -214,10 +235,14 @@ export default function BotActivityPage() {
                                 bot_name: a.botName,
                                 status: a.status,
                                 current_action: a.currentAction,
+                                waiting_for: a.waitingFor || null,
                                 last_activity: a.lastActivity,
+                                last_activity_readable: a.lastActivity ? new Date(a.lastActivity).toLocaleString() : null,
                                 last_execution_time: a.lastExecutionTime,
+                                last_execution_time_readable: a.lastExecutionTime ? new Date(a.lastExecutionTime).toLocaleString() : null,
                                 error_count: a.errorCount,
                                 success_count: a.successCount,
+                                recent_logs_count: a.logs.length,
                               })),
                             analyzing: activities
                               .filter(a => a.executionState === 'analyzing')
@@ -226,10 +251,14 @@ export default function BotActivityPage() {
                                 bot_name: a.botName,
                                 status: a.status,
                                 current_action: a.currentAction,
+                                waiting_for: a.waitingFor || null,
                                 last_activity: a.lastActivity,
+                                last_activity_readable: a.lastActivity ? new Date(a.lastActivity).toLocaleString() : null,
                                 last_execution_time: a.lastExecutionTime,
+                                last_execution_time_readable: a.lastExecutionTime ? new Date(a.lastExecutionTime).toLocaleString() : null,
                                 error_count: a.errorCount,
                                 success_count: a.successCount,
+                                recent_logs_count: a.logs.length,
                               })),
                             waiting: activities
                               .filter(a => a.executionState === 'waiting')
@@ -238,11 +267,30 @@ export default function BotActivityPage() {
                                 bot_name: a.botName,
                                 status: a.status,
                                 current_action: a.currentAction,
-                                waiting_for: a.waitingFor,
+                                waiting_for: a.waitingFor || null,
                                 last_activity: a.lastActivity,
+                                last_activity_readable: a.lastActivity ? new Date(a.lastActivity).toLocaleString() : null,
                                 last_execution_time: a.lastExecutionTime,
+                                last_execution_time_readable: a.lastExecutionTime ? new Date(a.lastExecutionTime).toLocaleString() : null,
                                 error_count: a.errorCount,
                                 success_count: a.successCount,
+                                recent_logs_count: a.logs.length,
+                              })),
+                            idle: activities
+                              .filter(a => a.executionState === 'idle')
+                              .map(a => ({
+                                bot_id: a.botId,
+                                bot_name: a.botName,
+                                status: a.status,
+                                current_action: a.currentAction,
+                                waiting_for: a.waitingFor || null,
+                                last_activity: a.lastActivity,
+                                last_activity_readable: a.lastActivity ? new Date(a.lastActivity).toLocaleString() : null,
+                                last_execution_time: a.lastExecutionTime,
+                                last_execution_time_readable: a.lastExecutionTime ? new Date(a.lastExecutionTime).toLocaleString() : null,
+                                error_count: a.errorCount,
+                                success_count: a.successCount,
+                                recent_logs_count: a.logs.length,
                               })),
                             errors: activities
                               .filter(a => a.executionState === 'error')
@@ -251,9 +299,14 @@ export default function BotActivityPage() {
                                 bot_name: a.botName,
                                 status: a.status,
                                 current_action: a.currentAction,
+                                waiting_for: a.waitingFor || null,
                                 last_activity: a.lastActivity,
+                                last_activity_readable: a.lastActivity ? new Date(a.lastActivity).toLocaleString() : null,
+                                last_execution_time: a.lastExecutionTime,
+                                last_execution_time_readable: a.lastExecutionTime ? new Date(a.lastExecutionTime).toLocaleString() : null,
                                 error_count: a.errorCount,
                                 success_count: a.successCount,
+                                recent_logs_count: a.logs.length,
                               })),
                           },
                           all_activities: activities.map(a => ({
@@ -262,13 +315,26 @@ export default function BotActivityPage() {
                             status: a.status,
                             execution_state: a.executionState,
                             current_action: a.currentAction,
-                            waiting_for: a.waitingFor,
+                            waiting_for: a.waitingFor || null,
                             last_activity: a.lastActivity,
+                            last_activity_readable: a.lastActivity ? new Date(a.lastActivity).toLocaleString() : null,
                             last_execution_time: a.lastExecutionTime,
+                            last_execution_time_readable: a.lastExecutionTime ? new Date(a.lastExecutionTime).toLocaleString() : null,
                             error_count: a.errorCount,
                             success_count: a.successCount,
                             recent_logs_count: a.logs.length,
                           })),
+                          bots_with_errors: activities
+                            .filter(a => a.errorCount > 0)
+                            .map(a => ({
+                              bot_id: a.botId,
+                              bot_name: a.botName,
+                              status: a.status,
+                              error_count: a.errorCount,
+                              last_activity: a.lastActivity,
+                              last_activity_readable: a.lastActivity ? new Date(a.lastActivity).toLocaleString() : null,
+                              current_action: a.currentAction,
+                            })),
                         };
 
                         const jsonData = JSON.stringify(recentActivityData, null, 2);
