@@ -9,9 +9,10 @@ SELECT
   mts.side,
   mts.mode,
   mts.created_at,
-  mts.updated_at,
+  mts.processed_at,
   mts.reason,
   mts.size_multiplier,
+  mts.error,
   CASE 
     WHEN mts.status = 'pending' THEN '⏳ Waiting to be processed'
     WHEN mts.status = 'processing' THEN '🔄 Currently being processed'

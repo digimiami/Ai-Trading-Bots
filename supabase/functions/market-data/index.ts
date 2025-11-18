@@ -263,59 +263,74 @@ async function fetchFearGreedIndex(): Promise<any> {
 
 // Fetch Crypto News
 async function fetchCryptoNews(limit: number = 10): Promise<any[]> {
+  const COINDESK_API_KEY = '748ace4c55e1966f240d16b797e6187e1efa229dbe28969cdd9f784fe2462121'
+  
   try {
-    // Using CryptoCompare API (free tier)
+    // Try CoinDesk API first (with API key for better access)
+    const coindeskUrl = `https://api.coindesk.com/v1/news/headlines?limit=${limit}`
+    console.log(`📰 Fetching crypto news from CoinDesk: ${coindeskUrl}`)
+    
+    const coindeskResponse = await fetchWithBackoff(coindeskUrl, {
+      headers: {
+        'X-API-Key': COINDESK_API_KEY,
+        'Accept': 'application/json'
+      }
+    })
+    
+    if (coindeskResponse.ok) {
+      const coindeskData = await coindeskResponse.json()
+      
+      if (coindeskData && Array.isArray(coindeskData) && coindeskData.length > 0) {
+        console.log(`✅ Fetched ${coindeskData.length} news articles from CoinDesk`)
+        
+        return coindeskData.slice(0, limit).map((article: any) => ({
+          id: article.id || `coindesk-${Math.random().toString(36).substr(2, 9)}`,
+          title: article.title || '',
+          body: article.description || article.body || '',
+          url: article.url || '',
+          imageUrl: article.image || article.imageUrl || null,
+          source: article.source || 'CoinDesk',
+          publishedOn: article.publishedAt || article.published_on || new Date().toISOString(),
+          categories: article.categories || '',
+          tags: article.tags || ''
+        }))
+      }
+    }
+    
+    console.warn('⚠️ CoinDesk API response not valid, trying CryptoCompare...')
+  } catch (coindeskError) {
+    console.warn('⚠️ CoinDesk API failed, trying CryptoCompare:', coindeskError)
+  }
+  
+  // Fallback: CryptoCompare API (free tier)
+  try {
     const url = `https://min-api.cryptocompare.com/data/v2/news/?lang=EN&limit=${limit}`
-    console.log(`📰 Fetching crypto news from: ${url}`)
+    console.log(`📰 Fetching crypto news from CryptoCompare: ${url}`)
     
     const response = await fetchWithBackoff(url)
     const data = await response.json()
     
     if (data && data.Data && Array.isArray(data.Data)) {
-      console.log(`✅ Fetched ${data.Data.length} news articles`)
+      console.log(`✅ Fetched ${data.Data.length} news articles from CryptoCompare`)
       
       return data.Data.map((article: any) => ({
-        id: article.id,
-        title: article.title,
+        id: article.id?.toString() || `cryptocompare-${Math.random().toString(36).substr(2, 9)}`,
+        title: article.title || '',
         body: article.body?.substring(0, 200) || '',
-        url: article.url,
+        url: article.url || '',
         imageUrl: article.imageurl || null,
-        source: article.source,
-        publishedOn: new Date(article.published_on * 1000).toISOString(),
+        source: article.source || 'CryptoCompare',
+        publishedOn: article.published_on ? new Date(article.published_on * 1000).toISOString() : new Date().toISOString(),
         categories: article.categories || '',
         tags: article.tags || ''
       }))
     }
-    
-    console.warn('⚠️ No crypto news data available')
-    return []
-  } catch (error) {
-    console.error('❌ Error fetching crypto news:', error)
-    // Fallback: try alternative API
-    try {
-      const altUrl = 'https://api.coindesk.com/v1/news/headlines'
-      const altResponse = await fetchWithBackoff(altUrl)
-      const altData = await altResponse.json()
-      
-      if (altData && Array.isArray(altData)) {
-        return altData.slice(0, limit).map((article: any) => ({
-          id: article.id || Math.random().toString(),
-          title: article.title || '',
-          body: article.description || '',
-          url: article.url || '',
-          imageUrl: article.image || null,
-          source: article.source || 'CoinDesk',
-          publishedOn: article.publishedAt || new Date().toISOString(),
-          categories: '',
-          tags: ''
-        }))
-      }
-    } catch (fallbackError) {
-      console.error('❌ Fallback news API also failed:', fallbackError)
-    }
-    
-    return []
+  } catch (cryptocompareError) {
+    console.error('❌ CryptoCompare API also failed:', cryptocompareError)
   }
+  
+  console.warn('⚠️ All news APIs failed, returning empty array')
+  return []
 }
 
 // Calculate inflows/outflows (simplified: based on volume and price change)

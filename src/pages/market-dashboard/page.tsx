@@ -297,9 +297,28 @@ export default function MarketDashboardPage() {
   };
 
   // Calculate gauge position (0-100% for the semi-circle)
-  const getGaugePosition = (value: number): number => {
+  // Calculate angle for a given value (0-100 maps to 0-180 degrees)
+  const getGaugeAngle = (value: number): number => {
     // Map 0-100 to 0-180 degrees (semi-circle)
-    return (value / 100) * 180;
+    // 0 = leftmost (180°), 100 = rightmost (0°)
+    return 180 - (value / 100) * 180;
+  };
+
+  // Convert angle to radians
+  const angleToRadians = (angle: number): number => {
+    return (angle * Math.PI) / 180;
+  };
+
+  // Calculate point on arc for a given value
+  const getPointOnArc = (value: number, radius: number = 80) => {
+    const angle = getGaugeAngle(value);
+    const radians = angleToRadians(angle);
+    const centerX = 100;
+    const centerY = 100;
+    return {
+      x: centerX + radius * Math.cos(radians),
+      y: centerY - radius * Math.sin(radians)
+    };
   };
 
   if (loading) {
@@ -370,8 +389,8 @@ export default function MarketDashboardPage() {
               {/* Gauge */}
               <div className="flex-1 flex items-center justify-center">
                 <div className="relative w-full max-w-md">
-                  {/* Semi-circle gauge */}
-                  <svg viewBox="0 0 200 120" className="w-full h-auto" style={{ minHeight: '220px' }}>
+                  {/* Semi-circle gauge - Fixed segments based on ranges */}
+                  <svg viewBox="0 0 200 120" className="w-full h-auto" style={{ minHeight: '220px' }} preserveAspectRatio="xMidYMid meet">
                     <defs>
                       <linearGradient id="fearGradient" x1="0%" y1="0%" x2="100%" y2="0%">
                         <stop offset="0%" stopColor="#ef4444" />
@@ -383,7 +402,7 @@ export default function MarketDashboardPage() {
                       </linearGradient>
                     </defs>
                     
-                    {/* Background arc - full semi-circle */}
+                    {/* Background arc - full semi-circle (perfectly straight) */}
                     <path
                       d="M 20 100 A 80 80 0 0 1 180 100"
                       fill="none"
@@ -392,69 +411,110 @@ export default function MarketDashboardPage() {
                       className="dark:stroke-gray-700"
                     />
                     
-                    {/* Colored segments with better positioning */}
+                    {/* Fixed segments based on actual ranges */}
                     {/* Extreme Fear (0-25) - Red */}
-                    <path
-                      d="M 20 100 A 80 80 0 0 1 65 30"
-                      fill="none"
-                      stroke="url(#fearGradient)"
-                      strokeWidth="16"
-                      strokeLinecap="round"
-                    />
-                    {/* Fear (26-45) - Orange */}
-                    <path
-                      d="M 65 30 A 80 80 0 0 1 110 20"
-                      fill="none"
-                      stroke="#f97316"
-                      strokeWidth="16"
-                      strokeLinecap="round"
-                    />
-                    {/* Neutral (46-55) - Yellow */}
-                    <path
-                      d="M 110 20 A 80 80 0 0 1 135 20"
-                      fill="none"
-                      stroke="#eab308"
-                      strokeWidth="16"
-                      strokeLinecap="round"
-                    />
-                    {/* Greed (56-75) - Green */}
-                    <path
-                      d="M 135 20 A 80 80 0 0 1 170 30"
-                      fill="none"
-                      stroke="#22c55e"
-                      strokeWidth="16"
-                      strokeLinecap="round"
-                    />
-                    {/* Extreme Greed (76-100) - Emerald */}
-                    <path
-                      d="M 170 30 A 80 80 0 0 1 180 100"
-                      fill="none"
-                      stroke="url(#greedGradient)"
-                      strokeWidth="16"
-                      strokeLinecap="round"
-                    />
+                    {(() => {
+                      const start = getPointOnArc(0, 80);
+                      const end = getPointOnArc(25, 80);
+                      return (
+                        <path
+                          d={`M ${start.x} ${start.y} A 80 80 0 0 1 ${end.x} ${end.y}`}
+                          fill="none"
+                          stroke="url(#fearGradient)"
+                          strokeWidth="16"
+                          strokeLinecap="round"
+                        />
+                      );
+                    })()}
                     
-                    {/* Indicator line - thicker and more visible */}
-                    <line
-                      x1="100"
-                      y1="100"
-                      x2={100 + 80 * Math.cos(Math.PI - (getGaugePosition(fearGreedIndex.value) * Math.PI / 180))}
-                      y2={100 - 80 * Math.sin(Math.PI - (getGaugePosition(fearGreedIndex.value) * Math.PI / 180))}
-                      stroke="#1f2937"
-                      strokeWidth="5"
-                      strokeLinecap="round"
-                      className="dark:stroke-gray-200"
-                    />
-                    {/* Indicator dot - larger and more visible */}
-                    <circle
-                      cx={100 + 80 * Math.cos(Math.PI - (getGaugePosition(fearGreedIndex.value) * Math.PI / 180))}
-                      cy={100 - 80 * Math.sin(Math.PI - (getGaugePosition(fearGreedIndex.value) * Math.PI / 180))}
-                      r="10"
-                      fill="#1f2937"
-                      stroke="#ffffff"
-                      strokeWidth="3"
-                      className="dark:fill-gray-200 dark:stroke-gray-800"
-                    />
+                    {/* Fear (26-45) - Orange */}
+                    {(() => {
+                      const start = getPointOnArc(26, 80);
+                      const end = getPointOnArc(45, 80);
+                      return (
+                        <path
+                          d={`M ${start.x} ${start.y} A 80 80 0 0 1 ${end.x} ${end.y}`}
+                          fill="none"
+                          stroke="#f97316"
+                          strokeWidth="16"
+                          strokeLinecap="round"
+                        />
+                      );
+                    })()}
+                    
+                    {/* Neutral (46-55) - Yellow */}
+                    {(() => {
+                      const start = getPointOnArc(46, 80);
+                      const end = getPointOnArc(55, 80);
+                      return (
+                        <path
+                          d={`M ${start.x} ${start.y} A 80 80 0 0 1 ${end.x} ${end.y}`}
+                          fill="none"
+                          stroke="#eab308"
+                          strokeWidth="16"
+                          strokeLinecap="round"
+                        />
+                      );
+                    })()}
+                    
+                    {/* Greed (56-75) - Green */}
+                    {(() => {
+                      const start = getPointOnArc(56, 80);
+                      const end = getPointOnArc(75, 80);
+                      return (
+                        <path
+                          d={`M ${start.x} ${start.y} A 80 80 0 0 1 ${end.x} ${end.y}`}
+                          fill="none"
+                          stroke="#22c55e"
+                          strokeWidth="16"
+                          strokeLinecap="round"
+                        />
+                      );
+                    })()}
+                    
+                    {/* Extreme Greed (76-100) - Emerald */}
+                    {(() => {
+                      const start = getPointOnArc(76, 80);
+                      const end = getPointOnArc(100, 80);
+                      return (
+                        <path
+                          d={`M ${start.x} ${start.y} A 80 80 0 0 1 ${end.x} ${end.y}`}
+                          fill="none"
+                          stroke="url(#greedGradient)"
+                          strokeWidth="16"
+                          strokeLinecap="round"
+                        />
+                      );
+                    })()}
+                    
+                    {/* Indicator line - points to current value */}
+                    {(() => {
+                      const indicatorPoint = getPointOnArc(fearGreedIndex.value, 80);
+                      return (
+                        <>
+                          <line
+                            x1="100"
+                            y1="100"
+                            x2={indicatorPoint.x}
+                            y2={indicatorPoint.y}
+                            stroke="#1f2937"
+                            strokeWidth="5"
+                            strokeLinecap="round"
+                            className="dark:stroke-gray-200"
+                          />
+                          {/* Indicator dot */}
+                          <circle
+                            cx={indicatorPoint.x}
+                            cy={indicatorPoint.y}
+                            r="10"
+                            fill="#1f2937"
+                            stroke="#ffffff"
+                            strokeWidth="3"
+                            className="dark:fill-gray-200 dark:stroke-gray-800"
+                          />
+                        </>
+                      );
+                    })()}
                     
                     {/* Center point */}
                     <circle cx="100" cy="100" r="4" fill="#6b7280" className="dark:fill-gray-500" />
