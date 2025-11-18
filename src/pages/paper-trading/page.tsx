@@ -20,15 +20,37 @@ export default function PaperTradingDashboard() {
         return;
       }
 
-      const { data: positions } = await supabase
-        .from('paper_trading_positions')
-        .select('symbol')
-        .eq('user_id', user.id)
-        .eq('status', 'open');
+      // Fetch pairs from both open positions AND closed trades
+      const [positionsResult, tradesResult] = await Promise.all([
+        supabase
+          .from('paper_trading_positions')
+          .select('symbol')
+          .eq('user_id', user.id)
+          .eq('status', 'open'),
+        supabase
+          .from('paper_trading_trades')
+          .select('symbol')
+          .eq('user_id', user.id)
+          .eq('status', 'closed')
+      ]);
 
-      const uniquePairs = positions && positions.length > 0
-        ? [...new Set(positions.map(p => p.symbol))].sort()
-        : [];
+      const allSymbols = new Set<string>();
+      
+      // Add symbols from open positions
+      if (positionsResult.data && positionsResult.data.length > 0) {
+        positionsResult.data.forEach((p: any) => {
+          if (p.symbol) allSymbols.add(p.symbol);
+        });
+      }
+      
+      // Add symbols from closed trades
+      if (tradesResult.data && tradesResult.data.length > 0) {
+        tradesResult.data.forEach((t: any) => {
+          if (t.symbol) allSymbols.add(t.symbol);
+        });
+      }
+
+      const uniquePairs = Array.from(allSymbols).sort();
 
       setAvailablePairs(uniquePairs);
       setSelectedPair(prev => {
