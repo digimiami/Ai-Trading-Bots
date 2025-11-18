@@ -84,7 +84,7 @@ export default function ActivityReportGenerator() {
     // Performance Summary
     csv += 'PERFORMANCE SUMMARY\n';
     csv += `Total Trades,${report.performance_summary.total_trades}\n`;
-    csv += `Total P&L,${report.performance_summary.total_pnl.toFixed(2)}\n`;
+    csv += `Total P&L,${(report.performance_summary?.total_pnl || 0).toFixed(2)}\n`;
     csv += `Win Rate,${report.performance_summary.win_rate.toFixed(2)}%\n`;
     csv += `Profitable Bots,${report.performance_summary.profitable_bots}\n\n`;
 
@@ -465,7 +465,7 @@ function generatePDFContent(report: ActivityReport): string {
     </tr>
     <tr>
       <td>Total P&L</td>
-      <td>$${report.performance_summary.total_pnl.toFixed(2)}</td>
+      <td>$${(report.performance_summary?.total_pnl || 0).toFixed(2)}</td>
     </tr>
     <tr>
       <td>Win Rate</td>

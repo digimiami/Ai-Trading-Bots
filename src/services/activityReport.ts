@@ -104,8 +104,14 @@ export async function generateActivityReport(
   // Calculate performance summary
   const filledTrades = trades?.filter(t => t.status === 'filled' || t.status === 'closed') || [];
   const totalTrades = filledTrades.length;
-  const totalPnL = filledTrades.reduce((sum, t) => sum + (parseFloat(t.pnl || '0') || 0), 0);
-  const winningTrades = filledTrades.filter(t => (parseFloat(t.pnl || '0') || 0) > 0).length;
+  const totalPnL = filledTrades.reduce((sum, t) => {
+    const pnl = parseFloat(t.pnl || '0') || 0;
+    return sum + (isNaN(pnl) ? 0 : pnl);
+  }, 0);
+  const winningTrades = filledTrades.filter(t => {
+    const pnl = parseFloat(t.pnl || '0') || 0;
+    return !isNaN(pnl) && pnl > 0;
+  }).length;
   const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
 
   // Group logs by bot
@@ -197,10 +203,10 @@ export async function generateActivityReport(
     },
     bot_activity: Array.from(botActivityMap.values()),
     performance_summary: {
-      total_trades: totalTrades,
-      total_pnl,
-      win_rate: winRate,
-      profitable_bots: profitableBots
+      total_trades: totalTrades || 0,
+      total_pnl: totalPnL || 0,
+      win_rate: winRate || 0,
+      profitable_bots: profitableBots || 0
     },
     errors_summary: errorsSummary
   };
