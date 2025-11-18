@@ -26,11 +26,22 @@ interface Alert {
   timestamp: string;
 }
 
+interface FearGreedIndex {
+  value: number;
+  classification: string;
+  timestamp: string;
+  yesterday?: {
+    value: number;
+    classification: string;
+  };
+}
+
 export default function MarketDashboardPage() {
   const [marketData, setMarketData] = useState<MarketData[]>([]);
   const [topGainers, setTopGainers] = useState<MarketData[]>([]);
   const [rapidChanges, setRapidChanges] = useState<MarketData[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [fearGreedIndex, setFearGreedIndex] = useState<FearGreedIndex | null>(null);
   const [loading, setLoading] = useState(true);
   const [wsConnected, setWsConnected] = useState(false);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
@@ -96,6 +107,9 @@ export default function MarketDashboardPage() {
         setMarketData(data.marketData);
         setTopGainers(data.topGainers || []);
         setRapidChanges(data.rapidChanges || []);
+        if (data.fearGreedIndex) {
+          setFearGreedIndex(data.fearGreedIndex);
+        }
         console.log('✅ Market data state updated:', data.marketData.length, 'items');
       } else {
         console.warn('⚠️ No marketData in response:', data);
@@ -257,6 +271,21 @@ export default function MarketDashboardPage() {
     return priceUpdates.get(symbol) || defaultPrice;
   };
 
+  // Get Fear & Greed Index color
+  const getFearGreedColor = (value: number): string => {
+    if (value <= 25) return 'text-red-500';
+    if (value <= 45) return 'text-orange-500';
+    if (value <= 55) return 'text-yellow-500';
+    if (value <= 75) return 'text-green-500';
+    return 'text-emerald-500';
+  };
+
+  // Calculate gauge position (0-100% for the semi-circle)
+  const getGaugePosition = (value: number): number => {
+    // Map 0-100 to 0-180 degrees (semi-circle)
+    return (value / 100) * 180;
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
@@ -316,6 +345,124 @@ export default function MarketDashboardPage() {
             Refresh
           </Button>
         </div>
+
+        {/* Crypto Fear & Greed Index */}
+        {fearGreedIndex && (
+          <Card className="p-6">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Crypto Fear & Greed Index</h2>
+            <div className="flex flex-col md:flex-row gap-6">
+              {/* Gauge */}
+              <div className="flex-1">
+                <div className="relative w-full max-w-md mx-auto">
+                  {/* Semi-circle gauge background */}
+                  <svg viewBox="0 0 200 120" className="w-full h-auto">
+                    {/* Background arc */}
+                    <path
+                      d="M 20 100 A 80 80 0 0 1 180 100"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="12"
+                      className="text-gray-200 dark:text-gray-700"
+                    />
+                    {/* Colored segments */}
+                    <path
+                      d="M 20 100 A 80 80 0 0 1 65 30"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="12"
+                      className="text-red-500"
+                    />
+                    <path
+                      d="M 65 30 A 80 80 0 0 1 110 20"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="12"
+                      className="text-orange-500"
+                    />
+                    <path
+                      d="M 110 20 A 80 80 0 0 1 135 20"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="12"
+                      className="text-yellow-500"
+                    />
+                    <path
+                      d="M 135 20 A 80 80 0 0 1 170 30"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="12"
+                      className="text-green-500"
+                    />
+                    <path
+                      d="M 170 30 A 80 80 0 0 1 180 100"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="12"
+                      className="text-emerald-500"
+                    />
+                    {/* Indicator line */}
+                    <line
+                      x1="100"
+                      y1="100"
+                      x2={100 + 80 * Math.cos(Math.PI - (getGaugePosition(fearGreedIndex.value) * Math.PI / 180))}
+                      y2={100 - 80 * Math.sin(Math.PI - (getGaugePosition(fearGreedIndex.value) * Math.PI / 180))}
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      className="text-gray-800 dark:text-gray-200"
+                    />
+                    {/* Indicator dot */}
+                    <circle
+                      cx={100 + 80 * Math.cos(Math.PI - (getGaugePosition(fearGreedIndex.value) * Math.PI / 180))}
+                      cy={100 - 80 * Math.sin(Math.PI - (getGaugePosition(fearGreedIndex.value) * Math.PI / 180))}
+                      r="6"
+                      fill="currentColor"
+                      className="text-gray-800 dark:text-gray-200"
+                    />
+                  </svg>
+                  {/* Value display */}
+                  <div className="text-center mt-4">
+                    <div className={`text-5xl font-bold ${getFearGreedColor(fearGreedIndex.value)}`}>
+                      {fearGreedIndex.value}
+                    </div>
+                    <div className={`text-lg font-semibold mt-2 ${getFearGreedColor(fearGreedIndex.value)}`}>
+                      {fearGreedIndex.classification}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Historical data and info */}
+              <div className="flex-1 space-y-4">
+                <div>
+                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">Historical Data</h3>
+                  <div className="space-y-2">
+                    {fearGreedIndex.yesterday && (
+                      <div className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Yesterday</span>
+                        <div className="text-right">
+                          <span className={`font-semibold ${getFearGreedColor(fearGreedIndex.yesterday.value)}`}>
+                            {fearGreedIndex.yesterday.value}
+                          </span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
+                            {fearGreedIndex.yesterday.classification}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">What's Crypto Fear & Greed Index?</h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
+                    The index ranges from 0 (Extreme Fear) to 100 (Extreme Greed), reflecting crypto market sentiment. 
+                    A low value signals over-selling, while a high value warns of a potential market correction.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </Card>
+        )}
 
         {/* Alerts */}
         {alerts.length > 0 && (

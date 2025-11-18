@@ -122,19 +122,70 @@ function calculateRSI(klines: any[], period: number = 14): number {
 async function fetchTickers(symbols: string[] = []): Promise<any[]> {
   try {
     const category = 'spot'
-    const symbolParam = symbols.length > 0 ? `&symbol=${symbols.join(',')}` : ''
-    const url = `https://api.bybit.com/v5/market/tickers?category=${category}${symbolParam}`
     
-    const response = await fetchWithBackoff(url)
-    const data = await response.json()
-    
-    if (data.retCode === 0 && data.result?.list) {
-      return data.result.list
+    // Try with specific symbols first
+    if (symbols.length > 0) {
+      const symbolParam = `&symbol=${symbols.join(',')}`
+      const url = `https://api.bybit.com/v5/market/tickers?category=${category}${symbolParam}`
+      
+      console.log(`📊 Fetching tickers from Bybit (with symbols): ${url}`)
+      
+      const response = await fetchWithBackoff(url)
+      const data = await response.json()
+      
+      console.log(`📊 Bybit ticker response: retCode=${data.retCode}, hasResult=${!!data.result}, listLength=${data.result?.list?.length || 0}`)
+      
+      if (data.retCode === 0 && data.result?.list && data.result.list.length > 0) {
+        console.log(`✅ Successfully fetched ${data.result.list.length} tickers`)
+        // Filter to only requested symbols
+        return data.result.list.filter((t: any) => symbols.includes(t.symbol))
+      }
+      
+      console.warn(`⚠️ Symbol-specific request failed or returned empty, trying without symbols...`)
     }
     
-    return []
+    // Fallback: fetch all tickers and filter
+    const url = `https://api.bybit.com/v5/market/tickers?category=${category}`
+    console.log(`📊 Fetching all tickers from Bybit (fallback): ${url}`)
+    
+    try {
+      const response = await fetchWithBackoff(url)
+      const responseText = await response.text()
+      console.log(`📊 Bybit raw response status: ${response.status}, length: ${responseText.length}`)
+      
+      let data
+      try {
+        data = JSON.parse(responseText)
+      } catch (parseError) {
+        console.error(`❌ Failed to parse Bybit response as JSON:`, parseError)
+        console.error(`📊 Response text (first 500 chars):`, responseText.substring(0, 500))
+        return []
+      }
+      
+      console.log(`📊 Bybit ticker response (fallback): retCode=${data.retCode}, hasResult=${!!data.result}, listLength=${data.result?.list?.length || 0}`)
+      
+      if (data.retCode === 0 && data.result?.list) {
+        console.log(`✅ Successfully fetched ${data.result.list.length} tickers (fallback)`)
+        // Filter to requested symbols if provided
+        if (symbols.length > 0) {
+          const filtered = data.result.list.filter((t: any) => symbols.includes(t.symbol))
+          console.log(`📊 Filtered to ${filtered.length} requested symbols from ${data.result.list.length} total`)
+          return filtered
+        }
+        return data.result.list
+      }
+      
+      console.error(`❌ Failed to fetch tickers: retCode=${data.retCode}, retMsg=${data.retMsg || 'N/A'}`)
+      if (data.retMsg) {
+        console.error(`❌ Error message: ${data.retMsg}`)
+      }
+      return []
+    } catch (error) {
+      console.error(`❌ Exception fetching tickers (fallback):`, error)
+      return []
+    }
   } catch (error) {
-    console.error('Error fetching tickers:', error)
+    console.error('❌ Error fetching tickers:', error)
     return []
   }
 }
@@ -176,6 +227,40 @@ async function getMarketCap(symbol: string, price: number): Promise<number> {
   }
 }
 
+// Fetch Crypto Fear & Greed Index
+async function fetchFearGreedIndex(): Promise<any> {
+  try {
+    const url = 'https://api.alternative.me/fng/?limit=2'
+    console.log(`📊 Fetching Fear & Greed Index from: ${url}`)
+    
+    const response = await fetchWithBackoff(url)
+    const data = await response.json()
+    
+    if (data && data.data && data.data.length > 0) {
+      const current = data.data[0]
+      const yesterday = data.data[1] || current
+      
+      console.log(`✅ Fear & Greed Index: ${current.value} (${current.value_classification})`)
+      
+      return {
+        value: parseInt(current.value),
+        classification: current.value_classification,
+        timestamp: new Date(parseInt(current.timestamp) * 1000).toISOString(),
+        yesterday: {
+          value: parseInt(yesterday.value),
+          classification: yesterday.value_classification
+        }
+      }
+    }
+    
+    console.warn('⚠️ No Fear & Greed Index data available')
+    return null
+  } catch (error) {
+    console.error('❌ Error fetching Fear & Greed Index:', error)
+    return null
+  }
+}
+
 // Calculate inflows/outflows (simplified: based on volume and price change)
 function calculateFlows(ticker: any, prevPrice: number): { inflow: number; outflow: number } {
   const currentPrice = parseFloat(ticker.lastPrice)
@@ -211,54 +296,92 @@ serve(async (req) => {
     // Get all market data
     if (action === 'all') {
       const symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'MATICUSDT', 'LINKUSDT']
+      console.log(`📊 Fetching market data for ${symbols.length} symbols: ${symbols.join(', ')}`)
+      
       const tickers = await fetchTickers(symbols)
+      console.log(`📊 Received ${tickers.length} tickers from Bybit`)
+      
+      if (tickers.length === 0) {
+        console.error('❌ No tickers received from Bybit API')
+        return new Response(
+          JSON.stringify({
+            error: 'No ticker data available from Bybit API',
+            marketData: [],
+            topGainers: [],
+            rapidChanges: [],
+            timestamp: new Date().toISOString()
+          }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      
+      console.log(`📊 Processing ${tickers.length} tickers into market data...`)
       
       const marketData = await Promise.all(
-        tickers.map(async (ticker) => {
-          const symbol = ticker.symbol
-          const klines = await fetchKlines(symbol, '1h', 200)
-          const price = parseFloat(ticker.lastPrice)
-          const prevPrice = parseFloat(ticker.prevPrice24h || ticker.lastPrice)
-          
-          const vwap = calculateVWAP(klines)
-          const atr = calculateATR(klines)
-          const rsi = calculateRSI(klines)
-          const marketCap = await getMarketCap(symbol, price)
-          const flows = calculateFlows(ticker, prevPrice)
-          
-          return {
-            symbol,
-            price,
-            change24h: parseFloat(ticker.price24hPcnt || '0') * 100,
-            volume24h: parseFloat(ticker.turnover24h || '0'),
-            high24h: parseFloat(ticker.highPrice24h || '0'),
-            low24h: parseFloat(ticker.lowPrice24h || '0'),
-            vwap,
-            atr,
-            rsi,
-            marketCap,
-            inflow: flows.inflow,
-            outflow: flows.outflow
+        tickers.map(async (ticker, index) => {
+          try {
+            const symbol = ticker.symbol
+            console.log(`📊 [${index + 1}/${tickers.length}] Processing ${symbol}...`)
+            
+            const klines = await fetchKlines(symbol, '1h', 200)
+            const price = parseFloat(ticker.lastPrice)
+            const prevPrice = parseFloat(ticker.prevPrice24h || ticker.lastPrice)
+            
+            const vwap = calculateVWAP(klines)
+            const atr = calculateATR(klines)
+            const rsi = calculateRSI(klines)
+            const marketCap = await getMarketCap(symbol, price)
+            const flows = calculateFlows(ticker, prevPrice)
+            
+            console.log(`✅ [${index + 1}/${tickers.length}] ${symbol} processed: price=${price}, vwap=${vwap}, atr=${atr}, rsi=${rsi}`)
+            
+            return {
+              symbol,
+              price,
+              change24h: parseFloat(ticker.price24hPcnt || '0') * 100,
+              volume24h: parseFloat(ticker.turnover24h || '0'),
+              high24h: parseFloat(ticker.highPrice24h || '0'),
+              low24h: parseFloat(ticker.lowPrice24h || '0'),
+              vwap,
+              atr,
+              rsi,
+              marketCap,
+              inflow: flows.inflow,
+              outflow: flows.outflow
+            }
+          } catch (error) {
+            console.error(`❌ Error processing ticker ${ticker.symbol}:`, error)
+            return null
           }
         })
       )
       
+      // Filter out null values
+      const validMarketData = marketData.filter((item): item is NonNullable<typeof item> => item !== null)
+      console.log(`✅ Processed ${validMarketData.length} valid market data items from ${tickers.length} tickers`)
+      
       // Sort by market cap
-      marketData.sort((a, b) => b.marketCap - a.marketCap)
+      validMarketData.sort((a, b) => b.marketCap - a.marketCap)
       
       // Top gainers
-      const topGainers = [...marketData]
+      const topGainers = [...validMarketData]
         .sort((a, b) => b.change24h - a.change24h)
         .slice(0, 5)
       
       // Rapid changes (change > 5% in 24h)
-      const rapidChanges = marketData.filter(d => Math.abs(d.change24h) > 5)
+      const rapidChanges = validMarketData.filter(d => Math.abs(d.change24h) > 5)
+      
+      console.log(`📊 Final market data: ${validMarketData.length} items, ${topGainers.length} top gainers, ${rapidChanges.length} rapid changes`)
+      
+      // Fetch Fear & Greed Index
+      const fearGreedIndex = await fetchFearGreedIndex()
       
       return new Response(
         JSON.stringify({
-          marketData,
+          marketData: validMarketData,
           topGainers,
           rapidChanges,
+          fearGreedIndex,
           timestamp: new Date().toISOString()
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
