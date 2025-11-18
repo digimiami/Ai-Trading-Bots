@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase, API_ENDPOINTS, apiCall } from '../../lib/supabase';
 import Card from '../base/Card';
 import Button from '../base/Button';
@@ -69,6 +69,7 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
   const [activityLogs, setActivityLogs] = useState<any[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [expandedLogs, setExpandedLogs] = useState(false);
+  const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const ensureAccountExists = async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -96,7 +97,30 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
   const fetchPerformance = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        // Set default performance if no user
+        setPerformance({
+          totalTrades: 0,
+          winningTrades: 0,
+          losingTrades: 0,
+          winRate: 0,
+          totalPnL: 0,
+          totalPnLBeforeFees: 0,
+          totalFees: 0,
+          totalPnLPercentage: 0,
+          averageWin: 0,
+          averageLoss: 0,
+          profitFactor: 0,
+          maxDrawdown: 0,
+          currentBalance: 10000,
+          initialBalance: 10000,
+          openPositions: 0,
+          totalVolume: 0,
+          pairsPerformance: []
+        });
+        setPositions([]);
+        return;
+      }
 
       // Get account balance
       const { data: account } = await supabase
@@ -588,13 +612,75 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
       }
     } catch (error) {
       console.error('Error fetching performance:', error);
+      // Set default performance on error so component still renders
+      setPerformance({
+        totalTrades: 0,
+        winningTrades: 0,
+        losingTrades: 0,
+        winRate: 0,
+        totalPnL: 0,
+        totalPnLBeforeFees: 0,
+        totalFees: 0,
+        totalPnLPercentage: 0,
+        averageWin: 0,
+        averageLoss: 0,
+        profitFactor: 0,
+        maxDrawdown: 0,
+        currentBalance: 10000,
+        initialBalance: 10000,
+        openPositions: 0,
+        totalVolume: 0,
+        pairsPerformance: []
+      });
+      setPositions([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
+      // Clear timeout since we've completed loading
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+        loadingTimeoutRef.current = null;
+      }
     }
   };
 
   useEffect(() => {
+    // Clear any existing timeout
+    if (loadingTimeoutRef.current) {
+      clearTimeout(loadingTimeoutRef.current);
+    }
+
+    // Set a timeout to ensure loading doesn't hang forever
+    loadingTimeoutRef.current = setTimeout(() => {
+      console.warn('Paper Trading Performance: Loading timeout, showing default data');
+      setLoading(false);
+      setPerformance(prev => {
+        if (!prev) {
+          return {
+            totalTrades: 0,
+            winningTrades: 0,
+            losingTrades: 0,
+            winRate: 0,
+            totalPnL: 0,
+            totalPnLBeforeFees: 0,
+            totalFees: 0,
+            totalPnLPercentage: 0,
+            averageWin: 0,
+            averageLoss: 0,
+            profitFactor: 0,
+            maxDrawdown: 0,
+            currentBalance: 10000,
+            initialBalance: 10000,
+            openPositions: 0,
+            totalVolume: 0,
+            pairsPerformance: []
+          };
+        }
+        return prev;
+      });
+      setPositions([]);
+    }, 10000); // 10 second timeout
+
     fetchPerformance();
     
     // Refresh every 30 seconds
@@ -602,7 +688,12 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
       fetchPerformance();
     }, 30000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+      }
+    };
   }, [selectedPair]);
 
   const handleRefresh = async () => {

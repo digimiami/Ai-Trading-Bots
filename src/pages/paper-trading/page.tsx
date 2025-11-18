@@ -81,18 +81,18 @@ export default function PaperTradingDashboard() {
               </option>
             ))}
           </select>
-          {selectedPair && (
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-              {selectedPair === 'all' 
-                ? `Showing report for all pairs (${availablePairs.length} pairs)`
-                : (
-                  <>
-                    Showing report for <span className="font-semibold">{selectedPair}</span>
-                  </>
-                )
-              }
-            </p>
-          )}
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+            {selectedPair === 'all' 
+              ? `Showing report for all pairs${availablePairs.length > 0 ? ` (${availablePairs.length} pairs)` : ''}`
+              : selectedPair 
+                ? (
+                    <>
+                      Showing report for <span className="font-semibold">{selectedPair}</span>
+                    </>
+                  )
+                : 'Showing report for all pairs'
+            }
+          </p>
         </Card>
 
         {/* Paper Trading Balance */}
