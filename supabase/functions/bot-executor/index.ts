@@ -588,7 +588,9 @@ class MarketDataFetcher {
   // Also handles incomplete symbols like "ETH" -> "ETHUSDT"
   static normalizeSymbol(symbol: string, exchange: string, tradingType: string): string[] {
     const variants: string[] = [];
-    const upperSymbol = symbol.toUpperCase().trim();
+    // Remove .P suffix (TradingView perpetual futures notation) before processing
+    const cleanedSymbol = symbol.replace(/\.P$/i, '').trim();
+    const upperSymbol = cleanedSymbol.toUpperCase();
     
     // Handle incomplete symbols (e.g., "ETH" -> "ETHUSDT", "BTC" -> "BTCUSDT")
     // Common coin names that need USDT suffix
@@ -686,17 +688,6 @@ class MarketDataFetcher {
                   method: 'GET',
                   headers: {
                     'Accept': 'application/json',
-                    'Content-Type': 'application/json',
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Referer': 'https://www.bybit.com',
-                    'Origin': 'https://www.bybit.com',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                    'Accept-Encoding': 'gzip, deflate, br',
-                    'Connection': 'keep-alive',
-                    'Cache-Control': 'no-cache',
-                    'Sec-Fetch-Dest': 'empty',
-                    'Sec-Fetch-Mode': 'cors',
-                    'Sec-Fetch-Site': 'same-site',
                   },
                   signal: AbortSignal.timeout(10000)
                 }).catch(() => null);
@@ -1014,9 +1005,6 @@ class MarketDataFetcher {
           const allTickersResponse = await fetch(allTickersUrl, {
             headers: {
               'Accept': 'application/json',
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-              'Referer': 'https://www.bybit.com',
-              'Origin': 'https://www.bybit.com',
             },
             signal: AbortSignal.timeout(10000)
           });
