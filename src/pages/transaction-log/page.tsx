@@ -216,6 +216,29 @@ export default function TransactionLogPage() {
     </Card>
   );
 
+  // Calculate Max Drawdown from entries
+  let maxDrawdown = 0;
+  let maxDrawdownPercentage = 0;
+  let peakPnL = 0;
+  let runningPnL = 0;
+  
+  const sortedEntries = [...report.entries].sort((a, b) => 
+    new Date(a.executedAt || a.createdAt).getTime() - new Date(b.executedAt || b.createdAt).getTime()
+  );
+  
+  sortedEntries.forEach(entry => {
+    const entryPnL = entry.pnl || 0;
+    runningPnL += entryPnL;
+    if (runningPnL > peakPnL) {
+      peakPnL = runningPnL;
+    }
+    const drawdown = peakPnL - runningPnL;
+    if (drawdown > maxDrawdown) {
+      maxDrawdown = drawdown;
+      maxDrawdownPercentage = peakPnL > 0 ? (drawdown / peakPnL) * 100 : 0;
+    }
+  });
+
   const summaryCards = [
     renderSummaryCard('Total Trades', formattedSummary.totalTrades, 'ri-bar-chart-line'),
     renderSummaryCard(
@@ -226,10 +249,10 @@ export default function TransactionLogPage() {
     ),
     renderSummaryCard('Fees', formatCurrency(formattedSummary.fees), 'ri-hand-coin-fill', 'text-amber-600'),
     renderSummaryCard('Win Rate', `${(formattedSummary.winRate * 100 || 0).toFixed(1)}%`, 'ri-trophy-line', 'text-blue-600'),
+    renderSummaryCard('Win/Loss', `${formattedSummary.wins}/${formattedSummary.losses}`, 'ri-bar-chart-box-line', 'text-gray-900'),
+    renderSummaryCard('Max Drawdown', `${formatCurrency(maxDrawdown)} (${maxDrawdownPercentage.toFixed(1)}%)`, 'ri-arrow-down-line', 'text-red-600'),
     renderSummaryCard('Long Trades', formattedSummary.longTrades, 'ri-arrow-up-line', 'text-emerald-600'),
-    renderSummaryCard('Short Trades', formattedSummary.shortTrades, 'ri-arrow-down-line', 'text-rose-600'),
-    renderSummaryCard('Wins', formattedSummary.wins, 'ri-checkbox-circle-line', 'text-green-600'),
-    renderSummaryCard('Losses', formattedSummary.losses, 'ri-close-circle-line', 'text-red-600')
+    renderSummaryCard('Short Trades', formattedSummary.shortTrades, 'ri-arrow-down-line', 'text-rose-600')
   ];
 
   return (

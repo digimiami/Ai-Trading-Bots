@@ -607,6 +607,26 @@ export default function PabloReadyPage() {
                               <div>
                                 <span className="text-gray-500 dark:text-gray-400">Win/Loss</span>
                                 <p className="font-semibold text-gray-900 dark:text-white">
+                                  <span className="text-green-600 dark:text-green-400">{botPerformance[bot.id].wins}</span>
+                                  <span className="text-gray-400 dark:text-gray-500 mx-1">/</span>
+                                  <span className="text-red-600 dark:text-red-400">{botPerformance[bot.id].losses}</span>
+                                </p>
+                              </div>
+                              <div>
+                                <span className="text-gray-500 dark:text-gray-400">Fees</span>
+                                <p className="font-semibold text-red-600 dark:text-red-400">
+                                  ${((botPerformance[bot.id].totalTrades * (bot.trade_amount || 100)) * 0.001).toFixed(2)}
+                                </p>
+                              </div>
+                              <div>
+                                <span className="text-gray-500 dark:text-gray-400">Drawdown</span>
+                                <p className="font-semibold text-red-600 dark:text-red-400">
+                                  {botPerformance[bot.id].pnl < 0 ? `$${Math.abs(botPerformance[bot.id].pnl).toFixed(2)}` : '$0.00'}
+                                </p>
+                              </div>
+                              <div>
+                                <span className="text-gray-500 dark:text-gray-400">Win/Loss</span>
+                                <p className="font-semibold text-gray-900 dark:text-white">
                                   {botPerformance[bot.id].wins}/{botPerformance[bot.id].losses}
                                 </p>
                               </div>

@@ -10,6 +10,10 @@ export interface PerformanceData {
   avgLoss: number;
   profitableDays: number;
   totalDays: number;
+  totalFees: number;
+  maxDrawdown: number;
+  winningTrades: number;
+  losingTrades: number;
 }
 
 export interface DailyPnL {
@@ -102,6 +106,10 @@ export function usePerformance(
             avgLoss: 0,
             profitableDays: 0,
             totalDays: 0,
+            totalFees: 0,
+            maxDrawdown: 0,
+            winningTrades: 0,
+            losingTrades: 0,
           },
           dailyPnL: [],
           symbolRanking: [],
@@ -443,6 +451,33 @@ export function usePerformance(
         (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)
       );
 
+      // Calculate total fees (estimate 0.1% of volume)
+      const totalFees = tradingVolume * 0.001;
+
+      // Calculate Max Drawdown
+      let maxDrawdown = 0;
+      let peakPnL = 0;
+      let runningPnL = 0;
+      
+      // Sort trades by timestamp and calculate cumulative drawdown
+      const sortedTradesWithPnL = [...tradesWithPnL].sort((a, b) => {
+        const dateA = new Date((a as any).executed_at || (a as any).created_at || (a as any).timestamp || 0).getTime();
+        const dateB = new Date((b as any).executed_at || (b as any).created_at || (b as any).timestamp || 0).getTime();
+        return dateA - dateB;
+      });
+      
+      sortedTradesWithPnL.forEach(trade => {
+        const tradePnL = parseFloat((trade as any).pnl || 0);
+        runningPnL += tradePnL;
+        if (runningPnL > peakPnL) {
+          peakPnL = runningPnL;
+        }
+        const drawdown = peakPnL - runningPnL;
+        if (drawdown > maxDrawdown) {
+          maxDrawdown = drawdown;
+        }
+      });
+
       setMetrics({
         overview: {
           totalPnL: parseFloat(totalPnL.toFixed(2)),
@@ -453,6 +488,10 @@ export function usePerformance(
           avgLoss: parseFloat(avgLoss.toFixed(2)),
           profitableDays,
           totalDays: daysDiff,
+          totalFees: parseFloat(totalFees.toFixed(2)),
+          maxDrawdown: parseFloat(maxDrawdown.toFixed(2)),
+          winningTrades: winningTrades.length,
+          losingTrades: losingTrades.length,
         },
         dailyPnL,
         symbolRanking,

@@ -150,8 +150,32 @@ export default function Trades() {
           // Calculate total fees (estimate 0.1% of volume)
           const totalFees = totalVolume * 0.001;
           
+          // Calculate Max Drawdown
+          let maxDrawdown = 0;
+          let maxDrawdownPercentage = 0;
+          let peakPnL = 0;
+          let runningPnL = 0;
+          
+          // Sort trades by timestamp and calculate cumulative drawdown
+          const sortedTrades = [...tradesWithPnL].sort((a, b) => 
+            new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+          );
+          
+          sortedTrades.forEach(trade => {
+            const tradePnL = trade.pnl || 0;
+            runningPnL += tradePnL;
+            if (runningPnL > peakPnL) {
+              peakPnL = runningPnL;
+            }
+            const drawdown = peakPnL - runningPnL;
+            if (drawdown > maxDrawdown) {
+              maxDrawdown = drawdown;
+              maxDrawdownPercentage = peakPnL > 0 ? (drawdown / peakPnL) * 100 : 0;
+            }
+          });
+          
           return (
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-9 gap-4">
           <Card className="p-4">
             <div className="text-center">
                   <div className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -214,11 +238,19 @@ export default function Trades() {
                     {totalPnL >= 0 ? '+' : ''}${totalPnL.toFixed(2)}
                   </div>
                   <div className="text-sm text-gray-500 dark:text-gray-400">Total PnL</div>
-                  <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                    Fees: ${totalFees.toFixed(2)}
+                </div>
+              </Card>
+              <Card className="p-4">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-red-600 dark:text-red-400">
+                    ${maxDrawdown.toFixed(2)}
                   </div>
-            </div>
-          </Card>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">Max Drawdown</div>
+                  <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                    {maxDrawdownPercentage.toFixed(1)}%
+                  </div>
+                </div>
+              </Card>
         </div>
           );
         })()}

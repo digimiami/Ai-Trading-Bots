@@ -66,6 +66,9 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [activityLogs, setActivityLogs] = useState<any[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [expandedLogs, setExpandedLogs] = useState(false);
 
   const ensureAccountExists = async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -994,6 +997,94 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
           </div>
         </Card>
       )}
+
+      {/* Activity Logs */}
+      <Card className="p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            📋 Activity Logs
+          </h3>
+          <button
+            onClick={() => setExpandedLogs(!expandedLogs)}
+            className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+          >
+            {expandedLogs ? 'Hide' : 'Show'} Logs
+          </button>
+        </div>
+
+        {expandedLogs && (
+          <div className="space-y-2 max-h-96 overflow-y-auto">
+            {loadingLogs ? (
+              <div className="text-center py-4">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto"></div>
+                <p className="text-sm text-gray-500 mt-2">Loading logs...</p>
+              </div>
+            ) : activityLogs.length === 0 ? (
+              <div className="text-center py-4 text-gray-500">
+                <i className="ri-file-list-line text-2xl mb-2"></i>
+                <p className="text-sm">No activity logs available</p>
+              </div>
+            ) : (
+              activityLogs.map((log: any) => {
+                const getLogLevelColor = (level: string) => {
+                  switch (level?.toLowerCase()) {
+                    case 'error': return 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200';
+                    case 'warning': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200';
+                    case 'success': return 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200';
+                    case 'info': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200';
+                    default: return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300';
+                  }
+                };
+
+                const formatLogTime = (timestamp: string) => {
+                  const date = new Date(timestamp);
+                  const now = new Date();
+                  const diffMs = now.getTime() - date.getTime();
+                  const diffMins = Math.floor(diffMs / 60000);
+                  
+                  if (diffMins < 1) return 'Just now';
+                  if (diffMins < 60) return `${diffMins}m ago`;
+                  const diffHours = Math.floor(diffMins / 60);
+                  if (diffHours < 24) return `${diffHours}h ago`;
+                  return date.toLocaleDateString();
+                };
+
+                return (
+                  <div
+                    key={log.id}
+                    className={`p-3 rounded-lg border ${getLogLevelColor(log.level)}`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs font-semibold uppercase">{log.level}</span>
+                          {log.category && (
+                            <span className="text-xs text-gray-500">• {log.category}</span>
+                          )}
+                        </div>
+                        <p className="text-sm">{log.message}</p>
+                        {log.details && typeof log.details === 'object' && (
+                          <details className="mt-2 text-xs">
+                            <summary className="cursor-pointer text-gray-500 hover:text-gray-700">
+                              View details
+                            </summary>
+                            <pre className="mt-1 p-2 bg-gray-50 dark:bg-gray-800 rounded text-xs overflow-x-auto">
+                              {JSON.stringify(log.details, null, 2)}
+                            </pre>
+                          </details>
+                        )}
+                      </div>
+                      <span className="text-xs text-gray-500 ml-4 whitespace-nowrap">
+                        {formatLogTime(log.timestamp)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

@@ -197,7 +197,7 @@ export default function BotActivityPage() {
         </div>
 
         {/* Summary Stats */}
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
           <Card className="p-4 text-center">
             <div className="text-2xl font-bold text-blue-600">{activities.length}</div>
             <div className="text-sm text-gray-500">Total Bots</div>
@@ -209,16 +209,68 @@ export default function BotActivityPage() {
             <div className="text-sm text-gray-500">Active</div>
           </Card>
           <Card className="p-4 text-center">
-            <div className="text-2xl font-bold text-yellow-600">
-              {activities.reduce((sum, a) => sum + a.logs.filter(l => l.level === 'warning').length, 0)}
+            <div className={`text-2xl font-bold ${bots.reduce((sum, b) => sum + (b.pnl || 0), 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              ${bots.reduce((sum, b) => sum + (b.pnl || 0), 0).toFixed(2)}
             </div>
-            <div className="text-sm text-gray-500">Warnings</div>
+            <div className="text-sm text-gray-500">Total PnL</div>
+          </Card>
+          <Card className="p-4 text-center">
+            <div className="text-2xl font-bold text-gray-900">
+              {bots.reduce((sum, b) => sum + (b.totalTrades || 0), 0)}
+            </div>
+            <div className="text-sm text-gray-500">Total Trades</div>
+          </Card>
+          <Card className="p-4 text-center">
+            <div className="text-2xl font-bold text-blue-600">
+              {(() => {
+                const botsWithTrades = bots.filter(b => (b.totalTrades || 0) > 0);
+                const avgWinRate = botsWithTrades.length > 0
+                  ? botsWithTrades.reduce((sum, b) => sum + (b.winRate || 0), 0) / botsWithTrades.length
+                  : 0;
+                return `${avgWinRate.toFixed(1)}%`;
+              })()}
+            </div>
+            <div className="text-sm text-gray-500">Win Rate</div>
+          </Card>
+          <Card className="p-4 text-center">
+            <div className="text-2xl font-bold text-gray-900">
+              {bots.reduce((sum, b) => sum + (b.winTrades || 0), 0)}/{bots.reduce((sum, b) => sum + (b.lossTrades || 0), 0)}
+            </div>
+            <div className="text-sm text-gray-500">Win/Loss</div>
           </Card>
           <Card className="p-4 text-center">
             <div className="text-2xl font-bold text-red-600">
-              {activities.reduce((sum, a) => sum + a.errorCount, 0)}
+              ${Math.abs(bots.reduce((sum, b) => {
+                const botFees = (b as any).totalFees || (b as any).total_fees || (b as any).fees || 0;
+                return sum + botFees;
+              }, 0)).toFixed(2)}
             </div>
-            <div className="text-sm text-gray-500">Errors</div>
+            <div className="text-sm text-gray-500">Total Fees</div>
+          </Card>
+          <Card className="p-4 text-center">
+            <div className="text-2xl font-bold text-red-600">
+              {(() => {
+                let maxDrawdown = 0;
+                let peakPnL = 0;
+                let runningPnL = 0;
+                const sortedBots = [...bots].sort((a, b) => 
+                  new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+                );
+                sortedBots.forEach(bot => {
+                  const botPnL = bot.pnl || 0;
+                  runningPnL += botPnL;
+                  if (runningPnL > peakPnL) {
+                    peakPnL = runningPnL;
+                  }
+                  const drawdown = peakPnL - runningPnL;
+                  if (drawdown > maxDrawdown) {
+                    maxDrawdown = drawdown;
+                  }
+                });
+                return `$${maxDrawdown.toFixed(2)}`;
+              })()}
+            </div>
+            <div className="text-sm text-gray-500">Max Drawdown</div>
           </Card>
         </div>
 

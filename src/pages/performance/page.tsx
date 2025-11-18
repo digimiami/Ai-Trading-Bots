@@ -253,7 +253,7 @@ export default function Performance() {
         </Card>
 
         {/* Key Performance Indicators */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card className="p-6">
             <div className="text-center">
               <div className={`text-3xl font-bold mb-2 ${
@@ -264,6 +264,51 @@ export default function Performance() {
                 {formatCurrency(metrics?.overview.totalPnL || 0)}
               </div>
               <div className="text-sm text-gray-500 dark:text-gray-400">Total P&L</div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <div className="text-center">
+              <div className="text-3xl font-bold text-blue-600 dark:text-blue-400 mb-2">
+                {metrics?.overview.winRate?.toFixed(1) || '0.0'}%
+              </div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">Win Rate</div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <div className="text-center">
+              <div className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+                {metrics?.overview.totalTrades || 0}
+              </div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">Total Trades</div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <div className="text-center">
+              <div className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+                {metrics?.overview.winningTrades || 0}/{metrics?.overview.losingTrades || 0}
+              </div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">Win/Loss</div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <div className="text-center">
+              <div className="text-3xl font-bold text-red-600 dark:text-red-400 mb-2">
+                {formatCurrency(metrics?.overview.totalFees || 0)}
+              </div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">Total Fees</div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <div className="text-center">
+              <div className="text-3xl font-bold text-red-600 dark:text-red-400 mb-2">
+                {formatCurrency(metrics?.overview.maxDrawdown || 0)}
+              </div>
+              <div className="text-sm text-gray-500 dark:text-gray-400">Max Drawdown</div>
             </div>
           </Card>
 
