@@ -270,6 +270,30 @@ export default function MarketDashboardPage() {
     );
   }
 
+  // Show empty state if no data
+  if (!marketData || marketData.length === 0) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center py-12">
+            <i className="ri-line-chart-line text-4xl text-gray-400 mb-4"></i>
+            <h2 className="text-2xl font-semibold text-gray-900 dark:text-white mb-2">No Market Data Available</h2>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">
+              The market data API may be temporarily unavailable or the Edge Function needs to be deployed.
+            </p>
+            <Button onClick={fetchMarketData} variant="primary">
+              <i className="ri-refresh-line mr-2"></i>
+              Retry
+            </Button>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">
+              Check the browser console for detailed error messages.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
       <div className="max-w-7xl mx-auto space-y-6">
@@ -341,6 +365,7 @@ export default function MarketDashboardPage() {
         {/* Price Tiles */}
         <div>
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Market Overview</h2>
+          {marketData && marketData.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {marketData.map((item) => {
               const currentPrice = getCurrentPrice(item.symbol, item.price);
@@ -425,6 +450,11 @@ export default function MarketDashboardPage() {
               );
             })}
           </div>
+          ) : (
+            <Card className="p-6">
+              <p className="text-gray-600 dark:text-gray-400 text-center">No market data available</p>
+            </Card>
+          )}
         </div>
 
         {/* Rapid Changes */}
