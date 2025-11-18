@@ -3882,14 +3882,14 @@ class BotExecutor {
       })();
 
       // Insert trade record - use 'price' column (entry_price may not exist in all deployments)
+      // Note: 'size' column doesn't exist in trades table, use 'amount' instead
       let insertPayload: any = {
         user_id: this.user.id,
         bot_id: bot.id,
         exchange: bot.exchange,
         symbol: bot.symbol,
         side: normalizedSide,
-        size: tradeAmount,
-        amount: tradeAmount,
+        amount: tradeAmount, // Use 'amount' instead of 'size' (size column doesn't exist)
         price: normalizedPrice, // Primary column for entry price
         status: normalizedTradeStatus,
         exchange_order_id: orderResult.orderId || orderResult.exchangeResponse?.result?.orderId || null,
@@ -3909,14 +3909,18 @@ class BotExecutor {
       let trade = insertResp.data;
       let error = insertResp.error;
 
-      // If entry_price error occurs, it means the column doesn't exist - that's fine, we're using 'price'
-      // But if there's a different error, try adding entry_price for backward compatibility
-      if (error && /column .*entry_price/i.test(error.message || '')) {
-        console.warn('⚠️ trades.entry_price column not found, using price column only (this is expected)');
-        // Already using price, so this shouldn't happen, but just in case
+      // If entry_price or size error occurs, it means the column doesn't exist - that's fine
+      // We're using 'price' and 'amount' instead
+      if (error && (/column .*entry_price/i.test(error.message || '') || /column .*size/i.test(error.message || ''))) {
+        const columnName = /column .*(entry_price|size)/i.exec(error.message || '')?.[1] || 'unknown';
+        console.warn(`⚠️ trades.${columnName} column not found, using standard columns (this is expected)`);
+        // Retry without the problematic column (shouldn't happen since we removed it, but just in case)
+        const retryPayload = { ...insertPayload };
+        delete retryPayload.size;
+        delete retryPayload.entry_price;
         const retryResp = await this.supabaseClient
           .from('trades')
-          .insert(insertPayload as any)
+          .insert(retryPayload as any)
           .select()
           .single();
         trade = retryResp.data;
