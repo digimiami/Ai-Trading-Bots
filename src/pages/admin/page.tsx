@@ -7,6 +7,7 @@ import Button from '../../components/base/Button';
 import Card from '../../components/base/Card';
 import { useAuth } from '../../hooks/useAuth';
 import { useAdmin } from '../../hooks/useAdmin';
+import { useBotExecutor } from '../../hooks/useBotExecutor';
 import { supabase } from '../../lib/supabase';
 
 interface User {
@@ -94,6 +95,7 @@ interface RiskMetrics {
 export default function AdminPage() {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
+  const { executeBot } = useBotExecutor();
   const { 
     createUser, 
     generateInvitationCode, 
@@ -126,6 +128,8 @@ export default function AdminPage() {
   const [editingBotName, setEditingBotName] = useState<string>('');
   const [deletingBotId, setDeletingBotId] = useState<string | null>(null);
   const [testingBotId, setTestingBotId] = useState<Record<string, 'real' | 'paper' | null>>({});
+  const [editingPabloBot, setEditingPabloBot] = useState<any | null>(null);
+  const [testingPabloBotId, setTestingPabloBotId] = useState<string | null>(null);
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
   const [tradingAnalytics, setTradingAnalytics] = useState<TradingAnalytics | null>(null);
   const [financialOverview, setFinancialOverview] = useState<FinancialOverview | null>(null);
@@ -285,6 +289,82 @@ export default function AdminPage() {
       alert(`❌ Failed to delete bot: ${error?.message || error}`);
     } finally {
       setDeletingBotId(null);
+    }
+  };
+
+  const editPabloReadyBot = (bot: any) => {
+    setEditingPabloBot(bot);
+  };
+
+  const savePabloReadyBot = async (updatedBot: any) => {
+    try {
+      const { error } = await supabase
+        .from('pablo_ready_bots')
+        .update(updatedBot)
+        .eq('id', updatedBot.id);
+      
+      if (error) throw error;
+      await fetchPabloReadyBots();
+      setEditingPabloBot(null);
+      alert('✅ Bot updated successfully');
+    } catch (error: any) {
+      console.error('Error updating Pablo Ready bot:', error);
+      alert(`❌ Failed to update bot: ${error?.message || error}`);
+    }
+  };
+
+  const testPabloReadyBot = async (bot: any, mode: 'paper' | 'real' = 'paper') => {
+    if (!confirm(`🧪 Test "${bot.name}" in ${mode.toUpperCase()} mode?\n\nThis will create a temporary bot and execute it.`)) {
+      return;
+    }
+
+    try {
+      setTestingPabloBotId(bot.id);
+      
+      // Create a temporary bot from the template
+      const tempBotData = {
+        name: `[TEST] ${bot.name}`,
+        exchange: bot.exchange,
+        trading_type: bot.trading_type,
+        symbol: bot.symbol,
+        timeframe: bot.timeframe,
+        leverage: bot.leverage || 1,
+        risk_level: bot.risk_level || 'medium',
+        trade_amount: bot.trade_amount || 100,
+        stop_loss: bot.stop_loss || 2.0,
+        take_profit: bot.take_profit || 4.0,
+        paper_trading: mode === 'paper',
+        strategy: bot.strategy || {},
+        strategy_config: bot.strategy_config || {},
+        status: 'running' as const
+      };
+
+      // Create the bot
+      const { data: newBot, error: createError } = await supabase
+        .from('trading_bots')
+        .insert(tempBotData)
+        .select()
+        .single();
+
+      if (createError) throw createError;
+
+      // Execute the bot
+      await executeBot(newBot.id);
+
+      // Delete the temporary bot after a delay
+      setTimeout(async () => {
+        await supabase
+          .from('trading_bots')
+          .delete()
+          .eq('id', newBot.id);
+      }, 5000);
+
+      alert(`✅ Test bot created and executed successfully!\n\nBot ID: ${newBot.id}\nMode: ${mode.toUpperCase()}\n\nThe temporary bot will be deleted in 5 seconds.`);
+    } catch (error: any) {
+      console.error('Error testing Pablo Ready bot:', error);
+      alert(`❌ Failed to test bot: ${error?.message || error}`);
+    } finally {
+      setTestingPabloBotId(null);
     }
   };
 
@@ -1281,6 +1361,50 @@ export default function AdminPage() {
                         </div>
                         <div className="ml-4 flex flex-col gap-2">
                           <Button
+                            onClick={() => editPabloReadyBot(bot)}
+                            variant="secondary"
+                            size="sm"
+                          >
+                            <i className="ri-edit-line mr-2"></i>
+                            Edit
+                          </Button>
+                          <Button
+                            onClick={() => testPabloReadyBot(bot, 'paper')}
+                            variant="primary"
+                            size="sm"
+                            disabled={testingPabloBotId === bot.id}
+                          >
+                            {testingPabloBotId === bot.id ? (
+                              <>
+                                <i className="ri-loader-4-line animate-spin mr-2"></i>
+                                Testing...
+                              </>
+                            ) : (
+                              <>
+                                <i className="ri-flask-line mr-2"></i>
+                                Test (Paper)
+                              </>
+                            )}
+                          </Button>
+                          <Button
+                            onClick={() => testPabloReadyBot(bot, 'real')}
+                            variant="warning"
+                            size="sm"
+                            disabled={testingPabloBotId === bot.id}
+                          >
+                            {testingPabloBotId === bot.id ? (
+                              <>
+                                <i className="ri-loader-4-line animate-spin mr-2"></i>
+                                Testing...
+                              </>
+                            ) : (
+                              <>
+                                <i className="ri-flask-line mr-2"></i>
+                                Test (Real)
+                              </>
+                            )}
+                          </Button>
+                          <Button
                             onClick={() => togglePabloReadyBot(bot.id, bot.enabled)}
                             variant={bot.enabled ? 'danger' : 'primary'}
                             size="sm"
@@ -1312,6 +1436,202 @@ export default function AdminPage() {
                   ))}
                 </div>
               )}
+            </Card>
+          </div>
+        )}
+
+        {/* Edit Bot Modal */}
+        {editingPabloBot && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
+                    Edit Bot: {editingPabloBot.name}
+                  </h3>
+                  <button
+                    onClick={() => setEditingPabloBot(null)}
+                    className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                  >
+                    <i className="ri-close-line text-2xl"></i>
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Name
+                    </label>
+                    <input
+                      type="text"
+                      value={editingPabloBot.name}
+                      onChange={(e) => setEditingPabloBot({ ...editingPabloBot, name: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg dark:bg-gray-800 dark:text-white dark:border-gray-600"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Description
+                    </label>
+                    <textarea
+                      value={editingPabloBot.description || ''}
+                      onChange={(e) => setEditingPabloBot({ ...editingPabloBot, description: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg dark:bg-gray-800 dark:text-white dark:border-gray-600"
+                      rows={3}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Exchange
+                      </label>
+                      <select
+                        value={editingPabloBot.exchange}
+                        onChange={(e) => setEditingPabloBot({ ...editingPabloBot, exchange: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg dark:bg-gray-800 dark:text-white dark:border-gray-600"
+                      >
+                        <option value="bybit">Bybit</option>
+                        <option value="okx">OKX</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Trading Type
+                      </label>
+                      <select
+                        value={editingPabloBot.trading_type}
+                        onChange={(e) => setEditingPabloBot({ ...editingPabloBot, trading_type: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg dark:bg-gray-800 dark:text-white dark:border-gray-600"
+                      >
+                        <option value="spot">Spot</option>
+                        <option value="futures">Futures</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Symbol
+                      </label>
+                      <input
+                        type="text"
+                        value={editingPabloBot.symbol}
+                        onChange={(e) => setEditingPabloBot({ ...editingPabloBot, symbol: e.target.value.toUpperCase() })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg dark:bg-gray-800 dark:text-white dark:border-gray-600"
+                        placeholder="BTCUSDT"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Timeframe
+                      </label>
+                      <select
+                        value={editingPabloBot.timeframe}
+                        onChange={(e) => setEditingPabloBot({ ...editingPabloBot, timeframe: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg dark:bg-gray-800 dark:text-white dark:border-gray-600"
+                      >
+                        <option value="1m">1m</option>
+                        <option value="5m">5m</option>
+                        <option value="15m">15m</option>
+                        <option value="1h">1h</option>
+                        <option value="4h">4h</option>
+                        <option value="1d">1d</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Leverage
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        value={editingPabloBot.leverage || 1}
+                        onChange={(e) => setEditingPabloBot({ ...editingPabloBot, leverage: parseInt(e.target.value) || 1 })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg dark:bg-gray-800 dark:text-white dark:border-gray-600"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Risk Level
+                      </label>
+                      <select
+                        value={editingPabloBot.risk_level || 'medium'}
+                        onChange={(e) => setEditingPabloBot({ ...editingPabloBot, risk_level: e.target.value })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg dark:bg-gray-800 dark:text-white dark:border-gray-600"
+                      >
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Trade Amount ($)
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={editingPabloBot.trade_amount || 100}
+                        onChange={(e) => setEditingPabloBot({ ...editingPabloBot, trade_amount: parseFloat(e.target.value) || 100 })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg dark:bg-gray-800 dark:text-white dark:border-gray-600"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Stop Loss (%)
+                      </label>
+                      <input
+                        type="number"
+                        min="0.1"
+                        step="0.1"
+                        value={editingPabloBot.stop_loss || 2.0}
+                        onChange={(e) => setEditingPabloBot({ ...editingPabloBot, stop_loss: parseFloat(e.target.value) || 2.0 })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg dark:bg-gray-800 dark:text-white dark:border-gray-600"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Take Profit (%)
+                      </label>
+                      <input
+                        type="number"
+                        min="0.1"
+                        step="0.1"
+                        value={editingPabloBot.take_profit || 4.0}
+                        onChange={(e) => setEditingPabloBot({ ...editingPabloBot, take_profit: parseFloat(e.target.value) || 4.0 })}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg dark:bg-gray-800 dark:text-white dark:border-gray-600"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <Button
+                      onClick={() => setEditingPabloBot(null)}
+                      variant="secondary"
+                      size="sm"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={() => savePabloReadyBot(editingPabloBot)}
+                      variant="primary"
+                      size="sm"
+                    >
+                      <i className="ri-save-line mr-2"></i>
+                      Save Changes
+                    </Button>
+                  </div>
+                </div>
+              </div>
             </Card>
           </div>
         )}
