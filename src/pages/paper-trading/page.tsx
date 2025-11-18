@@ -35,13 +35,17 @@ export default function PaperTradingDashboard() {
         if (uniquePairs.length === 0) {
           return '';
         }
+        // Default to 'all' if no pair is selected
+        if (!prev || prev === '') {
+          return 'all';
+        }
         if (prev === 'all') {
           return 'all';
         }
         if (prev && uniquePairs.includes(prev)) {
           return prev;
         }
-        return '';
+        return 'all';
       });
     } catch (error) {
       console.error('Error fetching pairs:', error);
@@ -94,27 +98,11 @@ export default function PaperTradingDashboard() {
         {/* Paper Trading Balance */}
         <PaperTradingBalance />
         
-        {/* Paper Trading Performance - Show when a pair is selected or "all" is selected */}
-        {selectedPair ? (
-          <PaperTradingPerformance
-            selectedPair={selectedPair === 'all' ? '' : selectedPair}
-            onReset={fetchPairs}
-          />
-        ) : availablePairs.length > 0 ? (
-          <Card className="p-6 text-center">
-            <i className="ri-search-line text-4xl text-gray-300 dark:text-gray-600 mb-4"></i>
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-              Select a Trading Pair
-            </h3>
-            <p className="text-gray-500 dark:text-gray-400">
-              {availablePairs.length > 0 
-                ? `Choose a pair from the dropdown above to view detailed performance report and open positions (${availablePairs.length} pairs available).`
-                : 'No open positions found. Start trading to see positions here.'}
-            </p>
-          </Card>
-        ) : (
-          <PaperTradingPerformance onReset={fetchPairs} />
-        )}
+        {/* Paper Trading Performance - Always show, default to all pairs */}
+        <PaperTradingPerformance
+          selectedPair={selectedPair === 'all' ? '' : selectedPair}
+          onReset={fetchPairs}
+        />
       </div>
       
       <Navigation />

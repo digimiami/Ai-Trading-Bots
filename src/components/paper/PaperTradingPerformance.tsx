@@ -654,6 +654,29 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
     }
   };
 
+  // Default empty performance data
+  const defaultPerformance: PaperPerformance = {
+    totalTrades: 0,
+    winningTrades: 0,
+    losingTrades: 0,
+    winRate: 0,
+    totalPnL: 0,
+    totalPnLBeforeFees: 0,
+    totalFees: 0,
+    totalPnLPercentage: 0,
+    averageWin: 0,
+    averageLoss: 0,
+    profitFactor: 0,
+    maxDrawdown: 0,
+    currentBalance: 10000,
+    initialBalance: 10000,
+    openPositions: 0,
+    totalVolume: 0,
+    pairsPerformance: []
+  };
+
+  const displayPerformance = performance || defaultPerformance;
+
   if (loading) {
     return (
       <Card className="p-6">
@@ -663,10 +686,6 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
         </div>
       </Card>
     );
-  }
-
-  if (!performance) {
-    return null;
   }
 
   return (
@@ -701,15 +720,15 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="p-4 bg-blue-50 rounded-lg">
             <div className="text-sm text-gray-600 mb-1">Total PnL</div>
-            <div className={`text-2xl font-bold ${performance.totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              ${performance.totalPnL.toFixed(2)}
+            <div className={`text-2xl font-bold ${displayPerformance.totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              ${displayPerformance.totalPnL.toFixed(2)}
             </div>
             <div className="text-xs text-gray-500 mt-1">
-              {performance.totalPnLPercentage >= 0 ? '+' : ''}{performance.totalPnLPercentage.toFixed(2)}%
+              {displayPerformance.totalPnLPercentage >= 0 ? '+' : ''}{displayPerformance.totalPnLPercentage.toFixed(2)}%
             </div>
-            {performance.totalFees > 0 && (
+            {displayPerformance.totalFees > 0 && (
               <div className="text-xs text-gray-400 mt-1">
-                Fees: ${performance.totalFees.toFixed(2)}
+                Fees: ${displayPerformance.totalFees.toFixed(2)}
               </div>
             )}
           </div>
@@ -717,30 +736,30 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
           <div className="p-4 bg-green-50 rounded-lg">
             <div className="text-sm text-gray-600 mb-1">Win Rate</div>
             <div className="text-2xl font-bold text-green-600">
-              {performance.winRate.toFixed(1)}%
+              {displayPerformance.winRate.toFixed(1)}%
             </div>
             <div className="text-xs text-gray-500 mt-1">
-              {performance.winningTrades}W / {performance.losingTrades}L
+              {displayPerformance.winningTrades}W / {displayPerformance.losingTrades}L
             </div>
           </div>
 
           <div className="p-4 bg-purple-50 rounded-lg">
             <div className="text-sm text-gray-600 mb-1">Total Trades</div>
             <div className="text-2xl font-bold text-purple-600">
-              {performance.totalTrades}
+              {displayPerformance.totalTrades}
             </div>
             <div className="text-xs text-gray-500 mt-1">
-              {performance.openPositions} open positions
+              {displayPerformance.openPositions} open positions
             </div>
           </div>
 
           <div className="p-4 bg-yellow-50 rounded-lg">
             <div className="text-sm text-gray-600 mb-1">Current Balance</div>
-            <div className={`text-2xl font-bold ${performance.currentBalance >= performance.initialBalance ? 'text-green-600' : 'text-red-600'}`}>
-              ${performance.currentBalance.toFixed(2)}
+            <div className={`text-2xl font-bold ${displayPerformance.currentBalance >= displayPerformance.initialBalance ? 'text-green-600' : 'text-red-600'}`}>
+              ${displayPerformance.currentBalance.toFixed(2)}
             </div>
             <div className="text-xs text-gray-500 mt-1">
-              Initial: ${performance.initialBalance.toFixed(2)}
+              Initial: ${displayPerformance.initialBalance.toFixed(2)}
             </div>
           </div>
         </div>
@@ -750,43 +769,43 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
           <div>
             <div className="text-sm text-gray-600 mb-1">Average Win</div>
             <div className="text-lg font-semibold text-green-600">
-              ${performance.averageWin.toFixed(2)}
+              ${displayPerformance.averageWin.toFixed(2)}
             </div>
           </div>
           <div>
             <div className="text-sm text-gray-600 mb-1">Average Loss</div>
             <div className="text-lg font-semibold text-red-600">
-              ${performance.averageLoss.toFixed(2)}
+              ${displayPerformance.averageLoss.toFixed(2)}
             </div>
           </div>
           <div>
             <div className="text-sm text-gray-600 mb-1">Profit Factor</div>
-            <div className={`text-lg font-semibold ${performance.profitFactor >= 1 ? 'text-green-600' : 'text-red-600'}`}>
-              {performance.profitFactor.toFixed(2)}x
+            <div className={`text-lg font-semibold ${displayPerformance.profitFactor >= 1 ? 'text-green-600' : 'text-red-600'}`}>
+              {displayPerformance.profitFactor.toFixed(2)}x
             </div>
           </div>
           <div>
             <div className="text-sm text-gray-600 mb-1">Max Drawdown</div>
             <div className="text-lg font-semibold text-orange-600">
-              {performance.maxDrawdown.toFixed(2)}%
+              {displayPerformance.maxDrawdown.toFixed(2)}%
             </div>
           </div>
           <div>
             <div className="text-sm text-gray-600 mb-1">Total Fees</div>
             <div className="text-lg font-semibold text-red-600">
-              ${performance.totalFees.toFixed(2)}
+              ${displayPerformance.totalFees.toFixed(2)}
             </div>
             <div className="text-xs text-gray-500 mt-1">
-              {performance.totalVolume > 0 ? ((performance.totalFees / performance.totalVolume) * 100).toFixed(3) + '%' : '0%'} of volume
+              {displayPerformance.totalVolume > 0 ? ((displayPerformance.totalFees / displayPerformance.totalVolume) * 100).toFixed(3) + '%' : '0%'} of volume
             </div>
           </div>
           <div>
             <div className="text-sm text-gray-600 mb-1">Total Volume</div>
             <div className="text-lg font-semibold text-blue-600">
-              ${performance.totalVolume.toFixed(2)}
+              ${displayPerformance.totalVolume.toFixed(2)}
             </div>
             <div className="text-xs text-gray-500 mt-1">
-              {performance.totalTrades} trades
+              {displayPerformance.totalTrades} trades
             </div>
           </div>
         </div>
@@ -874,16 +893,16 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
       </Card>
 
       {/* Performance by Pair - Always show if there are pairs or open positions */}
-      {performance.pairsPerformance && performance.pairsPerformance.length > 0 && (
+      {displayPerformance.pairsPerformance && displayPerformance.pairsPerformance.length > 0 && (
         <Card className="p-6">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
             📊 Performance by Trading Pair
             <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">
-              ({performance.pairsPerformance.length} {performance.pairsPerformance.length === 1 ? 'pair' : 'pairs'})
+              ({displayPerformance.pairsPerformance.length} {displayPerformance.pairsPerformance.length === 1 ? 'pair' : 'pairs'})
             </span>
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {performance.pairsPerformance.map((pair) => {
+            {displayPerformance.pairsPerformance.map((pair) => {
               const totalPnLWithUnrealized = pair.totalPnL + pair.unrealizedPnL;
               
               return (
