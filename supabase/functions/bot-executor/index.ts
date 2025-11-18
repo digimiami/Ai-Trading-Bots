@@ -4759,6 +4759,15 @@ class BotExecutor {
         body: JSON.stringify(requestBody),
       });
       
+      // Check content-type before parsing JSON
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const errorText = await response.text().catch(() => '');
+        const errorPreview = errorText.substring(0, 500);
+        console.error(`❌ Bybit order API returned non-JSON response (${contentType}):`, errorPreview);
+        throw new Error(`Bybit API returned ${contentType} instead of JSON (HTTP ${response.status}). This may indicate rate limiting, IP blocking, or API issues. Response preview: ${errorPreview.substring(0, 200)}`);
+      }
+      
       const data = await response.json();
       
       console.log(`\n📥 === BYBIT API RESPONSE ===`);
@@ -4945,6 +4954,21 @@ class BotExecutor {
           },
         });
         
+        // Check content-type before parsing JSON
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          const errorText = await response.text().catch(() => '');
+          const errorPreview = errorText.substring(0, 500);
+          console.warn(`⚠️ Bybit balance API returned non-JSON response (${contentType}):`, errorPreview);
+          // Return unknown balance status - let order attempt happen
+          return {
+            hasBalance: true, // Assume sufficient if we can't check
+            availableBalance: 0,
+            totalRequired: orderValue * 1.05,
+            orderValue: orderValue
+          };
+        }
+        
         const data = await response.json();
         
         if (data.retCode !== 0) {
@@ -5044,6 +5068,21 @@ class BotExecutor {
             'X-BAPI-SIGN': signature,
           },
         });
+        
+        // Check content-type before parsing JSON
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          const errorText = await response.text().catch(() => '');
+          const errorPreview = errorText.substring(0, 500);
+          console.warn(`⚠️ Bybit balance API returned non-JSON response (${contentType}):`, errorPreview);
+          // Return unknown balance status - let order attempt happen
+          return {
+            hasBalance: true, // Assume sufficient if we can't check
+            availableBalance: 0,
+            totalRequired: orderValue * 1.05,
+            orderValue: orderValue
+          };
+        }
         
         const data = await response.json();
         
