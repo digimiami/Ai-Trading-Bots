@@ -1239,6 +1239,9 @@ class MarketDataFetcher {
             const coinGeckoUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${coinGeckoId}&vs_currencies=usd`;
             console.log(`🔍 Fetching from CoinGecko: ${coinGeckoUrl}`);
             
+            // Small delay to avoid rate limits
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
             const cgResp = await fetch(coinGeckoUrl, {
               headers: {
                 'Accept': 'application/json',
@@ -1248,15 +1251,33 @@ class MarketDataFetcher {
             });
             
             if (cgResp.ok) {
+              // Check content-type before parsing
+              const contentType = cgResp.headers.get('content-type') || '';
+              if (!contentType.includes('application/json')) {
+                const textPreview = await cgResp.text().then(t => t.substring(0, 200)).catch(() => '');
+                console.warn(`⚠️ CoinGecko returned non-JSON response (${contentType}): ${textPreview}`);
+                throw new Error(`CoinGecko returned ${contentType} instead of JSON`);
+              }
+              
               const cgData = await cgResp.json();
               const price = cgData[coinGeckoId]?.usd;
               if (price && price > 0 && isFinite(price)) {
                 console.log(`✅ CoinGecko fallback price for ${symbol}: $${price}`);
                 return price;
+              } else {
+                console.warn(`⚠️ CoinGecko price invalid for ${symbol}:`, price);
               }
+            } else {
+              const errorText = await cgResp.text().catch(() => '');
+              console.warn(`⚠️ CoinGecko API error (${cgResp.status}): ${errorText.substring(0, 200)}`);
             }
-          } catch (cgErr) {
-            console.warn(`⚠️ CoinGecko fallback failed for ${symbol}:`, cgErr);
+          } catch (cgErr: any) {
+            // Don't log the full error if it's just a content-type issue
+            if (cgErr?.message?.includes('DOCTYPE') || cgErr?.message?.includes('Unexpected token')) {
+              console.warn(`⚠️ CoinGecko fallback failed for ${symbol}: Received HTML instead of JSON (likely rate limited or blocked)`);
+            } else {
+              console.warn(`⚠️ CoinGecko fallback failed for ${symbol}:`, cgErr?.message || cgErr);
+            }
           }
         }
         
