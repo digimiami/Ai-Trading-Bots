@@ -36,12 +36,25 @@ interface FearGreedIndex {
   };
 }
 
+interface CryptoNews {
+  id: string;
+  title: string;
+  body: string;
+  url: string;
+  imageUrl: string | null;
+  source: string;
+  publishedOn: string;
+  categories: string;
+  tags: string;
+}
+
 export default function MarketDashboardPage() {
   const [marketData, setMarketData] = useState<MarketData[]>([]);
   const [topGainers, setTopGainers] = useState<MarketData[]>([]);
   const [rapidChanges, setRapidChanges] = useState<MarketData[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [fearGreedIndex, setFearGreedIndex] = useState<FearGreedIndex | null>(null);
+  const [news, setNews] = useState<CryptoNews[]>([]);
   const [loading, setLoading] = useState(true);
   const [wsConnected, setWsConnected] = useState(false);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
@@ -109,6 +122,9 @@ export default function MarketDashboardPage() {
         setRapidChanges(data.rapidChanges || []);
         if (data.fearGreedIndex) {
           setFearGreedIndex(data.fearGreedIndex);
+        }
+        if (data.news) {
+          setNews(data.news);
         }
         console.log('✅ Market data state updated:', data.marketData.length, 'items');
       } else {
@@ -354,56 +370,70 @@ export default function MarketDashboardPage() {
               {/* Gauge */}
               <div className="flex-1 flex items-center justify-center">
                 <div className="relative w-full max-w-md">
-                  {/* Semi-circle gauge background */}
-                  <svg viewBox="0 0 200 120" className="w-full h-auto" style={{ minHeight: '200px' }}>
+                  {/* Semi-circle gauge */}
+                  <svg viewBox="0 0 200 120" className="w-full h-auto" style={{ minHeight: '220px' }}>
+                    <defs>
+                      <linearGradient id="fearGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stopColor="#ef4444" />
+                        <stop offset="100%" stopColor="#dc2626" />
+                      </linearGradient>
+                      <linearGradient id="greedGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                        <stop offset="0%" stopColor="#22c55e" />
+                        <stop offset="100%" stopColor="#10b981" />
+                      </linearGradient>
+                    </defs>
+                    
                     {/* Background arc - full semi-circle */}
                     <path
                       d="M 20 100 A 80 80 0 0 1 180 100"
                       fill="none"
                       stroke="#e5e7eb"
-                      strokeWidth="14"
+                      strokeWidth="16"
                       className="dark:stroke-gray-700"
                     />
-                    {/* Colored segments - Extreme Fear (0-25) */}
+                    
+                    {/* Colored segments with better positioning */}
+                    {/* Extreme Fear (0-25) - Red */}
                     <path
                       d="M 20 100 A 80 80 0 0 1 65 30"
                       fill="none"
-                      stroke="#ef4444"
-                      strokeWidth="14"
+                      stroke="url(#fearGradient)"
+                      strokeWidth="16"
                       strokeLinecap="round"
                     />
-                    {/* Fear (26-45) */}
+                    {/* Fear (26-45) - Orange */}
                     <path
                       d="M 65 30 A 80 80 0 0 1 110 20"
                       fill="none"
                       stroke="#f97316"
-                      strokeWidth="14"
+                      strokeWidth="16"
                       strokeLinecap="round"
                     />
-                    {/* Neutral (46-55) */}
+                    {/* Neutral (46-55) - Yellow */}
                     <path
                       d="M 110 20 A 80 80 0 0 1 135 20"
                       fill="none"
                       stroke="#eab308"
-                      strokeWidth="14"
+                      strokeWidth="16"
                       strokeLinecap="round"
                     />
-                    {/* Greed (56-75) */}
+                    {/* Greed (56-75) - Green */}
                     <path
                       d="M 135 20 A 80 80 0 0 1 170 30"
                       fill="none"
                       stroke="#22c55e"
-                      strokeWidth="14"
+                      strokeWidth="16"
                       strokeLinecap="round"
                     />
-                    {/* Extreme Greed (76-100) */}
+                    {/* Extreme Greed (76-100) - Emerald */}
                     <path
                       d="M 170 30 A 80 80 0 0 1 180 100"
                       fill="none"
-                      stroke="#10b981"
-                      strokeWidth="14"
+                      stroke="url(#greedGradient)"
+                      strokeWidth="16"
                       strokeLinecap="round"
                     />
+                    
                     {/* Indicator line - thicker and more visible */}
                     <line
                       x1="100"
@@ -411,7 +441,7 @@ export default function MarketDashboardPage() {
                       x2={100 + 80 * Math.cos(Math.PI - (getGaugePosition(fearGreedIndex.value) * Math.PI / 180))}
                       y2={100 - 80 * Math.sin(Math.PI - (getGaugePosition(fearGreedIndex.value) * Math.PI / 180))}
                       stroke="#1f2937"
-                      strokeWidth="4"
+                      strokeWidth="5"
                       strokeLinecap="round"
                       className="dark:stroke-gray-200"
                     />
@@ -419,12 +449,15 @@ export default function MarketDashboardPage() {
                     <circle
                       cx={100 + 80 * Math.cos(Math.PI - (getGaugePosition(fearGreedIndex.value) * Math.PI / 180))}
                       cy={100 - 80 * Math.sin(Math.PI - (getGaugePosition(fearGreedIndex.value) * Math.PI / 180))}
-                      r="8"
+                      r="10"
                       fill="#1f2937"
                       stroke="#ffffff"
-                      strokeWidth="2"
+                      strokeWidth="3"
                       className="dark:fill-gray-200 dark:stroke-gray-800"
                     />
+                    
+                    {/* Center point */}
+                    <circle cx="100" cy="100" r="4" fill="#6b7280" className="dark:fill-gray-500" />
                   </svg>
                   {/* Value display */}
                   <div className="text-center mt-4">
@@ -610,6 +643,49 @@ export default function MarketDashboardPage() {
             </Card>
           )}
         </div>
+
+        {/* Recent Crypto News */}
+        {news.length > 0 && (
+          <Card className="p-6">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Recent Crypto News</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {news.slice(0, 6).map((article) => (
+                <a
+                  key={article.id}
+                  href={article.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block p-4 bg-gray-50 dark:bg-gray-800 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors border border-gray-200 dark:border-gray-700"
+                >
+                  <div className="flex gap-3">
+                    {article.imageUrl && (
+                      <img
+                        src={article.imageUrl}
+                        alt={article.title}
+                        className="w-20 h-20 object-cover rounded-lg flex-shrink-0"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-gray-900 dark:text-white text-sm mb-2 line-clamp-2">
+                        {article.title}
+                      </h3>
+                      <p className="text-xs text-gray-600 dark:text-gray-400 line-clamp-2 mb-2">
+                        {article.body}
+                      </p>
+                      <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-500">
+                        <span>{article.source}</span>
+                        <span>{new Date(article.publishedOn).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                </a>
+              ))}
+            </div>
+          </Card>
+        )}
 
         {/* Rapid Changes */}
         {rapidChanges.length > 0 && (

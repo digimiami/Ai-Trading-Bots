@@ -261,6 +261,63 @@ async function fetchFearGreedIndex(): Promise<any> {
   }
 }
 
+// Fetch Crypto News
+async function fetchCryptoNews(limit: number = 10): Promise<any[]> {
+  try {
+    // Using CryptoCompare API (free tier)
+    const url = `https://min-api.cryptocompare.com/data/v2/news/?lang=EN&limit=${limit}`
+    console.log(`📰 Fetching crypto news from: ${url}`)
+    
+    const response = await fetchWithBackoff(url)
+    const data = await response.json()
+    
+    if (data && data.Data && Array.isArray(data.Data)) {
+      console.log(`✅ Fetched ${data.Data.length} news articles`)
+      
+      return data.Data.map((article: any) => ({
+        id: article.id,
+        title: article.title,
+        body: article.body?.substring(0, 200) || '',
+        url: article.url,
+        imageUrl: article.imageurl || null,
+        source: article.source,
+        publishedOn: new Date(article.published_on * 1000).toISOString(),
+        categories: article.categories || '',
+        tags: article.tags || ''
+      }))
+    }
+    
+    console.warn('⚠️ No crypto news data available')
+    return []
+  } catch (error) {
+    console.error('❌ Error fetching crypto news:', error)
+    // Fallback: try alternative API
+    try {
+      const altUrl = 'https://api.coindesk.com/v1/news/headlines'
+      const altResponse = await fetchWithBackoff(altUrl)
+      const altData = await altResponse.json()
+      
+      if (altData && Array.isArray(altData)) {
+        return altData.slice(0, limit).map((article: any) => ({
+          id: article.id || Math.random().toString(),
+          title: article.title || '',
+          body: article.description || '',
+          url: article.url || '',
+          imageUrl: article.image || null,
+          source: article.source || 'CoinDesk',
+          publishedOn: article.publishedAt || new Date().toISOString(),
+          categories: '',
+          tags: ''
+        }))
+      }
+    } catch (fallbackError) {
+      console.error('❌ Fallback news API also failed:', fallbackError)
+    }
+    
+    return []
+  }
+}
+
 // Calculate inflows/outflows (simplified: based on volume and price change)
 function calculateFlows(ticker: any, prevPrice: number): { inflow: number; outflow: number } {
   const currentPrice = parseFloat(ticker.lastPrice)
@@ -373,8 +430,11 @@ serve(async (req) => {
       
       console.log(`📊 Final market data: ${validMarketData.length} items, ${topGainers.length} top gainers, ${rapidChanges.length} rapid changes`)
       
-      // Fetch Fear & Greed Index
-      const fearGreedIndex = await fetchFearGreedIndex()
+      // Fetch Fear & Greed Index and News in parallel
+      const [fearGreedIndex, news] = await Promise.all([
+        fetchFearGreedIndex(),
+        fetchCryptoNews(10)
+      ])
       
       return new Response(
         JSON.stringify({
@@ -382,6 +442,7 @@ serve(async (req) => {
           topGainers,
           rapidChanges,
           fearGreedIndex,
+          news,
           timestamp: new Date().toISOString()
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
