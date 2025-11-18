@@ -1214,6 +1214,52 @@ class MarketDataFetcher {
           console.warn(`⚠️ Orderbook fallback failed for ${symbol}:`, obErr);
         }
         
+        // FINAL FALLBACK 3: Use CoinGecko public API (most permissive, rarely blocked)
+        if (isMajorCoin) {
+          console.log(`🔄 Trying CoinGecko public API as final fallback for ${symbol}...`);
+          try {
+            // Map symbol to CoinGecko ID
+            const coinGeckoMap: { [key: string]: string } = {
+              'BTCUSDT': 'bitcoin',
+              'ETHUSDT': 'ethereum',
+              'BNBUSDT': 'binancecoin',
+              'SOLUSDT': 'solana',
+              'ADAUSDT': 'cardano',
+              'DOGEUSDT': 'dogecoin',
+              'XRPUSDT': 'ripple',
+              'DOTUSDT': 'polkadot',
+              'MATICUSDT': 'matic-network',
+              'LTCUSDT': 'litecoin'
+            };
+            
+            // Extract base coin (remove USDT suffix)
+            const baseCoin = symbol.replace(/USDT.*$/i, '').toUpperCase();
+            const coinGeckoId = coinGeckoMap[symbol] || coinGeckoMap[`${baseCoin}USDT`] || baseCoin.toLowerCase();
+            
+            const coinGeckoUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${coinGeckoId}&vs_currencies=usd`;
+            console.log(`🔍 Fetching from CoinGecko: ${coinGeckoUrl}`);
+            
+            const cgResp = await fetch(coinGeckoUrl, {
+              headers: {
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              },
+              signal: AbortSignal.timeout(5000)
+            });
+            
+            if (cgResp.ok) {
+              const cgData = await cgResp.json();
+              const price = cgData[coinGeckoId]?.usd;
+              if (price && price > 0 && isFinite(price)) {
+                console.log(`✅ CoinGecko fallback price for ${symbol}: $${price}`);
+                return price;
+              }
+            }
+          } catch (cgErr) {
+            console.warn(`⚠️ CoinGecko fallback failed for ${symbol}:`, cgErr);
+          }
+        }
+        
         console.warn(`⚠️ Symbol ${symbol} not found in ${bybitCategory} category on Bybit. Tried variants: ${symbolVariants.join(', ')}`);
         
         // Log all API responses for debugging
