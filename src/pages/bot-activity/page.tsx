@@ -8,6 +8,7 @@ import { useBots } from '../../hooks/useBots';
 import BotActivityLogs from '../../components/bot/BotActivityLogs';
 import BotReportViewer from '../../components/bot/BotReportViewer';
 import ActivityReportGenerator from '../../components/activity/ActivityReportGenerator';
+import ErrorsReportGenerator from '../../components/activity/ErrorsReportGenerator';
 
 export default function BotActivityPage() {
   const { bots } = useBots();
@@ -301,6 +302,9 @@ export default function BotActivityPage() {
 
         {/* Activity Report Generator */}
         <ActivityReportGenerator />
+
+        {/* Errors Report Generator */}
+        <ErrorsReportGenerator />
 
         {/* Bot Performance Report */}
         <BotReportViewer />
