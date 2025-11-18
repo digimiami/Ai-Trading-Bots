@@ -106,33 +106,76 @@ export default function BotActivityPage() {
                         // Export as CSV
                         const csvRows: string[] = [];
                         
-                        // Header
-                        csvRows.push('Bot Name,Status,Execution State,Current Action,Waiting For,Last Activity,Last Execution Time,Error Count,Success Count,Recent Logs Count');
+                        // Metadata header
+                        const now = new Date();
+                        csvRows.push(`Recent Activity Report`);
+                        csvRows.push(`Generated: ${now.toLocaleString()}`);
+                        csvRows.push(`Generated (ISO): ${now.toISOString()}`);
+                        csvRows.push('');
+                        
+                        // Summary section
+                        csvRows.push('SUMMARY');
+                        csvRows.push(`Total Bots,${activities.length}`);
+                        csvRows.push(`Running,${activities.filter(a => a.status === 'running').length}`);
+                        csvRows.push(`Paused,${activities.filter(a => a.status === 'paused').length}`);
+                        csvRows.push(`Stopped,${activities.filter(a => a.status === 'stopped').length}`);
+                        csvRows.push(`Executing,${activities.filter(a => a.executionState === 'executing').length}`);
+                        csvRows.push(`Analyzing,${activities.filter(a => a.executionState === 'analyzing').length}`);
+                        csvRows.push(`Waiting,${activities.filter(a => a.executionState === 'waiting').length}`);
+                        csvRows.push(`Errors,${activities.filter(a => a.executionState === 'error').length}`);
+                        csvRows.push(`Total Errors,${activities.reduce((sum, a) => sum + a.errorCount, 0)}`);
+                        csvRows.push(`Total Success,${activities.reduce((sum, a) => sum + a.successCount, 0)}`);
+                        csvRows.push('');
+                        
+                        // Main data header
+                        csvRows.push('BOT ACTIVITY DETAILS');
+                        csvRows.push('Bot ID,Bot Name,Status,Execution State,Current Action,Waiting For,Last Activity,Last Activity (Readable),Last Execution Time,Last Execution Time (Readable),Error Count,Success Count,Recent Logs Count');
+                        
+                        // Helper function to format date
+                        const formatDate = (dateStr: string | null | undefined): string => {
+                          if (!dateStr || dateStr === 'N/A') return 'N/A';
+                          try {
+                            const date = new Date(dateStr);
+                            return date.toLocaleString();
+                          } catch {
+                            return dateStr;
+                          }
+                        };
                         
                         // Data rows
                         activities.forEach(a => {
                           csvRows.push([
+                            a.botId,
                             `"${a.botName}"`,
                             a.status,
                             a.executionState || 'N/A',
                             `"${(a.currentAction || '').replace(/"/g, '""')}"`,
                             `"${(a.waitingFor || '').replace(/"/g, '""')}"`,
                             a.lastActivity || 'N/A',
+                            formatDate(a.lastActivity),
                             a.lastExecutionTime || 'N/A',
+                            formatDate(a.lastExecutionTime),
                             a.errorCount,
                             a.successCount,
                             a.logs.length,
                           ].join(','));
                         });
                         
-                        // Summary row
-                        csvRows.push('');
-                        csvRows.push('Summary');
-                        csvRows.push(`Total Bots,${activities.length}`);
-                        csvRows.push(`Executing,${activities.filter(a => a.executionState === 'executing').length}`);
-                        csvRows.push(`Analyzing,${activities.filter(a => a.executionState === 'analyzing').length}`);
-                        csvRows.push(`Waiting,${activities.filter(a => a.executionState === 'waiting').length}`);
-                        csvRows.push(`Errors,${activities.filter(a => a.executionState === 'error').length}`);
+                        // Recent errors section
+                        const botsWithErrors = activities.filter(a => a.errorCount > 0);
+                        if (botsWithErrors.length > 0) {
+                          csvRows.push('');
+                          csvRows.push('BOTS WITH ERRORS');
+                          csvRows.push('Bot Name,Error Count,Last Activity,Status');
+                          botsWithErrors.forEach(a => {
+                            csvRows.push([
+                              `"${a.botName}"`,
+                              a.errorCount,
+                              a.lastActivity || 'N/A',
+                              a.status,
+                            ].join(','));
+                          });
+                        }
                         
                         const csvContent = csvRows.join('\n');
                         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
