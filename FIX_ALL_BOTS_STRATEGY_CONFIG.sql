@@ -9,7 +9,7 @@
 UPDATE trading_bots
 SET 
   strategy_config = jsonb_build_object(
-    'adx_min', 5,
+    'adx_min', 15,
     'min_volume_requirement', 0.1,
     'volume_multiplier', 0.3,
     'min_volatility_atr', 0.05,
@@ -35,7 +35,7 @@ UPDATE trading_bots
 SET 
   strategy_config = jsonb_build_object(
     'bias_mode', 'both',
-    'adx_min_htf', 8,
+    'adx_min_htf', 15,
     'adx_trend_min', 10,
     'adx_meanrev_max', 30,
     'require_price_vs_trend', NULL,
@@ -56,7 +56,7 @@ UPDATE trading_bots
 SET 
   strategy_config = jsonb_build_object(
     'min_volatility_atr', 0.15,
-    'adx_min', 8,
+    'adx_min', 15,
     'min_volume_requirement', 0.3,
     'volume_multiplier', 0.5,
     'ema_fast', 9,
@@ -79,7 +79,7 @@ UPDATE trading_bots
 SET 
   strategy_config = jsonb_build_object(
     'bias_mode', 'both',
-    'adx_min_htf', 8,
+    'adx_min_htf', 15,
     'adx_trend_min', 10,
     'adx_meanrev_max', 30,
     'require_price_vs_trend', NULL,
@@ -100,7 +100,7 @@ UPDATE trading_bots
 SET 
   strategy_config = jsonb_build_object(
     'bias_mode', 'both',
-    'adx_min_htf', 8,
+    'adx_min_htf', 15,
     'adx_trend_min', 10,
     'adx_meanrev_max', 30,
     'rsi_oversold', 40,
@@ -121,8 +121,8 @@ UPDATE trading_bots
 SET 
   strategy_config = jsonb_build_object(
     'scalping_mode', 'auto',
-    'adx_min_continuation', 8,
-    'adx_min_reversal', 6,
+    'adx_min_continuation', 15,
+    'adx_min_reversal', 12,
     'volume_multiplier_continuation', 0.3,
     'volume_multiplier_reversal', 0.4,
     'supertrend_period', 10,
