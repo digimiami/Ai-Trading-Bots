@@ -585,38 +585,53 @@ function applySlippage(price: number, side: string, symbol: string, tradeValue: 
 // Market data fetcher
 class MarketDataFetcher {
   // Helper function to normalize symbol formats (e.g., 1000PEPEUSDT <-> PEPEUSDT, 10000SATSUSDT <-> SATSUSDT)
+  // Also handles incomplete symbols like "ETH" -> "ETHUSDT"
   static normalizeSymbol(symbol: string, exchange: string, tradingType: string): string[] {
-    const variants: string[] = [symbol]; // Always try original first
+    const variants: string[] = [];
+    const upperSymbol = symbol.toUpperCase().trim();
+    
+    // Handle incomplete symbols (e.g., "ETH" -> "ETHUSDT", "BTC" -> "BTCUSDT")
+    // Common coin names that need USDT suffix
+    const commonCoins = ['BTC', 'ETH', 'BNB', 'SOL', 'ADA', 'XRP', 'DOGE', 'DOT', 'MATIC', 'AVAX', 'LINK', 'UNI', 'ATOM', 'ALGO', 'NEAR', 'FTM', 'SAND', 'MANA', 'AXS', 'GALA', 'ENJ', 'CHZ', 'HBAR', 'ICP', 'FLOW', 'THETA', 'FIL', 'EOS', 'TRX', 'LTC', 'BCH', 'XLM', 'VET', 'AAVE', 'MKR', 'COMP', 'SNX', 'CRV', 'SUSHI', '1INCH', 'PEPE', 'SHIB', 'FLOKI', 'BONK', 'WIF', 'HMAR'];
+    
+    // Check if symbol is just a coin name without USDT suffix
+    if (commonCoins.includes(upperSymbol) && !upperSymbol.endsWith('USDT') && !upperSymbol.endsWith('USD') && !upperSymbol.endsWith('BUSD')) {
+      const fullSymbol = `${upperSymbol}USDT`;
+      variants.push(fullSymbol); // Add full symbol first (most likely to work)
+      variants.push(upperSymbol); // Also try original
+      console.log(`🔧 Symbol normalization: "${symbol}" -> "${fullSymbol}" (added USDT suffix)`);
+    } else {
+      variants.push(upperSymbol); // Always try original (uppercase) first
+    }
     
     // Handle 10000SATSUSDT -> SATSUSDT and vice versa (check longer prefix first)
-    if (symbol.startsWith('10000')) {
-      const withoutPrefix = symbol.replace(/^10000/, '');
+    if (upperSymbol.startsWith('10000')) {
+      const withoutPrefix = upperSymbol.replace(/^10000/, '');
       variants.push(withoutPrefix);
-    } else if (symbol.match(/^[A-Z]+USDT$/)) {
+    } else if (upperSymbol.match(/^[A-Z]+USDT$/)) {
       // If it's a standard format like SATSUSDT, try 10000SATSUSDT for futures
       if (tradingType === 'futures' || tradingType === 'linear') {
-        variants.push(`10000${symbol}`);
+        variants.push(`10000${upperSymbol}`);
       }
     }
     
     // Handle 1000PEPEUSDT -> PEPEUSDT and vice versa
-    if (symbol.startsWith('1000')) {
-      const withoutPrefix = symbol.replace(/^1000/, '');
+    if (upperSymbol.startsWith('1000')) {
+      const withoutPrefix = upperSymbol.replace(/^1000/, '');
       variants.push(withoutPrefix);
-    } else if (symbol.match(/^[A-Z]+USDT$/)) {
+    } else if (upperSymbol.match(/^[A-Z]+USDT$/)) {
       // If it's a standard format like PEPEUSDT, try 1000PEPEUSDT for futures
       if (tradingType === 'futures' || tradingType === 'linear') {
-        variants.push(`1000${symbol}`);
+        variants.push(`1000${upperSymbol}`);
       }
     }
     
-    // Try uppercase variants
-    variants.push(symbol.toUpperCase());
-    if (symbol !== symbol.toUpperCase()) {
+    // Try lowercase variant if different
+    if (upperSymbol !== symbol.toLowerCase()) {
       variants.push(symbol.toLowerCase());
     }
     
-    // Remove duplicates
+    // Remove duplicates and return
     return [...new Set(variants)];
   }
   
@@ -1927,11 +1942,24 @@ class BotExecutor {
       // Validate market data before strategy evaluation
       if (!currentPrice || currentPrice === 0 || !isFinite(currentPrice)) {
         console.error(`❌ Invalid price for ${bot.symbol}: ${currentPrice}. Skipping strategy evaluation.`);
+        
+        // Check if symbol might be incomplete (e.g., "ETH" instead of "ETHUSDT")
+        const symbolUpper = bot.symbol.toUpperCase().trim();
+        const commonCoins = ['BTC', 'ETH', 'BNB', 'SOL', 'ADA', 'XRP', 'DOGE', 'DOT', 'MATIC', 'AVAX', 'LINK', 'UNI', 'ATOM', 'ALGO', 'NEAR', 'FTM', 'SAND', 'MANA', 'AXS', 'GALA', 'ENJ', 'CHZ', 'HBAR', 'ICP', 'FLOW', 'THETA', 'FIL', 'EOS', 'TRX', 'LTC', 'BCH', 'XLM', 'VET', 'AAVE', 'MKR', 'COMP', 'SNX', 'CRV', 'SUSHI', '1INCH', 'PEPE', 'SHIB', 'FLOKI', 'BONK', 'WIF', 'HMAR'];
+        const isIncompleteSymbol = commonCoins.includes(symbolUpper) && !symbolUpper.endsWith('USDT') && !symbolUpper.endsWith('USD') && !symbolUpper.endsWith('BUSD');
+        const suggestedSymbol = isIncompleteSymbol ? `${symbolUpper}USDT` : null;
+        
         await this.addBotLog(bot.id, {
           level: 'error',
           category: 'market',
-          message: `Invalid price data: ${currentPrice}. Cannot evaluate strategy.`,
-          details: { price: currentPrice, symbol: bot.symbol }
+          message: `Invalid price data: ${currentPrice}. Cannot evaluate strategy.${suggestedSymbol ? ` Symbol "${bot.symbol}" appears incomplete. Try "${suggestedSymbol}" instead.` : ''}`,
+          details: { 
+            price: currentPrice, 
+            symbol: bot.symbol,
+            suggested_symbol: suggestedSymbol,
+            exchange: bot.exchange,
+            trading_type: bot.trading_type || bot.tradingType
+          }
         });
         return;
       }
