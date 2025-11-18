@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Header from '../../components/feature/Header';
 import Navigation from '../../components/feature/Navigation';
 import Button from '../../components/base/Button';
@@ -14,6 +14,25 @@ export default function BotActivityPage() {
   const { bots } = useBots();
   const { activities, loading, addLog, clearBotLogs, simulateBotActivity } = useBotActivity(bots);
   const [filter, setFilter] = useState<'all' | 'running' | 'paused' | 'stopped'>('all');
+  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+  const downloadMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (downloadMenuRef.current && !downloadMenuRef.current.contains(event.target as Node)) {
+        setShowDownloadMenu(false);
+      }
+    };
+
+    if (showDownloadMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showDownloadMenu]);
 
   const filteredActivities = activities.filter(activity => 
     filter === 'all' || activity.status === filter
@@ -64,9 +83,170 @@ export default function BotActivityPage() {
               <i className="ri-pulse-line mr-2 text-blue-600 animate-pulse"></i>
               Recent Activity
             </h3>
-            <span className="text-xs text-gray-500">
-              Updates every 10s
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-gray-500">
+                Updates every 10s
+              </span>
+              <div className="relative" ref={downloadMenuRef}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setShowDownloadMenu(!showDownloadMenu)}
+                >
+                  <i className="ri-download-line mr-1"></i>
+                  Download
+                  <i className={`ri-arrow-${showDownloadMenu ? 'up' : 'down'}-s-line ml-1`}></i>
+                </Button>
+                {showDownloadMenu && (
+                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-10">
+                    <button
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                      onClick={() => {
+                        setShowDownloadMenu(false);
+                        // Export as CSV
+                        const csvRows: string[] = [];
+                        
+                        // Header
+                        csvRows.push('Bot Name,Status,Execution State,Current Action,Waiting For,Last Activity,Last Execution Time,Error Count,Success Count,Recent Logs Count');
+                        
+                        // Data rows
+                        activities.forEach(a => {
+                          csvRows.push([
+                            `"${a.botName}"`,
+                            a.status,
+                            a.executionState || 'N/A',
+                            `"${(a.currentAction || '').replace(/"/g, '""')}"`,
+                            `"${(a.waitingFor || '').replace(/"/g, '""')}"`,
+                            a.lastActivity || 'N/A',
+                            a.lastExecutionTime || 'N/A',
+                            a.errorCount,
+                            a.successCount,
+                            a.logs.length,
+                          ].join(','));
+                        });
+                        
+                        // Summary row
+                        csvRows.push('');
+                        csvRows.push('Summary');
+                        csvRows.push(`Total Bots,${activities.length}`);
+                        csvRows.push(`Executing,${activities.filter(a => a.executionState === 'executing').length}`);
+                        csvRows.push(`Analyzing,${activities.filter(a => a.executionState === 'analyzing').length}`);
+                        csvRows.push(`Waiting,${activities.filter(a => a.executionState === 'waiting').length}`);
+                        csvRows.push(`Errors,${activities.filter(a => a.executionState === 'error').length}`);
+                        
+                        const csvContent = csvRows.join('\n');
+                        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = `recent-activity-${new Date().toISOString().split('T')[0]}.csv`;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        URL.revokeObjectURL(url);
+                      }}
+                    >
+                      <i className="ri-file-excel-line mr-2"></i>
+                      Download CSV
+                    </button>
+                    <button
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                      onClick={() => {
+                        setShowDownloadMenu(false);
+                        // Export as JSON
+                        const recentActivityData = {
+                          generated_at: new Date().toISOString(),
+                          summary: {
+                            total_bots: activities.length,
+                            executing: activities.filter(a => a.executionState === 'executing').length,
+                            analyzing: activities.filter(a => a.executionState === 'analyzing').length,
+                            waiting: activities.filter(a => a.executionState === 'waiting').length,
+                            errors: activities.filter(a => a.executionState === 'error').length,
+                          },
+                          activities_by_state: {
+                            executing: activities
+                              .filter(a => a.executionState === 'executing')
+                              .map(a => ({
+                                bot_id: a.botId,
+                                bot_name: a.botName,
+                                status: a.status,
+                                current_action: a.currentAction,
+                                last_activity: a.lastActivity,
+                                last_execution_time: a.lastExecutionTime,
+                                error_count: a.errorCount,
+                                success_count: a.successCount,
+                              })),
+                            analyzing: activities
+                              .filter(a => a.executionState === 'analyzing')
+                              .map(a => ({
+                                bot_id: a.botId,
+                                bot_name: a.botName,
+                                status: a.status,
+                                current_action: a.currentAction,
+                                last_activity: a.lastActivity,
+                                last_execution_time: a.lastExecutionTime,
+                                error_count: a.errorCount,
+                                success_count: a.successCount,
+                              })),
+                            waiting: activities
+                              .filter(a => a.executionState === 'waiting')
+                              .map(a => ({
+                                bot_id: a.botId,
+                                bot_name: a.botName,
+                                status: a.status,
+                                current_action: a.currentAction,
+                                waiting_for: a.waitingFor,
+                                last_activity: a.lastActivity,
+                                last_execution_time: a.lastExecutionTime,
+                                error_count: a.errorCount,
+                                success_count: a.successCount,
+                              })),
+                            errors: activities
+                              .filter(a => a.executionState === 'error')
+                              .map(a => ({
+                                bot_id: a.botId,
+                                bot_name: a.botName,
+                                status: a.status,
+                                current_action: a.currentAction,
+                                last_activity: a.lastActivity,
+                                error_count: a.errorCount,
+                                success_count: a.successCount,
+                              })),
+                          },
+                          all_activities: activities.map(a => ({
+                            bot_id: a.botId,
+                            bot_name: a.botName,
+                            status: a.status,
+                            execution_state: a.executionState,
+                            current_action: a.currentAction,
+                            waiting_for: a.waitingFor,
+                            last_activity: a.lastActivity,
+                            last_execution_time: a.lastExecutionTime,
+                            error_count: a.errorCount,
+                            success_count: a.successCount,
+                            recent_logs_count: a.logs.length,
+                          })),
+                        };
+
+                        const jsonData = JSON.stringify(recentActivityData, null, 2);
+                        const blob = new Blob([jsonData], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.download = `recent-activity-${new Date().toISOString().split('T')[0]}.json`;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        URL.revokeObjectURL(url);
+                      }}
+                    >
+                      <i className="ri-file-code-line mr-2"></i>
+                      Download JSON
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
