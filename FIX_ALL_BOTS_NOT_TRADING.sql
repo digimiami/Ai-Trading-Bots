@@ -9,7 +9,7 @@
 
 UPDATE trading_bots
 SET 
-  strategy = '{"type": "scalping", "name": "Immediate Trading Bot", "allows_custom_pair": true, "immediate_trading": true}'::jsonb,
+  strategy = '{"type": "scalping", "name": "Immediate Trading Bot", "allows_custom_pair": true, "immediate_trading": true}',
   strategy_config = COALESCE(strategy_config, '{}'::jsonb)::jsonb || 
   jsonb_build_object(
     'adx_min', 5,
@@ -83,14 +83,14 @@ WHERE name LIKE '%Hybrid Trend + Mean Reversion Strategy%FILUSDT%'
 -- ISSUE 5 & 6: Trend Following Strategy bots (HYPEUSDT, ASTERUSDT)
 -- Problem: "No trading signals detected"
 -- Fix: Update to use proper strategy type and lenient config
+-- Note: strategy column is TEXT, so we need to handle it as JSON string
 
 UPDATE trading_bots
 SET 
-  strategy = COALESCE(strategy, '{}'::jsonb)::jsonb || 
-  jsonb_build_object(
+  strategy = jsonb_build_object(
     'type', 'hybrid_trend_meanreversion',
     'name', 'Trend Following Strategy'
-  )::jsonb,
+  )::text,
   strategy_config = COALESCE(strategy_config, '{}'::jsonb)::jsonb || 
   jsonb_build_object(
     'bias_mode', 'both',
@@ -116,7 +116,7 @@ SELECT
   symbol,
   timeframe,
   status,
-  strategy->>'type' as strategy_type,
+  (strategy::jsonb)->>'type' as strategy_type,
   strategy_config->>'bias_mode' as bias_mode,
   strategy_config->>'adx_min' as adx_min,
   strategy_config->>'adx_min_htf' as adx_min_htf,
