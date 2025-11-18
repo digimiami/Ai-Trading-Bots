@@ -352,71 +352,78 @@ export default function MarketDashboardPage() {
             <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Crypto Fear & Greed Index</h2>
             <div className="flex flex-col md:flex-row gap-6">
               {/* Gauge */}
-              <div className="flex-1">
-                <div className="relative w-full max-w-md mx-auto">
+              <div className="flex-1 flex items-center justify-center">
+                <div className="relative w-full max-w-md">
                   {/* Semi-circle gauge background */}
-                  <svg viewBox="0 0 200 120" className="w-full h-auto">
-                    {/* Background arc */}
+                  <svg viewBox="0 0 200 120" className="w-full h-auto" style={{ minHeight: '200px' }}>
+                    {/* Background arc - full semi-circle */}
                     <path
                       d="M 20 100 A 80 80 0 0 1 180 100"
                       fill="none"
-                      stroke="currentColor"
-                      strokeWidth="12"
-                      className="text-gray-200 dark:text-gray-700"
+                      stroke="#e5e7eb"
+                      strokeWidth="14"
+                      className="dark:stroke-gray-700"
                     />
-                    {/* Colored segments */}
+                    {/* Colored segments - Extreme Fear (0-25) */}
                     <path
                       d="M 20 100 A 80 80 0 0 1 65 30"
                       fill="none"
-                      stroke="currentColor"
-                      strokeWidth="12"
-                      className="text-red-500"
+                      stroke="#ef4444"
+                      strokeWidth="14"
+                      strokeLinecap="round"
                     />
+                    {/* Fear (26-45) */}
                     <path
                       d="M 65 30 A 80 80 0 0 1 110 20"
                       fill="none"
-                      stroke="currentColor"
-                      strokeWidth="12"
-                      className="text-orange-500"
+                      stroke="#f97316"
+                      strokeWidth="14"
+                      strokeLinecap="round"
                     />
+                    {/* Neutral (46-55) */}
                     <path
                       d="M 110 20 A 80 80 0 0 1 135 20"
                       fill="none"
-                      stroke="currentColor"
-                      strokeWidth="12"
-                      className="text-yellow-500"
+                      stroke="#eab308"
+                      strokeWidth="14"
+                      strokeLinecap="round"
                     />
+                    {/* Greed (56-75) */}
                     <path
                       d="M 135 20 A 80 80 0 0 1 170 30"
                       fill="none"
-                      stroke="currentColor"
-                      strokeWidth="12"
-                      className="text-green-500"
+                      stroke="#22c55e"
+                      strokeWidth="14"
+                      strokeLinecap="round"
                     />
+                    {/* Extreme Greed (76-100) */}
                     <path
                       d="M 170 30 A 80 80 0 0 1 180 100"
                       fill="none"
-                      stroke="currentColor"
-                      strokeWidth="12"
-                      className="text-emerald-500"
+                      stroke="#10b981"
+                      strokeWidth="14"
+                      strokeLinecap="round"
                     />
-                    {/* Indicator line */}
+                    {/* Indicator line - thicker and more visible */}
                     <line
                       x1="100"
                       y1="100"
                       x2={100 + 80 * Math.cos(Math.PI - (getGaugePosition(fearGreedIndex.value) * Math.PI / 180))}
                       y2={100 - 80 * Math.sin(Math.PI - (getGaugePosition(fearGreedIndex.value) * Math.PI / 180))}
-                      stroke="currentColor"
-                      strokeWidth="3"
-                      className="text-gray-800 dark:text-gray-200"
+                      stroke="#1f2937"
+                      strokeWidth="4"
+                      strokeLinecap="round"
+                      className="dark:stroke-gray-200"
                     />
-                    {/* Indicator dot */}
+                    {/* Indicator dot - larger and more visible */}
                     <circle
                       cx={100 + 80 * Math.cos(Math.PI - (getGaugePosition(fearGreedIndex.value) * Math.PI / 180))}
                       cy={100 - 80 * Math.sin(Math.PI - (getGaugePosition(fearGreedIndex.value) * Math.PI / 180))}
-                      r="6"
-                      fill="currentColor"
-                      className="text-gray-800 dark:text-gray-200"
+                      r="8"
+                      fill="#1f2937"
+                      stroke="#ffffff"
+                      strokeWidth="2"
+                      className="dark:fill-gray-200 dark:stroke-gray-800"
                     />
                   </svg>
                   {/* Value display */}
