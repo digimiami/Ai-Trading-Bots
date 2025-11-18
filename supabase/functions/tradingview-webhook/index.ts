@@ -882,9 +882,18 @@ serve(async (req) => {
           console.warn(`⚠️ SUPABASE_ANON_KEY not set - function access may fail`);
         }
         
+        // Add Authorization header with service role key (required by Supabase Edge Function auth layer)
+        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+        if (serviceRoleKey) {
+          headers["Authorization"] = `Bearer ${serviceRoleKey}`;
+          console.log(`🔑 Sending Authorization header with service role key`);
+        } else {
+          console.warn(`⚠️ SUPABASE_SERVICE_ROLE_KEY not set - function access may fail`);
+        }
+        
         // NOTE: bot-executor uses x-cron-secret to detect cron/internal calls
         // When x-cron-secret matches CRON_SECRET env var, it uses service role client
-        // No Authorization header needed - x-cron-secret is sufficient
+        // We also send Authorization header to satisfy Supabase's Edge Function auth layer
         
         console.log(`📤 Sending POST to bot-executor: ${supabaseUrl}/functions/v1/bot-executor`);
         console.log(`📋 Request body:`, JSON.stringify({ action: "execute_bot", botId: bot.id }));

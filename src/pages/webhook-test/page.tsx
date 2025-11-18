@@ -160,11 +160,29 @@ export default function WebhookTestPage() {
       console.log('🚀 Sending webhook to:', fullWebhookUrl);
       console.log('📦 Payload:', payload);
       
+      // Get authentication headers
+      const { data: { session } } = await supabase.auth.getSession();
+      const anonKey = import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
+      
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+      
+      // Add apikey header (required by Supabase Edge Functions)
+      if (anonKey) {
+        headers['apikey'] = anonKey;
+      }
+      
+      // Add Authorization header if user is authenticated
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+      
+      console.log('🔐 Headers:', Object.keys(headers).join(', '));
+      
       const response = await fetch(fullWebhookUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers,
         body: JSON.stringify(payload)
       });
 

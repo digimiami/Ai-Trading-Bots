@@ -7,6 +7,7 @@ import Card from '../../components/base/Card';
 import Button from '../../components/base/Button';
 import { useAuth } from '../../hooks/useAuth';
 import { useBots } from '../../hooks/useBots';
+import { useBotExecutor } from '../../hooks/useBotExecutor';
 
 interface PabloReadyBot {
   id: string;
@@ -32,6 +33,7 @@ export default function PabloReadyPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { createBot, startBot } = useBots();
+  const { executeBot } = useBotExecutor();
   const [bots, setBots] = useState<PabloReadyBot[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -163,7 +165,18 @@ export default function PabloReadyPage() {
         if (createdBot.status !== 'running') {
           await startBot(createdBot.id);
         }
-        alert(`✅ Bot "${createdBot.name}" created and started successfully!`);
+        
+        // Trigger immediate execution to start trading right away
+        try {
+          console.log(`🚀 Triggering immediate execution for bot ${createdBot.id}...`);
+          await executeBot(createdBot.id);
+          console.log(`✅ Bot "${createdBot.name}" executed immediately`);
+        } catch (execError) {
+          console.warn('⚠️ Failed to trigger immediate execution (bot will start on next cron run):', execError);
+          // Don't fail the whole operation - bot will still be picked up by cron
+        }
+        
+        alert(`✅ Bot "${createdBot.name}" created and started successfully! It will begin trading immediately.`);
         navigate('/bots');
       }
     } catch (error: any) {

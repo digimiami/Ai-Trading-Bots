@@ -689,7 +689,14 @@ class MarketDataFetcher {
                     'Content-Type': 'application/json',
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                     'Referer': 'https://www.bybit.com',
-                    'Origin': 'https://www.bybit.com'
+                    'Origin': 'https://www.bybit.com',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Connection': 'keep-alive',
+                    'Cache-Control': 'no-cache',
+                    'Sec-Fetch-Dest': 'empty',
+                    'Sec-Fetch-Mode': 'cors',
+                    'Sec-Fetch-Site': 'same-site',
                   },
                   signal: AbortSignal.timeout(10000)
                 }).catch(() => null);
@@ -1004,7 +1011,15 @@ class MarketDataFetcher {
         
         try {
           const allTickersUrl = `https://api.bybit.com/v5/market/tickers?category=${bybitCategory}`;
-          const allTickersResponse = await fetch(allTickersUrl);
+          const allTickersResponse = await fetch(allTickersUrl, {
+            headers: {
+              'Accept': 'application/json',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              'Referer': 'https://www.bybit.com',
+              'Origin': 'https://www.bybit.com',
+            },
+            signal: AbortSignal.timeout(10000)
+          });
           
           if (!allTickersResponse.ok) {
             console.warn(`⚠️ Failed to fetch all tickers: HTTP ${allTickersResponse.status}`);
@@ -1069,7 +1084,14 @@ class MarketDataFetcher {
         if (isMajorCoin && bybitCategory === 'linear') {
           console.log(`🔄 Trying spot category as fallback for major coin ${symbol}...`);
           try {
-            const spotResponse = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${symbol}`);
+            const spotResponse = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${symbol}`, {
+              headers: {
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Referer': 'https://www.bybit.com',
+              },
+              signal: AbortSignal.timeout(8000)
+            });
             const spotData = await spotResponse.json();
             
             if (spotData.retCode === 0 && spotData.result?.list && spotData.result.list.length > 0) {
@@ -1086,7 +1108,14 @@ class MarketDataFetcher {
         } else if (isMajorCoin && bybitCategory === 'spot') {
           console.log(`🔄 Trying linear category as fallback for major coin ${symbol}...`);
           try {
-            const linearResponse = await fetch(`https://api.bybit.com/v5/market/tickers?category=linear&symbol=${symbol}`);
+            const linearResponse = await fetch(`https://api.bybit.com/v5/market/tickers?category=linear&symbol=${symbol}`, {
+              headers: {
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Referer': 'https://www.bybit.com',
+              },
+              signal: AbortSignal.timeout(8000)
+            });
             const linearData = await linearResponse.json();
             
             if (linearData.retCode === 0 && linearData.result?.list && linearData.result.list.length > 0) {
@@ -1102,7 +1131,39 @@ class MarketDataFetcher {
           }
         }
         
-        // FINAL FALLBACK: Use top-of-book orderbook mid-price if tickers endpoints are blocked
+        // FINAL FALLBACK 1: Use Binance public API (more permissive than Bybit)
+        if (isMajorCoin) {
+          console.log(`🔄 Trying Binance public API as fallback for ${symbol}...`);
+          try {
+            // Convert Bybit symbol to Binance format (usually same, but handle edge cases)
+            const binanceSymbol = symbol.replace(/\.P$/, ''); // Remove .P suffix if present
+            const binanceUrl = `https://api.binance.com/api/v3/ticker/price?symbol=${binanceSymbol}`;
+            console.log(`🔍 Fetching from Binance: ${binanceUrl}`);
+            
+            const binanceResp = await fetch(binanceUrl, {
+              headers: {
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              },
+              signal: AbortSignal.timeout(5000)
+            });
+            
+            if (binanceResp.ok) {
+              const binanceData = await binanceResp.json();
+              if (binanceData.price) {
+                const price = parseFloat(binanceData.price);
+                if (price > 0 && isFinite(price)) {
+                  console.log(`✅ Binance fallback price for ${symbol}: $${price}`);
+                  return price;
+                }
+              }
+            }
+          } catch (binanceErr) {
+            console.warn(`⚠️ Binance fallback failed for ${symbol}:`, binanceErr);
+          }
+        }
+        
+        // FINAL FALLBACK 2: Use top-of-book orderbook mid-price if tickers endpoints are blocked
         try {
           const orderbookDomains = ['https://api.bybit.com', 'https://api.bytick.com'];
           for (const base of orderbookDomains) {
@@ -1113,6 +1174,12 @@ class MarketDataFetcher {
                 'Accept': 'application/json',
                 'Content-Type': 'application/json',
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Referer': 'https://www.bybit.com',
+                'Origin': 'https://www.bybit.com',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Cache-Control': 'no-cache',
               },
               signal: AbortSignal.timeout(8000)
             }).catch(() => null);
@@ -1122,16 +1189,21 @@ class MarketDataFetcher {
               console.warn(`⚠️ Orderbook fallback returned HTML from ${base} - trying next domain`);
               continue;
             }
-            const obData = JSON.parse(obText);
-            if (obData.retCode === 0 && obData.result) {
-              // Bybit orderbook returns { a: [[price, qty], ...], b: [[price, qty], ...] }
-              const ask = parseFloat(obData.result.a?.[0]?.[0] || '0');
-              const bid = parseFloat(obData.result.b?.[0]?.[0] || '0');
-              const mid = (ask > 0 && bid > 0) ? (ask + bid) / 2 : (ask || bid || 0);
-              if (mid > 0 && isFinite(mid)) {
-                console.log(`✅ Orderbook fallback price for ${symbol}: $${mid.toFixed(8)} (bid=${bid}, ask=${ask})`);
-                return mid;
+            try {
+              const obData = JSON.parse(obText);
+              if (obData.retCode === 0 && obData.result) {
+                // Bybit orderbook returns { a: [[price, qty], ...], b: [[price, qty], ...] }
+                const ask = parseFloat(obData.result.a?.[0]?.[0] || '0');
+                const bid = parseFloat(obData.result.b?.[0]?.[0] || '0');
+                const mid = (ask > 0 && bid > 0) ? (ask + bid) / 2 : (ask || bid || 0);
+                if (mid > 0 && isFinite(mid)) {
+                  console.log(`✅ Orderbook fallback price for ${symbol}: $${mid.toFixed(8)} (bid=${bid}, ask=${ask})`);
+                  return mid;
+                }
               }
+            } catch (parseErr) {
+              console.warn(`⚠️ Failed to parse orderbook response from ${base}:`, parseErr);
+              continue;
             }
           }
         } catch (obErr) {
