@@ -684,17 +684,37 @@ class MarketDataFetcher {
               for (const base of baseDomains) {
                 apiUrl = `${base}/v5/market/tickers?category=${bybitCategory}&symbol=${symbolVariant}`;
                 console.log(`🔍 Fetching price for ${symbolVariant} (${bybitCategory}) - Attempt ${attempt + 1}/3 via ${base}: ${apiUrl}`);
-                response = await fetch(apiUrl, {
-                  method: 'GET',
-                  headers: {
-                    'Accept': 'application/json',
-                  },
-                  signal: AbortSignal.timeout(10000)
-                }).catch(() => null);
-                
-                // If first domain failed or returned non-2xx, try the alternate domain immediately
-                if (response && response.status !== 403) {
+                try {
+                  response = await fetch(apiUrl, {
+                    method: 'GET',
+                    headers: {
+                      'Accept': 'application/json',
+                    },
+                    signal: AbortSignal.timeout(10000)
+                  });
+                  
+                  console.log(`📡 Response status for ${symbolVariant} via ${base}: ${response.status} ${response.statusText}`);
+                  
+                  // If we got a successful response (2xx), use it
+                  if (response.ok) {
+                    break;
+                  }
+                  
+                  // If first domain failed with 403, try the alternate domain immediately
+                  if (response.status === 403 && base === baseDomains[0]) {
+                    console.warn(`⚠️ Got 403 from ${base}, trying alternate domain...`);
+                    continue; // Try next domain
+                  }
+                  
+                  // For other errors, break and handle below
                   break;
+                } catch (fetchErr: any) {
+                  console.error(`❌ Fetch error for ${symbolVariant} via ${base}:`, fetchErr);
+                  response = null;
+                  // Try next domain if available
+                  if (base === baseDomains[0] && baseDomains.length > 1) {
+                    continue;
+                  }
                 }
               }
               
@@ -710,12 +730,13 @@ class MarketDataFetcher {
                   errorType: 'FetchError',
                   note: 'Network error, timeout, or connection issue'
                 });
-                return null;
-              }
-              
-              if (!response) {
-                lastError = { fetchError: 'Network error', attempt: attempt + 1 };
-                continue; // Retry
+                lastError = {
+                  symbolVariant,
+                  apiUrl,
+                  fetchError: fetchError.message || String(fetchError),
+                  attempt: attempt + 1
+                };
+                continue; // Try next attempt or variant
               }
             
             const responseText = await response.text().catch((textError: any) => {
