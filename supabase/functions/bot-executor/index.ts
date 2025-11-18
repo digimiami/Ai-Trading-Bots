@@ -685,11 +685,8 @@ class MarketDataFetcher {
                 apiUrl = `${base}/v5/market/tickers?category=${bybitCategory}&symbol=${symbolVariant}`;
                 console.log(`🔍 Fetching price for ${symbolVariant} (${bybitCategory}) - Attempt ${attempt + 1}/3 via ${base}: ${apiUrl}`);
                 try {
+                  // Use no headers at all - this matches the working futures-pairs function
                   response = await fetch(apiUrl, {
-                    method: 'GET',
-                    headers: {
-                      'Accept': 'application/json',
-                    },
                     signal: AbortSignal.timeout(10000)
                   });
                   
@@ -1023,10 +1020,8 @@ class MarketDataFetcher {
         
         try {
           const allTickersUrl = `https://api.bybit.com/v5/market/tickers?category=${bybitCategory}`;
+          // Use no headers - matches working futures-pairs function
           const allTickersResponse = await fetch(allTickersUrl, {
-            headers: {
-              'Accept': 'application/json',
-            },
             signal: AbortSignal.timeout(10000)
           });
           
