@@ -253,6 +253,19 @@ jobs:
           fi
           echo "✅ PM2 process restarted"
           
+          # Restart bot-scheduler-cron if it exists
+          echo "🔄 Checking bot-scheduler-cron..."
+          if pm2 list | grep -q "bot-scheduler-cron"; then
+            echo "📌 Process 'bot-scheduler-cron' exists, restarting..."
+            if ! pm2 restart bot-scheduler-cron 2>&1; then
+              echo "⚠️ bot-scheduler-cron restart failed, but continuing..."
+            else
+              echo "✅ bot-scheduler-cron restarted"
+            fi
+          else
+            echo "⚠️ bot-scheduler-cron not found in PM2 (may not be set up yet)"
+          fi
+          
           # Save PM2 process
           echo "💾 Saving PM2 process..."
           pm2 save 2>&1 || {

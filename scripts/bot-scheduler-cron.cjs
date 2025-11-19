@@ -2,7 +2,7 @@
 
 /**
  * PM2 Cron Job for Bot Scheduler
- * Runs the bot scheduler every 5 minutes using node-cron or setInterval
+ * Runs the bot scheduler every 1 minute using node-cron or setInterval
  * This script runs continuously and executes the scheduler on schedule
  */
 
@@ -75,37 +75,37 @@ let cron;
 try {
   cron = require('node-cron');
   
-  // Schedule to run every 5 minutes
+  // Schedule to run every 1 minute
   console.log('🚀 Starting PM2 Bot Scheduler Cron Job...');
-  console.log('📅 Schedule: Every 5 minutes (*/5 * * * *)');
+  console.log('📅 Schedule: Every 1 minute (* * * * *)');
   console.log('⏱️  First execution will happen immediately...\n');
   
   // Execute immediately on startup
   executeScheduler();
   
-  // Schedule every 5 minutes
-  cron.schedule('*/5 * * * *', () => {
+  // Schedule every 1 minute
+  cron.schedule('* * * * *', () => {
     executeScheduler();
   });
   
-  console.log('✅ PM2 Bot Scheduler Cron Job is running and will execute every 5 minutes');
+  console.log('✅ PM2 Bot Scheduler Cron Job is running and will execute every 1 minute');
   console.log('🔄 The process will run continuously - do not exit this process');
   
 } catch (e) {
   // Fallback to setInterval if node-cron is not installed
   console.warn('⚠️  node-cron not found, using setInterval fallback');
   console.log('💡 Install node-cron for better cron support: npm install node-cron');
-  console.log('🚀 Starting PM2 Bot Scheduler with setInterval (every 5 minutes)...\n');
+  console.log('🚀 Starting PM2 Bot Scheduler with setInterval (every 1 minute)...\n');
   
   // Execute immediately
   executeScheduler();
   
-  // Run every 5 minutes (300000 ms)
+  // Run every 1 minute (60000 ms)
   setInterval(() => {
     executeScheduler();
-  }, 5 * 60 * 1000);
+  }, 1 * 60 * 1000);
   
-  console.log('✅ PM2 Bot Scheduler is running with setInterval (every 5 minutes)');
+  console.log('✅ PM2 Bot Scheduler is running with setInterval (every 1 minute)');
 }
 
 // Keep the process alive
