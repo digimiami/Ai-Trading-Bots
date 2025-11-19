@@ -422,21 +422,50 @@ export default function EditBotPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Cooldown (Bars)
-                    </label>
-                    <input
-                      type="number"
-                      value={advancedConfig.cooldown_bars}
-                      onChange={(e) => setAdvancedConfig(prev => ({ ...prev, cooldown_bars: parseInt(e.target.value) || 8 }))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      min="1"
-                      max="100"
-                      step="1"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Number of bars to wait between trades (prevents overtrading)
-                    </p>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Cooldown (Bars)
+                      </label>
+                      <div className="flex items-center">
+                        <span className={`text-xs mr-2 ${advancedConfig.cooldown_bars > 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                          {advancedConfig.cooldown_bars > 0 ? 'ON' : 'OFF'}
+                        </span>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={advancedConfig.cooldown_bars > 0}
+                            onChange={(e) => {
+                              setAdvancedConfig(prev => ({
+                                ...prev,
+                                cooldown_bars: e.target.checked ? (prev.cooldown_bars || 8) : 0
+                              }));
+                            }}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                        </label>
+                      </div>
+                    </div>
+                    {advancedConfig.cooldown_bars > 0 ? (
+                      <>
+                        <input
+                          type="number"
+                          value={advancedConfig.cooldown_bars}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, cooldown_bars: parseInt(e.target.value) || 8 }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          min="1"
+                          max="100"
+                          step="1"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Number of bars to wait between trades (prevents overtrading)
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-xs text-gray-400 italic mt-1">
+                        Cooldown disabled - bot can trade on every bar
+                      </p>
+                    )}
                   </div>
 
                   <div>
