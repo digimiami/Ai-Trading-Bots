@@ -247,7 +247,7 @@ serve(async (req) => {
             contentType: req.headers.get("content-type") || "unknown",
             metadata: requestMetadata
           },
-          status: "processing",
+          status: "received",
           created_at: new Date().toISOString()
         })
         .select()

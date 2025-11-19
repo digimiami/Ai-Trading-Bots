@@ -919,6 +919,8 @@ class MarketDataFetcher {
                   shouldUseFallback: true, // Flag to trigger CoinGecko fallback
                   note: `HTTP 403 Forbidden after ${attempt + 1} attempts. Will try CoinGecko fallback.`
                 };
+                // Immediately add to apiResponses so fallback can detect it
+                apiResponses.push(lastError);
                 break; // Try next variant or fallback
               }
             }
@@ -1142,7 +1144,8 @@ class MarketDataFetcher {
         }
         
         // If all retries failed for this variant, log the last error
-        if (lastError && !lastError.retryable) {
+        // Always push errors to apiResponses so fallback can detect them
+        if (lastError) {
           apiResponses.push(lastError);
         }
       }
