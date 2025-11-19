@@ -607,23 +607,29 @@ class MarketDataFetcher {
     }
     
     // Handle 10000SATSUSDT -> SATSUSDT and vice versa (check longer prefix first)
+    // Only apply to coins that actually have this variant on Bybit
+    const coinsWith10000Prefix = ['SATS', 'BONK', 'FLOKI', '1000SATS', '1000BONK', '1000FLOKI'];
     if (upperSymbol.startsWith('10000')) {
       const withoutPrefix = upperSymbol.replace(/^10000/, '');
       variants.push(withoutPrefix);
-    } else if (upperSymbol.match(/^[A-Z]+USDT$/)) {
-      // If it's a standard format like SATSUSDT, try 10000SATSUSDT for futures
-      if (tradingType === 'futures' || tradingType === 'linear') {
+    } else if (tradingType === 'futures' || tradingType === 'linear') {
+      // Only try 10000 prefix for coins that actually have this variant
+      const baseCoin = upperSymbol.replace(/USDT$/, '');
+      if (coinsWith10000Prefix.includes(baseCoin) || coinsWith10000Prefix.some(coin => baseCoin.includes(coin))) {
         variants.push(`10000${upperSymbol}`);
       }
     }
     
     // Handle 1000PEPEUSDT -> PEPEUSDT and vice versa
+    // Only apply to coins that actually have this variant on Bybit
+    const coinsWith1000Prefix = ['PEPE', 'SHIB', 'FLOKI', 'BONK', 'WIF', 'HMAR', 'SATS'];
     if (upperSymbol.startsWith('1000')) {
       const withoutPrefix = upperSymbol.replace(/^1000/, '');
       variants.push(withoutPrefix);
-    } else if (upperSymbol.match(/^[A-Z]+USDT$/)) {
-      // If it's a standard format like PEPEUSDT, try 1000PEPEUSDT for futures
-      if (tradingType === 'futures' || tradingType === 'linear') {
+    } else if (tradingType === 'futures' || tradingType === 'linear') {
+      // Only try 1000 prefix for coins that actually have this variant
+      const baseCoin = upperSymbol.replace(/USDT$/, '');
+      if (coinsWith1000Prefix.includes(baseCoin) || coinsWith1000Prefix.some(coin => baseCoin.includes(coin))) {
         variants.push(`1000${upperSymbol}`);
       }
     }
