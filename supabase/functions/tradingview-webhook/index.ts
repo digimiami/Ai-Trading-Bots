@@ -238,7 +238,7 @@ serve(async (req) => {
   // Record webhook call IMMEDIATELY with raw body (before parsing)
   if (!webhookCallId) {
     try {
-      const { data: recordedCall } = await supabaseClient
+      const { data: recordedCall, error: insertError } = await supabaseClient
         .from("webhook_calls")
         .insert({
           raw_payload: { 
@@ -252,8 +252,24 @@ serve(async (req) => {
         })
         .select()
         .single();
-      webhookCallId = recordedCall?.id || null;
-      console.log("📝 Recorded incoming webhook call:", webhookCallId);
+      
+      if (insertError) {
+        console.error("❌ Database error recording webhook call:", {
+          error: insertError.message,
+          code: insertError.code,
+          details: insertError.details,
+          hint: insertError.hint,
+          rawBodyLength: rawBody.length
+        });
+        webhookCallId = null;
+      } else {
+        webhookCallId = recordedCall?.id || null;
+        if (webhookCallId) {
+          console.log("📝 Recorded incoming webhook call:", webhookCallId);
+        } else {
+          console.warn("⚠️ Webhook call insert returned no data (recordedCall is null)");
+        }
+      }
     } catch (recordError) {
       console.error("❌ Failed to record webhook call (initial):", {
         error: recordError instanceof Error ? recordError.message : String(recordError),
