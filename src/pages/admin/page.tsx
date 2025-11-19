@@ -130,6 +130,9 @@ export default function AdminPage() {
   const [testingBotId, setTestingBotId] = useState<Record<string, 'real' | 'paper' | null>>({});
   const [editingPabloBot, setEditingPabloBot] = useState<any | null>(null);
   const [testingPabloBotId, setTestingPabloBotId] = useState<string | null>(null);
+  const [orphanedBots, setOrphanedBots] = useState<any[]>([]);
+  const [loadingOrphanedBots, setLoadingOrphanedBots] = useState(false);
+  const [deletingOrphanedBotId, setDeletingOrphanedBotId] = useState<string | null>(null);
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
   const [tradingAnalytics, setTradingAnalytics] = useState<TradingAnalytics | null>(null);
   const [financialOverview, setFinancialOverview] = useState<FinancialOverview | null>(null);
