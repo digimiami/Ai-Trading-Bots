@@ -656,6 +656,62 @@ class MarketDataFetcher {
         // Try different symbol variants
         const symbolVariants = this.normalizeSymbol(symbol, exchange, tradingType);
         
+        // STRATEGY: Try fetching ALL tickers first (like futures-pairs does) - this is less suspicious to Cloudflare
+        // Only try symbol-specific requests if "all tickers" approach fails
+        console.log(`🔍 [PRIMARY] Trying "fetch all tickers" approach first (like futures-pairs) for ${symbol}...`);
+        try {
+          const allTickersUrl = `https://api.bybit.com/v5/market/tickers?category=${bybitCategory}`;
+          // Use no headers - matches working futures-pairs function
+          const allTickersResponse = await fetch(allTickersUrl, {
+            signal: AbortSignal.timeout(10000)
+          });
+          
+          if (allTickersResponse.ok) {
+            const allTickersData = await allTickersResponse.json();
+            
+            if (allTickersData.retCode === 0 && allTickersData.result?.list) {
+              console.log(`✅ Successfully fetched ${allTickersData.result.list.length} tickers from ${bybitCategory} category`);
+              
+              // Search for our symbol in the list
+              for (const symbolVariant of symbolVariants) {
+                const ticker = allTickersData.result.list.find((t: any) => t.symbol === symbolVariant);
+                if (ticker && ticker.lastPrice) {
+                  const price = parseFloat(ticker.lastPrice);
+                  if (price > 0 && isFinite(price)) {
+                    console.log(`✅ Found price using "all tickers" approach: ${symbolVariant} = $${price} (original: ${symbol})`);
+                    return price;
+                  }
+                }
+              }
+              
+              // Try case-insensitive search for major coins
+              const isMajorCoin = ['BTC', 'ETH', 'BNB', 'SOL'].some(coin => symbol.toUpperCase().startsWith(coin));
+              if (isMajorCoin) {
+                const upperSymbol = symbol.toUpperCase();
+                const ticker = allTickersData.result.list.find((t: any) => t.symbol.toUpperCase() === upperSymbol);
+                if (ticker && ticker.lastPrice) {
+                  const price = parseFloat(ticker.lastPrice);
+                  if (price > 0 && isFinite(price)) {
+                    console.log(`✅ Found price using case-insensitive search: ${ticker.symbol} = $${price} (original: ${symbol})`);
+                    return price;
+                  }
+                }
+              }
+              
+              console.log(`⚠️ Symbol ${symbol} not found in all tickers list. Tried variants: ${symbolVariants.join(', ')}`);
+            } else {
+              console.warn(`⚠️ All tickers fetch returned error: retCode=${allTickersData.retCode}, retMsg=${allTickersData.retMsg}`);
+            }
+          } else {
+            console.warn(`⚠️ All tickers fetch failed: HTTP ${allTickersResponse.status}`);
+          }
+        } catch (allTickersErr: any) {
+          console.warn(`⚠️ "All tickers" approach failed for ${symbol}, falling back to symbol-specific requests:`, allTickersErr?.message || allTickersErr);
+        }
+        
+        // FALLBACK: If "all tickers" approach failed, try symbol-specific requests
+        console.log(`🔍 [FALLBACK] Trying symbol-specific requests for ${symbol}...`);
+        
         for (let variantIndex = 0; variantIndex < symbolVariants.length; variantIndex++) {
           const symbolVariant = symbolVariants[variantIndex];
           
@@ -1012,10 +1068,11 @@ class MarketDataFetcher {
         }
       }
         
-        // If all variants failed, try fetching all tickers and searching
+        // FINAL FALLBACK: If all symbol-specific requests failed, try fetching all tickers one more time
+        // (This is a last resort - we already tried this at the beginning, but maybe it will work now)
         const isMajorCoin = ['BTC', 'ETH', 'BNB', 'SOL'].some(coin => symbol.toUpperCase().startsWith(coin));
         if (isMajorCoin) {
-          console.log(`🔍 All symbol variants failed for ${symbol}, trying to fetch all tickers from ${bybitCategory} category...`);
+          console.log(`🔍 [FINAL FALLBACK] All symbol-specific requests failed for ${symbol}, trying all tickers one more time...`);
         }
         
         try {
@@ -1088,12 +1145,8 @@ class MarketDataFetcher {
         if (isMajorCoin && bybitCategory === 'linear') {
           console.log(`🔄 Trying spot category as fallback for major coin ${symbol}...`);
           try {
+            // Use no headers - matches working futures-pairs function
             const spotResponse = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${symbol}`, {
-              headers: {
-                'Accept': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Referer': 'https://www.bybit.com',
-              },
               signal: AbortSignal.timeout(8000)
             });
             const spotData = await spotResponse.json();
