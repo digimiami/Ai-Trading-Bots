@@ -49,6 +49,14 @@ class TimeSync {
 
       // 1. Fetch time from Bybit V5 market time endpoint
       const response = await fetch(`${baseUrl}/v5/market/time`);
+      
+      // Check content-type before parsing JSON
+      const contentType = response.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        const errorText = await response.text().catch(() => '');
+        throw new Error(`Bybit time sync returned non-JSON (${contentType}): ${errorText.substring(0, 200)}`);
+      }
+      
       const data = await response.json();
       
       // Check for API success and presence of time data
@@ -1221,6 +1229,15 @@ class MarketDataFetcher {
             const spotResponse = await fetch(`https://api.bybit.com/v5/market/tickers?category=spot&symbol=${symbol}`, {
               signal: AbortSignal.timeout(8000)
             });
+            
+            // Check content-type before parsing JSON
+            const contentType = spotResponse.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+              const errorText = await spotResponse.text().catch(() => '');
+              console.warn(`⚠️ Spot fallback returned non-JSON (${contentType}): ${errorText.substring(0, 200)}`);
+              throw new Error(`Non-JSON response: ${contentType}`);
+            }
+            
             const spotData = await spotResponse.json();
             
             if (spotData.retCode === 0 && spotData.result?.list && spotData.result.list.length > 0) {
@@ -1245,6 +1262,15 @@ class MarketDataFetcher {
               },
               signal: AbortSignal.timeout(8000)
             });
+            
+            // Check content-type before parsing JSON
+            const contentType = linearResponse.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+              const errorText = await linearResponse.text().catch(() => '');
+              console.warn(`⚠️ Linear fallback returned non-JSON (${contentType}): ${errorText.substring(0, 200)}`);
+              throw new Error(`Non-JSON response: ${contentType}`);
+            }
+            
             const linearData = await linearResponse.json();
             
             if (linearData.retCode === 0 && linearData.result?.list && linearData.result.list.length > 0) {
@@ -1501,6 +1527,15 @@ class MarketDataFetcher {
             for (const symbolVariant of symbolVariants) {
               const url = `https://api.bybit.com/v5/market/kline?category=${category}&symbol=${symbolVariant}&interval=${interval}&limit=${limit}`;
               const response = await fetch(url);
+              
+              // Check content-type before parsing JSON
+              const contentType = response.headers.get('content-type') || '';
+              if (!contentType.includes('application/json')) {
+                const errorText = await response.text().catch(() => '');
+                console.warn(`⚠️ Bybit klines API returned non-JSON (${contentType}) for ${symbolVariant}: ${errorText.substring(0, 200)}`);
+                continue; // Try next variant
+              }
+              
               const data = await response.json();
               
               if (data.retCode === 0 && data.result && data.result.list && data.result.list.length > 0) {
@@ -1537,6 +1572,15 @@ class MarketDataFetcher {
           try {
             const url = `https://www.okx.com/api/v5/market/candles?instId=${symbolVariant}&instType=${instType}&bar=${timeframe}&limit=${limit}`;
             const response = await fetch(url);
+            
+            // Check content-type before parsing JSON
+            const contentType = response.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+              const errorText = await response.text().catch(() => '');
+              console.warn(`⚠️ OKX klines API returned non-JSON (${contentType}) for ${symbolVariant}: ${errorText.substring(0, 200)}`);
+              continue; // Try next variant
+            }
+            
             const data = await response.json();
             
             if (data.code === '0' && data.data && Array.isArray(data.data) && data.data.length > 0) {
