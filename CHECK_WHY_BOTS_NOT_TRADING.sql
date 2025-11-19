@@ -130,20 +130,20 @@ SELECT
   '=== RECENT EXECUTION TIMES ===' as section;
 
 SELECT 
-  bot_id,
+  bal.bot_id,
   tb.name as bot_name,
   tb.symbol,
-  MAX(created_at) as last_execution,
-  COUNT(*) FILTER (WHERE level = 'error') as error_count_24h,
-  COUNT(*) FILTER (WHERE level = 'warning') as warning_count_24h,
-  COUNT(*) FILTER (WHERE level = 'success') as success_count_24h,
-  COUNT(*) FILTER (WHERE message LIKE '%Strategy conditions not met%') as no_signals_count_24h,
-  EXTRACT(EPOCH FROM (NOW() - MAX(created_at))) / 60 as minutes_since_last_execution
+  MAX(bal.created_at) as last_execution,
+  COUNT(*) FILTER (WHERE bal.level = 'error') as error_count_24h,
+  COUNT(*) FILTER (WHERE bal.level = 'warning') as warning_count_24h,
+  COUNT(*) FILTER (WHERE bal.level = 'success') as success_count_24h,
+  COUNT(*) FILTER (WHERE bal.message LIKE '%Strategy conditions not met%') as no_signals_count_24h,
+  EXTRACT(EPOCH FROM (NOW() - MAX(bal.created_at))) / 60 as minutes_since_last_execution
 FROM bot_activity_logs bal
 JOIN trading_bots tb ON bal.bot_id = tb.id
 WHERE bal.created_at > NOW() - INTERVAL '24 hours'
   AND tb.status = 'running'
-GROUP BY bot_id, tb.name, tb.symbol
+GROUP BY bal.bot_id, tb.name, tb.symbol
 ORDER BY last_execution DESC;
 
 -- 6. CHECK FOR BOTS WITH NO RECENT ACTIVITY
