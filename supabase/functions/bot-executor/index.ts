@@ -1921,7 +1921,20 @@ class BotExecutor {
         const timeframe = bot.timeframe || bot.timeFrame || '1h';
         console.log(`📊 [PAPER] Using timeframe: ${timeframe} for ${bot.symbol}`);
         
-        const currentPrice = await MarketDataFetcher.fetchPrice(bot.symbol, bot.exchange, tradingType);
+        // Pass logging callback to track CoinGecko fallback usage
+        const currentPrice = await MarketDataFetcher.fetchPrice(
+          bot.symbol, 
+          bot.exchange, 
+          tradingType,
+          async (message: string, details?: any) => {
+            await this.addBotLog(bot.id, {
+              level: 'info',
+              category: 'market',
+              message: message,
+              details: details
+            });
+          }
+        );
         const rsi = await MarketDataFetcher.fetchRSI(bot.symbol, bot.exchange, timeframe);
         const adx = await MarketDataFetcher.fetchADX(bot.symbol, bot.exchange, timeframe);
         
@@ -2275,7 +2288,20 @@ class BotExecutor {
           details: { step: 'fetch_price', symbol: bot.symbol, exchange: bot.exchange }
         });
         
-        currentPrice = await MarketDataFetcher.fetchPrice(bot.symbol, bot.exchange, tradingType);
+        // Pass logging callback to track CoinGecko fallback usage
+        currentPrice = await MarketDataFetcher.fetchPrice(
+          bot.symbol, 
+          bot.exchange, 
+          tradingType,
+          async (message: string, details?: any) => {
+            await this.addBotLog(bot.id, {
+              level: 'info',
+              category: 'market',
+              message: message,
+              details: details
+            });
+          }
+        );
         console.log(`✅ [${bot.name}] Price fetched: ${currentPrice}`);
         await this.addBotLog(bot.id, {
           level: 'info',
