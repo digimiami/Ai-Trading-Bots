@@ -1941,13 +1941,27 @@ class BotExecutor {
           return; // Stop execution - outside allowed hours
         }
         
+        // Ensure shouldTrade always has a reason
+        if (!shouldTrade || typeof shouldTrade !== 'object') {
+          shouldTrade = {
+            shouldTrade: false,
+            reason: 'Strategy evaluation returned invalid result',
+            confidence: 0
+          };
+        }
+        if (!shouldTrade.reason) {
+          shouldTrade.reason = shouldTrade.shouldTrade 
+            ? 'Trading conditions met' 
+            : 'No trading signals detected (all strategy parameters checked)';
+        }
+        
         if (shouldTrade.shouldTrade) {
           await paperExecutor.executePaperTrade(bot, shouldTrade);
         } else {
           await this.addBotLog(bot.id, {
             level: 'info',
             category: 'strategy',
-            message: `📝 [PAPER] Strategy conditions not met: ${shouldTrade.reason}`,
+            message: `📝 [PAPER] Strategy conditions not met: ${shouldTrade.reason || 'No reason provided'}`,
             details: { ...shouldTrade, paper_trading: true, ml_prediction: mlPrediction }
           });
         }
@@ -2428,6 +2442,20 @@ class BotExecutor {
             confidence: 0
           };
         }
+      }
+      
+      // Ensure shouldTrade always has a reason
+      if (!shouldTrade || typeof shouldTrade !== 'object') {
+        shouldTrade = {
+          shouldTrade: false,
+          reason: 'Strategy evaluation returned invalid result',
+          confidence: 0
+        };
+      }
+      if (!shouldTrade.reason) {
+        shouldTrade.reason = shouldTrade.shouldTrade 
+          ? 'Trading conditions met' 
+          : 'No trading signals detected (all strategy parameters checked)';
       }
       
       // Log strategy result to bot activity logs
@@ -2911,10 +2939,10 @@ class BotExecutor {
       const { rsi, adx, price } = marketData;
       const config = bot.strategy_config || {};
       
-      // Get configuration values with defaults
+      // Get configuration values with defaults (lowered for more trading opportunities)
       const htfTimeframe = config.htf_timeframe || '4h';
-      const adxMinHTF = config.adx_min_htf || 23;
-      const adxTrendMin = config.adx_trend_min || 25;
+      const adxMinHTF = config.adx_min_htf || 15;
+      const adxTrendMin = config.adx_trend_min || 15;
       const adxMeanRevMax = config.adx_meanrev_max || 19;
       const rsiOversold = config.rsi_oversold || 30;
       const momentumThreshold = config.momentum_threshold || 0.8;
