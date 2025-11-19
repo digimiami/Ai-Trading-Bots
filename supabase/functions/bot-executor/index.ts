@@ -656,9 +656,69 @@ class MarketDataFetcher {
         // Try different symbol variants
         const symbolVariants = this.normalizeSymbol(symbol, exchange, tradingType);
         
-        // STRATEGY: Try fetching ALL tickers first (like futures-pairs does) - this is less suspicious to Cloudflare
-        // Only try symbol-specific requests if "all tickers" approach fails
-        console.log(`🔍 [PRIMARY] Trying "fetch all tickers" approach first (like futures-pairs) for ${symbol}...`);
+        // STRATEGY: Use futures-pairs Edge Function as proxy (it works, we don't) - this bypasses Cloudflare blocking
+        // For linear category, use futures-pairs function which successfully fetches from Bybit
+        if (bybitCategory === 'linear') {
+          console.log(`🔍 [PRIMARY] Using futures-pairs Edge Function as proxy for ${symbol} (linear category)...`);
+          try {
+            const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+            if (supabaseUrl) {
+              const futuresPairsUrl = `${supabaseUrl}/functions/v1/futures-pairs?action=tickers&exchange=bybit`;
+              console.log(`📡 Calling futures-pairs function: ${futuresPairsUrl}`);
+              
+              const futuresPairsResponse = await fetch(futuresPairsUrl, {
+                signal: AbortSignal.timeout(10000)
+              });
+              
+              if (futuresPairsResponse.ok) {
+                const futuresPairsData = await futuresPairsResponse.json();
+                
+                if (futuresPairsData.retCode === 0 && futuresPairsData.result?.list) {
+                  console.log(`✅ Successfully fetched ${futuresPairsData.result.list.length} tickers via futures-pairs proxy`);
+                  
+                  // Search for our symbol in the list
+                  for (const symbolVariant of symbolVariants) {
+                    const ticker = futuresPairsData.result.list.find((t: any) => t.symbol === symbolVariant);
+                    if (ticker && ticker.lastPrice) {
+                      const price = parseFloat(ticker.lastPrice);
+                      if (price > 0 && isFinite(price)) {
+                        console.log(`✅ Found price via futures-pairs proxy: ${symbolVariant} = $${price} (original: ${symbol})`);
+                        return price;
+                      }
+                    }
+                  }
+                  
+                  // Try case-insensitive search for major coins
+                  const isMajorCoin = ['BTC', 'ETH', 'BNB', 'SOL'].some(coin => symbol.toUpperCase().startsWith(coin));
+                  if (isMajorCoin) {
+                    const upperSymbol = symbol.toUpperCase();
+                    const ticker = futuresPairsData.result.list.find((t: any) => t.symbol.toUpperCase() === upperSymbol);
+                    if (ticker && ticker.lastPrice) {
+                      const price = parseFloat(ticker.lastPrice);
+                      if (price > 0 && isFinite(price)) {
+                        console.log(`✅ Found price via futures-pairs proxy (case-insensitive): ${ticker.symbol} = $${price} (original: ${symbol})`);
+                        return price;
+                      }
+                    }
+                  }
+                  
+                  console.log(`⚠️ Symbol ${symbol} not found in futures-pairs tickers list. Tried variants: ${symbolVariants.join(', ')}`);
+                } else {
+                  console.warn(`⚠️ futures-pairs proxy returned error: retCode=${futuresPairsData.retCode}, retMsg=${futuresPairsData.retMsg}`);
+                }
+              } else {
+                console.warn(`⚠️ futures-pairs proxy failed: HTTP ${futuresPairsResponse.status}`);
+              }
+            } else {
+              console.warn(`⚠️ SUPABASE_URL not available, skipping futures-pairs proxy`);
+            }
+          } catch (futuresPairsErr: any) {
+            console.warn(`⚠️ futures-pairs proxy failed for ${symbol}, falling back to direct requests:`, futuresPairsErr?.message || futuresPairsErr);
+          }
+        }
+        
+        // FALLBACK: Try direct "fetch all tickers" approach (for non-linear or if proxy failed)
+        console.log(`🔍 [FALLBACK] Trying direct "fetch all tickers" approach for ${symbol}...`);
         try {
           const allTickersUrl = `https://api.bybit.com/v5/market/tickers?category=${bybitCategory}`;
           // Use no headers - matches working futures-pairs function
