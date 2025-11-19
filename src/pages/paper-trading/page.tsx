@@ -104,15 +104,15 @@ export default function PaperTradingDashboard() {
             ))}
           </select>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-            {selectedPair === 'all' 
-              ? `Showing report for all pairs${availablePairs.length > 0 ? ` (${availablePairs.length} pairs)` : ''}`
-              : selectedPair 
-                ? (
-                    <>
-                      Showing report for <span className="font-semibold">{selectedPair}</span>
-                    </>
-                  )
-                : 'Showing report for all pairs'
+            {selectedPair === 'all' || !selectedPair || selectedPair === ''
+              ? availablePairs.length > 0
+                ? `Showing report for all pairs (${availablePairs.length} ${availablePairs.length === 1 ? 'pair' : 'pairs'})`
+                : 'Showing report for all pairs (no pairs available yet)'
+              : (
+                  <>
+                    Showing report for <span className="font-semibold">{selectedPair}</span>
+                  </>
+                )
             }
           </p>
         </Card>
@@ -122,7 +122,7 @@ export default function PaperTradingDashboard() {
         
         {/* Paper Trading Performance - Always show, default to all pairs */}
         <PaperTradingPerformance
-          selectedPair={selectedPair === 'all' ? '' : selectedPair}
+          selectedPair={selectedPair === 'all' || !selectedPair || selectedPair === '' ? '' : selectedPair}
           onReset={fetchPairs}
         />
       </div>
