@@ -1566,29 +1566,101 @@ class MarketDataFetcher {
         // For now, try both spot and linear, but prefer linear for futures
         const categories = ['linear', 'spot', 'inverse'];
         
+        // Use multiple domains for redundancy (same as price fetching)
+        const baseDomains = ['https://api.bybit.com', 'https://api.bytick.com'];
+        let had403Errors = false;
+        
         for (const category of categories) {
           try {
             // Normalize symbol for Bybit API
             const symbolVariants = this.normalizeSymbol(symbol, exchange, category === 'linear' ? 'futures' : 'spot');
             
             for (const symbolVariant of symbolVariants) {
-              const url = `https://api.bybit.com/v5/market/kline?category=${category}&symbol=${symbolVariant}&interval=${interval}&limit=${limit}`;
-              const response = await fetch(url);
-              
-              // Check content-type before parsing JSON
-              const contentType = response.headers.get('content-type') || '';
-              if (!contentType.includes('application/json')) {
-                const errorText = await response.text().catch(() => '');
-                console.warn(`⚠️ Bybit klines API returned non-JSON (${contentType}) for ${symbolVariant}: ${errorText.substring(0, 200)}`);
-                continue; // Try next variant
+              // Try each domain
+              for (const baseDomain of baseDomains) {
+                try {
+                  const url = `${baseDomain}/v5/market/kline?category=${category}&symbol=${symbolVariant}&interval=${interval}&limit=${limit}`;
+                  const response = await fetch(url, {
+                    signal: AbortSignal.timeout(10000)
+                  });
+                  
+                  // Check content-type before parsing JSON
+                  const contentType = response.headers.get('content-type') || '';
+                  if (!contentType.includes('application/json')) {
+                    const errorText = await response.text().catch(() => '');
+                    if (response.status === 403) {
+                      had403Errors = true;
+                      console.warn(`⚠️ Bybit klines API returned 403 (geographic blocking?) from ${baseDomain} for ${symbolVariant}`);
+                      continue; // Try next domain
+                    }
+                    console.warn(`⚠️ Bybit klines API returned non-JSON (${contentType}) for ${symbolVariant}: ${errorText.substring(0, 200)}`);
+                    continue; // Try next domain
+                  }
+                  
+                  const data = await response.json();
+                  
+                  if (data.retCode === 0 && data.result && data.result.list && data.result.list.length > 0) {
+                    // Bybit returns klines in reverse chronological order (newest first)
+                    // Format: [startTime, open, high, low, close, volume, turnover]
+                    const klines = data.result.list.reverse().map((k: any[]) => [
+                      parseFloat(k[0]), // timestamp
+                      parseFloat(k[1]), // open
+                      parseFloat(k[2]), // high
+                      parseFloat(k[3]), // low
+                      parseFloat(k[4]), // close
+                      parseFloat(k[5])  // volume
+                    ]);
+                    
+                    if (klines.length > 0) {
+                      console.log(`✅ Fetched ${klines.length} klines for ${symbolVariant} (${category}) from ${baseDomain}`);
+                      return klines;
+                    }
+                  }
+                } catch (err) {
+                  continue; // Try next domain
+                }
               }
-              
-              const data = await response.json();
-              
-              if (data.retCode === 0 && data.result && data.result.list && data.result.list.length > 0) {
-                // Bybit returns klines in reverse chronological order (newest first)
-                // Format: [startTime, open, high, low, close, volume, turnover]
-                const klines = data.result.list.reverse().map((k: any[]) => [
+            }
+          } catch (err) {
+            continue; // Try next category
+          }
+        }
+        
+        // FALLBACK: Try Binance for major coins if Bybit is blocked
+        const isMajorCoin = ['BTC', 'ETH', 'BNB', 'SOL'].some(coin => symbol.toUpperCase().startsWith(coin));
+        if (isMajorCoin || had403Errors) {
+          console.log(`🔄 Trying Binance fallback for klines (${symbol})...`);
+          try {
+            // Map timeframe to Binance interval
+            const binanceIntervalMap: { [key: string]: string } = {
+              '1m': '1m',
+              '3m': '3m',
+              '5m': '5m',
+              '15m': '15m',
+              '30m': '30m',
+              '1h': '1h',
+              '2h': '2h',
+              '4h': '4h',
+              '6h': '6h',
+              '12h': '12h',
+              '1d': '1d',
+              '1w': '1w',
+              '1M': '1M'
+            };
+            
+            const binanceInterval = binanceIntervalMap[timeframe] || '1h';
+            const binanceSymbol = symbol.replace(/\.P$/, ''); // Remove .P suffix if present
+            
+            const binanceUrl = `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=${binanceInterval}&limit=${limit}`;
+            const binanceResponse = await fetch(binanceUrl, {
+              signal: AbortSignal.timeout(10000)
+            });
+            
+            if (binanceResponse.ok) {
+              const binanceData = await binanceResponse.json();
+              if (Array.isArray(binanceData) && binanceData.length > 0) {
+                // Binance returns: [timestamp, open, high, low, close, volume, ...]
+                const klines = binanceData.map((k: any[]) => [
                   parseFloat(k[0]), // timestamp
                   parseFloat(k[1]), // open
                   parseFloat(k[2]), // high
@@ -1598,17 +1670,17 @@ class MarketDataFetcher {
                 ]);
                 
                 if (klines.length > 0) {
-                  console.log(`✅ Fetched ${klines.length} klines for ${symbolVariant} (${category})`);
+                  console.log(`✅ Fetched ${klines.length} klines for ${symbol} from Binance (fallback)`);
                   return klines;
                 }
               }
             }
-          } catch (err) {
-            continue; // Try next category
+          } catch (binanceErr) {
+            console.warn(`⚠️ Binance klines fallback failed for ${symbol}:`, binanceErr);
           }
         }
         
-        console.warn(`⚠️ Could not fetch klines for ${symbol} from Bybit`);
+        console.warn(`⚠️ Could not fetch klines for ${symbol} from Bybit${had403Errors ? ' (geographic blocking detected)' : ''}`);
         return [];
       } else if (exchange === 'okx') {
         // OKX klines implementation
