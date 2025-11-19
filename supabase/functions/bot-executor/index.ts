@@ -5091,23 +5091,74 @@ class BotExecutor {
         const signaturePayload = timestamp + apiKey + recvWindow + queryParams;
         const signature = await this.createBybitSignature(signaturePayload, apiSecret);
         
-        const response = await fetch(`${baseUrl}/v5/account/wallet-balance?${queryParams}`, {
-          method: 'GET',
-          headers: {
-            'X-BAPI-API-KEY': apiKey,
-            'X-BAPI-TIMESTAMP': timestamp,
-            'X-BAPI-RECV-WINDOW': recvWindow,
-            'X-BAPI-SIGN': signature,
-          },
-        });
+        // Try each domain until one succeeds
+        let response: Response | null = null;
+        let data: any = null;
         
-        // Check content-type before parsing JSON
-        const contentType = response.headers.get('content-type') || '';
-        if (!contentType.includes('application/json')) {
-          const errorText = await response.text().catch(() => '');
-          const errorPreview = errorText.substring(0, 500);
-          console.warn(`⚠️ Bybit balance API returned non-JSON response (${contentType}):`, errorPreview);
-          // Return unknown balance status - let order attempt happen
+        for (const domain of baseDomains) {
+          try {
+            console.log(`🔄 Checking balance via ${domain}...`);
+            response = await fetch(`${domain}/v5/account/wallet-balance?${queryParams}`, {
+              method: 'GET',
+              headers: {
+                'X-BAPI-API-KEY': apiKey,
+                'X-BAPI-TIMESTAMP': timestamp,
+                'X-BAPI-RECV-WINDOW': recvWindow,
+                'X-BAPI-SIGN': signature,
+              },
+            });
+            
+            // Check content-type before parsing JSON
+            const contentType = response.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+              // If 403 and we have more domains to try, continue to next domain
+              if (response.status === 403 && baseDomains.indexOf(domain) < baseDomains.length - 1) {
+                console.warn(`⚠️ Got 403 from ${domain}, trying alternate domain...`);
+                continue; // Try next domain
+              }
+              
+              const errorText = await response.text().catch(() => '');
+              const errorPreview = errorText.substring(0, 500);
+              console.warn(`⚠️ Bybit balance API returned non-JSON response (${contentType}):`, errorPreview);
+              // Return unknown balance status - let order attempt happen
+              return {
+                hasBalance: true, // Assume sufficient if we can't check
+                availableBalance: 0,
+                totalRequired: orderValue * 1.05,
+                orderValue: orderValue
+              };
+            }
+            
+            data = await response.json();
+            
+            // If we got a valid response, use it
+            if (data && typeof data === 'object') {
+              console.log(`✅ Successfully received balance response from ${domain}`);
+              break; // Success, exit loop
+            }
+          } catch (fetchError: any) {
+            // If it's a 403 and we have more domains, try next one
+            if (response?.status === 403 && baseDomains.indexOf(domain) < baseDomains.length - 1) {
+              console.warn(`⚠️ Error from ${domain} (HTTP ${response.status}), trying alternate domain...`);
+              continue;
+            }
+            
+            // If it's the last domain, return unknown balance status
+            if (baseDomains.indexOf(domain) === baseDomains.length - 1) {
+              console.warn(`⚠️ All balance check domains failed, assuming sufficient balance`);
+              return {
+                hasBalance: true, // Assume sufficient if we can't check
+                availableBalance: 0,
+                totalRequired: orderValue * 1.05,
+                orderValue: orderValue
+              };
+            }
+          }
+        }
+        
+        // If we exhausted all domains without success, return unknown balance status
+        if (!response || !data) {
+          console.warn(`⚠️ Balance check failed on all domains, assuming sufficient balance`);
           return {
             hasBalance: true, // Assume sufficient if we can't check
             availableBalance: 0,
@@ -5115,8 +5166,6 @@ class BotExecutor {
             orderValue: orderValue
           };
         }
-        
-        const data = await response.json();
         
         if (data.retCode !== 0) {
           console.warn(`⚠️ Failed to check balance (retCode: ${data.retCode}), proceeding with order attempt:`, data.retMsg);
@@ -5206,23 +5255,74 @@ class BotExecutor {
         const signaturePayload = timestamp + apiKey + recvWindow + queryParams;
         const signature = await this.createBybitSignature(signaturePayload, apiSecret);
         
-        const response = await fetch(`${baseUrl}/v5/account/wallet-balance?${queryParams}`, {
-          method: 'GET',
-          headers: {
-            'X-BAPI-API-KEY': apiKey,
-            'X-BAPI-TIMESTAMP': timestamp,
-            'X-BAPI-RECV-WINDOW': recvWindow,
-            'X-BAPI-SIGN': signature,
-          },
-        });
+        // Try each domain until one succeeds
+        let response: Response | null = null;
+        let data: any = null;
         
-        // Check content-type before parsing JSON
-        const contentType = response.headers.get('content-type') || '';
-        if (!contentType.includes('application/json')) {
-          const errorText = await response.text().catch(() => '');
-          const errorPreview = errorText.substring(0, 500);
-          console.warn(`⚠️ Bybit balance API returned non-JSON response (${contentType}):`, errorPreview);
-          // Return unknown balance status - let order attempt happen
+        for (const domain of baseDomains) {
+          try {
+            console.log(`🔄 Checking spot balance via ${domain}...`);
+            response = await fetch(`${domain}/v5/account/wallet-balance?${queryParams}`, {
+              method: 'GET',
+              headers: {
+                'X-BAPI-API-KEY': apiKey,
+                'X-BAPI-TIMESTAMP': timestamp,
+                'X-BAPI-RECV-WINDOW': recvWindow,
+                'X-BAPI-SIGN': signature,
+              },
+            });
+            
+            // Check content-type before parsing JSON
+            const contentType = response.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+              // If 403 and we have more domains to try, continue to next domain
+              if (response.status === 403 && baseDomains.indexOf(domain) < baseDomains.length - 1) {
+                console.warn(`⚠️ Got 403 from ${domain}, trying alternate domain...`);
+                continue; // Try next domain
+              }
+              
+              const errorText = await response.text().catch(() => '');
+              const errorPreview = errorText.substring(0, 500);
+              console.warn(`⚠️ Bybit balance API returned non-JSON response (${contentType}):`, errorPreview);
+              // Return unknown balance status - let order attempt happen
+              return {
+                hasBalance: true, // Assume sufficient if we can't check
+                availableBalance: 0,
+                totalRequired: orderValue * 1.05,
+                orderValue: orderValue
+              };
+            }
+            
+            data = await response.json();
+            
+            // If we got a valid response, use it
+            if (data && typeof data === 'object') {
+              console.log(`✅ Successfully received spot balance response from ${domain}`);
+              break; // Success, exit loop
+            }
+          } catch (fetchError: any) {
+            // If it's a 403 and we have more domains, try next one
+            if (response?.status === 403 && baseDomains.indexOf(domain) < baseDomains.length - 1) {
+              console.warn(`⚠️ Error from ${domain} (HTTP ${response.status}), trying alternate domain...`);
+              continue;
+            }
+            
+            // If it's the last domain, return unknown balance status
+            if (baseDomains.indexOf(domain) === baseDomains.length - 1) {
+              console.warn(`⚠️ All spot balance check domains failed, assuming sufficient balance`);
+              return {
+                hasBalance: true, // Assume sufficient if we can't check
+                availableBalance: 0,
+                totalRequired: orderValue * 1.05,
+                orderValue: orderValue
+              };
+            }
+          }
+        }
+        
+        // If we exhausted all domains without success, return unknown balance status
+        if (!response || !data) {
+          console.warn(`⚠️ Spot balance check failed on all domains, assuming sufficient balance`);
           return {
             hasBalance: true, // Assume sufficient if we can't check
             availableBalance: 0,
@@ -5230,8 +5330,6 @@ class BotExecutor {
             orderValue: orderValue
           };
         }
-        
-        const data = await response.json();
         
         if (data.retCode !== 0) {
           console.warn(`⚠️ Failed to check balance (retCode: ${data.retCode}), proceeding with order attempt:`, data.retMsg);
