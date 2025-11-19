@@ -1369,8 +1369,8 @@ class MarketDataFetcher {
         
         // FINAL FALLBACK 3: Use CoinGecko public API (most permissive, rarely blocked)
         // Trigger for major coins OR if we got 403 errors (indicates Bybit blocking)
+        // Note: isMajorCoin is already declared above (line 1155), reuse it here
         const had403Errors = apiResponses.some((r: any) => r.httpStatus === 403);
-        const isMajorCoin = ['BTC', 'ETH', 'BNB', 'SOL'].some(coin => symbol.toUpperCase().startsWith(coin));
         
         console.log(`🔍 CoinGecko fallback check: isMajorCoin=${isMajorCoin}, had403Errors=${had403Errors}, apiResponses.length=${apiResponses.length}`);
         
