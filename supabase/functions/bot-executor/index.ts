@@ -7240,9 +7240,12 @@ class BotExecutor {
         ? JSON.parse(bot.strategy_config) 
         : bot.strategy_config || {};
       
-      const cooldownBars = strategyConfig.cooldown_bars || 8; // Default: 8 bars
+      // Get cooldown bars - 0 means disabled, undefined/null means use default 8
+      const cooldownBars = strategyConfig.cooldown_bars !== undefined && strategyConfig.cooldown_bars !== null
+        ? strategyConfig.cooldown_bars
+        : 8; // Default: 8 bars if not specified
       
-      // If cooldown is 0 or negative, skip check
+      // If cooldown is 0 or negative, skip check (cooldown disabled)
       if (cooldownBars <= 0) {
         return { canTrade: true };
       }
