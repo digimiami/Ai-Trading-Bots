@@ -651,7 +651,7 @@ class MarketDataFetcher {
     return [...new Set(variants)];
   }
   
-  static async fetchPrice(symbol: string, exchange: string, tradingType: string = 'spot'): Promise<number> {
+  static async fetchPrice(symbol: string, exchange: string, tradingType: string = 'spot', logCallback?: (message: string, details?: any) => Promise<void>): Promise<number> {
     // Store API responses for error reporting
     const apiResponses: any[] = [];
     
@@ -1371,7 +1371,18 @@ class MarketDataFetcher {
         // Trigger for major coins OR if we got 403 errors (indicates Bybit blocking)
         const had403Errors = apiResponses.some((r: any) => r.httpStatus === 403);
         if (isMajorCoin || had403Errors) {
-          console.log(`🔄 Trying CoinGecko public API as fallback for ${symbol}${had403Errors ? ' (Bybit returned 403)' : ''}...`);
+          const fallbackReason = had403Errors ? ' (Bybit returned 403)' : '';
+          console.log(`🔄 Trying CoinGecko public API as fallback for ${symbol}${fallbackReason}...`);
+          
+          // Log to bot_activity_logs if callback provided
+          if (logCallback) {
+            await logCallback(`🔄 CoinGecko fallback triggered for ${symbol}${fallbackReason}`, {
+              symbol,
+              reason: had403Errors ? 'Bybit returned 403' : 'Major coin fallback',
+              apiResponses: apiResponses.filter((r: any) => r.httpStatus === 403).length
+            }).catch(err => console.warn('Failed to log CoinGecko fallback trigger:', err));
+          }
+          
           try {
             // Map symbol to CoinGecko ID (expanded for more coins)
             const coinGeckoMap: { [key: string]: string } = {
@@ -1435,6 +1446,17 @@ class MarketDataFetcher {
               const price = cgData[coinGeckoId]?.usd;
               if (price && price > 0 && isFinite(price)) {
                 console.log(`✅ CoinGecko fallback price for ${symbol}: $${price}`);
+                
+                // Log success to bot_activity_logs if callback provided
+                if (logCallback) {
+                  await logCallback(`✅ CoinGecko fallback price for ${symbol}: $${price}`, {
+                    symbol,
+                    price,
+                    coinGeckoId,
+                    source: 'coingecko'
+                  }).catch(err => console.warn('Failed to log CoinGecko success:', err));
+                }
+                
                 return price;
               } else {
                 console.warn(`⚠️ CoinGecko price invalid for ${symbol}:`, price);
@@ -4142,7 +4164,20 @@ class BotExecutor {
       
       try {
         console.log(`🔍 [executeTrade] Starting price fetch for ${bot.symbol} (${tradingType})...`);
-        currentPrice = await MarketDataFetcher.fetchPrice(bot.symbol, bot.exchange, tradingType);
+        // Pass logging callback to track CoinGecko fallback usage
+        currentPrice = await MarketDataFetcher.fetchPrice(
+          bot.symbol, 
+          bot.exchange, 
+          tradingType,
+          async (message: string, details?: any) => {
+            await this.addBotLog(bot.id, {
+              level: 'info',
+              category: 'market',
+              message: message,
+              details: details
+            });
+          }
+        );
         console.log(`✅ [executeTrade] Price fetch completed: $${currentPrice} for ${bot.symbol}`);
       } catch (err: any) {
         // Capture error details for logging
