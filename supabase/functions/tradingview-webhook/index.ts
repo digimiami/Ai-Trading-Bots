@@ -255,7 +255,11 @@ serve(async (req) => {
       webhookCallId = recordedCall?.id || null;
       console.log("📝 Recorded incoming webhook call:", webhookCallId);
     } catch (recordError) {
-      console.error("❌ Failed to record webhook call (initial):", recordError);
+      console.error("❌ Failed to record webhook call (initial):", {
+        error: recordError instanceof Error ? recordError.message : String(recordError),
+        stack: recordError instanceof Error ? recordError.stack : undefined,
+        rawBodyLength: rawBody.length
+      });
       // Continue processing even if recording fails
     }
   }
@@ -499,8 +503,60 @@ serve(async (req) => {
       .eq("id", botId)
       .single();
 
-    if (botError || !botData) {
-      console.error("❌ Trading bot not found for webhook", botError);
+    if (botError) {
+      console.error("❌ Error fetching bot:", {
+        error: botError.message,
+        code: botError.code,
+        details: botError.details,
+        hint: botError.hint,
+        botId
+      });
+      
+      // Update webhook call record with error
+      if (webhookCallId) {
+        try {
+          await supabaseClient
+            .from("webhook_calls")
+            .update({
+              status: "failed",
+              error_message: `Database error: ${botError.message}`,
+              response_status: 500,
+              processed_at: new Date().toISOString()
+            })
+            .eq("id", webhookCallId);
+        } catch (recordError) {
+          console.error("❌ Failed to update webhook call record:", recordError);
+        }
+      }
+      
+      return new Response(JSON.stringify({ 
+        error: "Database error while fetching bot",
+        details: botError.message
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+    if (!botData) {
+      console.error("❌ Trading bot not found for webhook", { botId });
+      
+      // Update webhook call record
+      if (webhookCallId) {
+        try {
+          await supabaseClient
+            .from("webhook_calls")
+            .update({
+              status: "failed",
+              error_message: "Bot not found",
+              response_status: 404,
+              processed_at: new Date().toISOString()
+            })
+            .eq("id", webhookCallId);
+        } catch (recordError) {
+          console.error("❌ Failed to update webhook call record:", recordError);
+        }
+      }
+      
       return new Response(JSON.stringify({ error: "Bot not found" }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" }

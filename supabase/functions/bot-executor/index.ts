@@ -959,7 +959,13 @@ class MarketDataFetcher {
             try {
               data = JSON.parse(responseText);
             } catch (parseError) {
-              console.error(`❌ Failed to parse Bybit API response for ${symbolVariant} (Attempt ${attempt + 1}/3):`, parseError);
+              console.error(`❌ Failed to parse Bybit API response for ${symbolVariant} (Attempt ${attempt + 1}/3):`, {
+                error: parseError instanceof Error ? parseError.message : String(parseError),
+                parseError: parseError instanceof Error ? parseError.message : String(parseError),
+                isHtml: isHtml,
+                attempt: attempt + 1,
+                responsePreview: responseText.substring(0, 200)
+              });
               lastError = {
                 symbolVariant,
                 apiUrl,
@@ -1701,6 +1707,21 @@ class MarketDataFetcher {
   }
 }
 
+// TypeScript interface for TradingBot
+interface TradingBot {
+  id: string;
+  name: string;
+  status: 'running' | 'stopped' | 'paused';
+  symbol: string;
+  exchange: string;
+  user_id: string;
+  strategy?: any;
+  paper_trading?: boolean;
+  webhook_only?: boolean;
+  trade_amount?: number;
+  [key: string]: any; // For other properties
+}
+
 // Bot execution engine
 class BotExecutor {
   private supabaseClient: any;
@@ -1711,7 +1732,29 @@ class BotExecutor {
     this.user = user;
   }
   
-  async executeBot(bot: any): Promise<void> {
+  /**
+   * Safe fetch helper with retry logic and timeout
+   */
+  private async safeFetch(url: string, options: RequestInit = {}, retries: number = 3): Promise<Response> {
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        const response = await fetch(url, {
+          ...options,
+          signal: AbortSignal.timeout(10000) // 10 second timeout
+        });
+        return response;
+      } catch (error) {
+        if (attempt === retries - 1) {
+          throw new Error(`Fetch failed after ${retries} attempts: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        console.warn(`⚠️ Fetch attempt ${attempt + 1} failed, retrying...`, error);
+        await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1))); // Exponential backoff
+      }
+    }
+    throw new Error('Unreachable code');
+  }
+  
+  async executeBot(bot: TradingBot): Promise<void> {
     const executionStartTime = Date.now();
     const botId = bot.id;
     const botName = bot.name || 'Unknown';
@@ -2496,11 +2539,11 @@ class BotExecutor {
       const errorStack = error instanceof Error ? error.stack : undefined;
       
       console.error(`\n❌ === BOT EXECUTION ERROR ===`);
-      console.error(`   Bot ID: ${botId}`);
-      console.error(`   Bot Name: ${botName}`);
-      console.error(`   Error: ${errorMessage}`);
+      console.error(`   Bot ID: ${botId || 'unknown'}`);
+      console.error(`   Bot Name: ${botName || 'unknown'}`);
+      console.error(`   Error: ${errorMessage || 'Unknown error'}`);
       console.error(`   Execution Time: ${executionTime}ms`);
-      if (errorStack) {
+      if (errorStack && errorStack.length > 0) {
         console.error(`   Stack: ${errorStack.substring(0, 500)}`);
       }
       console.error(`\n`);
@@ -2941,12 +2984,12 @@ class BotExecutor {
       
       // Get configuration values with defaults (lowered for more trading opportunities)
       const htfTimeframe = config.htf_timeframe || '4h';
-      const adxMinHTF = config.adx_min_htf || 15;
-      const adxTrendMin = config.adx_trend_min || 15;
-      const adxMeanRevMax = config.adx_meanrev_max || 19;
-      const rsiOversold = config.rsi_oversold || 30;
-      const momentumThreshold = config.momentum_threshold || 0.8;
-      const vwapDistance = config.vwap_distance || 1.2;
+      const adxMinHTF = config.adx_min_htf || 12; // Lowered from 15
+      const adxTrendMin = config.adx_trend_min || 12; // Lowered from 15
+      const adxMeanRevMax = config.adx_meanrev_max || 50; // Increased from 19 - this is MAX ADX for mean reversion, so higher = more lenient
+      const rsiOversold = config.rsi_oversold || 40; // Increased from 30 - more lenient
+      const momentumThreshold = config.momentum_threshold || 0.3; // Lowered from 0.8 - much more lenient
+      const vwapDistance = config.vwap_distance || 0.5; // Lowered from 1.2 - much more lenient
       const timeframe = bot.timeframe || bot.timeFrame || '4h';
       
       // 1. Fetch HTF (4H) klines for trend confirmation
@@ -3007,25 +3050,22 @@ class BotExecutor {
         };
       }
 
-      // For LONG trades (uptrend): require price and EMA50 above EMA200
+      // For LONG trades (uptrend): EMA50 alignment is preferred but not strictly required
+      // Only warn if EMA50 is significantly misaligned (more than 2% difference)
       if (htfPriceAboveEMA200) {
-        if (!htfEMA50AboveEMA200) {
-          return {
-            shouldTrade: false,
-            reason: `HTF EMA50 (${htfEMA50.toFixed(2)}) not above EMA200 (${htfEMA200.toFixed(2)}) - required for long entries`,
-            confidence: 0
-          };
+        const ema50Diff = ((htfEMA50 - htfEMA200) / htfEMA200) * 100;
+        if (ema50Diff < -2) { // EMA50 is more than 2% below EMA200
+          // Still allow but with lower confidence - don't block completely
+          console.log(`⚠️ HTF EMA50 (${htfEMA50.toFixed(2)}) is ${Math.abs(ema50Diff).toFixed(2)}% below EMA200 (${htfEMA200.toFixed(2)}) - proceeding with caution`);
         }
       }
       
-      // For SHORT trades (downtrend): require price and EMA50 below EMA200 (when shorts allowed)
+      // For SHORT trades (downtrend): EMA50 alignment is preferred but not strictly required
       if (!htfPriceAboveEMA200 && allowShorts) {
-        if (!htfEMA50BelowEMA200) {
-          return {
-            shouldTrade: false,
-            reason: `HTF EMA50 (${htfEMA50.toFixed(2)}) not below EMA200 (${htfEMA200.toFixed(2)}) - required for short entries`,
-            confidence: 0
-          };
+        const ema50Diff = ((htfEMA200 - htfEMA50) / htfEMA200) * 100;
+        if (ema50Diff < -2) { // EMA50 is more than 2% above EMA200 when it should be below
+          // Still allow but with lower confidence - don't block completely
+          console.log(`⚠️ HTF EMA50 (${htfEMA50.toFixed(2)}) is ${Math.abs(ema50Diff).toFixed(2)}% above EMA200 (${htfEMA200.toFixed(2)}) - proceeding with caution`);
         }
       }
       
@@ -3055,6 +3095,7 @@ class BotExecutor {
       }
       
       // 3. Current Timeframe Regime Filter
+      // Only block if ADX is extremely low (below minimum trend threshold)
       if (adx < adxTrendMin) {
         return {
           shouldTrade: false,
@@ -3063,12 +3104,12 @@ class BotExecutor {
         };
       }
       
-      if (adx < adxMeanRevMax) {
-        return {
-          shouldTrade: false,
-          reason: `ADX (${adx.toFixed(2)}) indicates mean-reversion/chop market (${adxMeanRevMax})`,
-          confidence: 0
-        };
+      // ADX mean-reversion max check: if ADX is TOO HIGH (above max), it's a strong trend, not mean-reverting
+      // This is a soft filter - only block if ADX is extremely high (strong trend, not suitable for mean reversion)
+      // Note: adxMeanRevMax should be high (like 50) - if ADX > 50, market is in very strong trend
+      if (adx > adxMeanRevMax) {
+        console.log(`⚠️ ADX (${adx.toFixed(2)}) is very high (above ${adxMeanRevMax}) - strong trend, mean reversion less likely but still allowing trade`);
+        // Don't block - just log a warning. High ADX can still work for trend-following entries.
       }
       
       // 4. Mean Reversion Entry Signal Checks (LONG or SHORT branch)
@@ -3113,43 +3154,73 @@ class BotExecutor {
 
       // Branch 4A: LONG entries (HTF uptrend)
       if (htfPriceAboveEMA200) {
-        // Require RSI oversold and price sufficiently below VWAP and positive momentum
-        if (rsi > rsiOversold) {
-          return {
-            shouldTrade: false,
-            reason: `RSI (${rsi.toFixed(2)}) not oversold (need <= ${rsiOversold})`,
-            confidence: 0
-          };
+        // More lenient conditions: RSI, VWAP, and momentum are preferred but not all strictly required
+        // Use a scoring system instead of hard blocks
+        
+        let score = 0;
+        let reasons = [];
+        
+        // RSI check (40% weight) - more lenient threshold
+        if (rsi <= rsiOversold) {
+          score += 0.4;
+          reasons.push(`RSI oversold (${rsi.toFixed(2)} <= ${rsiOversold})`);
+        } else if (rsi <= rsiOversold + 10) {
+          score += 0.2; // Partial credit if RSI is close to oversold
+          reasons.push(`RSI near oversold (${rsi.toFixed(2)} <= ${rsiOversold + 10})`);
         }
-        if (vwapDistancePct < vwapDistance) {
-          return {
-            shouldTrade: false,
-            reason: `Price not far enough below VWAP (${vwapDistancePct.toFixed(2)}% < ${vwapDistance}%)`,
-            confidence: 0
-          };
+        
+        // VWAP check (30% weight) - more lenient
+        if (vwapDistancePct >= vwapDistance) {
+          score += 0.3;
+          reasons.push(`Price below VWAP (${vwapDistancePct.toFixed(2)}% >= ${vwapDistance}%)`);
+        } else if (vwapDistancePct >= vwapDistance * 0.5) {
+          score += 0.15; // Partial credit
+          reasons.push(`Price somewhat below VWAP (${vwapDistancePct.toFixed(2)}% >= ${(vwapDistance * 0.5).toFixed(2)}%)`);
         }
-        if (momentum < momentumThreshold) {
+        
+        // Momentum check (30% weight) - more lenient
+        if (momentum >= momentumThreshold) {
+          score += 0.3;
+          reasons.push(`Positive momentum (${momentum.toFixed(2)}% >= ${momentumThreshold}%)`);
+        } else if (momentum >= momentumThreshold * 0.5) {
+          score += 0.15; // Partial credit
+          reasons.push(`Moderate momentum (${momentum.toFixed(2)}% >= ${(momentumThreshold * 0.5).toFixed(2)}%)`);
+        }
+        
+        // Require at least 50% score to trade (at least 2 out of 3 conditions met, or strong in 1-2)
+        if (score < 0.5) {
           return {
             shouldTrade: false,
-            reason: `Momentum (${momentum.toFixed(2)}%) below threshold (${momentumThreshold}%)`,
+            reason: `Long conditions not met (score: ${(score * 100).toFixed(0)}%): ${reasons.length > 0 ? reasons.join('; ') : 'RSI, VWAP, and momentum checks failed'}`,
             confidence: 0
           };
         }
 
-        const confidence = Math.min(
-          (rsiOversold - rsi) / rsiOversold * 0.3 +
-          (adx - adxTrendMin) / 20 * 0.2 +
-          (htfADX - adxMinHTF) / 20 * 0.2 +
-          (vwapDistancePct - vwapDistance) / vwapDistance * 0.15 +
-          (momentum - momentumThreshold) / momentumThreshold * 0.15,
-          1.0
-        );
+        // Calculate confidence based on score and individual factors
+        let confidence = score; // Start with base score (0.5 to 1.0)
+        
+        // Boost confidence based on how well conditions are met
+        if (rsi <= rsiOversold) {
+          confidence += Math.min((rsiOversold - rsi) / rsiOversold * 0.2, 0.2);
+        }
+        if (vwapDistancePct >= vwapDistance) {
+          confidence += Math.min((vwapDistancePct - vwapDistance) / vwapDistance * 0.15, 0.15);
+        }
+        if (momentum >= momentumThreshold) {
+          confidence += Math.min((momentum - momentumThreshold) / momentumThreshold * 0.15, 0.15);
+        }
+        
+        // Add trend strength contributions
+        confidence += Math.min((adx - adxTrendMin) / 20 * 0.2, 0.2);
+        confidence += Math.min((htfADX - adxMinHTF) / 20 * 0.2, 0.2);
+        
+        confidence = Math.min(confidence, 1.0);
 
         return {
           shouldTrade: true,
           side: 'buy',
-          reason: `Hybrid LONG: HTF uptrend (EMA200), ADX ${adx.toFixed(2)}, RSI ${rsi.toFixed(2)}, VWAP Δ ${vwapDistancePct.toFixed(2)}%, momentum ${momentum.toFixed(2)}%`,
-          confidence: Math.max(confidence, 0.7),
+          reason: `Hybrid LONG: HTF uptrend (EMA200), ADX ${adx.toFixed(2)}, RSI ${rsi.toFixed(2)}, VWAP Δ ${vwapDistancePct.toFixed(2)}%, momentum ${momentum.toFixed(2)}% [Score: ${(score * 100).toFixed(0)}%]`,
+          confidence: Math.max(confidence, 0.6), // Lower minimum confidence from 0.7 to 0.6
           entryPrice: price,
           htfTrend: { price: htfCurrentPrice, ema200: htfEMA200, ema50: htfEMA50, adx: htfADX },
           meanReversion: { rsi, vwap, vwapDistance: vwapDistancePct, momentum }
@@ -7959,7 +8030,11 @@ serve(async (req) => {
       console.log('🕐 Time sync needed, attempting synchronization (non-blocking)...');
       // Don't await - let it run in background
       TimeSync.syncWithServer().catch(err => {
-        console.log('⚠️ Time sync failed (non-critical):', err.message);
+        console.error('❌ TimeSync failed (non-critical, continuing with local time):', {
+          error: err instanceof Error ? err.message : String(err),
+          timestamp: new Date().toISOString()
+        });
+        // Continue execution with local time as fallback
       });
       
       // Log sync status
