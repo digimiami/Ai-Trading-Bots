@@ -886,11 +886,11 @@ class MarketDataFetcher {
               const waitTime = Math.min(2000 * Math.pow(2, attempt), 10000); // Exponential backoff: 2s, 4s, 8s, max 10s
               console.warn(`⚠️ HTTP 403 Forbidden for ${symbolVariant} (Attempt ${attempt + 1}/3). This may be rate limiting or IP blocking. Waiting ${waitTime}ms before retry...`);
               
+              // Extract title from HTML if available
+              const titleMatch = responseText.match(/<title[^>]*>([^<]+)<\/title>/i);
+              const title = titleMatch ? titleMatch[1] : 'ERROR: The request could not be satisfied';
+              
               if (attempt < 2) {
-                // Extract title from HTML if available
-                const titleMatch = responseText.match(/<title[^>]*>([^<]+)<\/title>/i);
-                const title = titleMatch ? titleMatch[1] : 'ERROR: The request could not be satisfied';
-                
                 lastError = {
                   symbolVariant,
                   apiUrl,
@@ -906,9 +906,7 @@ class MarketDataFetcher {
                 await new Promise(resolve => setTimeout(resolve, waitTime));
                 continue; // Retry with backoff
               } else {
-                // Last attempt failed
-                const titleMatch = responseText.match(/<title[^>]*>([^<]+)<\/title>/i);
-                const title = titleMatch ? titleMatch[1] : 'ERROR: The request could not be satisfied';
+                // Last attempt failed - mark for CoinGecko fallback
                 lastError = {
                   symbolVariant,
                   apiUrl,
@@ -918,9 +916,10 @@ class MarketDataFetcher {
                   htmlTitle: title,
                   htmlPreview: responseText.substring(0, 200),
                   attempt: attempt + 1,
-                  note: `HTTP 403 Forbidden after ${attempt + 1} attempts. Possible causes: rate limiting, IP blocking, or Cloudflare protection.`
+                  shouldUseFallback: true, // Flag to trigger CoinGecko fallback
+                  note: `HTTP 403 Forbidden after ${attempt + 1} attempts. Will try CoinGecko fallback.`
                 };
-                break; // Try next variant
+                break; // Try next variant or fallback
               }
             }
             
@@ -1369,23 +1368,40 @@ class MarketDataFetcher {
         if (isMajorCoin) {
           console.log(`🔄 Trying CoinGecko public API as final fallback for ${symbol}...`);
           try {
-            // Map symbol to CoinGecko ID
+            // Map symbol to CoinGecko ID (expanded for more coins)
             const coinGeckoMap: { [key: string]: string } = {
               'BTCUSDT': 'bitcoin',
+              'BTC': 'bitcoin',
               'ETHUSDT': 'ethereum',
+              'ETH': 'ethereum',
               'BNBUSDT': 'binancecoin',
+              'BNB': 'binancecoin',
               'SOLUSDT': 'solana',
+              'SOL': 'solana',
               'ADAUSDT': 'cardano',
+              'ADA': 'cardano',
               'DOGEUSDT': 'dogecoin',
+              'DOGE': 'dogecoin',
               'XRPUSDT': 'ripple',
+              'XRP': 'ripple',
               'DOTUSDT': 'polkadot',
+              'DOT': 'polkadot',
               'MATICUSDT': 'matic-network',
-              'LTCUSDT': 'litecoin'
+              'MATIC': 'matic-network',
+              'LTCUSDT': 'litecoin',
+              'LTC': 'litecoin',
+              'TRUMPUSDT': 'trump', // Add more as needed
+              'STRKUSDT': 'starknet',
+              'STRK': 'starknet',
+              'HBARUSDT': 'hedera-hashgraph',
+              'HBAR': 'hedera-hashgraph',
+              'FILUSDT': 'filecoin',
+              'FIL': 'filecoin'
             };
             
-            // Extract base coin (remove USDT suffix)
-            const baseCoin = symbol.replace(/USDT.*$/i, '').toUpperCase();
-            const coinGeckoId = coinGeckoMap[symbol] || coinGeckoMap[`${baseCoin}USDT`] || baseCoin.toLowerCase();
+            // Extract base coin (remove USDT suffix and any other suffixes)
+            const baseCoin = symbol.replace(/USDT.*$/i, '').replace(/\.P$/i, '').toUpperCase();
+            const coinGeckoId = coinGeckoMap[symbol] || coinGeckoMap[baseCoin] || coinGeckoMap[`${baseCoin}USDT`] || baseCoin.toLowerCase();
             
             const coinGeckoUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${coinGeckoId}&vs_currencies=usd`;
             console.log(`🔍 Fetching from CoinGecko: ${coinGeckoUrl}`);
