@@ -4833,10 +4833,13 @@ class BotExecutor {
   }
   
   private async placeBybitOrder(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string, side: string, amount: number, price: number, tradingType: string = 'spot', bot: any = null): Promise<any> {
-    const baseUrl = isTestnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com';
+    // Use multiple domains for redundancy (same as balance check)
+    const baseDomains = isTestnet 
+      ? ['https://api-testnet.bybit.com']
+      : ['https://api.bybit.com', 'https://api.bytick.com'];
     
     console.log(`🔑 Bybit Order Details:`);
-    console.log(`   Base URL: ${baseUrl} (isTestnet: ${isTestnet})`);
+    console.log(`   Domains: ${baseDomains.join(', ')} (isTestnet: ${isTestnet})`);
     console.log(`   API Key length: ${apiKey.length}, starts with: ${apiKey.substring(0, 8)}...`);
     console.log(`   API Secret length: ${apiSecret.length}, starts with: ${apiSecret.substring(0, 8)}...`);
     console.log(`   Symbol: ${symbol}, Side: ${side}, Amount: ${amount}, Price: ${price}`);
@@ -4965,28 +4968,112 @@ class BotExecutor {
       console.log('Price:', currentMarketPrice);
       console.log('=== END DEBUG ===');
       
-      const response = await fetch(`${baseUrl}/v5/order/create`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-BAPI-API-KEY': apiKey,
-          'X-BAPI-TIMESTAMP': timestamp,
-          'X-BAPI-RECV-WINDOW': recvWindow,
-          'X-BAPI-SIGN': signature,
-        },
-        body: JSON.stringify(requestBody),
-      });
+      // Try each domain until one succeeds
+      let response: Response | null = null;
+      let data: any = null;
+      let lastError: Error | null = null;
       
-      // Check content-type before parsing JSON
-      const contentType = response.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) {
-        const errorText = await response.text().catch(() => '');
-        const errorPreview = errorText.substring(0, 500);
-        console.error(`❌ Bybit order API returned non-JSON response (${contentType}):`, errorPreview);
-        throw new Error(`Bybit API returned ${contentType} instead of JSON (HTTP ${response.status}). This may indicate rate limiting, IP blocking, or API issues. Response preview: ${errorPreview.substring(0, 200)}`);
+      for (const domain of baseDomains) {
+        try {
+          console.log(`🔄 Placing order via ${domain}...`);
+          response = await fetch(`${domain}/v5/order/create`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-BAPI-API-KEY': apiKey,
+              'X-BAPI-TIMESTAMP': timestamp,
+              'X-BAPI-RECV-WINDOW': recvWindow,
+              'X-BAPI-SIGN': signature,
+            },
+            body: JSON.stringify(requestBody),
+          });
+          
+          // Check content-type before parsing JSON
+          const contentType = response.headers.get('content-type') || '';
+          if (!contentType.includes('application/json')) {
+            // If 403 and we have more domains to try, continue to next domain
+            if (response.status === 403 && baseDomains.indexOf(domain) < baseDomains.length - 1) {
+              console.warn(`⚠️ Got 403 from ${domain}, trying alternate domain...`);
+              const errorText = await response.text().catch(() => '');
+              const errorPreview = errorText.substring(0, 200);
+              console.warn(`⚠️ 403 Response preview: ${errorPreview}`);
+              lastError = new Error(`Bybit API returned ${contentType} instead of JSON (HTTP 403) from ${domain}. Trying alternate domain...`);
+              continue; // Try next domain
+            }
+            
+            const errorText = await response.text().catch(() => '');
+            const errorPreview = errorText.substring(0, 500);
+            console.error(`❌ Bybit order API returned non-JSON response (${contentType}) from ${domain}:`, errorPreview);
+            lastError = new Error(`Bybit API returned ${contentType} instead of JSON (HTTP ${response.status}) from ${domain}. This may indicate rate limiting, IP blocking, or API issues. Response preview: ${errorPreview.substring(0, 200)}`);
+            
+            // If it's the last domain, throw the error
+            if (baseDomains.indexOf(domain) === baseDomains.length - 1) {
+              throw lastError;
+            }
+            continue; // Try next domain
+          }
+          
+          data = await response.json();
+          
+          // If we got a valid JSON response, use it (even if retCode is not 0, we'll handle that below)
+          if (data && typeof data === 'object') {
+            console.log(`✅ Successfully received order response from ${domain}`);
+            break; // Success, exit loop
+          }
+        } catch (fetchError: any) {
+          // If it's a 403 and we have more domains, try next one
+          if (response?.status === 403 && baseDomains.indexOf(domain) < baseDomains.length - 1) {
+            console.warn(`⚠️ Error from ${domain} (HTTP ${response.status}), trying alternate domain...`);
+            lastError = fetchError instanceof Error ? fetchError : new Error(String(fetchError));
+            continue;
+          }
+          
+          // If it's the last domain, throw the error
+          if (baseDomains.indexOf(domain) === baseDomains.length - 1) {
+            throw fetchError instanceof Error ? fetchError : new Error(String(fetchError));
+          }
+          
+          lastError = fetchError instanceof Error ? fetchError : new Error(String(fetchError));
+        }
       }
       
-      const data = await response.json();
+      // If we exhausted all domains without success, throw the last error
+      if (!response || !data) {
+        const errorMessage = lastError?.message || 'Unknown error';
+        const is403Error = lastError?.message?.includes('403') || response?.status === 403;
+        
+        // Enhanced error message for 403 errors
+        if (is403Error && bot?.id) {
+          await this.addBotLog(bot.id, {
+            level: 'error',
+            category: 'trade',
+            message: `Bybit API returned HTTP 403 (Forbidden) on all domains. This may indicate API key issues, IP blocking, or rate limiting.`,
+            details: {
+              symbol: symbol,
+              side: side,
+              http_status: 403,
+              domains_tried: baseDomains,
+              is_testnet: isTestnet,
+              api_key_preview: apiKey.substring(0, 8) + '...',
+              error: errorMessage,
+              action_required: 'Check API key validity, IP whitelist settings, and rate limits',
+              troubleshooting: [
+                '1. Verify API key is valid and active in Bybit API Management',
+                '2. Check if IP whitelist is enabled (disable or add server IP)',
+                '3. Verify API key has "Trade" permission enabled',
+                '4. Check if you\'ve exceeded rate limits (wait and retry)',
+                '5. Ensure testnet flag matches your account type',
+                '6. Try regenerating API keys if issue persists'
+              ]
+            }
+          }).catch(err => console.error('Failed to log 403 error:', err));
+        }
+        
+        if (lastError) {
+          throw lastError;
+        }
+        throw new Error(`Failed to place order on all Bybit domains (${baseDomains.join(', ')}). All attempts returned errors.`);
+      }
       
       console.log(`\n📥 === BYBIT API RESPONSE ===`);
       console.log(`📊 HTTP Status: ${response.status}`);
@@ -5006,27 +5093,36 @@ class BotExecutor {
           // API key is invalid
           console.error(`❌ Bybit API key is invalid (Code: 10003) for ${symbol}`);
           console.error(`📋 RetMsg: ${data.retMsg}`);
+          console.error(`🔑 API Key (first 8 chars): ${apiKey.substring(0, 8)}...`);
+          console.error(`🌐 Domain used: ${baseDomains[baseDomains.length - 1]}`);
+          console.error(`🧪 Testnet: ${isTestnet}`);
           
           // Log to bot activity logs with actionable message
-          await this.addBotLog(bot.id, {
-            level: 'error',
-            category: 'trade',
-            message: `Bybit API key is invalid (Code: 10003). Please verify and update your Bybit API keys in account settings.`,
-            details: {
-              symbol: symbol,
-              retCode: 10003,
-              retMsg: data.retMsg,
-              exchange: 'bybit',
-              action_required: 'Update Bybit API keys in account settings. Ensure keys are valid and have trading permissions.',
-              troubleshooting: [
-                '1. Go to Bybit → API Management',
-                '2. Verify your API key is active and has trading permissions',
-                '3. Check if API key has expired or been revoked',
-                '4. Re-enter API key and secret in your account settings',
-                '5. Ensure testnet flag matches your Bybit account type'
-              ]
-            }
-          });
+          if (bot?.id) {
+            await this.addBotLog(bot.id, {
+              level: 'error',
+              category: 'trade',
+              message: `Bybit API key is invalid (Code: 10003). Please verify and update your Bybit API keys in account settings.`,
+              details: {
+                symbol: symbol,
+                retCode: 10003,
+                retMsg: data.retMsg,
+                exchange: 'bybit',
+                is_testnet: isTestnet,
+                api_key_preview: apiKey.substring(0, 8) + '...',
+                action_required: 'Update Bybit API keys in account settings. Ensure keys are valid and have trading permissions.',
+                troubleshooting: [
+                  '1. Go to Bybit → API Management',
+                  '2. Verify your API key is active and has trading permissions',
+                  '3. Check if API key has expired or been revoked',
+                  '4. Re-enter API key and secret in your account settings',
+                  '5. Ensure testnet flag matches your Bybit account type',
+                  '6. Verify API key has "Trade" permission enabled',
+                  '7. Check if IP whitelist is enabled (may need to add server IP)'
+                ]
+              }
+            }).catch(err => console.error('Failed to log API key error:', err));
+          }
           
           throw new Error(`Bybit API key is invalid (Code: 10003). Please verify and update your Bybit API keys in your account settings. The API key may have expired, been revoked, or may not have trading permissions.`);
         } else if (data.retCode === 10001) {
