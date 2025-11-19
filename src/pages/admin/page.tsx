@@ -220,6 +220,48 @@ export default function AdminPage() {
     }
   };
 
+  const fetchOrphanedBots = async () => {
+    try {
+      setLoadingOrphanedBots(true);
+      const { data, error } = await supabase
+        .from('trading_bots')
+        .select('*')
+        .is('user_id', null)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      setOrphanedBots(data || []);
+    } catch (error: any) {
+      console.error('Error fetching orphaned bots:', error);
+      alert(`Failed to load orphaned bots: ${error?.message || error}`);
+    } finally {
+      setLoadingOrphanedBots(false);
+    }
+  };
+
+  const deleteOrphanedBot = async (botId: string, botName: string) => {
+    if (!confirm(`⚠️ Delete bot "${botName}"?\n\nThis bot has no user and cannot trade. This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      setDeletingOrphanedBotId(botId);
+      const { error } = await supabase
+        .from('trading_bots')
+        .delete()
+        .eq('id', botId);
+      
+      if (error) throw error;
+      alert(`✅ Bot "${botName}" deleted successfully`);
+      await fetchOrphanedBots();
+    } catch (error: any) {
+      console.error('Error deleting orphaned bot:', error);
+      alert(`❌ Failed to delete bot: ${error?.message || error}`);
+    } finally {
+      setDeletingOrphanedBotId(null);
+    }
+  };
+
   const togglePabloReadyBot = async (botId: string, enabled: boolean) => {
     try {
       const { error } = await supabase
@@ -754,6 +796,7 @@ export default function AdminPage() {
                   setActiveTab(tab.id);
                   if (tab.id === 'pablo-ready') {
                     fetchPabloReadyBots();
+                    fetchOrphanedBots();
                   } else if (tab.id === 'latest-trades') {
                     // Ensure users are loaded before showing dropdown
                     console.log('🔍 Latest Trades tab clicked. Current users count:', users.length);
@@ -1223,6 +1266,112 @@ export default function AdminPage() {
         {/* Pablo Ready Tab */}
         {activeTab === 'pablo-ready' && (
           <div className="space-y-6">
+            {/* Orphaned Bots Section - Bots with null user_id */}
+            <Card className="p-6 border-2 border-red-200 bg-red-50/50 dark:border-red-900/40 dark:bg-red-900/10">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-red-900 dark:text-red-200 flex items-center gap-2">
+                    <i className="ri-error-warning-line"></i>
+                    Orphaned Bots (No User)
+                  </h3>
+                  <p className="text-sm text-red-700 dark:text-red-300 mt-1">
+                    These bots have no user_id and cannot trade. Delete them or they will cause errors.
+                  </p>
+                </div>
+                <Button
+                  onClick={fetchOrphanedBots}
+                  variant="secondary"
+                  size="sm"
+                  disabled={loadingOrphanedBots}
+                >
+                  <i className="ri-refresh-line mr-2"></i>
+                  Refresh
+                </Button>
+              </div>
+
+              {loadingOrphanedBots ? (
+                <div className="text-center py-4">
+                  <i className="ri-loader-4-line animate-spin text-xl text-red-400"></i>
+                  <p className="text-sm text-red-600 dark:text-red-400 mt-2">Loading orphaned bots...</p>
+                </div>
+              ) : orphanedBots.length === 0 ? (
+                <div className="text-center py-4 text-green-700 dark:text-green-400">
+                  <i className="ri-checkbox-circle-line text-2xl mb-2"></i>
+                  <p className="text-sm">✅ No orphaned bots found</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {orphanedBots.map((bot) => (
+                    <div
+                      key={bot.id}
+                      className="p-4 bg-white dark:bg-gray-800 rounded-lg border border-red-300 dark:border-red-800"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-2">
+                            <h4 className="font-semibold text-gray-900 dark:text-white">
+                              {bot.name}
+                            </h4>
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-200">
+                              <i className="ri-error-warning-line mr-1"></i>
+                              No User
+                            </span>
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                              bot.status === 'running' 
+                                ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-200'
+                                : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                            }`}>
+                              {bot.status}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                            <div>
+                              <span className="text-gray-500 dark:text-gray-400 block text-xs mb-1">Symbol</span>
+                              <span className="font-medium text-gray-900 dark:text-white">{bot.symbol}</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500 dark:text-gray-400 block text-xs mb-1">Exchange</span>
+                              <span className="font-medium text-gray-900 dark:text-white capitalize">{bot.exchange}</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500 dark:text-gray-400 block text-xs mb-1">Type</span>
+                              <span className="font-medium text-gray-900 dark:text-white capitalize">{bot.trading_type}</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500 dark:text-gray-400 block text-xs mb-1">Created</span>
+                              <span className="font-medium text-gray-900 dark:text-white text-xs">
+                                {new Date(bot.created_at).toLocaleDateString()}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="ml-4">
+                          <Button
+                            onClick={() => deleteOrphanedBot(bot.id, bot.name)}
+                            variant="danger"
+                            size="sm"
+                            disabled={deletingOrphanedBotId === bot.id}
+                          >
+                            {deletingOrphanedBotId === bot.id ? (
+                              <>
+                                <i className="ri-loader-4-line animate-spin mr-2"></i>
+                                Deleting...
+                              </>
+                            ) : (
+                              <>
+                                <i className="ri-delete-bin-line mr-2"></i>
+                                Delete
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+
             <Card className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <div>
