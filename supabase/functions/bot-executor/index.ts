@@ -1370,6 +1370,10 @@ class MarketDataFetcher {
         // FINAL FALLBACK 3: Use CoinGecko public API (most permissive, rarely blocked)
         // Trigger for major coins OR if we got 403 errors (indicates Bybit blocking)
         const had403Errors = apiResponses.some((r: any) => r.httpStatus === 403);
+        const isMajorCoin = ['BTC', 'ETH', 'BNB', 'SOL'].some(coin => symbol.toUpperCase().startsWith(coin));
+        
+        console.log(`🔍 CoinGecko fallback check: isMajorCoin=${isMajorCoin}, had403Errors=${had403Errors}, apiResponses.length=${apiResponses.length}`);
+        
         if (isMajorCoin || had403Errors) {
           const fallbackReason = had403Errors ? ' (Bybit returned 403)' : '';
           console.log(`🔄 Trying CoinGecko public API as fallback for ${symbol}${fallbackReason}...`);
@@ -5363,7 +5367,10 @@ class BotExecutor {
     totalRequired: number;
     orderValue: number;
   }> {
-    const baseUrl = isTestnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com';
+    // Use multiple domains for redundancy (same as placeBybitOrder)
+    const baseDomains = isTestnet
+      ? ['https://api-testnet.bybit.com']
+      : ['https://api.bybit.com', 'https://api.bytick.com'];
     
     try {
       const timestamp = Date.now().toString();
