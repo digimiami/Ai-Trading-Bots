@@ -1365,8 +1365,10 @@ class MarketDataFetcher {
         }
         
         // FINAL FALLBACK 3: Use CoinGecko public API (most permissive, rarely blocked)
-        if (isMajorCoin) {
-          console.log(`🔄 Trying CoinGecko public API as final fallback for ${symbol}...`);
+        // Trigger for major coins OR if we got 403 errors (indicates Bybit blocking)
+        const had403Errors = apiResponses.some((r: any) => r.httpStatus === 403);
+        if (isMajorCoin || had403Errors) {
+          console.log(`🔄 Trying CoinGecko public API as fallback for ${symbol}${had403Errors ? ' (Bybit returned 403)' : ''}...`);
           try {
             // Map symbol to CoinGecko ID (expanded for more coins)
             const coinGeckoMap: { [key: string]: string } = {
