@@ -79,7 +79,9 @@ export default function ActiveBots({ bots = [] }: ActiveBotsProps) {
                 <div>
                   <p className="font-medium text-gray-900">{bot.name}</p>
                   <p className="text-sm text-gray-500">
-                    {bot.symbol} • {bot.exchange.toUpperCase()}
+                    {bot.symbols && bot.symbols.length > 1 
+                      ? `${bot.symbols.join(', ')} (${bot.symbols.length} pairs)` 
+                      : bot.symbol} • {bot.exchange.toUpperCase()}
                   </p>
                 </div>
               </div>

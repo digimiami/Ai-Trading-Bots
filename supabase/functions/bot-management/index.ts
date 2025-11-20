@@ -161,6 +161,20 @@ serve(async (req) => {
             ? (realizedPnl / (tradeAmount * closedTrades)) * 100
             : (bot.pnl_percentage ?? 0);
 
+          // Parse symbols if it's a JSON string, otherwise use as-is
+          let symbolsArray: string[] | undefined = undefined;
+          if (bot.symbols) {
+            if (typeof bot.symbols === 'string') {
+              try {
+                symbolsArray = JSON.parse(bot.symbols);
+              } catch (e) {
+                console.warn('Failed to parse symbols JSON:', e);
+              }
+            } else if (Array.isArray(bot.symbols)) {
+              symbolsArray = bot.symbols;
+            }
+          }
+
           return ({
           id: bot.id,
           name: bot.name,
@@ -188,7 +202,9 @@ serve(async (req) => {
           aiMlEnabled: bot.ai_ml_enabled || false,
           paperTrading: bot.paper_trading || false,
           webhookSecret: bot.webhook_secret || null,
-          webhookTriggerImmediate: bot.webhook_trigger_immediate ?? true
+          webhookTriggerImmediate: bot.webhook_trigger_immediate ?? true,
+          symbols: symbolsArray,
+          customPairs: bot.custom_pairs || null
         });
         })
 
@@ -283,8 +299,51 @@ serve(async (req) => {
           throw error
         }
 
+        // Transform bot to match frontend expectations (same as list endpoint)
+        let symbolsArray: string[] | undefined = undefined;
+        if (bot.symbols) {
+          if (typeof bot.symbols === 'string') {
+            try {
+              symbolsArray = JSON.parse(bot.symbols);
+            } catch (e) {
+              console.warn('Failed to parse symbols JSON:', e);
+            }
+          } else if (Array.isArray(bot.symbols)) {
+            symbolsArray = bot.symbols;
+          }
+        }
+
+        const transformedBot = {
+          id: bot.id,
+          name: bot.name,
+          exchange: bot.exchange,
+          tradingType: bot.trading_type || 'spot',
+          symbol: bot.symbol,
+          timeframe: bot.timeframe || '1h',
+          status: bot.status,
+          leverage: bot.leverage ?? 1,
+          tradeAmount: bot.trade_amount || 100,
+          stopLoss: bot.stop_loss || 2.0,
+          takeProfit: bot.take_profit || 4.0,
+          pnl: bot.pnl ?? 0,
+          pnlPercentage: bot.pnl_percentage ?? 0,
+          totalTrades: bot.total_trades ?? 0,
+          winRate: bot.win_rate ?? 0,
+          createdAt: bot.created_at,
+          lastTradeAt: bot.last_trade_at,
+          riskLevel: bot.risk_level || 'medium',
+          strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy,
+          strategyConfig: bot.strategy_config ? (typeof bot.strategy_config === 'string' ? JSON.parse(bot.strategy_config) : bot.strategy_config) : undefined,
+          aiMlEnabled: bot.ai_ml_enabled || false,
+          paperTrading: bot.paper_trading || false,
+          webhookSecret: bot.webhook_secret || null,
+          webhookTriggerImmediate: bot.webhook_trigger_immediate ?? true,
+          symbols: symbolsArray,
+          customPairs: bot.custom_pairs || null
+        };
+
         return new Response(
-          JSON.stringify({ bot }),
+          JSON.stringify({ bot: transformedBot }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }

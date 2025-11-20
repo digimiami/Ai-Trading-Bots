@@ -1330,7 +1330,11 @@ export default function AdminPage() {
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                             <div>
                               <span className="text-gray-500 dark:text-gray-400 block text-xs mb-1">Symbol</span>
-                              <span className="font-medium text-gray-900 dark:text-white">{bot.symbol}</span>
+                              <span className="font-medium text-gray-900 dark:text-white">
+                                {bot.symbols && bot.symbols.length > 1 
+                                  ? `${bot.symbols.join(', ')} (${bot.symbols.length} pairs)` 
+                                  : bot.symbol}
+                              </span>
                             </div>
                             <div>
                               <span className="text-gray-500 dark:text-gray-400 block text-xs mb-1">Exchange</span>
@@ -1494,7 +1498,9 @@ export default function AdminPage() {
                             <div>
                               <span className="text-gray-500 dark:text-gray-400 block text-xs mb-1">Symbol</span>
                               <span className="font-medium text-gray-900 dark:text-white">
-                                {bot.symbol}
+                                {bot.symbols && bot.symbols.length > 1 
+                                  ? `${bot.symbols.join(', ')} (${bot.symbols.length} pairs)` 
+                                  : bot.symbol}
                               </span>
                             </div>
                             <div>

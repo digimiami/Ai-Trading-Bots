@@ -254,7 +254,9 @@ export default function WebhookTestPage() {
                   <option value="">Select a bot...</option>
                   {bots.map(bot => (
                     <option key={bot.id} value={bot.id}>
-                      {bot.name} ({bot.symbol})
+                      {bot.name} ({bot.symbols && bot.symbols.length > 1 
+                        ? `${bot.symbols.join(', ')} (${bot.symbols.length} pairs)` 
+                        : bot.symbol})
                     </option>
                   ))}
                 </select>

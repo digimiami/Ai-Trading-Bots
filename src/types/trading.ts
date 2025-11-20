@@ -27,6 +27,8 @@ export interface TradingBot {
   realizedPnl?: number;
   webhookSecret?: string;
   webhookTriggerImmediate?: boolean;
+  symbols?: string[]; // Array of trading pairs for multi-pair bots
+  customPairs?: string; // Raw user input for custom pairs
 }
 
 export interface TradingStrategy {

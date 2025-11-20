@@ -750,7 +750,11 @@ export default function BotsPage() {
                     </div>
                     <div>
                       <h3 className="font-semibold text-gray-900">{bot.name}</h3>
-                      <p className="text-sm text-gray-500">{bot.symbol} • {bot.exchange.toUpperCase()}</p>
+                      <p className="text-sm text-gray-500">
+                        {bot.symbols && bot.symbols.length > 1 
+                          ? `${bot.symbols.join(', ')} (${bot.symbols.length} pairs)` 
+                          : bot.symbol} • {bot.exchange.toUpperCase()}
+                      </p>
                       <div className="flex items-center space-x-2 mt-1 flex-wrap gap-1">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(bot.status)}`}>
                           {bot.status}
