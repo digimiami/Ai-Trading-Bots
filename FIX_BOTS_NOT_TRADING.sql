@@ -1,124 +1,88 @@
 -- ============================================
--- FIX BOTS NOT TRADING - Enable Shorts & Adjust Thresholds
+-- FIX: Make All Bots Trade More Frequently
 -- ============================================
--- NOTE: All strategy_config fields are NULL, so bots are using strict defaults
--- This script sets proper values to enable trading
+-- This script relaxes strategy parameters to allow more trading
+-- ============================================
 
--- ISSUE 1: Hybrid Trend bots can't trade when price is below EMA200 because shorts are disabled
--- SOLUTION: Enable shorts by setting bias_mode to 'both' and lower ADX requirements
-
--- Fix Hybrid Trend + Mean Reversion Strategy bots
+-- 1. RELAX STRATEGY PARAMETERS FOR ALL RUNNING BOTS
+-- Lower ADX thresholds (to minimum allowed: 15), relax RSI, reduce momentum/VWAP requirements
+-- NOTE: adx_min_htf must be between 15-35 (validation constraint), so we use 15 (minimum)
+-- This updates ALL running bots, including those with NULL/empty strategy_config
 UPDATE trading_bots
-SET strategy_config = COALESCE(strategy_config, '{}'::jsonb)::jsonb || 
-  jsonb_build_object(
-    'bias_mode', 'both',
-    'require_price_vs_trend', NULL,
-    'adx_min_htf', CASE 
-      WHEN symbol IN ('FILUSDT', 'HBARUSDT') THEN 15
-      ELSE 20
-    END,
-    'adx_trend_min', CASE 
-      WHEN symbol IN ('FILUSDT', 'HBARUSDT') THEN 18
-      ELSE 22
-    END,
-    'adx_meanrev_max', 19,
-    'rsi_oversold', 30,
-    'rsi_overbought', 70,
-    'momentum_threshold', 0.8,
-    'vwap_distance', 1.2
-  )::jsonb
+SET strategy_config = COALESCE(strategy_config, '{}'::jsonb) || jsonb_build_object(
+    'adx_min_htf', 15,  -- Minimum allowed by validation (15-35)
+    'adx_trend_min', 15,  -- Lowered to minimum
+    'adx_min', 15,  -- Lowered to minimum
+    'adx_min_reversal', 12,  -- Lowered for more lenient reversal trades
+    'rsi_oversold', 40,  -- More lenient (was 30)
+    'rsi_overbought', 60,  -- More lenient (was 70)
+    'momentum_threshold', 0.3,  -- Lowered from 0.8% to 0.3%
+    'vwap_distance', 0.5,  -- Lowered from 1.2% to 0.5%
+    'bias_mode', 'both'  -- Enable both longs and shorts
+)
 WHERE status = 'running'
-  AND name LIKE '%Hybrid Trend + Mean Reversion Strategy%';
+    AND (
+        -- Update if strategy_config is NULL or empty
+        strategy_config IS NULL
+        OR strategy_config = '{}'::jsonb
+        -- OR update if any key is missing (using ? operator)
+        OR NOT (strategy_config ? 'adx_min_htf')
+        OR NOT (strategy_config ? 'adx_trend_min')
+        OR NOT (strategy_config ? 'rsi_oversold')
+        OR NOT (strategy_config ? 'bias_mode')
+        -- OR update if values are too strict
+        OR (strategy_config ? 'adx_min_htf' AND COALESCE((strategy_config->>'adx_min_htf')::numeric, 99) > 15)
+        OR (strategy_config ? 'adx_trend_min' AND COALESCE((strategy_config->>'adx_trend_min')::numeric, 99) > 15)
+        OR (strategy_config ? 'adx_min' AND COALESCE((strategy_config->>'adx_min')::numeric, 99) > 15)
+        OR (strategy_config ? 'rsi_oversold' AND COALESCE((strategy_config->>'rsi_oversold')::numeric, 0) < 40)
+        OR (strategy_config ? 'rsi_overbought' AND COALESCE((strategy_config->>'rsi_overbought')::numeric, 100) > 60)
+        OR (strategy_config ? 'momentum_threshold' AND COALESCE((strategy_config->>'momentum_threshold')::numeric, 99) > 0.3)
+        OR (strategy_config ? 'vwap_distance' AND COALESCE((strategy_config->>'vwap_distance')::numeric, 99) > 0.5)
+        OR (strategy_config ? 'bias_mode' AND COALESCE(NULLIF(strategy_config->>'bias_mode', ''), 'both') != 'both')
+    );
 
--- ISSUE 2: Scalping bots have volume requirements too strict (default 1.2x minimum)
--- SOLUTION: Lower volume requirement to 0.5x for more trading opportunities
-
--- Fix Scalping Strategy - Fast EMA Cloud bots
+-- 2. FIX SPECIFIC BOT: HYPEUSDT (ADX too high - set to minimum allowed: 15)
 UPDATE trading_bots
-SET strategy_config = COALESCE(strategy_config, '{}'::jsonb)::jsonb || 
-  jsonb_build_object(
-    'min_volume_requirement', 0.5,
-    'adx_min', 15,
-    'ema_fast', 9,
-    'ema_slow', 21,
-    'rsi_period', 14,
-    'rsi_oversold', 30,
-    'rsi_overbought', 70,
-    'atr_period', 14,
-    'atr_stop_multiplier', 1.5,
-    'atr_tp_multiplier', 2.0
-  )::jsonb
-WHERE status = 'running'
-  AND name LIKE '%Scalping Strategy - Fast EMA Cloud%';
+SET strategy_config = COALESCE(strategy_config, '{}'::jsonb) || jsonb_build_object(
+    'adx_min_htf', 15,
+    'adx_trend_min', 15
+)
+WHERE name LIKE '%HYPEUSDT%' 
+    AND status = 'running'
+    AND COALESCE((strategy_config->>'adx_min_htf')::numeric, 99) > 15;
 
--- ISSUE 3: Advanced Scalping bots - lower volume requirement for continuation mode
+-- 3. FIX SPECIFIC BOT: TRUMPUSDT (Enable shorts)
 UPDATE trading_bots
-SET strategy_config = COALESCE(strategy_config, '{}'::jsonb)::jsonb || 
-  jsonb_build_object(
-    'volume_multiplier_continuation', 0.4,
-    'volume_multiplier_reversal', 0.6,
-    'adx_min_continuation', 15,
-    'adx_min_reversal', 12,
-    'supertrend_period', 10,
-    'supertrend_multiplier', 3.0,
-    'ema_fast', 8,
-    'ema_slow', 34,
-    'rsi_period', 14,
-    'rsi_oversold', 30,
-    'rsi_overbought', 70,
-    'bb_period', 20,
-    'bb_std_dev', 2.0,
-    'atr_period', 14,
-    'atr_stop_multiplier', 1.2,
-    'atr_tp1_multiplier', 1.5,
-    'atr_tp2_multiplier', 2.5
-  )::jsonb
-WHERE status = 'running'
-  AND name LIKE '%Advanced Dual-Mode Scalping Strategy%';
+SET strategy_config = COALESCE(strategy_config, '{}'::jsonb) || jsonb_build_object(
+    'bias_mode', 'both'
+)
+WHERE name LIKE '%TRUMPUSDT%' 
+    AND status = 'running'
+    AND COALESCE(NULLIF(strategy_config->>'bias_mode', ''), 'both') != 'both';
 
--- ISSUE 4: Trend Following Strategy bots - need proper configuration
--- SOLUTION: Set appropriate defaults for trend following strategy
+-- 4. OPTIONAL: Disable cooldown for immediate trading (COMMENT OUT IF YOU WANT COOLDOWN)
+-- UPDATE trading_bots
+-- SET strategy_config = COALESCE(strategy_config, '{}'::jsonb) || jsonb_build_object(
+--     'cooldown_bars', 0
+-- )
+-- WHERE status = 'running'
+--     AND (strategy_config->>'cooldown_bars')::numeric > 0;
 
-UPDATE trading_bots
-SET strategy_config = COALESCE(strategy_config, '{}'::jsonb)::jsonb || 
-  jsonb_build_object(
-    'bias_mode', 'both',
-    'adx_min', 20,
-    'rsi_period', 14,
-    'rsi_oversold', 30,
-    'rsi_overbought', 70,
-    'ema_fast', 12,
-    'ema_slow', 26,
-    'trend_confirmation_periods', 3,
-    'min_volume_requirement', 0.8
-  )::jsonb
-WHERE status = 'running'
-  AND name LIKE '%Trend Following Strategy%';
-
--- ISSUE 5: Trendline Breakout Strategy - ensure proper configuration
-UPDATE trading_bots
-SET strategy_config = COALESCE(strategy_config, '{}'::jsonb)::jsonb || 
-  jsonb_build_object(
-    'bias_mode', 'both',
-    'trendline_length', 30,
-    'volume_multiplier', 1.2,
-    'enable_tp', false,
-    'enable_trail_sl', false
-  )::jsonb
-WHERE status = 'running'
-  AND name LIKE '%Trendline Breakout Strategy%';
-
--- Verify changes
+-- 5. VERIFICATION: Show what was updated
 SELECT 
-  id,
-  name,
-  symbol,
-  strategy_config::jsonb->>'bias_mode' as bias_mode,
-  strategy_config::jsonb->>'require_price_vs_trend' as require_price_vs_trend,
-  strategy_config::jsonb->>'min_volume_requirement' as min_volume_requirement,
-  strategy_config::jsonb->>'adx_min_htf' as adx_min_htf,
-  strategy_config::jsonb->>'adx_trend_min' as adx_trend_min
+    '=== UPDATED BOTS ===' as status,
+    name,
+    symbol,
+    status,
+    paper_trading,
+    strategy_config->>'adx_min_htf' as adx_min_htf,
+    strategy_config->>'adx_trend_min' as adx_trend_min,
+    strategy_config->>'rsi_oversold' as rsi_oversold,
+    strategy_config->>'rsi_overbought' as rsi_overbought,
+    strategy_config->>'momentum_threshold' as momentum_threshold,
+    strategy_config->>'vwap_distance' as vwap_distance,
+    strategy_config->>'bias_mode' as bias_mode,
+    strategy_config->>'cooldown_bars' as cooldown_bars
 FROM trading_bots
 WHERE status = 'running'
 ORDER BY name;
-
