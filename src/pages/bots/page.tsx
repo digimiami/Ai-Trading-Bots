@@ -445,12 +445,36 @@ export default function BotsPage() {
     }
     setBulkLoading(true);
     try {
-      const botsToUpdate = filteredBots.filter(bot => !bot.paperTrading);
-      await Promise.all(botsToUpdate.map(bot => updateBot(bot.id, { paperTrading: true } as any)));
-      alert(`✅ Switched ${botsToUpdate.length} bot(s) to Paper Trading mode`);
-    } catch (error) {
+      const botsToUpdate = filteredBots.filter(bot => {
+        // Check both paperTrading and paper_trading properties
+        const isPaper = bot.paperTrading || (bot as any).paper_trading || false;
+        return !isPaper;
+      });
+      
+      if (botsToUpdate.length === 0) {
+        alert('ℹ️ All bots are already in Paper Trading mode.');
+        setBulkLoading(false);
+        return;
+      }
+
+      console.log(`🔄 Switching ${botsToUpdate.length} bot(s) to Paper Trading mode...`);
+      
+      const results = await Promise.allSettled(
+        botsToUpdate.map(bot => updateBot(bot.id, { paperTrading: true } as any))
+      );
+
+      const successful = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.filter(r => r.status === 'rejected').length;
+
+      if (failed > 0) {
+        console.error('Some bots failed to update:', results.filter(r => r.status === 'rejected'));
+        alert(`⚠️ Updated ${successful} bot(s) to Paper Trading mode. ${failed} bot(s) failed. Check console for details.`);
+      } else {
+        alert(`✅ Successfully switched ${successful} bot(s) to Paper Trading mode`);
+      }
+    } catch (error: any) {
       console.error('Failed to activate all paper trading:', error);
-      alert('❌ Failed to switch bots to paper trading. Please check console for details.');
+      alert(`❌ Failed to switch bots to paper trading: ${error?.message || 'Unknown error'}. Please check console for details.`);
     } finally {
       setBulkLoading(false);
     }
@@ -483,12 +507,36 @@ export default function BotsPage() {
     }
     setBulkLoading(true);
     try {
-      const botsToUpdate = filteredBots.filter(bot => bot.paperTrading);
-      await Promise.all(botsToUpdate.map(bot => updateBot(bot.id, { paperTrading: false } as any)));
-      alert(`🚨 Switched ${botsToUpdate.length} bot(s) to REAL Trading mode. Trades will use live funds!`);
-    } catch (error) {
+      const botsToUpdate = filteredBots.filter(bot => {
+        // Check both paperTrading and paper_trading properties
+        const isPaper = bot.paperTrading || (bot as any).paper_trading || false;
+        return isPaper;
+      });
+      
+      if (botsToUpdate.length === 0) {
+        alert('ℹ️ All bots are already in Real Trading mode.');
+        setBulkLoading(false);
+        return;
+      }
+
+      console.log(`🔄 Switching ${botsToUpdate.length} bot(s) to Real Trading mode...`);
+      
+      const results = await Promise.allSettled(
+        botsToUpdate.map(bot => updateBot(bot.id, { paperTrading: false } as any))
+      );
+
+      const successful = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.filter(r => r.status === 'rejected').length;
+
+      if (failed > 0) {
+        console.error('Some bots failed to update:', results.filter(r => r.status === 'rejected'));
+        alert(`⚠️ Updated ${successful} bot(s) to Real Trading mode. ${failed} bot(s) failed. Check console for details.`);
+      } else {
+        alert(`🚨 Successfully switched ${successful} bot(s) to REAL Trading mode. Trades will use live funds!`);
+      }
+    } catch (error: any) {
       console.error('Failed to activate all real trading:', error);
-      alert('❌ Failed to switch bots to real trading. Please check console for details.');
+      alert(`❌ Failed to switch bots to real trading: ${error?.message || 'Unknown error'}. Please check console for details.`);
     } finally {
       setBulkLoading(false);
     }
