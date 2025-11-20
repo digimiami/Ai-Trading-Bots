@@ -1193,19 +1193,49 @@ All settings have been applied to your bot configuration.`;
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
-                          ADX Min (HTF): {advancedConfig.adx_min_htf}
-                        </label>
-                        <input
-                          type="range"
-                          value={advancedConfig.adx_min_htf}
-                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, adx_min_htf: parseFloat(e.target.value) }))}
-                          className="w-full"
-                          min="15"
-                          max="35"
-                          step="1"
-                        />
-                        <p className="text-xs text-gray-500">Minimum ADX for trend confirmation</p>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="block text-sm font-medium text-gray-700">
+                            ADX Min (HTF): {advancedConfig.adx_min_htf}
+                          </label>
+                          <div className="flex items-center">
+                            <span className={`text-xs mr-2 ${(advancedConfig as any).disable_htf_adx_check ? 'text-green-600' : 'text-gray-400'}`}>
+                              {(advancedConfig as any).disable_htf_adx_check ? 'DISABLED' : 'ENABLED'}
+                            </span>
+                            <label className="relative inline-flex items-center cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={(advancedConfig as any).disable_htf_adx_check || false}
+                                onChange={(e) => {
+                                  setAdvancedConfig(prev => ({
+                                    ...prev,
+                                    disable_htf_adx_check: e.target.checked
+                                  } as any));
+                                }}
+                                className="sr-only peer"
+                              />
+                              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
+                            </label>
+                          </div>
+                        </div>
+                        {!(advancedConfig as any).disable_htf_adx_check && (
+                          <>
+                            <input
+                              type="range"
+                              value={advancedConfig.adx_min_htf}
+                              onChange={(e) => setAdvancedConfig(prev => ({ ...prev, adx_min_htf: parseFloat(e.target.value) }))}
+                              className="w-full"
+                              min="15"
+                              max="35"
+                              step="1"
+                            />
+                            <p className="text-xs text-gray-500">Minimum ADX for trend confirmation (15-35)</p>
+                          </>
+                        )}
+                        {(advancedConfig as any).disable_htf_adx_check && (
+                          <p className="text-xs text-red-600 italic mt-1">
+                            HTF ADX check disabled - bot will trade regardless of HTF ADX value
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>

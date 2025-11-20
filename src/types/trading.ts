@@ -79,6 +79,7 @@ export interface AdvancedStrategyConfig {
   require_price_vs_trend: 'above' | 'below' | 'any';
   adx_min_htf: number;
   require_adx_rising: boolean;
+  disable_htf_adx_check?: boolean; // Flag to bypass HTF ADX check
   
   // Regime Filter
   regime_mode: 'trend' | 'mean-reversion' | 'auto';
