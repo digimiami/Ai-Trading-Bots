@@ -32,6 +32,7 @@ export default function BotsPage() {
   const [webhookSignalsLoading, setWebhookSignalsLoading] = useState<Record<string, boolean>>({});
   const [webhookSecretVisible, setWebhookSecretVisible] = useState<Record<string, boolean>>({});
   const [webhookActionLoading, setWebhookActionLoading] = useState<Record<string, boolean>>({});
+  const [searchQuery, setSearchQuery] = useState<string>('');
   const isWebhookView = viewMode === 'webhook';
   
   // Get trade limits for all bots
@@ -191,9 +192,29 @@ export default function BotsPage() {
   };
 
   const filteredBots = bots.filter(bot => {
-    if (filter === 'all') return true;
-    if (filter === 'live') return !bot.paperTrading;
-    return bot.status === filter;
+    // Apply status filter
+    let matchesFilter = true;
+    if (filter === 'all') matchesFilter = true;
+    else if (filter === 'live') matchesFilter = !bot.paperTrading;
+    else matchesFilter = bot.status === filter;
+
+    // Apply search filter
+    if (!matchesFilter) return false;
+    
+    if (!searchQuery.trim()) return true;
+    
+    const query = searchQuery.toLowerCase().trim();
+    const botName = (bot.name || '').toLowerCase();
+    const botSymbol = (bot.symbol || '').toLowerCase();
+    const botExchange = (bot.exchange || '').toLowerCase();
+    const botStatus = (bot.status || '').toLowerCase();
+    
+    return (
+      botName.includes(query) ||
+      botSymbol.includes(query) ||
+      botExchange.includes(query) ||
+      botStatus.includes(query)
+    );
   });
 
   const resetPaperTradingPerformance = async () => {
@@ -678,6 +699,35 @@ export default function BotsPage() {
                 Auto-execution every 5 minutes
               </div>
             </div>
+          </Card>
+
+          {/* Search Bar */}
+          <Card className="p-4">
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <i className="ri-search-line text-gray-400"></i>
+              </div>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search bots by name, symbol, exchange, or status..."
+                className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                >
+                  <i className="ri-close-line"></i>
+                </button>
+              )}
+            </div>
+            {searchQuery && (
+              <div className="mt-2 text-sm text-gray-600">
+                Found {filteredBots.length} bot{filteredBots.length !== 1 ? 's' : ''} matching "{searchQuery}"
+              </div>
+            )}
           </Card>
 
           {/* Filter Tabs */}

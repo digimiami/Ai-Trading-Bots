@@ -461,6 +461,34 @@ export default function Settings() {
         });
       }
 
+      // Save Bitunix API key if provided
+      if (apiSettings.bitunixApiKey && apiSettings.bitunixApiSecret) {
+        await saveApiKey({
+          exchange: 'bitunix',
+          apiKey: apiSettings.bitunixApiKey,
+          apiSecret: apiSettings.bitunixApiSecret,
+          passphrase: '', // Bitunix doesn't use passphrase
+          isTestnet: apiSettings.bitunixTestnet
+        });
+      }
+
+      // Clear form fields after saving (for security - keys are encrypted in DB)
+      setApiSettings(prev => ({
+        bybitApiKey: '',
+        bybitApiSecret: '',
+        bybitTestnet: prev.bybitTestnet,
+        okxApiKey: '',
+        okxApiSecret: '',
+        okxPassphrase: '',
+        okxTestnet: prev.okxTestnet,
+        bitunixApiKey: '',
+        bitunixApiSecret: '',
+        bitunixTestnet: prev.bitunixTestnet,
+        webhookUrl: prev.webhookUrl,
+        webhookSecret: prev.webhookSecret,
+        alertsEnabled: prev.alertsEnabled
+      }));
+
     setShowApiConfig(false);
       alert('API keys saved successfully!');
     } catch (error: any) {
@@ -709,9 +737,15 @@ export default function Settings() {
                 <div key={apiKey.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
               <div className="flex items-center space-x-3">
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                      apiKey.exchange === 'bybit' ? 'bg-orange-100' : 'bg-blue-100'
+                      apiKey.exchange === 'bybit' ? 'bg-orange-100' : 
+                      apiKey.exchange === 'bitunix' ? 'bg-green-100' : 
+                      'bg-blue-100'
                     }`}>
-                      <i className={`${apiKey.exchange === 'bybit' ? 'ri-currency-line text-orange-600' : 'ri-exchange-line text-blue-600'}`}></i>
+                      <i className={`${
+                        apiKey.exchange === 'bybit' ? 'ri-currency-line text-orange-600' : 
+                        apiKey.exchange === 'bitunix' ? 'ri-exchange-line text-green-600' : 
+                        'ri-exchange-line text-blue-600'
+                      }`}></i>
                 </div>
                 <div>
                       <p className="font-medium text-gray-900">{apiKey.exchange.toUpperCase()} API</p>
