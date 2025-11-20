@@ -424,13 +424,26 @@ function getQuantityConstraints(symbol: string): QuantityConstraint {
     'PEPEUSDT': { min: 1000, max: 1000000 },
     'DOGEUSDT': { min: 1, max: 10000 },
     'SHIBUSDT': { min: 1000, max: 1000000 },
-    'HBARUSDT': { min: 1, max: 10000 }
+    'HBARUSDT': { min: 1, max: 10000 },
+    'MYXUSDT': { min: 0.001, max: 10 }, // Reduced max - Bybit may have lower limits for this symbol
+    'STRKUSDT': { min: 0.1, max: 1000 },
+    'TRUMPUSDT': { min: 0.1, max: 1000 },
+    'FILUSDT': { min: 0.1, max: 1000 },
+    'ONDOUSDT': { min: 0.1, max: 1000 },
+    'XANUSDT': { min: 0.1, max: 1000 },
+    'ASTERUSDT': { min: 0.1, max: 1000 },
+    'HYPEUSDT': { min: 0.1, max: 1000 },
+    'VIRTUALUSDT': { min: 0.1, max: 1000 },
+    'WIFUSDT': { min: 0.1, max: 1000 },
+    'ZENUSDT': { min: 0.1, max: 1000 },
+    'LTCUSDT': { min: 0.01, max: 100 }
   };
 
   if (isLowLiquiditySymbol(symbol)) {
     return { min: 1000, max: 1000000 };
   }
 
+  // Default constraints for unknown symbols
   return constraints[symbol] || { min: 0.001, max: 100 };
 }
 
@@ -450,7 +463,19 @@ function getSymbolSteps(symbol: string): SymbolSteps {
     'HBARUSDT': { stepSize: 1, tickSize: 0.0001 },
     'PEPEUSDT': { stepSize: 1000, tickSize: 0.00000001 },
     'DOGEUSDT': { stepSize: 1, tickSize: 0.0001 },
-    'SHIBUSDT': { stepSize: 1000, tickSize: 0.00000001 }
+    'SHIBUSDT': { stepSize: 1000, tickSize: 0.00000001 },
+    'MYXUSDT': { stepSize: 0.001, tickSize: 0.0001 },
+    'STRKUSDT': { stepSize: 0.1, tickSize: 0.0001 },
+    'TRUMPUSDT': { stepSize: 0.1, tickSize: 0.0001 },
+    'FILUSDT': { stepSize: 0.1, tickSize: 0.0001 },
+    'ONDOUSDT': { stepSize: 0.1, tickSize: 0.0001 },
+    'XANUSDT': { stepSize: 0.1, tickSize: 0.0001 },
+    'ASTERUSDT': { stepSize: 0.1, tickSize: 0.0001 },
+    'HYPEUSDT': { stepSize: 0.1, tickSize: 0.0001 },
+    'VIRTUALUSDT': { stepSize: 0.1, tickSize: 0.0001 },
+    'WIFUSDT': { stepSize: 0.1, tickSize: 0.0001 },
+    'ZENUSDT': { stepSize: 0.1, tickSize: 0.0001 },
+    'LTCUSDT': { stepSize: 0.01, tickSize: 0.01 }
   };
 
   if (isLowLiquiditySymbol(symbol)) {
@@ -3009,30 +3034,44 @@ class BotExecutor {
       }
     }
     
-    // RSI strategy
+    // RSI strategy - ALWAYS generates signal if threshold is set
+    // With rsiThreshold=50: RSI > 50 = sell, RSI <= 50 = buy (always generates signal!)
     if (strategy.rsiThreshold) {
-      if (rsi > strategy.rsiThreshold) {
+      if (rsi >= strategy.rsiThreshold) {
         signals.push({
           side: 'sell',
-          reason: `RSI overbought (${rsi.toFixed(2)} > ${strategy.rsiThreshold})`,
-          confidence: Math.min((rsi - strategy.rsiThreshold) / 10, 1)
+          reason: `RSI overbought (${rsi.toFixed(2)} >= ${strategy.rsiThreshold})`,
+          confidence: Math.min((rsi - strategy.rsiThreshold) / 10 + 0.1, 1) // Add 0.1 base confidence
         });
-      } else if (rsi < (100 - strategy.rsiThreshold)) {
+      } else {
+        // RSI < threshold = buy signal (always true if RSI < threshold)
         signals.push({
           side: 'buy',
-          reason: `RSI oversold (${rsi.toFixed(2)} < ${100 - strategy.rsiThreshold})`,
-          confidence: Math.min(((100 - strategy.rsiThreshold) - rsi) / 10, 1)
+          reason: `RSI oversold (${rsi.toFixed(2)} < ${strategy.rsiThreshold})`,
+          confidence: Math.min(((strategy.rsiThreshold - rsi) / 10) + 0.1, 1) // Add 0.1 base confidence
         });
       }
     }
     
-    // ADX strategy
-    if (strategy.adxThreshold && adx > strategy.adxThreshold) {
-      signals.push({
-        side: rsi > 50 ? 'sell' : 'buy',
-        reason: `Strong trend detected (ADX: ${adx.toFixed(2)} > ${strategy.adxThreshold})`,
-        confidence: Math.min((adx - strategy.adxThreshold) / 20, 1)
-      });
+    // ADX strategy - Very lenient: if threshold is low (<=5), always allow if ADX > 0
+    if (strategy.adxThreshold) {
+      const adxThreshold = strategy.adxThreshold;
+      // If threshold is very low (<=5), be very lenient - allow any ADX > 0
+      if (adxThreshold <= 5) {
+        if (adx > 0) {
+          signals.push({
+            side: rsi > 50 ? 'sell' : 'buy',
+            reason: `Trend detected (ADX: ${adx.toFixed(2)} > 0, threshold: ${adxThreshold})`,
+            confidence: Math.min((adx / 20) + 0.2, 1) // Base 0.2 confidence, scales with ADX
+          });
+        }
+      } else if (adx >= adxThreshold) {
+        signals.push({
+          side: rsi > 50 ? 'sell' : 'buy',
+          reason: `Strong trend detected (ADX: ${adx.toFixed(2)} >= ${adxThreshold})`,
+          confidence: Math.min((adx - adxThreshold) / 20 + 0.3, 1)
+        });
+      }
     }
     
     // Bollinger Band width strategy (if configured)
@@ -5187,11 +5226,14 @@ class BotExecutor {
       // Round quantity to Bybit lot step and clamp to min/max
       const { stepSize } = getSymbolSteps(symbol);
       const constraints = getQuantityConstraints(symbol);
+      // Clamp amount to min/max FIRST, then round
       let qty = Math.max(constraints.min, Math.min(constraints.max, amount));
       if (stepSize > 0) {
         // Use more precise rounding to avoid floating point errors
         const factor = 1 / stepSize;
         qty = Math.floor(qty * factor) / factor;
+        // Re-clamp after rounding to ensure we don't exceed max due to rounding errors
+        qty = Math.max(constraints.min, Math.min(constraints.max, qty));
       }
       // Calculate decimals for formatting - ensure we have enough precision
       // For stepSize 0.1, we need 1 decimal place; for 0.01, we need 2, etc.
@@ -5465,7 +5507,20 @@ class BotExecutor {
           console.error(`❌ Quantity validation failed for ${symbol}: ${formattedQty}`);
           console.error(`📏 Constraints: min=${constraints.min}, max=${constraints.max}`);
           console.error(`💰 Price: $${currentMarketPrice}`);
-          throw new Error(`Invalid quantity for ${symbol}: ${formattedQty}. Min: ${constraints.min}, Max: ${constraints.max}. Please adjust trade amount or check symbol requirements.`);
+          const orderValue = parseFloat(formattedQty) * currentMarketPrice;
+          console.error(`💰 Order value: $${orderValue.toFixed(2)}`);
+          console.error(`📋 Bybit error message: ${data.retMsg}`);
+          
+          // Provide more helpful error message
+          let errorMsg = `Invalid quantity for ${symbol}: ${formattedQty}. Min: ${constraints.min}, Max: ${constraints.max}.`;
+          if (orderValue > 10000) {
+            errorMsg += ` Order value ($${orderValue.toFixed(2)}) may be too high. Please reduce trade amount.`;
+          } else if (data.retMsg?.toLowerCase().includes('qty') || data.retMsg?.toLowerCase().includes('quantity')) {
+            errorMsg += ` Bybit rejected quantity. Try reducing trade amount or check if ${symbol} has different limits on Bybit.`;
+          } else {
+            errorMsg += ` Bybit API error: ${data.retMsg || 'Unknown error'}.`;
+          }
+          throw new Error(errorMsg);
         } else if (data.retCode === 110007) {
           const orderValue = parseFloat(formattedQty) * currentMarketPrice;
           console.warn(`⚠️ Insufficient balance for ${symbol} ${capitalizedSide} order`);

@@ -422,6 +422,78 @@ export default function BotsPage() {
     }
   };
 
+  const handlePauseAll = async () => {
+    if (!confirm('Are you sure you want to pause all running bots?')) {
+      return;
+    }
+    setBulkLoading(true);
+    try {
+      const runningBots = filteredBots.filter(bot => bot.status === 'running');
+      await Promise.all(runningBots.map(bot => pauseBot(bot.id)));
+      alert(`✅ Paused ${runningBots.length} bot(s) successfully`);
+    } catch (error) {
+      console.error('Failed to pause all bots:', error);
+      alert('❌ Failed to pause all bots. Please check console for details.');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleActivateAllPaper = async () => {
+    if (!confirm('Switch all bots to Paper Trading mode? This will set all bots to paper trading (simulation mode).')) {
+      return;
+    }
+    setBulkLoading(true);
+    try {
+      const botsToUpdate = filteredBots.filter(bot => !bot.paperTrading);
+      await Promise.all(botsToUpdate.map(bot => updateBot(bot.id, { paperTrading: true } as any)));
+      alert(`✅ Switched ${botsToUpdate.length} bot(s) to Paper Trading mode`);
+    } catch (error) {
+      console.error('Failed to activate all paper trading:', error);
+      alert('❌ Failed to switch bots to paper trading. Please check console for details.');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handlePauseAllReal = async () => {
+    if (!confirm('Pause all bots in Real Trading mode? This will pause all bots that are using real funds.')) {
+      return;
+    }
+    setBulkLoading(true);
+    try {
+      const realTradingBots = filteredBots.filter(bot => !bot.paperTrading && bot.status === 'running');
+      await Promise.all(realTradingBots.map(bot => pauseBot(bot.id)));
+      alert(`✅ Paused ${realTradingBots.length} real trading bot(s) successfully`);
+    } catch (error) {
+      console.error('Failed to pause all real trading bots:', error);
+      alert('❌ Failed to pause real trading bots. Please check console for details.');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
+  const handleActivateAllReal = async () => {
+    if (!confirm('🚨 Switch all bots to REAL Trading mode? This will use LIVE FUNDS on your exchange. Are you absolutely sure?')) {
+      return;
+    }
+    const doubleConfirm = confirm('⚠️ FINAL CONFIRMATION: This will enable REAL trading with LIVE FUNDS for all bots. Continue?');
+    if (!doubleConfirm) {
+      return;
+    }
+    setBulkLoading(true);
+    try {
+      const botsToUpdate = filteredBots.filter(bot => bot.paperTrading);
+      await Promise.all(botsToUpdate.map(bot => updateBot(bot.id, { paperTrading: false } as any)));
+      alert(`🚨 Switched ${botsToUpdate.length} bot(s) to REAL Trading mode. Trades will use live funds!`);
+    } catch (error) {
+      console.error('Failed to activate all real trading:', error);
+      alert('❌ Failed to switch bots to real trading. Please check console for details.');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+
   // Individual bot actions
   const handleResetBot = async (botId: string, botName: string) => {
     if (!confirm(`Are you sure you want to reset "${botName}" statistics? This will set PnL, trades count, and win rate to zero.`)) {
@@ -672,7 +744,54 @@ export default function BotsPage() {
         }
       />
       
-      <div className="pt-20 pb-20 px-4">
+      <div className="pt-20 pb-4 px-4">
+        <div className="max-w-6xl mx-auto">
+          {/* Bulk Actions - Paper/Real Trading */}
+          <Card className="p-4 mb-4">
+            <div className="flex flex-wrap gap-2 items-center">
+              <span className="text-sm font-medium text-gray-700 mr-2">Bulk Actions:</span>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handlePauseAll}
+                disabled={bulkLoading || filteredBots.filter(bot => bot.status === 'running').length === 0}
+              >
+                <i className="ri-pause-line mr-1"></i>
+                Pause All
+              </Button>
+              <Button
+                variant="info"
+                size="sm"
+                onClick={handleActivateAllPaper}
+                disabled={bulkLoading || filteredBots.filter(bot => !bot.paperTrading).length === 0}
+              >
+                <i className="ri-edit-box-line mr-1"></i>
+                Activate All Paper
+              </Button>
+              <Button
+                variant="warning"
+                size="sm"
+                onClick={handlePauseAllReal}
+                disabled={bulkLoading || filteredBots.filter(bot => !bot.paperTrading && bot.status === 'running').length === 0}
+              >
+                <i className="ri-pause-circle-line mr-1"></i>
+                Pause All Real
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={handleActivateAllReal}
+                disabled={bulkLoading || filteredBots.filter(bot => bot.paperTrading).length === 0}
+              >
+                <i className="ri-money-dollar-circle-line mr-1"></i>
+                Activate All Real
+              </Button>
+            </div>
+          </Card>
+        </div>
+      </div>
+      
+      <div className="pb-20 px-4">
         <div className="max-w-6xl mx-auto space-y-4">
           {/* Execution Status */}
           <Card className="p-4">
