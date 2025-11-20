@@ -744,10 +744,10 @@ export default function BotsPage() {
         }
       />
       
-      <div className="pt-20 pb-4 px-4">
-        <div className="max-w-6xl mx-auto">
+      <div className="pt-20 pb-20 px-4">
+        <div className="max-w-6xl mx-auto space-y-4">
           {/* Bulk Actions - Paper/Real Trading */}
-          <Card className="p-4 mb-4">
+          <Card className="p-4">
             <div className="flex flex-wrap gap-2 items-center">
               <span className="text-sm font-medium text-gray-700 mr-2">Bulk Actions:</span>
               <Button
@@ -760,19 +760,21 @@ export default function BotsPage() {
                 Pause All
               </Button>
               <Button
-                variant="info"
+                variant="secondary"
                 size="sm"
                 onClick={handleActivateAllPaper}
                 disabled={bulkLoading || filteredBots.filter(bot => !bot.paperTrading).length === 0}
+                className="bg-yellow-100 hover:bg-yellow-200 text-yellow-800 border border-yellow-300"
               >
                 <i className="ri-edit-box-line mr-1"></i>
                 Activate All Paper
               </Button>
               <Button
-                variant="warning"
+                variant="secondary"
                 size="sm"
                 onClick={handlePauseAllReal}
                 disabled={bulkLoading || filteredBots.filter(bot => !bot.paperTrading && bot.status === 'running').length === 0}
+                className="bg-orange-100 hover:bg-orange-200 text-orange-800 border border-orange-300"
               >
                 <i className="ri-pause-circle-line mr-1"></i>
                 Pause All Real
@@ -788,11 +790,6 @@ export default function BotsPage() {
               </Button>
             </div>
           </Card>
-        </div>
-      </div>
-      
-      <div className="pb-20 px-4">
-        <div className="max-w-6xl mx-auto space-y-4">
           {/* Execution Status */}
           <Card className="p-4">
             <div className="flex items-center justify-between">
