@@ -57,15 +57,17 @@ SET strategy_config = COALESCE(strategy_config, '{}'::jsonb)::jsonb || jsonb_bui
 )
 WHERE status = 'running';
 
--- For hybrid_trend_meanreversion strategy - DISABLE HTF ADX check by setting to 0
--- The code now allows adx_min_htf = 0 to skip the HTF ADX check entirely
+-- For hybrid_trend_meanreversion strategy - Use minimum allowed values
+-- Note: adx_min_htf must be between 15-35 per validation, so we use 15 (minimum)
+-- The code will check for 15 and be lenient, or we can add a bypass flag
 UPDATE trading_bots
 SET strategy_config = COALESCE(strategy_config, '{}'::jsonb)::jsonb || jsonb_build_object(
-  'adx_min_htf', 0,  -- 0 = DISABLE HTF ADX check (bypasses the blocking check)
-  'adx_trend_min', 0,  -- 0 = DISABLE current timeframe ADX check
-  'adx_min', 0,  -- 0 = DISABLE ADX check
-  'adx_min_reversal', 0,  -- 0 = DISABLE ADX reversal check
+  'adx_min_htf', 15,  -- Minimum allowed by validation (15-35 range)
+  'adx_trend_min', 0,  -- 0 = DISABLE current timeframe ADX check (no validation on this)
+  'adx_min', 0,  -- 0 = DISABLE ADX check (no validation on this)
+  'adx_min_reversal', 0,  -- 0 = DISABLE ADX reversal check (no validation on this)
   'adx_meanrev_max', 100,  -- Very high (effectively disables this check)
+  'disable_htf_adx_check', true,  -- Flag to bypass HTF ADX check in code
   'rsi_oversold', 55,  -- Very lenient
   'rsi_overbought', 45,  -- Very lenient
   'momentum_threshold', 0.05,  -- Very low

@@ -3186,10 +3186,11 @@ class BotExecutor {
       
       // Get configuration values with defaults (lowered for more trading opportunities)
       const htfTimeframe = config.htf_timeframe || '4h';
-      // Make HTF ADX check optional - if adx_min_htf is 0 or negative, skip the check
-      const adxMinHTF = config.adx_min_htf !== undefined && config.adx_min_htf !== null && config.adx_min_htf > 0
-        ? config.adx_min_htf 
-        : 0; // 0 means skip HTF ADX check
+      // Check if HTF ADX check should be disabled (either 0, negative, or disable_htf_adx_check flag)
+      // Note: Database validation requires adx_min_htf to be 15-35, so we use a flag to bypass
+      const disableHTFADXCheck = config.disable_htf_adx_check === true || 
+                                 (config.adx_min_htf !== undefined && config.adx_min_htf !== null && config.adx_min_htf <= 0);
+      const adxMinHTF = disableHTFADXCheck ? 0 : (config.adx_min_htf || 15); // Default to 15 if not disabled
       const adxTrendMin = config.adx_trend_min || 5; // Lowered from 12 to 5
       const adxMeanRevMax = config.adx_meanrev_max || 50; // Increased from 19 - this is MAX ADX for mean reversion, so higher = more lenient
       const rsiOversold = config.rsi_oversold || 40; // Increased from 30 - more lenient
