@@ -53,13 +53,15 @@ SET strategy_config = COALESCE(strategy_config, '{}'::jsonb)::jsonb || jsonb_bui
   'min_volatility_atr', 0.05,  -- Very low for scalping
   'min_volume_requirement', 0.3,  -- Very low
   'ml_confidence_threshold', 0.3,  -- Very low
-  'time_filter_enabled', false
+  'time_filter_enabled', false,
+  'disable_htf_adx_check', false  -- Default to false (can be enabled per bot via UI)
 )
-WHERE status = 'running';
+WHERE status = 'running'
+  AND (strategy::text NOT LIKE '%hybrid_trend_meanreversion%' AND strategy::text NOT LIKE '%Hybrid Trend%');
 
 -- For hybrid_trend_meanreversion strategy - Use minimum allowed values
 -- Note: adx_min_htf must be between 15-35 per validation, so we use 15 (minimum)
--- The code will check for 15 and be lenient, or we can add a bypass flag
+-- The code will check for disable_htf_adx_check flag to bypass HTF ADX check
 UPDATE trading_bots
 SET strategy_config = COALESCE(strategy_config, '{}'::jsonb)::jsonb || jsonb_build_object(
   'adx_min_htf', 15,  -- Minimum allowed by validation (15-35 range)
@@ -67,7 +69,7 @@ SET strategy_config = COALESCE(strategy_config, '{}'::jsonb)::jsonb || jsonb_bui
   'adx_min', 0,  -- 0 = DISABLE ADX check (no validation on this)
   'adx_min_reversal', 0,  -- 0 = DISABLE ADX reversal check (no validation on this)
   'adx_meanrev_max', 100,  -- Very high (effectively disables this check)
-  'disable_htf_adx_check', true,  -- Flag to bypass HTF ADX check in code
+  'disable_htf_adx_check', true,  -- Flag to bypass HTF ADX check in code (CRITICAL)
   'rsi_oversold', 55,  -- Very lenient
   'rsi_overbought', 45,  -- Very lenient
   'momentum_threshold', 0.05,  -- Very low
@@ -115,7 +117,8 @@ SELECT
   (strategy_config->>'cooldown_bars')::int as cooldown_bars,
   (strategy_config->>'adx_min_htf')::int as adx_min_htf,
   (strategy_config->>'adx_trend_min')::int as adx_trend_min,
-  (strategy_config->>'rsi_oversold')::int as rsi_oversold
+  (strategy_config->>'rsi_oversold')::int as rsi_oversold,
+  (strategy_config->>'disable_htf_adx_check')::boolean as disable_htf_adx_check
 FROM trading_bots
 WHERE status = 'running'
 ORDER BY name;
