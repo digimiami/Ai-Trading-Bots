@@ -2,7 +2,7 @@
 export interface TradingBot {
   id: string;
   name: string;
-  exchange: 'bybit' | 'okx';
+  exchange: 'bybit' | 'okx' | 'bitunix';
   tradingType: 'spot' | 'futures';
   symbol: string;
   status: 'active' | 'paused' | 'stopped' | 'running';

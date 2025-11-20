@@ -578,6 +578,7 @@ export default function BacktestPage() {
                 >
                   <option value="bybit">Bybit</option>
                   <option value="okx">OKX</option>
+                  <option value="bitunix">Bitunix</option>
                 </select>
               </div>
               <div>

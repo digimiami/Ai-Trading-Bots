@@ -116,6 +116,24 @@ serve(async (req) => {
         return new Response(JSON.stringify(data), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
+      } else if (exchange === 'bitunix') {
+        const marketType = 'futures' // Bitunix futures pairs finder
+        const klinesUrl = `https://api.bitunix.com/api/v1/market/klines?symbol=${symbol}&marketType=${marketType}&interval=${interval}&limit=${limit}${start ? `&start=${start}` : ''}`
+        const response = await fetch(klinesUrl)
+        if (!response.ok) {
+          const errorText = await response.text()
+          console.error('Bitunix klines fetch failed:', response.status, errorText)
+          return new Response(JSON.stringify({
+            error: 'Failed to fetch Bitunix klines',
+            status: response.status,
+            body: errorText
+          }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }
+
+        const data = await response.json()
+        return new Response(JSON.stringify(data), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
       }
     }
 

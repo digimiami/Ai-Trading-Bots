@@ -484,6 +484,16 @@ serve(async (req) => {
                 exchangeBalance = await fetchBybitBalance(decryptedApiKey, decryptedApiSecret, apiKey.is_testnet)
               } else if (apiKey.exchange === 'okx') {
                 exchangeBalance = await fetchOKXBalance(decryptedApiKey, decryptedApiSecret, decryptedPassphrase, apiKey.is_testnet)
+              } else if (apiKey.exchange === 'bitunix') {
+                // TODO: Implement Bitunix balance fetching
+                exchangeBalance = {
+                  exchange: 'bitunix',
+                  totalBalance: 0,
+                  availableBalance: 0,
+                  lockedBalance: 0,
+                  assets: [],
+                  lastUpdated: new Date().toISOString(),
+                }
               }
 
               if (exchangeBalance) {

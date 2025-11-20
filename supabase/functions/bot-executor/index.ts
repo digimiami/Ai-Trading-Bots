@@ -1531,6 +1531,42 @@ class MarketDataFetcher {
         
         console.warn(`⚠️ OKX API error for ${symbol}: Symbol not found. Tried variants: ${symbolVariants.join(', ')}`);
         return 0;
+      } else if (exchange === 'bitunix') {
+        // Bitunix price fetching
+        const symbolVariants = this.normalizeSymbol(symbol, exchange, tradingType);
+        
+        for (const symbolVariant of symbolVariants) {
+          try {
+            // Bitunix API endpoint for ticker
+            const marketType = tradingType === 'futures' || tradingType === 'linear' ? 'futures' : 'spot';
+            const response = await fetch(`https://api.bitunix.com/api/v1/market/ticker?symbol=${symbolVariant}&marketType=${marketType}`, {
+              signal: AbortSignal.timeout(10000)
+            });
+            
+            if (!response.ok) {
+              continue; // Try next variant
+            }
+            
+            const data = await response.json();
+            
+            // Bitunix response format: { code: 0, data: { lastPrice: "..." } }
+            if (data.code === 0 && data.data && data.data.lastPrice) {
+              const price = parseFloat(data.data.lastPrice);
+              if (price > 0 && isFinite(price)) {
+                if (symbolVariant !== symbol) {
+                  console.log(`✅ Found price using symbol variant: ${symbolVariant} (original: ${symbol})`);
+                }
+                return price;
+              }
+            }
+          } catch (err) {
+            console.warn(`⚠️ Error trying symbol variant ${symbolVariant}:`, err);
+            continue; // Try next variant
+          }
+        }
+        
+        console.warn(`⚠️ Bitunix API error for ${symbol}: Symbol not found. Tried variants: ${symbolVariants.join(', ')}`);
+        return 0;
       }
       return 0;
     } catch (error) {
@@ -1724,6 +1760,66 @@ class MarketDataFetcher {
         }
         
         console.warn(`⚠️ Could not fetch klines for ${symbol} from OKX`);
+        return [];
+      } else if (exchange === 'bitunix') {
+        // Bitunix klines implementation
+        const marketType = timeframe.includes('m') || timeframe.includes('h') ? 'futures' : 'spot';
+        const symbolVariants = this.normalizeSymbol(symbol, exchange, marketType === 'futures' ? 'futures' : 'spot');
+        
+        // Map timeframe to Bitunix interval format
+        const intervalMap: { [key: string]: string } = {
+          '1m': '1m',
+          '3m': '3m',
+          '5m': '5m',
+          '15m': '15m',
+          '30m': '30m',
+          '1h': '1h',
+          '2h': '2h',
+          '4h': '4h',
+          '6h': '6h',
+          '12h': '12h',
+          '1d': '1d',
+          '1w': '1w'
+        };
+        const bitunixInterval = intervalMap[timeframe] || '1h';
+        
+        for (const symbolVariant of symbolVariants) {
+          try {
+            const url = `https://api.bitunix.com/api/v1/market/klines?symbol=${symbolVariant}&marketType=${marketType}&interval=${bitunixInterval}&limit=${limit}`;
+            const response = await fetch(url);
+            
+            // Check content-type before parsing JSON
+            const contentType = response.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+              const errorText = await response.text().catch(() => '');
+              console.warn(`⚠️ Bitunix klines API returned non-JSON (${contentType}) for ${symbolVariant}: ${errorText.substring(0, 200)}`);
+              continue; // Try next variant
+            }
+            
+            const data = await response.json();
+            
+            // Bitunix returns: { code: 0, data: [[timestamp, open, high, low, close, volume], ...] }
+            if (data.code === 0 && data.data && Array.isArray(data.data) && data.data.length > 0) {
+              const klines = data.data.reverse().map((k: any[]) => [
+                parseFloat(k[0]), // timestamp
+                parseFloat(k[1]), // open
+                parseFloat(k[2]), // high
+                parseFloat(k[3]), // low
+                parseFloat(k[4]), // close
+                parseFloat(k[5])  // volume
+              ]);
+              
+              if (klines.length > 0) {
+                console.log(`✅ Fetched ${klines.length} klines for ${symbolVariant} from Bitunix`);
+                return klines;
+              }
+            }
+          } catch (err) {
+            continue; // Try next variant
+          }
+        }
+        
+        console.warn(`⚠️ Could not fetch klines for ${symbol} from Bitunix`);
         return [];
       }
       
@@ -5053,6 +5149,8 @@ class BotExecutor {
       } else if (bot.exchange === 'okx') {
         // TODO: Add balance check for OKX
         return await this.placeOKXOrder(apiKey, apiSecret, passphrase, apiKeys.is_testnet, bot.symbol, tradeSignal.side, amount, price);
+      } else if (bot.exchange === 'bitunix') {
+        return await this.placeBitunixOrder(apiKey, apiSecret, apiKeys.is_testnet, bot.symbol, tradeSignal.side, amount, price, tradingType, bot);
       }
       
       throw new Error(`Unsupported exchange: ${bot.exchange}`);
@@ -6708,6 +6806,103 @@ class BotExecutor {
     const signature = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
     const hashArray = Array.from(new Uint8Array(signature));
     return btoa(String.fromCharCode(...hashArray));
+  }
+  
+  private async placeBitunixOrder(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string, side: string, amount: number, price: number, tradingType: string = 'spot', bot: any = null): Promise<any> {
+    const baseUrl = isTestnet ? 'https://api-testnet.bitunix.com' : 'https://api.bitunix.com';
+    
+    console.log(`🔑 Bitunix Order Details:`);
+    console.log(`   Base URL: ${baseUrl} (isTestnet: ${isTestnet})`);
+    console.log(`   API Key length: ${apiKey.length}, starts with: ${apiKey.substring(0, 8)}...`);
+    console.log(`   API Secret length: ${apiSecret.length}, starts with: ${apiSecret.substring(0, 8)}...`);
+    console.log(`   Symbol: ${symbol}, Side: ${side}, Amount: ${amount}, Price: ${price}`);
+    console.log(`   Trading Type: ${tradingType}`);
+    
+    try {
+      const timestamp = Date.now().toString();
+      const nonce = timestamp;
+      const marketType = tradingType === 'futures' || tradingType === 'linear' ? 'futures' : 'spot';
+      
+      // Bitunix order parameters
+      const orderParams: any = {
+        symbol: symbol,
+        marketType: marketType,
+        side: side.toLowerCase(), // 'buy' or 'sell'
+        type: 'market', // Market order
+        quantity: amount.toString(),
+        timestamp: timestamp,
+        nonce: nonce
+      };
+      
+      // Create query string for signature
+      const queryString = Object.keys(orderParams)
+        .sort()
+        .map(key => `${key}=${orderParams[key]}`)
+        .join('&');
+      
+      // Create signature: HMAC-SHA256(queryString, apiSecret)
+      const signature = await this.createBitunixSignature(queryString, apiSecret);
+      
+      // Add signature to params
+      orderParams.sign = signature;
+      
+      const requestPath = '/api/v1/trade/order';
+      const response = await fetch(`${baseUrl}${requestPath}`, {
+        method: 'POST',
+        headers: {
+          'api-key': apiKey,
+          'timestamp': timestamp,
+          'nonce': nonce,
+          'sign': signature,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(orderParams)
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        console.error(`❌ Bitunix API error (HTTP ${response.status}):`, errorText);
+        if (response.status === 401) {
+          throw new Error('Bitunix 401 Unauthorized - check API key, secret, and testnet flag');
+        }
+        throw new Error(`Bitunix API error: ${response.status} - ${errorText}`);
+      }
+      
+      const data = await response.json();
+      
+      if (data.code !== 0) {
+        throw new Error(`Bitunix order error: ${data.msg || data.message} (Code: ${data.code})`);
+      }
+      
+      return {
+        orderId: data.data?.orderId || data.data?.id,
+        status: 'filled',
+        exchange: 'bitunix',
+        response: data
+      };
+    } catch (error) {
+      console.error('Bitunix order placement error:', error);
+      throw error;
+    }
+  }
+  
+  private async createBitunixSignature(message: string, secret: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(secret);
+    const messageData = encoder.encode(message);
+    
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      keyData,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    
+    const signature = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+    const hashArray = Array.from(new Uint8Array(signature));
+    // Bitunix expects lowercase hex string
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toLowerCase();
   }
   
   private calculateTradeAmount(bot: any, price: number): number {

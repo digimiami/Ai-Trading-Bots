@@ -275,6 +275,7 @@ export default function EditBotPage() {
                     >
                       <option value="bybit">Bybit</option>
                       <option value="okx">OKX</option>
+                      <option value="bitunix">Bitunix</option>
                     </select>
                   </div>
 

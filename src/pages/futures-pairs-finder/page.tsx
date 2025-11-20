@@ -426,6 +426,7 @@ export default function FuturesPairsFinderPage() {
                   <option value="all">All Exchanges</option>
                   <option value="bybit">Bybit</option>
                   <option value="okx">OKX</option>
+                  <option value="bitunix">Bitunix</option>
                 </select>
               </div>
 
