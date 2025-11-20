@@ -3186,8 +3186,11 @@ class BotExecutor {
       
       // Get configuration values with defaults (lowered for more trading opportunities)
       const htfTimeframe = config.htf_timeframe || '4h';
-      const adxMinHTF = config.adx_min_htf || 12; // Lowered from 15
-      const adxTrendMin = config.adx_trend_min || 12; // Lowered from 15
+      // Make HTF ADX check optional - if adx_min_htf is 0 or negative, skip the check
+      const adxMinHTF = config.adx_min_htf !== undefined && config.adx_min_htf !== null && config.adx_min_htf > 0
+        ? config.adx_min_htf 
+        : 0; // 0 means skip HTF ADX check
+      const adxTrendMin = config.adx_trend_min || 5; // Lowered from 12 to 5
       const adxMeanRevMax = config.adx_meanrev_max || 50; // Increased from 19 - this is MAX ADX for mean reversion, so higher = more lenient
       const rsiOversold = config.rsi_oversold || 40; // Increased from 30 - more lenient
       const momentumThreshold = config.momentum_threshold || 0.3; // Lowered from 0.8 - much more lenient
@@ -3280,7 +3283,8 @@ class BotExecutor {
         };
       }
       
-      if (!htfADXStrong) {
+      // Only check HTF ADX if adxMinHTF > 0 (if 0, skip this check entirely)
+      if (adxMinHTF > 0 && !htfADXStrong) {
         return {
           shouldTrade: false,
           reason: `HTF ADX (${htfADX.toFixed(2)}) below minimum (${adxMinHTF})`,
@@ -3288,7 +3292,8 @@ class BotExecutor {
         };
       }
       
-      if (!htfADXRising) {
+      // Only check HTF ADX rising if adxMinHTF > 0
+      if (adxMinHTF > 0 && !htfADXRising) {
         return {
           shouldTrade: false,
           reason: `HTF ADX not rising (${htfADX.toFixed(2)})`,
@@ -3298,7 +3303,8 @@ class BotExecutor {
       
       // 3. Current Timeframe Regime Filter
       // Only block if ADX is extremely low (below minimum trend threshold)
-      if (adx < adxTrendMin) {
+      // If adxTrendMin is 0 or negative, skip this check
+      if (adxTrendMin > 0 && adx < adxTrendMin) {
         return {
           shouldTrade: false,
           reason: `ADX (${adx.toFixed(2)}) below trend minimum (${adxTrendMin}) - market not trending`,
@@ -3526,10 +3532,17 @@ class BotExecutor {
       const rsiOverbought = config.rsi_overbought || 70;
       const atrPeriod = config.atr_period || 14;
       const atrMultiplier = config.atr_multiplier || 1.5;
-      const adxMin = config.adx_min || 20;
-      const volumeMultiplier = config.volume_multiplier || 1.2;
-      const minVolatilityATR = config.min_volatility_atr || 0.3;
-      const minVolumeRequirement = config.min_volume_requirement || 1.2;
+      // Make ADX check optional - if adx_min is 0 or negative, skip the check
+      const adxMin = config.adx_min !== undefined && config.adx_min !== null && config.adx_min > 0
+        ? config.adx_min 
+        : 0; // 0 means skip ADX check
+      const volumeMultiplier = config.volume_multiplier || 0.5; // Lowered from 1.2
+      const minVolatilityATR = config.min_volatility_atr !== undefined && config.min_volatility_atr !== null && config.min_volatility_atr > 0
+        ? config.min_volatility_atr 
+        : 0; // 0 means skip volatility check
+      const minVolumeRequirement = config.min_volume_requirement !== undefined && config.min_volume_requirement !== null && config.min_volume_requirement > 0
+        ? config.min_volume_requirement 
+        : 0; // 0 means skip volume check
       const timeFilterEnabled = config.time_filter_enabled !== false;
       const allowedHoursUTC = config.allowed_hours_utc || [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
       const vwapPeriod = config.vwap_period || 20;
@@ -3583,8 +3596,8 @@ class BotExecutor {
       const atr = this.calculateATR(highs, lows, closes, atrPeriod);
       const atrPercent = (atr / currentPrice) * 100;
       
-      // Check minimum volatility requirement
-      if (atrPercent < minVolatilityATR) {
+      // Check minimum volatility requirement (only if minVolatilityATR > 0)
+      if (minVolatilityATR > 0 && atrPercent < minVolatilityATR) {
         return {
           shouldTrade: false,
           reason: `Volatility too low: ATR ${atrPercent.toFixed(2)}% < minimum ${minVolatilityATR}%`,
@@ -3592,12 +3605,12 @@ class BotExecutor {
         };
       }
       
-      // 5. Volume Confirmation - Avoid dead zones
+      // 5. Volume Confirmation - Avoid dead zones (only if minVolumeRequirement > 0)
       const avgVolume = volumes.slice(-20).reduce((a, b) => a + b, 0) / 20;
       const currentVolume = volumes[volumes.length - 1];
       const volumeRatio = currentVolume / avgVolume;
       
-      if (volumeRatio < minVolumeRequirement) {
+      if (minVolumeRequirement > 0 && volumeRatio < minVolumeRequirement) {
         return {
           shouldTrade: false,
           reason: `Volume too low: ${volumeRatio.toFixed(2)}x < minimum ${minVolumeRequirement}x`,
@@ -3606,7 +3619,8 @@ class BotExecutor {
       }
       
       // 6. ADX for trend strength filter (avoid choppy markets)
-      if (adx < adxMin) {
+      // Only check if adxMin > 0 (if 0, skip this check entirely)
+      if (adxMin > 0 && adx < adxMin) {
         return {
           shouldTrade: false,
           reason: `ADX (${adx.toFixed(2)}) below minimum (${adxMin}) - market too choppy`,
@@ -3641,8 +3655,8 @@ class BotExecutor {
         // Avoid fake breakouts: require price to be above both EMAs
         const priceAboveBothEMAs = currentPrice > emaFastValue && currentPrice > emaSlowValue;
         
-        // Avoid ranging phases: require ADX to show trend strength
-        const strongTrend = adx >= adxMin;
+        // Avoid ranging phases: require ADX to show trend strength (only if adxMin > 0)
+        const strongTrend = adxMin > 0 ? adx >= adxMin : true; // If adxMin is 0, always true
         
         if (priceAboveBothEMAs && priceAboveVWAP && rsiNotOverbought && strongTrend) {
           // Calculate confidence based on multiple factors
@@ -3689,7 +3703,7 @@ class BotExecutor {
         const priceBelowBothEMAs = currentPrice < emaFastValue && currentPrice < emaSlowValue;
         
         // Avoid ranging phases: require ADX to show trend strength
-        const strongTrend = adx >= adxMin;
+        const strongTrend = adxMin > 0 ? adx >= adxMin : true; // If adxMin is 0, always true
         
         if (priceBelowBothEMAs && priceBelowVWAP && rsiNotOversold && strongTrend) {
           // Calculate confidence based on multiple factors
