@@ -77,6 +77,9 @@ export default function Settings() {
     okxApiSecret: '',
     okxPassphrase: '',
     okxTestnet: true,
+    bitunixApiKey: '',
+    bitunixApiSecret: '',
+    bitunixTestnet: true,
     webhookUrl: '',
     webhookSecret: '',
     alertsEnabled: true
@@ -514,7 +517,7 @@ export default function Settings() {
     setShowEditProfile(true);
   };
 
-  const handleTestConnection = async (exchange: 'bybit' | 'okx') => {
+  const handleTestConnection = async (exchange: 'bybit' | 'okx' | 'bitunix') => {
     try {
       let formData: ApiKeyFormData;
       
@@ -1414,6 +1417,61 @@ export default function Settings() {
                     <button
                       onClick={() => handleTestConnection('okx')}
                       className="w-full bg-blue-100 hover:bg-blue-200 text-blue-700 py-2 px-4 rounded-lg transition-colors text-sm"
+                    >
+                      Test Connection
+                    </button>
+                  </div>
+                </div>
+
+                {/* Bitunix API */}
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-3 flex items-center">
+                    <i className="ri-exchange-line text-green-600 mr-2"></i>
+                    Bitunix API
+                  </h3>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        API Key
+                      </label>
+                      <input
+                        type="password"
+                        value={apiSettings.bitunixApiKey}
+                        onChange={(e) => handleApiChange('bitunixApiKey', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        placeholder="Enter Bitunix API Key"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        API Secret
+                      </label>
+                      <input
+                        type="password"
+                        value={apiSettings.bitunixApiSecret}
+                        onChange={(e) => handleApiChange('bitunixApiSecret', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        placeholder="Enter Bitunix API Secret"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-gray-700">Use Testnet</span>
+                      <button
+                        onClick={() => handleApiChange('bitunixTestnet', !apiSettings.bitunixTestnet)}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          apiSettings.bitunixTestnet ? 'bg-blue-600' : 'bg-gray-200'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            apiSettings.bitunixTestnet ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                    <button
+                      onClick={() => handleTestConnection('bitunix')}
+                      className="w-full bg-green-100 hover:bg-green-200 text-green-700 py-2 px-4 rounded-lg transition-colors text-sm"
                     >
                       Test Connection
                     </button>
