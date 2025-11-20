@@ -109,13 +109,13 @@ SELECT
     tb.exchange,
     CASE 
         WHEN ak.id IS NULL THEN '❌ NO API KEY'
-        WHEN ak.active = false THEN '❌ INACTIVE'
+        WHEN ak.is_active = false THEN '❌ INACTIVE'
         ELSE '✅ OK'
     END as api_status
 FROM trading_bots tb
 LEFT JOIN api_keys ak ON tb.user_id = ak.user_id AND ak.exchange = tb.exchange
 WHERE tb.status = 'running' 
     AND tb.paper_trading = false
-    AND (ak.id IS NULL OR ak.active = false)
+    AND (ak.id IS NULL OR ak.is_active = false)
 ORDER BY tb.name;
 

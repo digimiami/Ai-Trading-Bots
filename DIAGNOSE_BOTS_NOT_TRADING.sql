@@ -25,17 +25,17 @@ SELECT
     tb.exchange,
     CASE 
         WHEN ak.id IS NULL THEN '❌ NO API KEY'
-        WHEN ak.active = false THEN '❌ API KEY INACTIVE'
+        WHEN ak.is_active = false THEN '❌ API KEY INACTIVE'
         WHEN ak.exchange != tb.exchange THEN '❌ WRONG EXCHANGE'
         ELSE '✅ API KEY OK'
     END as api_key_status,
     ak.exchange as api_key_exchange,
-    ak.active as api_key_active
+    ak.is_active as api_key_active
 FROM trading_bots tb
 LEFT JOIN api_keys ak ON tb.user_id = ak.user_id AND ak.exchange = tb.exchange
 WHERE tb.status = 'running' 
     AND tb.paper_trading = false
-    AND (ak.id IS NULL OR ak.active = false OR ak.exchange != tb.exchange)
+    AND (ak.id IS NULL OR ak.is_active = false OR ak.exchange != tb.exchange)
 ORDER BY tb.name;
 
 -- 3. BOTS WITH PROBLEMATIC STRATEGY CONFIG
@@ -162,7 +162,7 @@ SELECT
     COUNT(DISTINCT ptp.id) FILTER (WHERE ptp.status = 'open') as open_positions,
     COUNT(DISTINCT ptt.id) as total_trades,
     MAX(ptt.executed_at) as last_paper_trade,
-    SUM(COALESCE(ptt.profit_loss, 0)) as total_pnl
+    SUM(COALESCE(ptt.pnl, 0)) as total_pnl
 FROM trading_bots tb
 LEFT JOIN paper_trading_accounts pta ON tb.user_id = pta.user_id
 LEFT JOIN paper_trading_positions ptp ON tb.id = ptp.bot_id AND ptp.status = 'open'
@@ -198,7 +198,7 @@ FROM trading_bots tb
 LEFT JOIN api_keys ak ON tb.user_id = ak.user_id AND ak.exchange = tb.exchange
 WHERE tb.status = 'running' 
     AND tb.paper_trading = false
-    AND (ak.id IS NULL OR ak.active = false)
+    AND (ak.id IS NULL OR ak.is_active = false)
 
 UNION ALL
 

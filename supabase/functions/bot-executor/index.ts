@@ -2218,8 +2218,21 @@ class BotExecutor {
         details: { step: 'cooldown_check', bot_name: bot.name }
       });
       
-      const cooldownCheck = await this.checkCooldownBars(bot);
-      console.log(`⏱️ [${bot.name}] Cooldown check result:`, JSON.stringify(cooldownCheck, null, 2));
+      let cooldownCheck;
+      try {
+        cooldownCheck = await this.checkCooldownBars(bot);
+        console.log(`⏱️ [${bot.name}] Cooldown check result:`, JSON.stringify(cooldownCheck, null, 2));
+      } catch (cooldownError) {
+        console.error(`❌ [${bot.name}] Error during cooldown check:`, cooldownError);
+        await this.addBotLog(bot.id, {
+          level: 'error',
+          category: 'system',
+          message: `❌ Error checking cooldown: ${cooldownError instanceof Error ? cooldownError.message : String(cooldownError)}`,
+          details: { step: 'cooldown_check', error: cooldownError instanceof Error ? cooldownError.stack : String(cooldownError) }
+        });
+        // On error, allow trading (fail open)
+        cooldownCheck = { canTrade: true, reason: 'Cooldown check error - allowing trade' };
+      }
       
       if (!cooldownCheck.canTrade) {
         console.log(`⏸️ Cooldown active for ${bot.name}: ${cooldownCheck.reason}`);
@@ -7250,8 +7263,9 @@ class BotExecutor {
         return { canTrade: true };
       }
       
-      // Get last trade time
-      const lastTrade = await this.getLastTradeTime(bot.id);
+      // Get last trade time (check paper_trading_trades for paper bots, trades for real bots)
+      const isPaperTrading = bot.paper_trading === true;
+      const lastTrade = await this.getLastTradeTime(bot.id, isPaperTrading);
       if (!lastTrade) {
         // No previous trades, cooldown doesn't apply
         return { canTrade: true };
@@ -7329,31 +7343,74 @@ class BotExecutor {
   /**
    * Get last trade time for a bot
    */
-  private async getLastTradeTime(botId: string): Promise<string | null> {
+  private async getLastTradeTime(botId: string, isPaperTrading: boolean = false): Promise<string | null> {
     try {
-      const { data, error } = await this.supabaseClient
-        .from('trades')
-        .select('executed_at, created_at')
-        .eq('bot_id', botId)
-        .not('executed_at', 'is', null)
-        .order('executed_at', { ascending: false })
-        .limit(1)
-        .single();
-      
-      if (error || !data) {
-        // Try with created_at as fallback
-        const { data: fallbackData } = await this.supabaseClient
-          .from('trades')
-          .select('created_at')
+      if (isPaperTrading) {
+        // For paper trading, check paper_trading_trades table
+        // Prefer closed_at (completed trade), then executed_at, then created_at
+        const { data, error } = await this.supabaseClient
+          .from('paper_trading_trades')
+          .select('closed_at, executed_at, created_at')
           .eq('bot_id', botId)
-          .order('created_at', { ascending: false })
+          .not('closed_at', 'is', null)
+          .order('closed_at', { ascending: false })
           .limit(1)
           .single();
         
-        return fallbackData?.created_at || null;
+        if (!error && data?.closed_at) {
+          return data.closed_at;
+        }
+        
+        // Fallback to executed_at
+        const { data: executedData } = await this.supabaseClient
+          .from('paper_trading_trades')
+          .select('executed_at, created_at')
+          .eq('bot_id', botId)
+          .not('executed_at', 'is', null)
+          .order('executed_at', { ascending: false })
+          .limit(1)
+          .single();
+        
+        if (!executedData?.executed_at) {
+          // Last fallback: created_at
+          const { data: createdData } = await this.supabaseClient
+            .from('paper_trading_trades')
+            .select('created_at')
+            .eq('bot_id', botId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+          
+          return createdData?.created_at || null;
+        }
+        
+        return executedData.executed_at || executedData.created_at || null;
+      } else {
+        // For real trading, check trades table
+        const { data, error } = await this.supabaseClient
+          .from('trades')
+          .select('executed_at, created_at')
+          .eq('bot_id', botId)
+          .not('executed_at', 'is', null)
+          .order('executed_at', { ascending: false })
+          .limit(1)
+          .single();
+        
+        if (error || !data) {
+          // Try with created_at as fallback
+          const { data: fallbackData } = await this.supabaseClient
+            .from('trades')
+            .select('created_at')
+            .eq('bot_id', botId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+          
+          return fallbackData?.created_at || null;
+        }
+        
+        return data.executed_at || data.created_at || null;
       }
-      
-      return data.executed_at || data.created_at || null;
     } catch (error) {
       console.warn('Error getting last trade time:', error);
       return null;
