@@ -63,8 +63,8 @@ UPDATE trading_bots
 SET strategy_config = COALESCE(strategy_config, '{}'::jsonb)::jsonb || jsonb_build_object(
   'adx_min_htf', 0,  -- 0 = DISABLE HTF ADX check (bypasses the blocking check)
   'adx_trend_min', 0,  -- 0 = DISABLE current timeframe ADX check
-  'adx_min', 0,  -- Very low
-  'adx_min_reversal', 0,  -- Very low
+  'adx_min', 0,  -- 0 = DISABLE ADX check
+  'adx_min_reversal', 0,  -- 0 = DISABLE ADX reversal check
   'adx_meanrev_max', 100,  -- Very high (effectively disables this check)
   'rsi_oversold', 55,  -- Very lenient
   'rsi_overbought', 45,  -- Very lenient
@@ -82,12 +82,12 @@ WHERE status = 'running'
 -- For scalping strategy - make ALL requirements very lenient
 UPDATE trading_bots
 SET strategy_config = COALESCE(strategy_config, '{}'::jsonb)::jsonb || jsonb_build_object(
-  'min_volatility_atr', 0.01,  -- Very low (was 0.3)
-  'adx_min', 0,  -- DISABLE ADX check (was 20, too strict)
+  'min_volatility_atr', 0,  -- 0 = DISABLE volatility check (was 0.3)
+  'adx_min', 0,  -- 0 = DISABLE ADX check (was 20, too strict)
   'rsi_oversold', 55,  -- Very lenient
   'rsi_overbought', 45,  -- Very lenient
   'volume_multiplier', 0.5,  -- Very low (was 1.2)
-  'min_volume_requirement', 0.3,  -- Very low (was 1.2)
+  'min_volume_requirement', 0,  -- 0 = DISABLE volume check (was 1.2)
   'time_filter_enabled', false,  -- Disable time filter
   'cooldown_bars', 0,
   'session_filter_enabled', false
