@@ -14,10 +14,10 @@ SET strategy_config = COALESCE(strategy_config, '{}'::jsonb)::jsonb || jsonb_bui
   'session_filter_enabled', false,
   'allowed_hours_utc', ARRAY[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23],
   
-  -- Very lenient strategy parameters
-  'adx_min_htf', 10,  -- Lowered from 12 (minimum allowed by validation is 15, but we'll try 10)
-  'adx_trend_min', 10,  -- Lowered from 12
-  'adx_min', 10,  -- Lowered from default
+  -- Very lenient strategy parameters (minimum allowed by validation)
+  'adx_min_htf', 15,  -- Minimum allowed by validation (15-35 range)
+  'adx_trend_min', 12,  -- Lowered from 15
+  'adx_min', 12,  -- Lowered from default
   'adx_min_reversal', 8,  -- Lowered from 12
   'adx_meanrev_max', 60,  -- Increased (higher = more lenient for mean reversion)
   
@@ -58,9 +58,9 @@ SET strategy_config = jsonb_build_object(
   'cooldown_bars', 0,
   'session_filter_enabled', false,
   'allowed_hours_utc', ARRAY[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23],
-  'adx_min_htf', 10,
-  'adx_trend_min', 10,
-  'adx_min', 10,
+  'adx_min_htf', 15,
+  'adx_trend_min', 12,
+  'adx_min', 12,
   'adx_min_reversal', 8,
   'adx_meanrev_max', 60,
   'rsi_oversold', 45,
