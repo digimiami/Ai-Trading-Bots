@@ -250,6 +250,42 @@ export default function Settings() {
     }
   }, [user]); // Removed getProfile from dependencies to prevent infinite loop
 
+  // Load API keys into form when modal opens (show placeholders for existing keys)
+  useEffect(() => {
+    if (showApiConfig && apiKeys.length > 0) {
+      const bybitKey = apiKeys.find(k => k.exchange === 'bybit');
+      const okxKey = apiKeys.find(k => k.exchange === 'okx');
+      const bitunixKey = apiKeys.find(k => k.exchange === 'bitunix');
+      
+      setApiSettings(prev => ({
+        ...prev,
+        bybitTestnet: bybitKey?.isTestnet ?? prev.bybitTestnet,
+        okxTestnet: okxKey?.isTestnet ?? prev.okxTestnet,
+        bitunixTestnet: bitunixKey?.isTestnet ?? prev.bitunixTestnet,
+        // Don't populate actual keys (they're encrypted, show placeholders instead)
+        bybitApiKey: bybitKey ? '••••••••••••••••' : '',
+        bybitApiSecret: bybitKey ? '••••••••••••••••' : '',
+        okxApiKey: okxKey ? '••••••••••••••••' : '',
+        okxApiSecret: okxKey ? '••••••••••••••••' : '',
+        okxPassphrase: okxKey ? '••••••••••••••••' : '',
+        bitunixApiKey: bitunixKey ? '••••••••••••••••' : '',
+        bitunixApiSecret: bitunixKey ? '••••••••••••••••' : '',
+      }));
+    } else if (showApiConfig && apiKeys.length === 0) {
+      // Reset to defaults when opening modal with no existing keys
+      setApiSettings(prev => ({
+        ...prev,
+        bybitApiKey: '',
+        bybitApiSecret: '',
+        okxApiKey: '',
+        okxApiSecret: '',
+        okxPassphrase: '',
+        bitunixApiKey: '',
+        bitunixApiSecret: '',
+      }));
+    }
+  }, [showApiConfig, apiKeys]);
+
   const handleProfilePictureChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
