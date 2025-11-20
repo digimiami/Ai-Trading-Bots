@@ -20,8 +20,11 @@ export default function PaperTradingDashboard() {
         return;
       }
 
-      // Fetch pairs from both open positions AND closed trades
-      const [positionsResult, tradesResult] = await Promise.all([
+      // Fetch pairs from:
+      // 1. Open positions
+      // 2. Closed trades
+      // 3. Paper trading bots (symbols field)
+      const [positionsResult, tradesResult, botsResult] = await Promise.all([
         supabase
           .from('paper_trading_positions')
           .select('symbol')
@@ -31,7 +34,12 @@ export default function PaperTradingDashboard() {
           .from('paper_trading_trades')
           .select('symbol')
           .eq('user_id', user.id)
-          .eq('status', 'closed')
+          .eq('status', 'closed'),
+        supabase
+          .from('trading_bots')
+          .select('symbol, symbols')
+          .eq('user_id', user.id)
+          .eq('paper_trading', true)
       ]);
 
       const allSymbols = new Set<string>();
@@ -47,6 +55,34 @@ export default function PaperTradingDashboard() {
       if (tradesResult.data && tradesResult.data.length > 0) {
         tradesResult.data.forEach((t: any) => {
           if (t.symbol) allSymbols.add(t.symbol);
+        });
+      }
+
+      // Add symbols from paper trading bots
+      if (botsResult.data && botsResult.data.length > 0) {
+        botsResult.data.forEach((bot: any) => {
+          // Handle single symbol
+          if (bot.symbol) {
+            allSymbols.add(bot.symbol);
+          }
+          
+          // Handle symbols array (multi-pair bots)
+          if (bot.symbols) {
+            let symbolsArray: string[] = [];
+            if (typeof bot.symbols === 'string') {
+              try {
+                symbolsArray = JSON.parse(bot.symbols);
+              } catch (e) {
+                console.warn('Failed to parse symbols JSON from bot:', e);
+              }
+            } else if (Array.isArray(bot.symbols)) {
+              symbolsArray = bot.symbols;
+            }
+            
+            symbolsArray.forEach((symbol: string) => {
+              if (symbol) allSymbols.add(symbol);
+            });
+          }
         });
       }
 
