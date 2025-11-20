@@ -231,8 +231,8 @@ serve(async (req) => {
         }
 
         // Check if exchange is valid
-        if (exchange !== 'bybit' && exchange !== 'okx') {
-          throw new Error(`Invalid exchange value: ${exchange}. Must be 'bybit' or 'okx'`)
+        if (exchange !== 'bybit' && exchange !== 'okx' && exchange !== 'bitunix') {
+          throw new Error(`Invalid exchange value: ${exchange}. Must be 'bybit', 'okx', or 'bitunix'`)
         }
 
         // Check if table exists by trying to select from it
