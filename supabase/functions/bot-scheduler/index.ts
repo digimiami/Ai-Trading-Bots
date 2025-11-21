@@ -3,7 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 // Setup:
 // 1) Set env vars: CRON_SECRET, SUPABASE_URL (project), SUPABASE_SERVICE_ROLE_KEY (on bot-executor only)
 // 2) Deploy: supabase functions deploy bot-scheduler
-// 3) Add schedule in Dashboard → Edge Functions → bot-scheduler (e.g. every 5 minutes)
+// 3) Add schedule in Dashboard → Edge Functions → bot-scheduler (every 1 minute: * * * * *)
 // 4) Add header: x-cron-secret: <CRON_SECRET>
 
 const corsHeaders = {
@@ -44,6 +44,7 @@ serve(async (req) => {
     const headerSecret = req.headers.get('x-cron-secret') ?? '';
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
     const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 
     console.log(`🔐 [${requestId}] Environment check:`);
     console.log(`   CRON_SECRET present: ${!!CRON_SECRET} (length: ${CRON_SECRET.length})`);
@@ -125,14 +126,15 @@ serve(async (req) => {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json', 
-          'x-cron-secret': CRON_SECRET,  // CRITICAL: This tells bot-executor it's a cron call
-          'Authorization': `Bearer ${SERVICE_ROLE_KEY}`  // Used when isCron=true
+          'x-cron-secret': CRON_SECRET,  // Internal authentication (bot-executor recognizes this)
+          'apikey': ANON_KEY,  // Supabase edge runtime access
+          'Authorization': `Bearer ${ANON_KEY}`  // Required by Supabase edge functions
         },
         body: JSON.stringify({ action: 'execute_all_bots' })
       });
       
       console.log(`📤 [${requestId}] Request to bot-executor:`);
-      console.log(`   Headers sent: x-cron-secret=${CRON_SECRET ? `${CRON_SECRET.substring(0, 4)}...${CRON_SECRET.substring(CRON_SECRET.length - 4)}` : '(empty)'}, Authorization=Bearer ${SERVICE_ROLE_KEY ? '***' : '(empty)'}`);
+      console.log(`   Headers sent: x-cron-secret=${CRON_SECRET ? `${CRON_SECRET.substring(0, 4)}...${CRON_SECRET.substring(CRON_SECRET.length - 4)}` : '(empty)'}, apikey=[ANON_KEY], Authorization=Bearer [ANON_KEY]`);
       
       const duration = Date.now() - callStartTime;
       responseBody = await executorResponse.text();
