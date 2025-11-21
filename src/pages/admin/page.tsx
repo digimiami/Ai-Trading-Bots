@@ -9,6 +9,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useAdmin } from '../../hooks/useAdmin';
 import { useBotExecutor } from '../../hooks/useBotExecutor';
 import { supabase } from '../../lib/supabase';
+import WebhookTestPage from '../webhook-test/page';
 
 interface User {
   id: string;
@@ -773,6 +774,7 @@ export default function AdminPage() {
     { id: 'bots', label: 'Trading Bots', icon: 'ri-robot-line' },
     { id: 'pablo-ready', label: 'Pablo Ready', icon: 'ri-star-line' },
     { id: 'latest-trades', label: 'Latest Trades', icon: 'ri-exchange-line' },
+    { id: 'webhook-test', label: 'Webhook Test', icon: 'ri-send-plane-line' },
     { id: 'analytics', label: 'Analytics', icon: 'ri-bar-chart-line' },
     { id: 'financial', label: 'Financial', icon: 'ri-money-dollar-circle-line' },
     { id: 'monitoring', label: 'Monitoring', icon: 'ri-eye-line' },
@@ -2295,6 +2297,11 @@ export default function AdminPage() {
               </div>
             </Card>
           </div>
+        )}
+
+        {/* Webhook Test Tab */}
+        {activeTab === 'webhook-test' && (
+          <WebhookTestPage />
         )}
 
         {/* Create User Modal */}
