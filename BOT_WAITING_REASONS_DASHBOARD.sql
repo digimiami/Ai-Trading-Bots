@@ -40,7 +40,7 @@ bot_status AS (
     (la.details->>'adx')::numeric as current_adx,
     (la.details->>'price')::numeric as current_price,
     (la.details->>'ml_prediction')::text as ml_prediction,
-    (la.details->'ml_prediction'->>'confidence')::numeric as ml_confidence,
+    (la.details->>'ml_confidence')::numeric as ml_confidence,
     
     la.message as last_message,
     la.created_at as last_check_time,
@@ -162,40 +162,51 @@ WITH bot_analysis AS (
     AND tb.paper_trading = true
 )
 SELECT 
-  '📊 SUMMARY STATISTICS' as section,
-  '' as metric,
-  '' as value;
-
-SELECT 
+  '📊 SUMMARY STATISTICS' as title,
   'Total Active Paper Bots' as metric,
   COUNT(*)::text as value
-FROM bot_analysis;
-
-SELECT 
-  'Bots that Traded (24h)' as metric,
-  COUNT(CASE WHEN trades_24h > 0 THEN 1 END)::text || ' / ' || COUNT(*)::text as value
-FROM bot_analysis;
-
-SELECT 
-  'Bots that Traded (7d)' as metric,
-  COUNT(CASE WHEN trades_7d > 0 THEN 1 END)::text || ' / ' || COUNT(*)::text as value
-FROM bot_analysis;
-
-SELECT 
-  'Average RSI Buy Threshold' as metric,
-  ROUND(AVG(rsi_buy), 1)::text as value
 FROM bot_analysis
-WHERE rsi_buy IS NOT NULL;
+
+UNION ALL
 
 SELECT 
-  'Average ADX Threshold' as metric,
-  ROUND(AVG(adx_min), 1)::text as value
+  '',
+  'Bots that Traded (24h)',
+  COUNT(CASE WHEN trades_24h > 0 THEN 1 END)::text || ' / ' || COUNT(*)::text
 FROM bot_analysis
-WHERE adx_min IS NOT NULL;
+
+UNION ALL
 
 SELECT 
-  'Bots with Aggressive Settings' as metric,
-  COUNT(CASE WHEN rsi_buy > 40 AND adx_min < 15 THEN 1 END)::text || ' / ' || COUNT(*)::text as value
+  '',
+  'Bots that Traded (7d)',
+  COUNT(CASE WHEN trades_7d > 0 THEN 1 END)::text || ' / ' || COUNT(*)::text
+FROM bot_analysis
+
+UNION ALL
+
+SELECT 
+  '',
+  'Average RSI Buy Threshold',
+  COALESCE(ROUND(AVG(rsi_buy), 1)::text, 'N/A')
+FROM bot_analysis
+WHERE rsi_buy IS NOT NULL
+
+UNION ALL
+
+SELECT 
+  '',
+  'Average ADX Threshold',
+  COALESCE(ROUND(AVG(adx_min), 1)::text, 'N/A')
+FROM bot_analysis
+WHERE adx_min IS NOT NULL
+
+UNION ALL
+
+SELECT 
+  '',
+  'Bots with Aggressive Settings',
+  COUNT(CASE WHEN rsi_buy > 40 AND adx_min < 15 THEN 1 END)::text || ' / ' || COUNT(*)::text
 FROM bot_analysis
 WHERE rsi_buy IS NOT NULL AND adx_min IS NOT NULL;
 
@@ -241,61 +252,50 @@ categorized_bots AS (
     AND tb.paper_trading = true
 )
 SELECT 
-  '📋 BOTS GROUPED BY REASON' as section,
-  '' as reason,
-  '' as count,
-  '' as bots;
-
-SELECT 
+  '📋 BOTS GROUPED BY REASON' as title,
   reason,
   COUNT(*)::text as count,
   STRING_AGG(name || ' (' || symbol || ')', ', ' ORDER BY name) as bots
-FROM categorized_bots
+FROM (
+  SELECT 'Header' as reason, '' as name, '' as symbol
+  UNION ALL
+  SELECT reason, name, symbol FROM categorized_bots
+) sub
 GROUP BY reason
-ORDER BY COUNT(*) DESC;
+ORDER BY 
+  CASE WHEN reason = 'Header' THEN 0 ELSE 1 END,
+  COUNT(*) DESC;
 
 
 -- ============================================================
 -- PART 4: Quick Fix Recommendations
 -- ============================================================
 
-SELECT 
-  '💡 QUICK FIX RECOMMENDATIONS' as section,
-  '' as recommendation;
-
-SELECT 
-  'To make ALL bots more aggressive:' as recommendation
+SELECT '💡 QUICK FIX RECOMMENDATIONS' as recommendation
 UNION ALL
-SELECT 
-  'Run: CREATE_AGGRESSIVE_BOT_CONFIGS.sql (Option 1)' as recommendation
+SELECT ''
 UNION ALL
-SELECT 
-  '' as recommendation
+SELECT 'To make ALL bots more aggressive:'
 UNION ALL
-SELECT 
-  'To make SPECIFIC bot aggressive:' as recommendation
+SELECT 'Run: CREATE_AGGRESSIVE_BOT_CONFIGS.sql (Option 1)'
 UNION ALL
-SELECT 
-  'Edit bot → Strategy Config → Adjust sliders' as recommendation
+SELECT ''
 UNION ALL
-SELECT 
-  '' as recommendation
+SELECT 'To make SPECIFIC bot aggressive:'
 UNION ALL
-SELECT 
-  'Recommended changes:' as recommendation
+SELECT 'Edit bot → Strategy Config → Adjust sliders'
 UNION ALL
-SELECT 
-  '  • RSI Oversold: 30 → 45' as recommendation
+SELECT ''
 UNION ALL
-SELECT 
-  '  • RSI Overbought: 70 → 55' as recommendation
+SELECT 'Recommended changes:'
 UNION ALL
-SELECT 
-  '  • ADX Threshold: 25 → 12' as recommendation
+SELECT '  • RSI Oversold: 30 → 45'
 UNION ALL
-SELECT 
-  '  • Cooldown Bars: 8 → 2' as recommendation
+SELECT '  • RSI Overbought: 70 → 55'
 UNION ALL
-SELECT 
-  '  • HTF ADX Check: ON → OFF' as recommendation;
+SELECT '  • ADX Threshold: 25 → 12'
+UNION ALL
+SELECT '  • Cooldown Bars: 8 → 2'
+UNION ALL
+SELECT '  • HTF ADX Check: ON → OFF';
 
