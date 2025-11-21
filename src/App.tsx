@@ -6,6 +6,7 @@ import routes from './router/config';
 import { useAuth } from './hooks/useAuth';
 import { useBotExecutor } from './hooks/useBotExecutor';
 import { ONBOARDING_ENABLED } from './constants/featureFlags';
+import CookieConsent from './components/ui/CookieConsent';
 
 function AppRoutes() {
   const element = useRoutes(routes);
@@ -108,6 +109,16 @@ function App() {
   return (
     <BrowserRouter basename={BASE_PATH}>
       <AppRoutes />
+      <CookieConsent 
+        onAccept={() => {
+          console.log('✅ User accepted cookies');
+          // Enable analytics tracking here if needed
+        }}
+        onDecline={() => {
+          console.log('❌ User declined cookies');
+          // Disable analytics tracking here if needed
+        }}
+      />
     </BrowserRouter>
   );
 }
