@@ -51,6 +51,7 @@ serve(async (req) => {
     console.log(`   Header secret present: ${!!headerSecret} (length: ${headerSecret.length})`);
     console.log(`   SUPABASE_URL present: ${!!SUPABASE_URL}`);
     console.log(`   SERVICE_ROLE_KEY present: ${!!SERVICE_ROLE_KEY} (length: ${SERVICE_ROLE_KEY.length})`);
+    console.log(`   ANON_KEY present: ${!!ANON_KEY} (length: ${ANON_KEY.length})`);
     
     // Detailed secret comparison
     if (CRON_SECRET && headerSecret) {
@@ -122,18 +123,30 @@ serve(async (req) => {
     let responseBody: string;
     
     try {
+      // Use SERVICE_ROLE_KEY for Authorization if available (preferred for service-to-service calls)
+      // Fall back to ANON_KEY if SERVICE_ROLE_KEY is not set
+      const authToken = SERVICE_ROLE_KEY || ANON_KEY;
+      const authType = SERVICE_ROLE_KEY ? 'SERVICE_ROLE_KEY' : 'ANON_KEY';
+      
+      if (!authToken) {
+        throw new Error('No authentication token available (set SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY)');
+      }
+      
+      console.log(`🔑 [${requestId}] Using ${authType} for bot-executor authentication`);
+      
       executorResponse = await fetch(executorUrl, {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json', 
           'x-cron-secret': CRON_SECRET,  // Internal authentication (bot-executor recognizes this)
-          'apikey': ANON_KEY  // Supabase edge runtime access (anon key for public endpoint access)
+          'apikey': ANON_KEY || authToken,  // Supabase edge runtime access (prefer ANON_KEY for apikey)
+          'Authorization': `Bearer ${authToken}`  // Use SERVICE_ROLE_KEY if available, else ANON_KEY
         },
         body: JSON.stringify({ action: 'execute_all_bots' })
       });
       
       console.log(`📤 [${requestId}] Request to bot-executor:`);
-      console.log(`   Headers sent: x-cron-secret=${CRON_SECRET ? `${CRON_SECRET.substring(0, 4)}...${CRON_SECRET.substring(CRON_SECRET.length - 4)}` : '(empty)'}, apikey=[ANON_KEY]`);
+      console.log(`   Headers sent: x-cron-secret=${CRON_SECRET ? `${CRON_SECRET.substring(0, 4)}...${CRON_SECRET.substring(CRON_SECRET.length - 4)}` : '(empty)'}, apikey=[${ANON_KEY ? 'ANON_KEY' : authType}], Authorization=Bearer [${authType}]`);
       
       const duration = Date.now() - callStartTime;
       responseBody = await executorResponse.text();
