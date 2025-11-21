@@ -5149,12 +5149,16 @@ class BotExecutor {
       );
       
       // Get API keys for the exchange
+      // IMPORTANT: Paper trading should ALWAYS use mainnet API keys (is_testnet = false)
+      // to get real market data, but trades are simulated in the database
+      // Real trading also uses mainnet keys (is_testnet = false)
       const { data: apiKeys, error: apiKeysError } = await serviceRoleClient
         .from('api_keys')
         .select('api_key, api_secret, passphrase, is_testnet')
         .eq('user_id', botOwnerUserId)
         .eq('exchange', bot.exchange)
         .eq('is_active', true)
+        .eq('is_testnet', false)  // Always use mainnet keys for real market data
         .single();
       
       if (apiKeysError || !apiKeys) {
