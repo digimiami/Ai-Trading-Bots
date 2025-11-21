@@ -161,54 +161,64 @@ WITH bot_analysis AS (
   WHERE tb.status = 'running'
     AND tb.paper_trading = true
 )
-SELECT 
-  '📊 SUMMARY STATISTICS' as title,
-  'Total Active Paper Bots' as metric,
-  COUNT(*)::text as value
-FROM bot_analysis
-
-UNION ALL
-
-SELECT 
-  '',
-  'Bots that Traded (24h)',
-  COUNT(CASE WHEN trades_24h > 0 THEN 1 END)::text || ' / ' || COUNT(*)::text
-FROM bot_analysis
-
-UNION ALL
-
-SELECT 
-  '',
-  'Bots that Traded (7d)',
-  COUNT(CASE WHEN trades_7d > 0 THEN 1 END)::text || ' / ' || COUNT(*)::text
-FROM bot_analysis
-
-UNION ALL
-
-SELECT 
-  '',
-  'Average RSI Buy Threshold',
-  COALESCE(ROUND(AVG(rsi_buy), 1)::text, 'N/A')
-FROM bot_analysis
-WHERE rsi_buy IS NOT NULL
-
-UNION ALL
-
-SELECT 
-  '',
-  'Average ADX Threshold',
-  COALESCE(ROUND(AVG(adx_min), 1)::text, 'N/A')
-FROM bot_analysis
-WHERE adx_min IS NOT NULL
-
-UNION ALL
-
-SELECT 
-  '',
-  'Bots with Aggressive Settings',
-  COUNT(CASE WHEN rsi_buy > 40 AND adx_min < 15 THEN 1 END)::text || ' / ' || COUNT(*)::text
-FROM bot_analysis
-WHERE rsi_buy IS NOT NULL AND adx_min IS NOT NULL;
+-- Combine all summary queries into one SELECT with UNION ALL
+SELECT * FROM (
+  SELECT 
+    '📊 SUMMARY STATISTICS' as title,
+    'Total Active Paper Bots' as metric,
+    COUNT(*)::text as value,
+    1 as sort_order
+  FROM bot_analysis
+  
+  UNION ALL
+  
+  SELECT 
+    '',
+    'Bots that Traded (24h)',
+    COUNT(CASE WHEN trades_24h > 0 THEN 1 END)::text || ' / ' || COUNT(*)::text,
+    2
+  FROM bot_analysis
+  
+  UNION ALL
+  
+  SELECT 
+    '',
+    'Bots that Traded (7d)',
+    COUNT(CASE WHEN trades_7d > 0 THEN 1 END)::text || ' / ' || COUNT(*)::text,
+    3
+  FROM bot_analysis
+  
+  UNION ALL
+  
+  SELECT 
+    '',
+    'Average RSI Buy Threshold',
+    COALESCE(ROUND(AVG(rsi_buy), 1)::text, 'N/A'),
+    4
+  FROM bot_analysis
+  WHERE rsi_buy IS NOT NULL
+  
+  UNION ALL
+  
+  SELECT 
+    '',
+    'Average ADX Threshold',
+    COALESCE(ROUND(AVG(adx_min), 1)::text, 'N/A'),
+    5
+  FROM bot_analysis
+  WHERE adx_min IS NOT NULL
+  
+  UNION ALL
+  
+  SELECT 
+    '',
+    'Bots with Aggressive Settings',
+    COUNT(CASE WHEN rsi_buy > 40 AND adx_min < 15 THEN 1 END)::text || ' / ' || COUNT(*)::text,
+    6
+  FROM bot_analysis
+  WHERE rsi_buy IS NOT NULL AND adx_min IS NOT NULL
+) summary
+ORDER BY sort_order;
 
 
 -- ============================================================
@@ -253,18 +263,12 @@ categorized_bots AS (
 )
 SELECT 
   '📋 BOTS GROUPED BY REASON' as title,
-  reason,
+  reason as metric,
   COUNT(*)::text as count,
   STRING_AGG(name || ' (' || symbol || ')', ', ' ORDER BY name) as bots
-FROM (
-  SELECT 'Header' as reason, '' as name, '' as symbol
-  UNION ALL
-  SELECT reason, name, symbol FROM categorized_bots
-) sub
+FROM categorized_bots
 GROUP BY reason
-ORDER BY 
-  CASE WHEN reason = 'Header' THEN 0 ELSE 1 END,
-  COUNT(*) DESC;
+ORDER BY COUNT(*) DESC;
 
 
 -- ============================================================
