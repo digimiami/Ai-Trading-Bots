@@ -8,11 +8,13 @@ import { supabase } from '../../lib/supabase'
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true)
+  const [isForgotPassword, setIsForgotPassword] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [inviteCode, setInviteCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
   const [inviteValid, setInviteValid] = useState<boolean | null>(null)
   const [showFixAuth, setShowFixAuth] = useState(false)
   
@@ -71,6 +73,33 @@ export default function AuthPage() {
       }
     } catch (err) {
       setInviteValid(false)
+    }
+  }
+
+  const handlePasswordReset = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+    setSuccess(null)
+
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      })
+
+      if (error) {
+        setError(error.message)
+      } else {
+        setSuccess('Password reset email sent! Please check your inbox.')
+        setTimeout(() => {
+          setIsForgotPassword(false)
+          setSuccess(null)
+        }, 3000)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send reset email')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -223,12 +252,16 @@ export default function AuthPage() {
       <Card className="w-full max-w-md p-8">
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold text-gray-900 mb-2">
-            {isLogin ? 'Welcome Back' : 'Create Account'}
+            {isForgotPassword ? 'Reset Password' : isLogin ? 'Welcome Back' : 'Create Account'}
           </h1>
           <p className="text-gray-600">
-            {isLogin ? 'Sign in to your trading account' : 'Start your trading journey'}
+            {isForgotPassword 
+              ? 'Enter your email to receive a password reset link' 
+              : isLogin 
+              ? 'Sign in to your trading account' 
+              : 'Start your trading journey'}
           </p>
-          {inviteCode && (
+          {inviteCode && !isForgotPassword && (
             <div className={`mt-3 p-2 rounded-lg text-sm ${
               inviteValid === true ? 'bg-green-50 text-green-700' : 
               inviteValid === false ? 'bg-red-50 text-red-700' : 
@@ -241,8 +274,8 @@ export default function AuthPage() {
           )}
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {!isLogin && (
+        <form onSubmit={isForgotPassword ? handlePasswordReset : handleSubmit} className="space-y-6">
+          {!isLogin && !isForgotPassword && (
             <div>
               <label htmlFor="inviteCode" className="block text-sm font-medium text-gray-700 mb-2">
                 Invitation Code <span className="text-red-500">*</span>
@@ -296,25 +329,42 @@ export default function AuthPage() {
             />
           </div>
 
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Enter your password"
-              required
-            />
-          </div>
+          {!isForgotPassword && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+                  Password
+                </label>
+                {isLogin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsForgotPassword(true)
+                      setError(null)
+                      setSuccess(null)
+                    }}
+                    className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Forgot Password?
+                  </button>
+                )}
+              </div>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="Enter your password"
+                required
+              />
+            </div>
+          )}
 
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3">
               <p className="text-red-600 text-sm">{error}</p>
-              {error.includes('Invalid login credentials') && (
+              {error.includes('Invalid login credentials') && !isForgotPassword && (
                 <button
                   type="button"
                   onClick={() => setShowFixAuth(true)}
@@ -323,6 +373,12 @@ export default function AuthPage() {
                   Fix Admin Account
                 </button>
               )}
+            </div>
+          )}
+
+          {success && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+              <p className="text-green-600 text-sm">{success}</p>
             </div>
           )}
 
@@ -345,19 +401,42 @@ export default function AuthPage() {
           <Button
             type="submit"
             className="w-full"
-            disabled={!!(loading || (!isLogin && (!inviteCode || inviteCode.trim() === '' || inviteValid === false)))}
+            disabled={!!(loading || (!isForgotPassword && !isLogin && (!inviteCode || inviteCode.trim() === '' || inviteValid === false)))}
           >
-            {loading ? 'Processing...' : (isLogin ? 'Sign In' : 'Create Account')}
+            {loading 
+              ? 'Processing...' 
+              : isForgotPassword 
+              ? 'Send Reset Link' 
+              : isLogin 
+              ? 'Sign In' 
+              : 'Create Account'}
           </Button>
         </form>
 
-        <div className="mt-6 text-center">
-          <button
-            onClick={() => setIsLogin(!isLogin)}
-            className="text-blue-600 hover:text-blue-700 text-sm font-medium"
-          >
-            {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
-          </button>
+        <div className="mt-6 text-center space-y-2">
+          {isForgotPassword ? (
+            <button
+              onClick={() => {
+                setIsForgotPassword(false)
+                setError(null)
+                setSuccess(null)
+              }}
+              className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+            >
+              ← Back to Sign In
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                setIsLogin(!isLogin)
+                setError(null)
+                setSuccess(null)
+              }}
+              className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+            >
+              {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+            </button>
+          )}
         </div>
       </Card>
     </div>
