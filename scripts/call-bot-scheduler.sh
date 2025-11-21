@@ -42,9 +42,9 @@ FULL_URL="${SUPABASE_URL}/functions/v1/bot-scheduler"
 # Build headers
 HEADERS=(-H "x-cron-secret: ${CRON_SECRET}" -H "Content-Type: application/json")
 
-# Add Authorization header if ANON_KEY is provided
+# Add apikey header if ANON_KEY is provided
 if [ -n "$SUPABASE_ANON_KEY" ]; then
-    HEADERS+=(-H "Authorization: Bearer ${SUPABASE_ANON_KEY}")
+    HEADERS+=(-H "apikey: ${SUPABASE_ANON_KEY}")
 fi
 
 # Make the request and capture response
