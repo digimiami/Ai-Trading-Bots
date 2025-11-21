@@ -860,7 +860,7 @@ export default function BotsPage() {
                 )}
               </div>
               <div className="text-xs text-gray-500">
-                Auto-execution every 5 minutes
+                Auto-execution every 1 minute
               </div>
             </div>
           </Card>

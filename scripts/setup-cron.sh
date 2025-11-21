@@ -6,7 +6,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CRON_SCRIPT="${SCRIPT_DIR}/call-bot-scheduler.sh"
-CRON_SCHEDULE="*/5 * * * *"  # Every 5 minutes
+CRON_SCHEDULE="* * * * *"  # Every 1 minute
 
 # Check if script exists
 if [ ! -f "$CRON_SCRIPT" ]; then
@@ -31,7 +31,7 @@ fi
 
 echo "✅ Cron job installed successfully!"
 echo ""
-echo "Schedule: $CRON_SCHEDULE"
+echo "Schedule: $CRON_SCHEDULE (every 1 minute)"
 echo "Script: $CRON_SCRIPT"
 echo ""
 echo "Current crontab:"
@@ -39,4 +39,5 @@ crontab -l
 echo ""
 echo "📝 To view logs: tail -f /var/log/bot-scheduler/bot-scheduler.log"
 echo "📝 To remove cron job: crontab -e (then delete the line)"
+echo "⚡ Bots will now execute every 1 minute for maximum responsiveness!"
 

@@ -127,14 +127,13 @@ serve(async (req) => {
         headers: { 
           'Content-Type': 'application/json', 
           'x-cron-secret': CRON_SECRET,  // Internal authentication (bot-executor recognizes this)
-          'apikey': ANON_KEY,  // Supabase edge runtime access
-          'Authorization': `Bearer ${ANON_KEY}`  // Required by Supabase edge functions
+          'apikey': ANON_KEY  // Supabase edge runtime access (anon key for public endpoint access)
         },
         body: JSON.stringify({ action: 'execute_all_bots' })
       });
       
       console.log(`📤 [${requestId}] Request to bot-executor:`);
-      console.log(`   Headers sent: x-cron-secret=${CRON_SECRET ? `${CRON_SECRET.substring(0, 4)}...${CRON_SECRET.substring(CRON_SECRET.length - 4)}` : '(empty)'}, apikey=[ANON_KEY], Authorization=Bearer [ANON_KEY]`);
+      console.log(`   Headers sent: x-cron-secret=${CRON_SECRET ? `${CRON_SECRET.substring(0, 4)}...${CRON_SECRET.substring(CRON_SECRET.length - 4)}` : '(empty)'}, apikey=[ANON_KEY]`);
       
       const duration = Date.now() - callStartTime;
       responseBody = await executorResponse.text();

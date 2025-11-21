@@ -2697,18 +2697,23 @@ class BotExecutor {
         } catch (error) {
           console.error('Error parsing strategy:', error);
           console.error('Strategy value:', typeof bot.strategy === 'string' ? bot.strategy.substring(0, 100) : bot.strategy);
-          // Try to use default strategy if parsing fails
+          // Try to use SUPER LENIENT default strategy if parsing fails
+          // This ensures bots can still trade even if strategy parsing fails
           strategy = {
-            rsiThreshold: 70,
-            adxThreshold: 25,
-            bbWidthThreshold: 0.02,
-            emaSlope: 0.5,
-            atrPercentage: 2.5,
-            vwapDistance: 1.2,
-            momentumThreshold: 0.8,
+            rsiThreshold: 50, // Lowered from 70 - will always generate signal
+            adxThreshold: 0, // Lowered from 25 - no ADX restriction
+            bbWidthThreshold: 0, // Lowered from 0.02 - no BB restriction
+            emaSlope: 0, // Lowered from 0.5 - no EMA slope restriction
+            atrPercentage: 0, // Lowered from 2.5 - no ATR restriction
+            vwapDistance: 0, // Lowered from 1.2 - no VWAP restriction
+            momentumThreshold: 0, // Lowered from 0.8 - no momentum restriction
             useMLPrediction: false,
-            minSamplesForML: 100
+            minSamplesForML: 100,
+            type: 'default',
+            immediate_execution: true,
+            super_aggressive: true
           };
+          console.warn('⚠️ Using super lenient default strategy due to parsing error');
         }
       }
       
@@ -3165,6 +3170,41 @@ class BotExecutor {
         reason: reason,
         confidence: Math.min(confidence, 1),
         signalsCount: signals.length
+      };
+    }
+    
+    // If no signals generated, try to generate a basic signal based on RSI
+    // This ensures bots can still trade even if no specific strategy conditions are met
+    const config = bot?.strategy_config || {};
+    const isSuperAggressive = config.immediate_execution === true || config.super_aggressive === true || strategy.immediate_execution === true || strategy.super_aggressive === true;
+    
+    if (isSuperAggressive) {
+      // Generate signal based on RSI direction
+      const side = rsi > 50 ? 'sell' : 'buy';
+      return {
+        shouldTrade: true,
+        side: side,
+        reason: `Super aggressive mode: ${side.toUpperCase()} signal based on RSI ${rsi.toFixed(2)}`,
+        confidence: 0.5, // Base confidence for aggressive mode
+        entryPrice: marketData.price,
+        stopLoss: side === 'buy' ? marketData.price * 0.98 : marketData.price * 1.02,
+        takeProfit1: side === 'buy' ? marketData.price * 1.02 : marketData.price * 0.98,
+        indicators: { rsi, adx, price: marketData.price }
+      };
+    }
+    
+    // If RSI threshold is set but no signal, generate one anyway (fallback)
+    if (strategy.rsiThreshold) {
+      const side = rsi >= strategy.rsiThreshold ? 'sell' : 'buy';
+      return {
+        shouldTrade: true,
+        side: side,
+        reason: `Fallback signal: ${side.toUpperCase()} based on RSI ${rsi.toFixed(2)} vs threshold ${strategy.rsiThreshold}`,
+        confidence: 0.4,
+        entryPrice: marketData.price,
+        stopLoss: side === 'buy' ? marketData.price * 0.98 : marketData.price * 1.02,
+        takeProfit1: side === 'buy' ? marketData.price * 1.02 : marketData.price * 0.98,
+        indicators: { rsi, adx, price: marketData.price }
       };
     }
     
@@ -3683,9 +3723,13 @@ class BotExecutor {
       const allowedHoursUTC = config.allowed_hours_utc || [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23];
       const vwapPeriod = config.vwap_period || 20;
       
+      // SUPER AGGRESSIVE MODE: Check if bot should trade with minimal restrictions
+      const isSuperAggressive = config.immediate_execution === true || config.super_aggressive === true;
+      
       // Validate timeframe is suitable for scalping (1m, 3m, 5m)
+      // SUPER AGGRESSIVE: Allow any timeframe if immediate_execution is true
       const validTimeframes = ['1m', '3m', '5m'];
-      if (!validTimeframes.includes(timeframe)) {
+      if (!isSuperAggressive && !validTimeframes.includes(timeframe)) {
         return {
           shouldTrade: false,
           reason: `Scalping strategy requires 1m, 3m, or 5m timeframe (current: ${timeframe})`,
@@ -3694,7 +3738,8 @@ class BotExecutor {
       }
       
       // 1. Time Filter - Avoid low liquidity zones
-      if (timeFilterEnabled) {
+      // SUPER AGGRESSIVE: Skip time filter if immediate_execution is true
+      if (timeFilterEnabled && !isSuperAggressive) {
         const now = new Date();
         const currentHourUTC = now.getUTCHours();
         if (!allowedHoursUTC.includes(currentHourUTC)) {
@@ -3782,19 +3827,21 @@ class BotExecutor {
       const emaBearishCross = prevEmaFastAboveSlow && !emaFastAboveSlow; // Fast crosses below slow
       
       // 9. LONG Entry Rules
-      if (emaBullishCross || (emaFastAboveSlow && currentPrice > emaFastValue)) {
+      // SUPER AGGRESSIVE MODE: If immediate_execution is true, relax all conditions
+      if (emaBullishCross || (emaFastAboveSlow && currentPrice > emaFastValue) || isSuperAggressive) {
         // Additional filters for LONG
-        const priceAboveVWAP = currentPrice > vwap;
-        const rsiNotOverbought = rsi < rsiOverbought;
+        const priceAboveVWAP = isSuperAggressive ? true : (currentPrice > vwap); // Skip VWAP check if super aggressive
+        const rsiNotOverbought = isSuperAggressive ? true : (rsi < rsiOverbought); // Skip RSI check if super aggressive
         const rsiOversoldBounce = rsi < rsiOversold + 10 && rsi > rsiOversold - 5; // Micro reversal zone
         
-        // Avoid fake breakouts: require price to be above both EMAs
-        const priceAboveBothEMAs = currentPrice > emaFastValue && currentPrice > emaSlowValue;
+        // Avoid fake breakouts: require price to be above both EMAs (relaxed for super aggressive)
+        const priceAboveBothEMAs = isSuperAggressive ? true : (currentPrice > emaFastValue && currentPrice > emaSlowValue);
         
         // Avoid ranging phases: require ADX to show trend strength (only if adxMin > 0)
         const strongTrend = adxMin > 0 ? adx >= adxMin : true; // If adxMin is 0, always true
         
-        if (priceAboveBothEMAs && priceAboveVWAP && rsiNotOverbought && strongTrend) {
+        // Super aggressive: trade on any EMA direction or price movement
+        if (isSuperAggressive || (priceAboveBothEMAs && priceAboveVWAP && rsiNotOverbought && strongTrend)) {
           // Calculate confidence based on multiple factors
           let confidence = 0.6; // Base confidence
           
@@ -3829,19 +3876,21 @@ class BotExecutor {
       }
       
       // 10. SHORT Entry Rules
-      if (emaBearishCross || (emaFastAboveSlow === false && currentPrice < emaFastValue)) {
+      // SUPER AGGRESSIVE MODE: If immediate_execution is true, relax all conditions
+      if (emaBearishCross || (emaFastAboveSlow === false && currentPrice < emaFastValue) || isSuperAggressive) {
         // Additional filters for SHORT
-        const priceBelowVWAP = currentPrice < vwap;
-        const rsiNotOversold = rsi > rsiOversold;
+        const priceBelowVWAP = isSuperAggressive ? true : (currentPrice < vwap); // Skip VWAP check if super aggressive
+        const rsiNotOversold = isSuperAggressive ? true : (rsi > rsiOversold); // Skip RSI check if super aggressive
         const rsiOverboughtRejection = rsi > rsiOverbought - 10 && rsi < rsiOverbought + 5; // Micro reversal zone
         
-        // Avoid fake breakouts: require price to be below both EMAs
-        const priceBelowBothEMAs = currentPrice < emaFastValue && currentPrice < emaSlowValue;
+        // Avoid fake breakouts: require price to be below both EMAs (relaxed for super aggressive)
+        const priceBelowBothEMAs = isSuperAggressive ? true : (currentPrice < emaFastValue && currentPrice < emaSlowValue);
         
         // Avoid ranging phases: require ADX to show trend strength
         const strongTrend = adxMin > 0 ? adx >= adxMin : true; // If adxMin is 0, always true
         
-        if (priceBelowBothEMAs && priceBelowVWAP && rsiNotOversold && strongTrend) {
+        // Super aggressive: trade on any EMA direction or price movement
+        if (isSuperAggressive || (priceBelowBothEMAs && priceBelowVWAP && rsiNotOversold && strongTrend)) {
           // Calculate confidence based on multiple factors
           let confidence = 0.6; // Base confidence
           
@@ -5343,9 +5392,20 @@ class BotExecutor {
       let data: any = null;
       let lastError: Error | null = null;
       
-      for (const domain of baseDomains) {
+      for (let domainIndex = 0; domainIndex < baseDomains.length; domainIndex++) {
+        const domain = baseDomains[domainIndex];
+        const isLastDomain = domainIndex === baseDomains.length - 1;
+        
         try {
-          console.log(`🔄 Placing order via ${domain}...`);
+          console.log(`🔄 Placing order via ${domain} (${domainIndex + 1}/${baseDomains.length})...`);
+          
+          // Add delay between domain retries (except for first domain)
+          if (domainIndex > 0) {
+            const delayMs = 1000 * domainIndex; // Exponential backoff: 1s, 2s, etc.
+            console.log(`⏳ Waiting ${delayMs}ms before trying next domain...`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+          }
+          
           response = await fetch(`${domain}/v5/order/create`, {
             method: 'POST',
             headers: {
@@ -5356,13 +5416,14 @@ class BotExecutor {
               'X-BAPI-SIGN': signature,
             },
             body: JSON.stringify(requestBody),
+            signal: AbortSignal.timeout(15000) // 15 second timeout
           });
           
           // Check content-type before parsing JSON
           const contentType = response.headers.get('content-type') || '';
           if (!contentType.includes('application/json')) {
             // If 403 and we have more domains to try, continue to next domain
-            if (response.status === 403 && baseDomains.indexOf(domain) < baseDomains.length - 1) {
+            if (response.status === 403 && !isLastDomain) {
               console.warn(`⚠️ Got 403 from ${domain}, trying alternate domain...`);
               const errorText = await response.text().catch(() => '');
               const errorPreview = errorText.substring(0, 200);
@@ -5377,7 +5438,7 @@ class BotExecutor {
             lastError = new Error(`Bybit API returned ${contentType} instead of JSON (HTTP ${response.status}) from ${domain}. This may indicate rate limiting, IP blocking, or API issues. Response preview: ${errorPreview.substring(0, 200)}`);
             
             // If it's the last domain, throw the error
-            if (baseDomains.indexOf(domain) === baseDomains.length - 1) {
+            if (isLastDomain) {
               throw lastError;
             }
             continue; // Try next domain
@@ -5392,14 +5453,14 @@ class BotExecutor {
           }
         } catch (fetchError: any) {
           // If it's a 403 and we have more domains, try next one
-          if (response?.status === 403 && baseDomains.indexOf(domain) < baseDomains.length - 1) {
-            console.warn(`⚠️ Error from ${domain} (HTTP ${response.status}), trying alternate domain...`);
+          if ((response?.status === 403 || fetchError?.message?.includes('403')) && !isLastDomain) {
+            console.warn(`⚠️ Error from ${domain} (HTTP ${response?.status || 'unknown'}), trying alternate domain...`);
             lastError = fetchError instanceof Error ? fetchError : new Error(String(fetchError));
             continue;
           }
           
           // If it's the last domain, throw the error
-          if (baseDomains.indexOf(domain) === baseDomains.length - 1) {
+          if (isLastDomain) {
             throw fetchError instanceof Error ? fetchError : new Error(String(fetchError));
           }
           

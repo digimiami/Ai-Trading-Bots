@@ -42,11 +42,9 @@ FULL_URL="${SUPABASE_URL}/functions/v1/bot-scheduler"
 # Build headers
 HEADERS=(-H "x-cron-secret: ${CRON_SECRET}" -H "Content-Type: application/json")
 
-# Add both apikey and Authorization headers if ANON_KEY is provided
-# Supabase Edge Functions require both for proper authentication
+# Add apikey header if ANON_KEY is provided (for Supabase edge runtime access)
 if [ -n "$SUPABASE_ANON_KEY" ]; then
     HEADERS+=(-H "apikey: ${SUPABASE_ANON_KEY}")
-    HEADERS+=(-H "Authorization: Bearer ${SUPABASE_ANON_KEY}")
 fi
 
 # Make the request and capture response
