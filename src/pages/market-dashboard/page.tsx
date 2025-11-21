@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import TechnicalAnalysis from '../../components/ui/TechnicalAnalysis';
 
 interface MarketData {
   symbol: string;
@@ -562,6 +563,16 @@ export default function MarketDashboardPage() {
               </div>
             </div>
           </Card>
+        )}
+
+        {/* Technical Analysis Section */}
+        {marketData && marketData.length > 0 && (
+          <TechnicalAnalysis 
+            symbol={selectedSymbol || marketData[0]?.symbol || 'BTCUSDT'}
+            onTimeframeChange={(timeframe) => {
+              console.log('Timeframe changed to:', timeframe);
+            }}
+          />
         )}
 
         {/* Alerts */}
