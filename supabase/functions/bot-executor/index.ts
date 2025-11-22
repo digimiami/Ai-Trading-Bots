@@ -2186,24 +2186,52 @@ class BotExecutor {
               timestamp: new Date().toISOString()
             };
             
-            // Simple ML prediction using weighted scoring (same logic as ml-predictions function)
-            // This is a simplified version - full implementation would call the ml-predictions function
-            const predictionScore = (rsi > 70 ? -0.3 : rsi < 30 ? 0.3 : 0) + 
-                                    (adx > 25 ? 0.2 : 0) +
-                                    (Math.random() * 0.1 - 0.05); // Small random component
+            // Enhanced ML prediction using weighted scoring
+            // More responsive thresholds to generate actual buy/sell signals
+            let predictionScore = 0;
+            
+            // RSI component: More lenient thresholds
+            if (rsi < 40) {
+              predictionScore += 0.4; // Strong buy signal when RSI < 40
+            } else if (rsi < 50) {
+              predictionScore += 0.2; // Moderate buy signal when RSI < 50
+            } else if (rsi > 60) {
+              predictionScore -= 0.4; // Strong sell signal when RSI > 60
+            } else if (rsi > 50) {
+              predictionScore -= 0.2; // Moderate sell signal when RSI > 50
+            }
+            
+            // ADX component: Trend strength
+            if (adx > 20) {
+              predictionScore += (adx - 20) / 50; // Boost confidence with trend strength
+            }
+            
+            // Price momentum (if available)
+            // Small random component for variability
+            predictionScore += (Math.random() * 0.1 - 0.05);
             
             let prediction = 'hold';
             let confidence = 0.5;
             
-            if (predictionScore > 0.3) {
+            // More lenient thresholds: 0.15 instead of 0.3
+            if (predictionScore > 0.15) {
               prediction = 'buy';
-              confidence = Math.min(0.5 + predictionScore, 0.95);
-            } else if (predictionScore < -0.3) {
+              confidence = Math.min(0.5 + predictionScore * 0.8, 0.95);
+            } else if (predictionScore < -0.15) {
               prediction = 'sell';
-              confidence = Math.min(0.5 + Math.abs(predictionScore), 0.95);
+              confidence = Math.min(0.5 + Math.abs(predictionScore) * 0.8, 0.95);
             } else {
-              prediction = 'hold';
-              confidence = 0.5;
+              // For neutral scores, still provide a slight bias based on RSI
+              if (rsi < 45) {
+                prediction = 'buy';
+                confidence = 0.55;
+              } else if (rsi > 55) {
+                prediction = 'sell';
+                confidence = 0.55;
+              } else {
+                prediction = 'hold';
+                confidence = 0.5;
+              }
             }
             
             mlPrediction = {
