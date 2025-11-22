@@ -9322,48 +9322,70 @@ serve(async (req) => {
         
         console.log(`🚀 Executing ${botList.length} running bots${isCron ? ' (all users)' : ` for user ${user?.id}`}`);
         
-        const results = await Promise.allSettled(
-          botList.map(async (bot) => {
-            const botStartTime = Date.now();
-            console.log(`\n🤖 [${bot.name}] Starting execution...`);
-            console.log(`   - ID: ${bot.id}`);
-            console.log(`   - Exchange: ${bot.exchange}`);
-            console.log(`   - Symbol: ${bot.symbol}`);
-            console.log(`   - User: ${bot.user_id}`);
-            
-            try {
-              const exec = new BotExecutor(supabaseClient, { id: isCron ? bot.user_id : user.id });
-              const result = await exec.executeBot(bot);
-              const duration = Date.now() - botStartTime;
-              console.log(`✅ [${bot.name}] Execution completed in ${duration}ms`);
-              return result;
-            } catch (error) {
-              const duration = Date.now() - botStartTime;
-              console.error(`❌ [${bot.name}] Execution failed after ${duration}ms:`, error);
+        // Process bots in batches to avoid CPU time and worker limit errors
+        // Batch size of 5 prevents resource exhaustion while maintaining reasonable throughput
+        const BATCH_SIZE = 5;
+        const BATCH_DELAY_MS = 500; // Small delay between batches to prevent API rate limits
+        const results: Array<PromiseSettledResult<any>> = [];
+        
+        for (let i = 0; i < botList.length; i += BATCH_SIZE) {
+          const batch = botList.slice(i, i + BATCH_SIZE);
+          const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+          const totalBatches = Math.ceil(botList.length / BATCH_SIZE);
+          
+          console.log(`\n📦 Processing batch ${batchNumber}/${totalBatches} (${batch.length} bots)...`);
+          
+          const batchResults = await Promise.allSettled(
+            batch.map(async (bot) => {
+              const botStartTime = Date.now();
+              console.log(`\n🤖 [${bot.name}] Starting execution...`);
+              console.log(`   - ID: ${bot.id}`);
+              console.log(`   - Exchange: ${bot.exchange}`);
+              console.log(`   - Symbol: ${bot.symbol}`);
+              console.log(`   - User: ${bot.user_id}`);
               
-              // Log error to bot activity logs for visibility
               try {
-                const execForLogging = new BotExecutor(supabaseClient, { id: isCron ? bot.user_id : user.id });
-                const errorMessage = error instanceof Error ? error.message : String(error);
-                await execForLogging.addBotLog(bot.id, {
-                  level: 'error',
-                  category: 'error',
-                  message: `Bot execution failed: ${errorMessage}`,
-                  details: { 
-                    error: errorMessage,
-                    errorType: error instanceof Error ? error.name : typeof error,
-                    duration: `${duration}ms`,
-                    timestamp: new Date().toISOString()
-                  }
-                });
-              } catch (logError) {
-                console.error('Failed to log error to bot activity:', logError);
+                const exec = new BotExecutor(supabaseClient, { id: isCron ? bot.user_id : user.id });
+                const result = await exec.executeBot(bot);
+                const duration = Date.now() - botStartTime;
+                console.log(`✅ [${bot.name}] Execution completed in ${duration}ms`);
+                return result;
+              } catch (error) {
+                const duration = Date.now() - botStartTime;
+                console.error(`❌ [${bot.name}] Execution failed after ${duration}ms:`, error);
+                
+                // Log error to bot activity logs for visibility
+                try {
+                  const execForLogging = new BotExecutor(supabaseClient, { id: isCron ? bot.user_id : user.id });
+                  const errorMessage = error instanceof Error ? error.message : String(error);
+                  await execForLogging.addBotLog(bot.id, {
+                    level: 'error',
+                    category: 'error',
+                    message: `Bot execution failed: ${errorMessage}`,
+                    details: { 
+                      error: errorMessage,
+                      errorType: error instanceof Error ? error.name : typeof error,
+                      duration: `${duration}ms`,
+                      timestamp: new Date().toISOString()
+                    }
+                  });
+                } catch (logError) {
+                  console.error('Failed to log error to bot activity:', logError);
+                }
+                
+                throw error;
               }
-              
-              throw error;
-            }
-          })
-        );
+            })
+          );
+          
+          results.push(...batchResults);
+          
+          // Add delay between batches (except after the last batch)
+          if (i + BATCH_SIZE < botList.length) {
+            console.log(`⏳ Waiting ${BATCH_DELAY_MS}ms before next batch...`);
+            await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
+          }
+        }
         
         const successful = results.filter(r => r.status === 'fulfilled').length;
         const failed = results.filter(r => r.status === 'rejected').length;
