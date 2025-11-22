@@ -37,6 +37,8 @@ export default defineConfig({
   },
   preview: {
     host: true,
+    port: 4173,
+    outDir: 'dist',  // Serve directly from dist (no need to copy to out/)
     allowedHosts: [
       'pablobots.net',
       'www.pablobots.net',
