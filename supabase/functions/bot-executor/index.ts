@@ -2946,25 +2946,27 @@ class BotExecutor {
       };
     }
     
-    // 🚀 SUPER AGGRESSIVE MODE: Check at the very beginning for ALL strategy types
-    // This ensures paper trading bots trade immediately based on RSI alone
+    // 🚀 PAPER TRADING MODE: Check at the very beginning for ALL strategy types
+    // This ensures ALL paper trading bots trade immediately based on RSI alone
+    // (Not just super aggressive ones - this makes paper trading work for all bots)
     const config = bot?.strategy_config || {};
     const isSuperAggressive = config.immediate_execution === true || config.super_aggressive === true || 
                               strategy.immediate_execution === true || strategy.super_aggressive === true ||
                               config.immediate_trading === true; // Also check immediate_trading
     
-    if (isSuperAggressive && bot?.paper_trading === true) {
-      // For paper trading with super aggressive mode, trade based on RSI alone
+    // For ALL paper trading bots, trade based on RSI alone (not just super aggressive ones)
+    if (bot?.paper_trading === true) {
+      // For paper trading, trade based on RSI alone
       const rsiOversold = config.rsi_oversold || strategy.rsiThreshold || 50;
       const rsiOverbought = config.rsi_overbought || strategy.rsiThreshold || 50;
       
       if (rsi < rsiOversold) {
         // RSI oversold - BUY signal
-        console.log(`🚀 [SUPER AGGRESSIVE] Paper trading BUY: RSI ${rsi.toFixed(2)} < ${rsiOversold}`);
+        console.log(`📝 [PAPER TRADING] BUY signal: RSI ${rsi.toFixed(2)} < ${rsiOversold}`);
         return {
           shouldTrade: true,
           side: 'buy',
-          reason: `Super Aggressive Paper Trading: RSI ${rsi.toFixed(2)} < ${rsiOversold} (oversold)`,
+          reason: `Paper Trading: RSI ${rsi.toFixed(2)} < ${rsiOversold} (oversold)`,
           confidence: 0.7,
           entryPrice: price,
           stopLoss: price * 0.98,
@@ -2974,11 +2976,11 @@ class BotExecutor {
         };
       } else {
         // RSI >= oversold threshold - SELL signal
-        console.log(`🚀 [SUPER AGGRESSIVE] Paper trading SELL: RSI ${rsi.toFixed(2)} >= ${rsiOversold}`);
+        console.log(`📝 [PAPER TRADING] SELL signal: RSI ${rsi.toFixed(2)} >= ${rsiOversold}`);
         return {
           shouldTrade: true,
           side: 'sell',
-          reason: `Super Aggressive Paper Trading: RSI ${rsi.toFixed(2)} >= ${rsiOversold} (overbought/neutral)`,
+          reason: `Paper Trading: RSI ${rsi.toFixed(2)} >= ${rsiOversold} (overbought/neutral)`,
           confidence: 0.7,
           entryPrice: price,
           stopLoss: price * 1.02,
