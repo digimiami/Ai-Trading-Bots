@@ -3922,6 +3922,58 @@ class BotExecutor {
       const emaBullishCross = !prevEmaFastAboveSlow && emaFastAboveSlow; // Fast crosses above slow
       const emaBearishCross = prevEmaFastAboveSlow && !emaFastAboveSlow; // Fast crosses below slow
       
+      // SUPER AGGRESSIVE MODE: Trade based on RSI alone (ignore EMA conditions)
+      if (isSuperAggressive) {
+        // Use RSI to determine direction when super aggressive
+        // With rsi_oversold=50 and rsi_overbought=50, we trade on any RSI
+        // RSI < 50 = oversold (BUY), RSI > 50 = overbought (SELL), RSI = 50 = treat as overbought (SELL)
+        if (rsi < rsiOversold) {
+          // RSI oversold - BUY signal
+          return {
+            shouldTrade: true,
+            side: 'buy',
+            reason: `Super Aggressive LONG: RSI ${rsi.toFixed(2)} < ${rsiOversold} (oversold)`,
+            confidence: 0.7,
+            entryPrice: currentPrice,
+            stopLoss: currentPrice - (atr * atrMultiplier),
+            takeProfit1: currentPrice + (atr * atrMultiplier * 1.5),
+            takeProfit2: currentPrice + (atr * atrMultiplier * 3.0),
+            indicators: {
+              emaFast: emaFastValue,
+              emaSlow: emaSlowValue,
+              rsi: rsi,
+              adx: adx,
+              atr: atr,
+              atrPercent: atrPercent,
+              vwap: vwap,
+              volumeRatio: volumeRatio
+            }
+          };
+        } else {
+          // RSI >= oversold threshold (including exactly 50) - SELL signal
+          return {
+            shouldTrade: true,
+            side: 'sell',
+            reason: `Super Aggressive SHORT: RSI ${rsi.toFixed(2)} >= ${rsiOversold} (overbought/neutral)`,
+            confidence: 0.7,
+            entryPrice: currentPrice,
+            stopLoss: currentPrice + (atr * atrMultiplier),
+            takeProfit1: currentPrice - (atr * atrMultiplier * 1.5),
+            takeProfit2: currentPrice - (atr * atrMultiplier * 3.0),
+            indicators: {
+              emaFast: emaFastValue,
+              emaSlow: emaSlowValue,
+              rsi: rsi,
+              adx: adx,
+              atr: atr,
+              atrPercent: atrPercent,
+              vwap: vwap,
+              volumeRatio: volumeRatio
+            }
+          };
+        }
+      }
+      
       // 9. LONG Entry Rules
       // SUPER AGGRESSIVE MODE: If immediate_execution is true, relax all conditions
       if (emaBullishCross || (emaFastAboveSlow && currentPrice > emaFastValue) || isSuperAggressive) {
