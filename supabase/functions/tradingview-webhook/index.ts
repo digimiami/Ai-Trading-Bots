@@ -753,12 +753,10 @@ serve(async (req) => {
       });
     }
 
-    const shouldTrigger =
-      typeof payload.trigger_execution === "boolean"
-        ? payload.trigger_execution
-        : bot
-        ? bot.webhook_trigger_immediate ?? true
-        : true;
+    // Always trigger immediate execution when a manual signal is created from TradingView webhook
+    // This ensures TradingView alerts execute immediately, not on next cycle
+    // The manual signal will be processed by bot-executor regardless of bot status
+    const shouldTrigger = true;
 
     const sanitizedPayload = { ...payload };
     delete sanitizedPayload.secret;
