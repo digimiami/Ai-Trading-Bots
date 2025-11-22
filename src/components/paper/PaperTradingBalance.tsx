@@ -369,6 +369,46 @@ export default function PaperTradingBalance() {
     if (diffHours < 24) return `${diffHours}h ago`;
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
+
+  const handleDownloadLogs = () => {
+    if (logs.length === 0) {
+      alert('No activity logs to download');
+      return;
+    }
+
+    // Create CSV content
+    const headers = ['Timestamp', 'Level', 'Category', 'Bot Name', 'Symbol', 'Message'];
+    const csvRows = [
+      headers.join(','),
+      ...logs.map(log => {
+        const timestamp = new Date(log.timestamp).toLocaleString();
+        const level = log.level || '';
+        const category = log.category || '';
+        const botName = log.bot_name || '';
+        const symbol = log.symbol || '';
+        // Escape message for CSV (handle commas, quotes, newlines)
+        const message = (log.message || '').replace(/"/g, '""').replace(/\n/g, ' ');
+        return [
+          `"${timestamp}"`,
+          `"${level}"`,
+          `"${category}"`,
+          `"${botName}"`,
+          `"${symbol}"`,
+          `"${message}"`
+        ].join(',');
+      })
+    ];
+
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const dateStr = new Date().toISOString().split('T')[0];
+    link.href = url;
+    link.download = `recent-activity-${dateStr}.csv`;
+    link.click();
+    window.URL.revokeObjectURL(url);
+  };
   
   if (!balance) {
     // Still show logs even if balance doesn't exist yet
@@ -386,14 +426,26 @@ export default function PaperTradingBalance() {
           <div className="border-t pt-4 mt-4">
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-sm font-semibold text-gray-700">Recent Activity</h4>
-              <Button
-                onClick={fetchLogs}
-                variant="secondary"
-                size="sm"
-                loading={loadingLogs}
-              >
-                <i className="ri-refresh-line"></i>
-              </Button>
+              <div className="flex items-center gap-2">
+                {logs.length > 0 && (
+                  <Button
+                    onClick={handleDownloadLogs}
+                    variant="secondary"
+                    size="sm"
+                    title="Download Recent Activity as CSV"
+                  >
+                    <i className="ri-download-line"></i>
+                  </Button>
+                )}
+                <Button
+                  onClick={fetchLogs}
+                  variant="secondary"
+                  size="sm"
+                  loading={loadingLogs}
+                >
+                  <i className="ri-refresh-line"></i>
+                </Button>
+              </div>
             </div>
             
             {loadingLogs && logs.length === 0 ? (
@@ -561,14 +613,26 @@ export default function PaperTradingBalance() {
         <div className="border-t pt-4 mt-4">
           <div className="flex items-center justify-between mb-3">
             <h4 className="text-sm font-semibold text-gray-700">Recent Activity</h4>
-            <Button
-              onClick={fetchLogs}
-              variant="secondary"
-              size="sm"
-              loading={loadingLogs}
-            >
-              <i className="ri-refresh-line"></i>
-            </Button>
+            <div className="flex items-center gap-2">
+              {logs.length > 0 && (
+                <Button
+                  onClick={handleDownloadLogs}
+                  variant="secondary"
+                  size="sm"
+                  title="Download Recent Activity as CSV"
+                >
+                  <i className="ri-download-line"></i>
+                </Button>
+              )}
+              <Button
+                onClick={fetchLogs}
+                variant="secondary"
+                size="sm"
+                loading={loadingLogs}
+              >
+                <i className="ri-refresh-line"></i>
+              </Button>
+            </div>
           </div>
           
           {loadingLogs && logs.length === 0 ? (
