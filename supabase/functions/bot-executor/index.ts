@@ -2977,20 +2977,37 @@ class BotExecutor {
         const result = await this.evaluateHybridTrendMeanReversionStrategy(strategy, marketData, bot);
         if (!result || typeof result !== 'object') {
           console.error('❌ Hybrid strategy returned invalid result:', result);
+          // For paper trading, fall back to simple RSI/ADX logic
+          if (bot?.paper_trading === true && strategy.rsiThreshold) {
+            console.log(`📝 [PAPER] Hybrid strategy failed, falling back to RSI-based logic...`);
+            // Continue to RSI logic below
+          } else {
+            return {
+              shouldTrade: false,
+              reason: 'Strategy evaluation returned invalid result',
+              confidence: 0
+            };
+          }
+        } else if (!result.shouldTrade && bot?.paper_trading === true && strategy.rsiThreshold) {
+          // For paper trading, if hybrid strategy says no trade but we have RSI threshold, use fallback
+          console.log(`📝 [PAPER] Hybrid strategy returned no signal, falling back to RSI-based logic...`);
+          // Continue to RSI logic below
+        } else {
+          return result;
+        }
+      } catch (error: any) {
+        console.error('❌ Error in hybrid strategy evaluation:', error);
+        // For paper trading, fall back to simple RSI/ADX logic
+        if (bot?.paper_trading === true && strategy.rsiThreshold) {
+          console.log(`📝 [PAPER] Hybrid strategy error, falling back to RSI-based logic...`);
+          // Continue to RSI logic below
+        } else {
           return {
             shouldTrade: false,
-            reason: 'Strategy evaluation returned invalid result',
+            reason: `Strategy evaluation error: ${error?.message || String(error)}`,
             confidence: 0
           };
         }
-        return result;
-      } catch (error: any) {
-        console.error('❌ Error in hybrid strategy evaluation:', error);
-        return {
-          shouldTrade: false,
-          reason: `Strategy evaluation error: ${error?.message || String(error)}`,
-          confidence: 0
-        };
       }
     }
     
@@ -3001,20 +3018,37 @@ class BotExecutor {
         const result = await this.evaluateAdvancedScalpingStrategy(strategy, marketData, bot);
         if (!result || typeof result !== 'object') {
           console.error('❌ Advanced scalping strategy returned invalid result:', result);
+          // For paper trading, fall back to simple RSI/ADX logic
+          if (bot?.paper_trading === true && strategy.rsiThreshold) {
+            console.log(`📝 [PAPER] Advanced scalping strategy failed, falling back to RSI-based logic...`);
+            // Continue to RSI logic below
+          } else {
+            return {
+              shouldTrade: false,
+              reason: 'Strategy evaluation returned invalid result',
+              confidence: 0
+            };
+          }
+        } else if (!result.shouldTrade && bot?.paper_trading === true && strategy.rsiThreshold) {
+          // For paper trading, if scalping strategy says no trade but we have RSI threshold, use fallback
+          console.log(`📝 [PAPER] Advanced scalping strategy returned no signal, falling back to RSI-based logic...`);
+          // Continue to RSI logic below
+        } else {
+          return result;
+        }
+      } catch (error: any) {
+        console.error('❌ Error in advanced scalping strategy evaluation:', error);
+        // For paper trading, fall back to simple RSI/ADX logic
+        if (bot?.paper_trading === true && strategy.rsiThreshold) {
+          console.log(`📝 [PAPER] Advanced scalping strategy error, falling back to RSI-based logic...`);
+          // Continue to RSI logic below
+        } else {
           return {
             shouldTrade: false,
-            reason: 'Strategy evaluation returned invalid result',
+            reason: `Strategy evaluation error: ${error?.message || String(error)}`,
             confidence: 0
           };
         }
-        return result;
-      } catch (error: any) {
-        console.error('❌ Error in advanced scalping strategy evaluation:', error);
-        return {
-          shouldTrade: false,
-          reason: `Strategy evaluation error: ${error?.message || String(error)}`,
-          confidence: 0
-        };
       }
     }
     
@@ -3025,20 +3059,37 @@ class BotExecutor {
         const result = await this.evaluateScalpingStrategy(strategy, marketData, bot);
         if (!result || typeof result !== 'object') {
           console.error('❌ Scalping strategy returned invalid result:', result);
+          // For paper trading, fall back to simple RSI/ADX logic
+          if (bot?.paper_trading === true && strategy.rsiThreshold) {
+            console.log(`📝 [PAPER] Scalping strategy failed, falling back to RSI-based logic...`);
+            // Continue to RSI logic below
+          } else {
+            return {
+              shouldTrade: false,
+              reason: 'Strategy evaluation returned invalid result',
+              confidence: 0
+            };
+          }
+        } else if (!result.shouldTrade && bot?.paper_trading === true && strategy.rsiThreshold) {
+          // For paper trading, if scalping strategy says no trade but we have RSI threshold, use fallback
+          console.log(`📝 [PAPER] Scalping strategy returned no signal, falling back to RSI-based logic...`);
+          // Continue to RSI logic below
+        } else {
+          return result;
+        }
+      } catch (error: any) {
+        console.error('❌ Error in scalping strategy evaluation:', error);
+        // For paper trading, fall back to simple RSI/ADX logic
+        if (bot?.paper_trading === true && strategy.rsiThreshold) {
+          console.log(`📝 [PAPER] Scalping strategy error, falling back to RSI-based logic...`);
+          // Continue to RSI logic below
+        } else {
           return {
             shouldTrade: false,
-            reason: 'Strategy evaluation returned invalid result',
+            reason: `Strategy evaluation error: ${error?.message || String(error)}`,
             confidence: 0
           };
         }
-        return result;
-      } catch (error: any) {
-        console.error('❌ Error in scalping strategy evaluation:', error);
-        return {
-          shouldTrade: false,
-          reason: `Strategy evaluation error: ${error?.message || String(error)}`,
-          confidence: 0
-        };
       }
     }
     
