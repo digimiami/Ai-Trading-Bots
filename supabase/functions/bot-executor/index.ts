@@ -3314,9 +3314,8 @@ class BotExecutor {
     
     // If no signals generated, try to generate a basic signal based on RSI
     // This ensures bots can still trade even if no specific strategy conditions are met
-    // Note: config is already declared at the top of this function
-    const isSuperAggressive = config.immediate_execution === true || config.super_aggressive === true || strategy.immediate_execution === true || strategy.super_aggressive === true;
-    
+    // Note: config and isSuperAggressive are already declared at the top of this function
+    // Re-check isSuperAggressive for fallback logic (it may have been false earlier but we want to try again)
     if (isSuperAggressive) {
       // Generate signal based on RSI direction
       const side = rsi > 50 ? 'sell' : 'buy';
