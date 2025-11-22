@@ -29,7 +29,7 @@ export function useMarketData(symbol: string = 'BTCUSDT', exchange: string = 'by
     try {
       setLoading(true)
       const response = await apiCall(
-        `${API_ENDPOINTS.MARKET_DATA}?symbol=${symbol}&exchange=${exchange}`
+        `${API_ENDPOINTS.MARKET_DATA}?action=symbol&symbol=${symbol}`
       )
       setData(response)
       setError(null)
