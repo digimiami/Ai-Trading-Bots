@@ -5236,7 +5236,30 @@ class BotExecutor {
           const finalMode: 'real' | 'paper' = signalMode === 'paper' ? 'paper' : 'real';
           console.log(`🔍 Signal mode normalization: raw="${signal.mode}", normalized="${signalMode}", final="${finalMode}"`);
           
-          const result = await this.executeManualTrade(bot, {
+          // Extract and normalize instrument from webhook signal metadata
+          // TradingView often sends symbols with suffixes like .P (perpetual), .PERP, etc.
+          let effectiveSymbol = bot.symbol;
+          if (signal.metadata && signal.metadata.instrument) {
+            const webhookInstrument = String(signal.metadata.instrument);
+            // Normalize TradingView symbol suffixes: remove .P, .PERP, .PERPETUAL, etc.
+            const normalizedInstrument = webhookInstrument
+              .replace(/\.P$/i, '') // Remove .P suffix
+              .replace(/\.PERP$/i, '') // Remove .PERP suffix
+              .replace(/\.PERPETUAL$/i, '') // Remove .PERPETUAL suffix
+              .toUpperCase(); // Convert to uppercase for consistency
+            
+            if (normalizedInstrument && normalizedInstrument !== bot.symbol) {
+              console.log(`🔍 Webhook instrument detected: "${webhookInstrument}" -> normalized: "${normalizedInstrument}"`);
+              console.log(`⚠️ Bot symbol "${bot.symbol}" differs from webhook instrument "${normalizedInstrument}"`);
+              console.log(`📝 Using webhook instrument "${normalizedInstrument}" for this trade`);
+              effectiveSymbol = normalizedInstrument;
+            }
+          }
+          
+          // Create a modified bot object with the effective symbol
+          const botWithSymbol = { ...bot, symbol: effectiveSymbol };
+          
+          const result = await this.executeManualTrade(botWithSymbol, {
             side: signal.side,
             reason: signal.reason || 'Manual trade signal',
             confidence: 1,
