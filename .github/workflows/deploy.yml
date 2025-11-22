@@ -211,6 +211,17 @@ jobs:
           fi
           echo "✅ Dependencies installed"
           
+          # Fix permissions for node_modules/.bin executables
+          echo "🔧 Fixing permissions for node_modules/.bin..."
+          if [ -d "node_modules/.bin" ]; then
+            chmod -R +x node_modules/.bin/ 2>&1 || {
+              echo "⚠️ Failed to fix permissions, but continuing..."
+            }
+            echo "✅ Permissions fixed"
+          else
+            echo "⚠️ node_modules/.bin directory not found"
+          fi
+          
           # Build the application
           echo "🔨 Building application..."
           if ! npm run build 2>&1; then
