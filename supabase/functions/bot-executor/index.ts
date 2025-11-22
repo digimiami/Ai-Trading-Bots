@@ -2257,7 +2257,7 @@ class BotExecutor {
           }
         }
         
-        const shouldTrade = this.evaluateStrategy(strategy, { price: currentPrice, rsi, adx, mlPrediction }, bot);
+        const shouldTrade = await this.evaluateStrategy(strategy, { price: currentPrice, rsi, adx, mlPrediction }, bot);
         
         // Enhance decision with ML prediction if available
         if (mlPrediction && shouldTrade.shouldTrade) {
