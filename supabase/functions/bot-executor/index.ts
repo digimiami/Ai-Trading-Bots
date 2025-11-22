@@ -2953,20 +2953,37 @@ class BotExecutor {
         const result = await this.evaluateTrendlineBreakoutStrategy(strategy, marketData, bot);
         if (!result || typeof result !== 'object') {
           console.error('❌ Trendline breakout strategy returned invalid result:', result);
+          // For paper trading, fall back to simple RSI/ADX logic
+          if (bot?.paper_trading === true && strategy.rsiThreshold) {
+            console.log(`📝 [PAPER] Trendline breakout strategy failed, falling back to RSI-based logic...`);
+            // Continue to RSI logic below
+          } else {
+            return {
+              shouldTrade: false,
+              reason: 'Strategy evaluation returned invalid result',
+              confidence: 0
+            };
+          }
+        } else if (!result.shouldTrade && bot?.paper_trading === true && strategy.rsiThreshold) {
+          // For paper trading, if trendline strategy says no trade but we have RSI threshold, use fallback
+          console.log(`📝 [PAPER] Trendline breakout strategy returned no signal, falling back to RSI-based logic...`);
+          // Continue to RSI logic below
+        } else {
+          return result;
+        }
+      } catch (error: any) {
+        console.error('❌ Error in trendline breakout strategy evaluation:', error);
+        // For paper trading, fall back to simple RSI/ADX logic
+        if (bot?.paper_trading === true && strategy.rsiThreshold) {
+          console.log(`📝 [PAPER] Trendline breakout strategy error, falling back to RSI-based logic...`);
+          // Continue to RSI logic below
+        } else {
           return {
             shouldTrade: false,
-            reason: 'Strategy evaluation returned invalid result',
+            reason: `Strategy evaluation error: ${error?.message || String(error)}`,
             confidence: 0
           };
         }
-        return result;
-      } catch (error: any) {
-        console.error('❌ Error in trendline breakout strategy evaluation:', error);
-        return {
-          shouldTrade: false,
-          reason: `Strategy evaluation error: ${error?.message || String(error)}`,
-          confidence: 0
-        };
       }
     }
     
