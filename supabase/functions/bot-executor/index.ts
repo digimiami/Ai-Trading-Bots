@@ -3314,7 +3314,7 @@ class BotExecutor {
     
     // If no signals generated, try to generate a basic signal based on RSI
     // This ensures bots can still trade even if no specific strategy conditions are met
-    const config = bot?.strategy_config || {};
+    // Note: config is already declared at the top of this function
     const isSuperAggressive = config.immediate_execution === true || config.super_aggressive === true || strategy.immediate_execution === true || strategy.super_aggressive === true;
     
     if (isSuperAggressive) {
