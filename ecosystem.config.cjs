@@ -8,8 +8,8 @@ module.exports = {
     // Web Application
     {
       name: 'pablobots',
-      script: 'npm',
-      args: 'run preview',
+      script: 'npx',
+      args: 'vite preview --host 0.0.0.0 --port 4173',
       cwd: '/var/www/Ai-Trading-Bots',
       instances: 1,
       exec_mode: 'fork',

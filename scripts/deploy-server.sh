@@ -56,6 +56,12 @@ echo "🔧 Fixing permissions..."
 if [ -d "node_modules/.bin" ]; then
     chmod +x node_modules/.bin/*
     echo "✅ Fixed permissions for node_modules/.bin"
+    
+    # Specifically ensure vite has execute permissions
+    if [ -f "node_modules/.bin/vite" ]; then
+        chmod +x node_modules/.bin/vite
+        echo "✅ Fixed vite permissions"
+    fi
 else
     echo "⚠️  node_modules/.bin not found"
 fi
