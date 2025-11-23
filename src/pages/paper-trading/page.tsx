@@ -21,20 +21,18 @@ export default function PaperTradingDashboard() {
       }
 
       // Fetch pairs from:
-      // 1. Open positions
-      // 2. Closed trades
-      // 3. Paper trading bots (symbols field)
+      // 1. ALL positions (open and closed) - to catch all pairs
+      // 2. ALL trades (all statuses) - to show all pairs that have been traded
+      // 3. Paper trading bots (symbols field) - to show pairs from configured bots
       const [positionsResult, tradesResult, botsResult] = await Promise.all([
         supabase
           .from('paper_trading_positions')
           .select('symbol')
-          .eq('user_id', user.id)
-          .eq('status', 'open'),
+          .eq('user_id', user.id),
         supabase
           .from('paper_trading_trades')
           .select('symbol')
-          .eq('user_id', user.id)
-          .eq('status', 'closed'),
+          .eq('user_id', user.id),
         supabase
           .from('trading_bots')
           .select('symbol, symbols')
@@ -87,6 +85,14 @@ export default function PaperTradingDashboard() {
       }
 
       const uniquePairs = Array.from(allSymbols).sort();
+      
+      console.log('📊 Paper Trading - Found pairs:', {
+        total: uniquePairs.length,
+        pairs: uniquePairs,
+        fromPositions: positionsResult.data?.length || 0,
+        fromTrades: tradesResult.data?.length || 0,
+        fromBots: botsResult.data?.length || 0
+      });
 
       setAvailablePairs(uniquePairs);
       setSelectedPair(prev => {
@@ -114,6 +120,13 @@ export default function PaperTradingDashboard() {
 
   useEffect(() => {
     fetchPairs();
+    
+    // Refresh pairs every 30 seconds to catch new trades/positions
+    const interval = setInterval(() => {
+      fetchPairs();
+    }, 30000);
+    
+    return () => clearInterval(interval);
   }, [fetchPairs]);
 
   return (

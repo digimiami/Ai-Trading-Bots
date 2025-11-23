@@ -342,6 +342,52 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
         // Calculate performance by pair
         const pairsMap = new Map<string, PairPerformance>();
         
+        // First, add all pairs from open positions (to ensure pairs with only open positions are included)
+        if (openPositions && positionsWithPrices) {
+          openPositions.forEach((position: any) => {
+            const symbol = position.symbol || 'UNKNOWN';
+            if (!pairsMap.has(symbol)) {
+              pairsMap.set(symbol, {
+                symbol: symbol,
+                totalTrades: 0,
+                winningTrades: 0,
+                losingTrades: 0,
+                winRate: 0,
+                totalPnL: 0,
+                totalFees: 0,
+                totalVolume: 0,
+                averageWin: 0,
+                averageLoss: 0,
+                profitFactor: 0,
+                openPositions: 0,
+                unrealizedPnL: 0,
+                runningHours: 0,
+                botNames: []
+              });
+            }
+            
+            const pairPerf = pairsMap.get(symbol)!;
+            pairPerf.openPositions++;
+            
+            // Add bot name if available
+            if (position.bot_id && botNamesMap.has(position.bot_id)) {
+              const botName = botNamesMap.get(position.bot_id)!;
+              if (!pairPerf.botNames.includes(botName)) {
+                pairPerf.botNames.push(botName);
+              }
+            }
+            
+            // Get unrealized PnL from positionsWithPrices
+            const positionWithPrice = positionsWithPrices.find((p) => p.id === position.id);
+            if (positionWithPrice) {
+              pairPerf.unrealizedPnL += positionWithPrice.unrealized_pnl || 0;
+            } else {
+              // Fallback to stored unrealized_pnl
+              pairPerf.unrealizedPnL += parseFloat(position.unrealized_pnl || 0);
+            }
+          });
+        }
+        
         // Process closed trades by symbol
         trades.forEach((trade: any) => {
           const symbol = trade.symbol || 'UNKNOWN';
@@ -385,52 +431,6 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
             pairPerf.losingTrades++;
           }
         });
-        
-        // Process open positions by symbol
-        if (openPositions && positionsWithPrices) {
-          openPositions.forEach((position: any) => {
-            const symbol = position.symbol || 'UNKNOWN';
-            if (!pairsMap.has(symbol)) {
-            pairsMap.set(symbol, {
-              symbol: symbol,
-              totalTrades: 0,
-              winningTrades: 0,
-              losingTrades: 0,
-              winRate: 0,
-              totalPnL: 0,
-              totalFees: 0,
-              totalVolume: 0,
-              averageWin: 0,
-              averageLoss: 0,
-              profitFactor: 0,
-              openPositions: 0,
-              unrealizedPnL: 0,
-              runningHours: 0,
-              botNames: []
-            });
-            }
-            
-            const pairPerf = pairsMap.get(symbol)!;
-            pairPerf.openPositions++;
-            
-            // Add bot name if available
-            if (position.bot_id && botNamesMap.has(position.bot_id)) {
-              const botName = botNamesMap.get(position.bot_id)!;
-              if (!pairPerf.botNames.includes(botName)) {
-                pairPerf.botNames.push(botName);
-              }
-            }
-            
-            // Get unrealized PnL from positionsWithPrices
-            const positionWithPrice = positionsWithPrices.find((p) => p.id === position.id);
-            if (positionWithPrice) {
-              pairPerf.unrealizedPnL += positionWithPrice.unrealized_pnl || 0;
-            } else {
-              // Fallback to stored unrealized_pnl
-              pairPerf.unrealizedPnL += parseFloat(position.unrealized_pnl || 0);
-            }
-          });
-        }
         
         // Calculate final metrics for each pair
         const pairsPerformance: PairPerformance[] = Array.from(pairsMap.values()).map((pair) => {
@@ -1114,12 +1114,56 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
             📋 Activity Logs
           </h3>
-          <button
-            onClick={() => setExpandedLogs(!expandedLogs)}
-            className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-          >
-            {expandedLogs ? 'Hide' : 'Show'} Logs
-          </button>
+          <div className="flex items-center gap-2">
+            {activityLogs.length > 0 && (
+              <Button
+                onClick={() => {
+                  // Convert activity logs to CSV
+                  const headers = ['Timestamp', 'Level', 'Category', 'Message', 'Details'];
+                  const csvRows = [headers.join(',')];
+                  
+                  activityLogs.forEach((log: any) => {
+                    const timestamp = new Date(log.timestamp || log.created_at).toLocaleString();
+                    const level = (log.level || 'info').toUpperCase();
+                    const category = (log.category || '').replace(/,/g, ';');
+                    const message = (log.message || '').replace(/,/g, ';').replace(/\n/g, ' ');
+                    const details = log.details ? JSON.stringify(log.details).replace(/,/g, ';').replace(/\n/g, ' ') : '';
+                    
+                    csvRows.push([
+                      timestamp,
+                      level,
+                      category,
+                      `"${message}"`,
+                      `"${details}"`
+                    ].join(','));
+                  });
+                  
+                  const csvContent = csvRows.join('\n');
+                  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                  const link = document.createElement('a');
+                  const url = URL.createObjectURL(blob);
+                  
+                  link.setAttribute('href', url);
+                  link.setAttribute('download', `paper-trading-activity-${new Date().toISOString().split('T')[0]}.csv`);
+                  link.style.visibility = 'hidden';
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                }}
+                variant="secondary"
+                size="sm"
+              >
+                <i className="ri-download-line mr-2"></i>
+                Download CSV
+              </Button>
+            )}
+            <button
+              onClick={() => setExpandedLogs(!expandedLogs)}
+              className="text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+            >
+              {expandedLogs ? 'Hide' : 'Show'} Logs
+            </button>
+          </div>
         </div>
 
         {expandedLogs && (
