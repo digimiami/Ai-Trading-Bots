@@ -201,6 +201,7 @@ serve(async (req) => {
           strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy,
           aiMlEnabled: bot.ai_ml_enabled || false,
           paperTrading: bot.paper_trading || false,
+          soundNotificationsEnabled: bot.sound_notifications_enabled || false,
           webhookSecret: bot.webhook_secret || null,
           webhookTriggerImmediate: bot.webhook_trigger_immediate ?? true,
           symbols: symbolsArray,
@@ -219,7 +220,7 @@ serve(async (req) => {
       const body = await req.json()
 
       if (action === 'create') {
-        const { name, exchange, tradingType, symbol, symbols, customPairs, timeframe, leverage, riskLevel, tradeAmount, stopLoss, takeProfit, strategy, strategyConfig, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt, paperTrading } = body
+        const { name, exchange, tradingType, symbol, symbols, customPairs, timeframe, leverage, riskLevel, tradeAmount, stopLoss, takeProfit, strategy, strategyConfig, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt, paperTrading, soundNotificationsEnabled } = body
 
         // Debug logging
         console.log('Received bot data:', { name, exchange, symbol, symbols, customPairs, timeframe, leverage, riskLevel, tradeAmount, stopLoss, takeProfit, strategy, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt })
@@ -264,6 +265,7 @@ serve(async (req) => {
           strategy: JSON.stringify(strategy),
           strategy_config: strategyConfig ? JSON.stringify(strategyConfig) : null,
           paper_trading: paperTrading || false,
+          sound_notifications_enabled: soundNotificationsEnabled || false,
           status: status || 'running', // Auto-start bots instead of 'stopped'
           pnl: pnl || 0,
           pnl_percentage: pnlPercentage || 0,
@@ -336,6 +338,7 @@ serve(async (req) => {
           strategyConfig: bot.strategy_config ? (typeof bot.strategy_config === 'string' ? JSON.parse(bot.strategy_config) : bot.strategy_config) : undefined,
           aiMlEnabled: bot.ai_ml_enabled || false,
           paperTrading: bot.paper_trading || false,
+          soundNotificationsEnabled: bot.sound_notifications_enabled || false,
           webhookSecret: bot.webhook_secret || null,
           webhookTriggerImmediate: bot.webhook_trigger_immediate ?? true,
           symbols: symbolsArray,
@@ -430,6 +433,11 @@ serve(async (req) => {
           dbUpdates.paper_trading = updates.paperTrading
         }
 
+        // Handle sound notifications toggle
+        if (updates.soundNotificationsEnabled !== undefined) {
+          dbUpdates.sound_notifications_enabled = updates.soundNotificationsEnabled
+        }
+
         if (updates.webhookSecret !== undefined) {
           dbUpdates.webhook_secret = updates.webhookSecret
         }
@@ -498,6 +506,7 @@ serve(async (req) => {
           strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy,
           aiMlEnabled: bot.ai_ml_enabled || false,
           paperTrading: bot.paper_trading || false,
+          soundNotificationsEnabled: bot.sound_notifications_enabled || false,
           webhookSecret: bot.webhook_secret || null,
           webhookTriggerImmediate: bot.webhook_trigger_immediate ?? true
         }
@@ -544,6 +553,7 @@ serve(async (req) => {
           strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy,
           aiMlEnabled: bot.ai_ml_enabled || false,
           paperTrading: bot.paper_trading || false,
+          soundNotificationsEnabled: bot.sound_notifications_enabled || false,
           webhookSecret: bot.webhook_secret || null,
           webhookTriggerImmediate: bot.webhook_trigger_immediate ?? true
         }
@@ -584,6 +594,7 @@ serve(async (req) => {
           strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy,
           aiMlEnabled: bot.ai_ml_enabled || false,
           paperTrading: bot.paper_trading || false,
+          soundNotificationsEnabled: bot.sound_notifications_enabled || false,
           webhookSecret: bot.webhook_secret || null,
           webhookTriggerImmediate: bot.webhook_trigger_immediate ?? true
         }
@@ -624,6 +635,7 @@ serve(async (req) => {
           strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy,
           aiMlEnabled: bot.ai_ml_enabled || false,
           paperTrading: bot.paper_trading || false,
+          soundNotificationsEnabled: bot.sound_notifications_enabled || false,
           webhookSecret: bot.webhook_secret || null,
           webhookTriggerImmediate: bot.webhook_trigger_immediate ?? true
         }

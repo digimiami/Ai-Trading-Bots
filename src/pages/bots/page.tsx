@@ -1765,37 +1765,53 @@ export default function BotsPage() {
                   </div>
                   
                   {/* Sound Notifications Toggle */}
-                  {!bot.paperTrading && (
-                    <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200">
-                      <div className="flex items-center space-x-2">
-                        <i className="ri-notification-3-line text-blue-600"></i>
+                  <div className={`flex items-center justify-between p-3 rounded-lg border ${
+                    bot.paperTrading 
+                      ? 'bg-gray-50 border-gray-200 opacity-60' 
+                      : 'bg-blue-50 border-blue-200'
+                  }`}>
+                    <div className="flex items-center space-x-2">
+                      <i className="ri-notification-3-line text-blue-600"></i>
+                      <div>
                         <span className="text-sm font-medium text-gray-700">🔔 Sound Notifications</span>
+                        {bot.paperTrading && (
+                          <p className="text-xs text-gray-500 mt-0.5">(Real trades only)</p>
+                        )}
                       </div>
-                      <button
-                        onClick={async () => {
-                          try {
-                            const newValue = !bot.soundNotificationsEnabled;
-                            await updateBot(bot.id, {
-                              soundNotificationsEnabled: newValue
-                            } as any);
-                            alert(`✅ Sound notifications ${newValue ? 'enabled' : 'disabled'} for ${bot.name}`);
-                          } catch (error: any) {
-                            console.error('Error toggling sound notifications:', error);
-                            alert(`❌ Failed to update sound notifications: ${error?.message || 'Unknown error'}`);
-                          }
-                        }}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                          bot.soundNotificationsEnabled ? 'bg-blue-600' : 'bg-gray-300'
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                            bot.soundNotificationsEnabled ? 'translate-x-6' : 'translate-x-1'
-                          }`}
-                        />
-                      </button>
                     </div>
-                  )}
+                    <button
+                      onClick={async () => {
+                        if (bot.paperTrading) {
+                          alert('ℹ️ Sound notifications only work for real trades. This bot is in paper trading mode.');
+                          return;
+                        }
+                        try {
+                          const newValue = !bot.soundNotificationsEnabled;
+                          await updateBot(bot.id, {
+                            soundNotificationsEnabled: newValue
+                          } as any);
+                          alert(`✅ Sound notifications ${newValue ? 'enabled' : 'disabled'} for ${bot.name}`);
+                        } catch (error: any) {
+                          console.error('Error toggling sound notifications:', error);
+                          alert(`❌ Failed to update sound notifications: ${error?.message || 'Unknown error'}`);
+                        }
+                      }}
+                      disabled={bot.paperTrading}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        bot.paperTrading 
+                          ? 'bg-gray-300 cursor-not-allowed' 
+                          : bot.soundNotificationsEnabled 
+                            ? 'bg-blue-600' 
+                            : 'bg-gray-300'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          bot.soundNotificationsEnabled ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
                   
                   {/* Management Actions Row */}
                   <div className="flex space-x-2">
