@@ -15,7 +15,7 @@ import { supabase } from '../../lib/supabase';
 
 export default function BotsPage() {
   const navigate = useNavigate();
-  const { bots, loading, startBot, stopBot, pauseBot, updateBot, deleteBot, createBot } = useBots();
+  const { bots, loading, fetchBots, startBot, stopBot, pauseBot, updateBot, deleteBot, createBot } = useBots();
   const { activities, addLog } = useBotActivity(bots);
   const { isExecuting, lastExecution, timeSync, executeBot, executeAllBots } = useBotExecutor();
   const [filter, setFilter] = useState<'all' | 'running' | 'paused' | 'stopped' | 'live'>('all');
@@ -33,6 +33,7 @@ export default function BotsPage() {
   const [webhookSecretVisible, setWebhookSecretVisible] = useState<Record<string, boolean>>({});
   const [webhookActionLoading, setWebhookActionLoading] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [refreshing, setRefreshing] = useState(false);
   const isWebhookView = viewMode === 'webhook';
   
   // Get trade limits for all bots
@@ -380,6 +381,24 @@ export default function BotsPage() {
       console.error('Failed to stop all bots:', error);
     } finally {
       setBulkLoading(false);
+    }
+  };
+
+  const handleRefreshStats = async () => {
+    setRefreshing(true);
+    try {
+      // Refresh bot data which includes all stats (Trades, Win Rate, Win/Loss, Fees, Drawdown, PnL)
+      await fetchBots();
+      // Also refresh trade limits if needed
+      if (refreshLimits) {
+        await refreshLimits();
+      }
+      console.log('✅ Bot statistics refreshed successfully');
+    } catch (error) {
+      console.error('Failed to refresh bot statistics:', error);
+      alert('Failed to refresh bot statistics. Please try again.');
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -798,6 +817,16 @@ export default function BotsPage() {
           <Card className="p-4">
             <div className="flex flex-wrap gap-2 items-center">
               <span className="text-sm font-medium text-gray-700 mr-2">Bulk Actions:</span>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleRefreshStats}
+                disabled={refreshing || loading}
+                className="bg-blue-600 hover:bg-blue-700 text-white border-blue-600"
+              >
+                <i className={`ri-refresh-line mr-1 ${refreshing ? 'animate-spin' : ''}`}></i>
+                {refreshing ? 'Refreshing...' : 'Refresh All Stats'}
+              </Button>
               <Button
                 variant="secondary"
                 size="sm"
