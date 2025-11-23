@@ -1764,6 +1764,39 @@ export default function BotsPage() {
                     </button>
                   </div>
                   
+                  {/* Sound Notifications Toggle */}
+                  {!bot.paperTrading && (
+                    <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200">
+                      <div className="flex items-center space-x-2">
+                        <i className="ri-notification-3-line text-blue-600"></i>
+                        <span className="text-sm font-medium text-gray-700">🔔 Sound Notifications</span>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const newValue = !bot.soundNotificationsEnabled;
+                            await updateBot(bot.id, {
+                              soundNotificationsEnabled: newValue
+                            } as any);
+                            alert(`✅ Sound notifications ${newValue ? 'enabled' : 'disabled'} for ${bot.name}`);
+                          } catch (error: any) {
+                            console.error('Error toggling sound notifications:', error);
+                            alert(`❌ Failed to update sound notifications: ${error?.message || 'Unknown error'}`);
+                          }
+                        }}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          bot.soundNotificationsEnabled ? 'bg-blue-600' : 'bg-gray-300'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            bot.soundNotificationsEnabled ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  )}
+                  
                   {/* Management Actions Row */}
                   <div className="flex space-x-2">
                     <Button 
