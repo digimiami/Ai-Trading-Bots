@@ -15,35 +15,84 @@ export function useSoundNotifications() {
 
   // Initialize audio element
   useEffect(() => {
-    // Create audio element with a simple notification sound
-    // Using Web Audio API to generate a pleasant notification sound
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    // Create audio context - handle browser autoplay policy
+    let audioContext: AudioContext | null = null;
     
-    const createNotificationSound = () => {
-      const oscillator = audioContext.createOscillator();
-      const gainNode = audioContext.createGain();
-      
-      oscillator.connect(gainNode);
-      gainNode.connect(audioContext.destination);
-      
-      // Create a pleasant two-tone notification sound
-      oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-      oscillator.frequency.setValueAtTime(1000, audioContext.currentTime + 0.1);
-      
-      gainNode.gain.setValueAtTime(0, audioContext.currentTime);
-      gainNode.gain.linearRampToValueAtTime(volume, audioContext.currentTime + 0.01);
-      gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.2);
-      
-      oscillator.start(audioContext.currentTime);
-      oscillator.stop(audioContext.currentTime + 0.2);
+    const initAudioContext = async () => {
+      try {
+        audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        
+        // Resume audio context if suspended (browser autoplay policy)
+        if (audioContext.state === 'suspended') {
+          console.log('🔔 AudioContext suspended, attempting to resume...');
+          await audioContext.resume();
+          console.log('✅ AudioContext resumed:', audioContext.state);
+        }
+        
+        return audioContext;
+      } catch (error) {
+        console.error('❌ Failed to create AudioContext:', error);
+        return null;
+      }
     };
+    
+    const createNotificationSound = async () => {
+      try {
+        // Initialize or resume audio context
+        if (!audioContext || audioContext.state === 'closed') {
+          audioContext = await initAudioContext();
+          if (!audioContext) {
+            console.warn('⚠️ Cannot play sound: AudioContext not available');
+            return;
+          }
+        }
+        
+        // Resume if suspended
+        if (audioContext.state === 'suspended') {
+          await audioContext.resume();
+        }
+        
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.type = 'sine';
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        // Create a more noticeable three-tone notification sound
+        const now = audioContext.currentTime;
+        oscillator.frequency.setValueAtTime(600, now);
+        oscillator.frequency.setValueAtTime(800, now + 0.1);
+        oscillator.frequency.setValueAtTime(1000, now + 0.2);
+        
+        gainNode.gain.setValueAtTime(0, now);
+        gainNode.gain.linearRampToValueAtTime(volume * 0.8, now + 0.01);
+        gainNode.gain.linearRampToValueAtTime(volume, now + 0.1);
+        gainNode.gain.linearRampToValueAtTime(volume, now + 0.2);
+        gainNode.gain.linearRampToValueAtTime(0, now + 0.3);
+        
+        oscillator.start(now);
+        oscillator.stop(now + 0.3);
+        
+        console.log('🔔 Sound notification played successfully');
+      } catch (error) {
+        console.error('❌ Failed to play sound notification:', error);
+        // Try to reinitialize audio context on next attempt
+        audioContext = null;
+      }
+    };
+
+    // Initialize audio context on mount
+    initAudioContext().then(() => {
+      console.log('🔔 AudioContext initialized for sound notifications');
+    });
 
     // Store the function for later use
     (window as any).__playTradeSound = createNotificationSound;
 
     return () => {
-      if (audioContext.state !== 'closed') {
-        audioContext.close();
+      if (audioContext && audioContext.state !== 'closed') {
+        audioContext.close().catch(console.error);
       }
     };
   }, [volume]);
@@ -178,9 +227,10 @@ export function useSoundNotifications() {
         // Fetch recent trades (last 30 seconds) for enabled bots
         const { data: recentTrades, error } = await supabase
           .from('trades')
-          .select('id, bot_id, created_at, paper_trading')
+          .select('id, bot_id, created_at, paper_trading, status')
           .in('bot_id', botsWithSoundEnabled)
           .eq('paper_trading', false)
+          .in('status', ['open', 'filled', 'pending', 'partial'])
           .gte('created_at', new Date(Date.now() - 30000).toISOString())
           .order('created_at', { ascending: false })
           .limit(10);
@@ -195,14 +245,18 @@ export function useSoundNotifications() {
             if (!lastTradeIdsRef.current.has(trade.id)) {
               lastTradeIdsRef.current.add(trade.id);
               
+              console.log('🔔 Polling found new trade:', trade.id);
+              
               // Play sound notification
               if ((window as any).__playTradeSound) {
                 try {
                   (window as any).__playTradeSound();
-                  console.log(`🔔 Sound notification played for trade: ${trade.id} (Bot: ${trade.bot_id})`);
+                  console.log(`✅ Sound notification played for trade: ${trade.id} (Bot: ${trade.bot_id})`);
                 } catch (error) {
-                  console.warn('Failed to play sound notification:', error);
+                  console.error('❌ Failed to play sound notification:', error);
                 }
+              } else {
+                console.warn('⚠️ Sound function not available');
               }
             }
           });

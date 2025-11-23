@@ -11,11 +11,13 @@ import { useBots } from '../../hooks/useBots';
 import { useBotActivity } from '../../hooks/useBotActivity';
 import { useBotExecutor } from '../../hooks/useBotExecutor';
 import { useBotTradeLimits } from '../../hooks/useBotTradeLimits';
+import { useSoundNotifications } from '../../hooks/useSoundNotifications';
 import { supabase } from '../../lib/supabase';
 
 export default function BotsPage() {
   const navigate = useNavigate();
   const { bots, loading, fetchBots, startBot, stopBot, pauseBot, updateBot, deleteBot, createBot } = useBots();
+  const { playTestSound } = useSoundNotifications();
   const { activities, addLog } = useBotActivity(bots);
   const { isExecuting, lastExecution, timeSync, executeBot, executeAllBots } = useBotExecutor();
   const [filter, setFilter] = useState<'all' | 'running' | 'paused' | 'stopped' | 'live'>('all');
@@ -1794,53 +1796,70 @@ export default function BotsPage() {
                   </div>
                   
                   {/* Sound Notifications Toggle */}
-                  <div className={`flex items-center justify-between p-3 rounded-lg border ${
-                    bot.paperTrading 
-                      ? 'bg-gray-50 border-gray-200 opacity-60' 
-                      : 'bg-blue-50 border-blue-200'
-                  }`}>
-                    <div className="flex items-center space-x-2">
-                      <i className="ri-notification-3-line text-blue-600"></i>
-                      <div>
-                        <span className="text-sm font-medium text-gray-700">🔔 Sound Notifications</span>
-                        {bot.paperTrading && (
-                          <p className="text-xs text-gray-500 mt-0.5">(Real trades only)</p>
+                  {!bot.paperTrading && (
+                    <div className="flex items-center justify-between p-3 rounded-lg border bg-blue-50 border-blue-200">
+                      <div className="flex items-center space-x-2 flex-1">
+                        <i className="ri-notification-3-line text-blue-600"></i>
+                        <div className="flex-1">
+                          <span className="text-sm font-medium text-gray-700">🔔 Sound Notifications</span>
+                          {bot.soundNotificationsEnabled && (
+                            <p className="text-xs text-blue-600 mt-0.5">Enabled for real trades</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        {bot.soundNotificationsEnabled && (
+                          <button
+                            onClick={() => {
+                              try {
+                                playTestSound();
+                                console.log('🔔 Test sound played');
+                              } catch (error) {
+                                console.error('Failed to play test sound:', error);
+                                alert('⚠️ Could not play test sound. Make sure your browser allows audio and try clicking anywhere on the page first (browser autoplay policy).');
+                              }
+                            }}
+                            className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                            title="Test sound notification"
+                          >
+                            🔊 Test
+                          </button>
                         )}
+                        <button
+                          onClick={async () => {
+                            try {
+                              const newValue = !bot.soundNotificationsEnabled;
+                              await updateBot(bot.id, {
+                                soundNotificationsEnabled: newValue
+                              } as any);
+                              if (newValue) {
+                                // Play test sound when enabling
+                                try {
+                                  playTestSound();
+                                } catch (e) {
+                                  console.warn('Could not play test sound:', e);
+                                }
+                              }
+                            } catch (error: any) {
+                              console.error('Error toggling sound notifications:', error);
+                              alert(`❌ Failed to update sound notifications: ${error?.message || 'Unknown error'}`);
+                            }
+                          }}
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                            bot.soundNotificationsEnabled 
+                              ? 'bg-blue-600' 
+                              : 'bg-gray-300'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                              bot.soundNotificationsEnabled ? 'translate-x-6' : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
                       </div>
                     </div>
-                    <button
-                      onClick={async () => {
-                        if (bot.paperTrading) {
-                          alert('ℹ️ Sound notifications only work for real trades. This bot is in paper trading mode.');
-                          return;
-                        }
-                        try {
-                          const newValue = !bot.soundNotificationsEnabled;
-                          await updateBot(bot.id, {
-                            soundNotificationsEnabled: newValue
-                          } as any);
-                          alert(`✅ Sound notifications ${newValue ? 'enabled' : 'disabled'} for ${bot.name}`);
-                        } catch (error: any) {
-                          console.error('Error toggling sound notifications:', error);
-                          alert(`❌ Failed to update sound notifications: ${error?.message || 'Unknown error'}`);
-                        }
-                      }}
-                      disabled={bot.paperTrading}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        bot.paperTrading 
-                          ? 'bg-gray-300 cursor-not-allowed' 
-                          : bot.soundNotificationsEnabled 
-                            ? 'bg-blue-600' 
-                            : 'bg-gray-300'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          bot.soundNotificationsEnabled ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                  </div>
+                  )}
                   
                   {/* Management Actions Row */}
                   <div className="flex space-x-2">
