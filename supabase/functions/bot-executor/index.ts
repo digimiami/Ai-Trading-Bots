@@ -4878,6 +4878,7 @@ class BotExecutor {
 
       // Insert trade record - use 'price' column (entry_price may not exist in all deployments)
       // Note: 'size' column doesn't exist in trades table, use 'amount' instead
+      // Note: 'paper_trading' column doesn't exist in trades table (real trades go here, paper trades go to paper_trading_trades)
       let insertPayload: any = {
         user_id: this.user.id,
         bot_id: bot.id,
@@ -4890,8 +4891,8 @@ class BotExecutor {
         exchange_order_id: orderResult.orderId || orderResult.exchangeResponse?.result?.orderId || null,
         executed_at: TimeSync.getCurrentTimeISO(),
         fee: estimatedFees,
-        pnl: 0,
-        paper_trading: false // Explicitly mark as real trade for sound notifications
+        pnl: 0
+        // Note: paper_trading column doesn't exist in trades table - real trades only go here
       };
 
       // Try inserting with entry_price if column exists (for backward compatibility)
@@ -4905,15 +4906,16 @@ class BotExecutor {
       let trade = insertResp.data;
       let error = insertResp.error;
 
-      // If entry_price or size error occurs, it means the column doesn't exist - that's fine
-      // We're using 'price' and 'amount' instead
-      if (error && (/column .*entry_price/i.test(error.message || '') || /column .*size/i.test(error.message || ''))) {
-        const columnName = /column .*(entry_price|size)/i.exec(error.message || '')?.[1] || 'unknown';
+      // If entry_price, size, or paper_trading error occurs, it means the column doesn't exist - that's fine
+      // We're using 'price' and 'amount' instead, and paper_trading doesn't exist in trades table
+      if (error && (/column .*entry_price/i.test(error.message || '') || /column .*size/i.test(error.message || '') || /column .*paper_trading/i.test(error.message || ''))) {
+        const columnName = /column .*(entry_price|size|paper_trading)/i.exec(error.message || '')?.[1] || 'unknown';
         console.warn(`⚠️ trades.${columnName} column not found, using standard columns (this is expected)`);
         // Retry without the problematic column (shouldn't happen since we removed it, but just in case)
         const retryPayload = { ...insertPayload };
         delete retryPayload.size;
         delete retryPayload.entry_price;
+        delete retryPayload.paper_trading; // Remove paper_trading if it was added
         const retryResp = await this.supabaseClient
           .from('trades')
           .insert(retryPayload as any)

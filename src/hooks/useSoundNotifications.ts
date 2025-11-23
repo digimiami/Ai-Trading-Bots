@@ -225,12 +225,13 @@ export function useSoundNotifications() {
     const pollInterval = setInterval(async () => {
       try {
         // Fetch recent trades (last 30 seconds) for enabled bots
+        // Note: trades table doesn't have paper_trading column - real trades only go here
+        // Use .or() for status filtering since .in() with array doesn't work in Supabase PostgREST
         const { data: recentTrades, error } = await supabase
           .from('trades')
-          .select('id, bot_id, created_at, paper_trading, status')
+          .select('id, bot_id, created_at, status')
           .in('bot_id', botsWithSoundEnabled)
-          .eq('paper_trading', false)
-          .in('status', ['open', 'filled', 'pending', 'partial'])
+          .or('status.eq.open,status.eq.filled,status.eq.pending,status.eq.partial')
           .gte('created_at', new Date(Date.now() - 30000).toISOString())
           .order('created_at', { ascending: false })
           .limit(10);
