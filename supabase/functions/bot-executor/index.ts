@@ -5262,6 +5262,13 @@ class BotExecutor {
           // Create a modified bot object with the effective symbol
           const botWithSymbol = { ...bot, symbol: effectiveSymbol };
           
+          console.log(`🚀 [MANUAL SIGNAL ${signalId}] Starting trade execution...`);
+          console.log(`   Bot: ${bot.name} (${bot.id})`);
+          console.log(`   Symbol: ${effectiveSymbol} (from webhook: ${signal.metadata?.instrument || 'N/A'})`);
+          console.log(`   Side: ${signal.side}`);
+          console.log(`   Mode: ${finalMode}`);
+          console.log(`   Size Multiplier: ${signal.size_multiplier || 'none'}`);
+          
           const result = await this.executeManualTrade(botWithSymbol, {
             side: signal.side,
             reason: signal.reason || 'Manual trade signal',
@@ -5270,6 +5277,8 @@ class BotExecutor {
             sizeMultiplier: signal.size_multiplier ? Number(signal.size_multiplier) : undefined,
             source: 'manual_trade_signal'
           });
+          
+          console.log(`✅ [MANUAL SIGNAL ${signalId}] Trade execution completed:`, result);
 
           // Verify that a trade was actually created (for real mode)
           let tradeCreated = false;
@@ -5319,20 +5328,53 @@ class BotExecutor {
           processedCount += 1;
         } catch (signalError) {
           const errorMessage = signalError instanceof Error ? signalError.message : String(signalError);
-          console.error(`❌ Manual trade signal ${signalId} failed for bot ${bot.id}:`, errorMessage);
+          console.error(`❌ [MANUAL SIGNAL ${signalId}] Trade execution failed for bot ${bot.id}:`, errorMessage);
+          console.error(`   Error type: ${signalError instanceof Error ? signalError.name : typeof signalError}`);
+          if (signalError instanceof Error && signalError.stack) {
+            console.error(`   Stack trace: ${signalError.stack.substring(0, 500)}`);
+          }
 
-          await this.addBotLog(bot.id, {
-            level: 'error',
-            category: 'trade',
-            message: `Manual trade signal failed: ${errorMessage}`,
-            details: {
-              signal_id: signalId,
-              side: signal.side,
-              mode: signal.mode,
-              error: errorMessage,
-              timestamp: TimeSync.getCurrentTimeISO()
-            }
-          });
+          // Enhanced error logging for 403 errors
+          const is403Error = errorMessage.includes('403') || errorMessage.includes('Forbidden');
+          if (is403Error) {
+            await this.addBotLog(bot.id, {
+              level: 'error',
+              category: 'trade',
+              message: `Manual trade signal failed: Bybit API returned HTTP 403 (Forbidden). This indicates geographic/IP blocking from Bybit's CloudFront distribution.`,
+              details: {
+                signal_id: signalId,
+                side: signal.side,
+                mode: signal.mode,
+                symbol: effectiveSymbol,
+                error: errorMessage,
+                http_status: 403,
+                issue_type: 'bybit_geographic_blocking',
+                troubleshooting: [
+                  '1. Check Bybit API key IP whitelist settings (disable or add Supabase Edge Function IPs)',
+                  '2. Verify API key has "Trade" permission enabled',
+                  '3. Check if your region is blocked by Bybit',
+                  '4. Consider using a VPN or proxy if geographic restrictions apply',
+                  '5. Contact Bybit support if issue persists'
+                ],
+                timestamp: TimeSync.getCurrentTimeISO()
+              }
+            });
+          } else {
+            await this.addBotLog(bot.id, {
+              level: 'error',
+              category: 'trade',
+              message: `Manual trade signal failed: ${errorMessage}`,
+              details: {
+                signal_id: signalId,
+                side: signal.side,
+                mode: signal.mode,
+                symbol: effectiveSymbol,
+                error: errorMessage,
+                error_type: signalError instanceof Error ? signalError.name : typeof signalError,
+                timestamp: TimeSync.getCurrentTimeISO()
+              }
+            });
+          }
 
           await serviceRoleClient
             .from('manual_trade_signals')
