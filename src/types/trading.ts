@@ -29,6 +29,7 @@ export interface TradingBot {
   webhookTriggerImmediate?: boolean;
   symbols?: string[]; // Array of trading pairs for multi-pair bots
   customPairs?: string; // Raw user input for custom pairs
+  soundNotificationsEnabled?: boolean; // Enable/disable sound notifications for real trades
 }
 
 export interface TradingStrategy {

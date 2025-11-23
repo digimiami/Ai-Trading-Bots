@@ -54,7 +54,8 @@ export default function CreateBotPage() {
     tradeAmount: isFromBacktest && backtestData?.backtestConfig?.tradeAmount ? backtestData.backtestConfig.tradeAmount : urlTradeAmount,
     stopLoss: isFromBacktest && backtestData?.backtestConfig?.stopLoss ? backtestData.backtestConfig.stopLoss : urlStopLoss,
     takeProfit: isFromBacktest && backtestData?.backtestConfig?.takeProfit ? backtestData.backtestConfig.takeProfit : urlTakeProfit,
-    paperTrading: false // Paper trading mode toggle
+    paperTrading: false, // Paper trading mode toggle
+    soundNotificationsEnabled: false // Sound notifications for real trades
   });
 
   // Update form data when URL params change
@@ -358,6 +359,7 @@ export default function CreateBotPage() {
         stopLoss: formData.stopLoss,
         takeProfit: formData.takeProfit,
         paperTrading: formData.paperTrading,
+        soundNotificationsEnabled: formData.soundNotificationsEnabled,
         strategy: strategy,
         strategyConfig: advancedConfig,  // Include advanced configuration
         // Initialize with default values

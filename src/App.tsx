@@ -5,6 +5,7 @@ import { useRoutes, useNavigate } from 'react-router-dom';
 import routes from './router/config';
 import { useAuth } from './hooks/useAuth';
 import { useBotExecutor } from './hooks/useBotExecutor';
+import { useSoundNotifications } from './hooks/useSoundNotifications';
 import { ONBOARDING_ENABLED } from './constants/featureFlags';
 import CookieConsent from './components/ui/CookieConsent';
 
@@ -15,6 +16,9 @@ function AppRoutes() {
   
   // Initialize bot executor for automatic trading (only when user is logged in)
   useBotExecutor();
+  
+  // Initialize sound notifications for real trades
+  useSoundNotifications();
 
   // Load theme from localStorage on mount
   useEffect(() => {

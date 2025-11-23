@@ -94,6 +94,7 @@ export default function EditBotPage() {
 
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [soundNotificationsEnabled, setSoundNotificationsEnabled] = useState(false);
 
   const popularSymbols = [
     'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'ADAUSDT', 'DOTUSDT', 'AVAXUSDT',
@@ -138,6 +139,9 @@ export default function EditBotPage() {
           }));
         }
         
+        // Load sound notifications setting
+        setSoundNotificationsEnabled(bot.soundNotificationsEnabled || false);
+        
         console.log('Edit bot: Form data set:', formData);
       } else {
         console.log('Edit bot: Bot not found with ID:', botId);
@@ -165,7 +169,8 @@ export default function EditBotPage() {
         stopLoss: formData.stopLoss,
         takeProfit: formData.takeProfit,
         strategy: strategy,
-        strategyConfig: advancedConfig
+        strategyConfig: advancedConfig,
+        soundNotificationsEnabled: soundNotificationsEnabled
       };
       
       console.log('Edit bot: Updating bot data:', botData);
@@ -419,6 +424,31 @@ export default function EditBotPage() {
                     />
                     <p className="text-xs text-gray-500 mt-1">
                       Target profit percentage before closing position
+                    </p>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-medium text-gray-700">
+                        Sound Notifications (Real Trades)
+                      </label>
+                      <div className="flex items-center">
+                        <span className={`text-xs mr-2 ${soundNotificationsEnabled ? 'text-green-600' : 'text-gray-400'}`}>
+                          {soundNotificationsEnabled ? 'ON' : 'OFF'}
+                        </span>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={soundNotificationsEnabled}
+                            onChange={(e) => setSoundNotificationsEnabled(e.target.checked)}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                        </label>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Play a sound notification when this bot executes a real trade (paper trading excluded)
                     </p>
                   </div>
 

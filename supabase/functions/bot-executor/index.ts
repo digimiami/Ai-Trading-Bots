@@ -8267,11 +8267,53 @@ class PaperTradingExecutor {
       
       // Get REAL market data from MAINNET (same as real trading)
       const tradingType = bot.tradingType || bot.trading_type || 'futures';
-      const currentPrice = await MarketDataFetcher.fetchPrice(
-        bot.symbol, 
-        bot.exchange, 
-        tradingType
-      );
+      let currentPrice = 0;
+      
+      try {
+        currentPrice = await MarketDataFetcher.fetchPrice(
+          bot.symbol, 
+          bot.exchange, 
+          tradingType
+        );
+      } catch (priceError: any) {
+        console.warn(`⚠️ [PAPER] Price fetch failed, trying CoinGecko directly:`, priceError?.message || priceError);
+        
+        // For paper trading, be more aggressive with CoinGecko fallback
+        // Try CoinGecko immediately if Bybit fails (regardless of coin type)
+        try {
+          const baseCoin = bot.symbol.replace(/USDT.*$/i, '').replace(/\.P$/i, '').replace(/^1000/, '').toUpperCase();
+          const coinGeckoMap: { [key: string]: string } = {
+            'BTC': 'bitcoin', 'ETH': 'ethereum', 'BNB': 'binancecoin', 'SOL': 'solana',
+            'ADA': 'cardano', 'DOGE': 'dogecoin', 'XRP': 'ripple', 'DOT': 'polkadot',
+            'MATIC': 'matic-network', 'LTC': 'litecoin', 'TRUMP': 'trump', 'STRK': 'starknet',
+            'HBAR': 'hedera-hashgraph', 'FIL': 'filecoin', 'AVAX': 'avalanche-2',
+            'LINK': 'chainlink', 'UNI': 'uniswap', 'ATOM': 'cosmos', 'ETC': 'ethereum-classic',
+            'XLM': 'stellar', 'ALGO': 'algorand', 'VET': 'vechain', 'TRX': 'tron',
+            'PEPE': 'pepe', 'FLOKI': 'floki', 'SHIB': 'shiba-inu', 'WLD': 'worldcoin-wld',
+            'DYM': 'dymension', 'VIRTUAL': 'virtual-protocol', 'MYX': 'myx-network'
+          };
+          
+          const coinGeckoId = coinGeckoMap[baseCoin] || baseCoin.toLowerCase();
+          const coinGeckoUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${coinGeckoId}&vs_currencies=usd`;
+          console.log(`🔄 [PAPER] Trying CoinGecko directly: ${coinGeckoUrl}`);
+          
+          const cgResp = await fetch(coinGeckoUrl, {
+            headers: { 'Accept': 'application/json' },
+            signal: AbortSignal.timeout(5000)
+          });
+          
+          if (cgResp.ok) {
+            const cgData = await cgResp.json();
+            const price = cgData[coinGeckoId]?.usd;
+            if (price && price > 0) {
+              console.log(`✅ [PAPER] CoinGecko price for ${bot.symbol}: $${price}`);
+              currentPrice = price;
+            }
+          }
+        } catch (cgError) {
+          console.warn(`⚠️ [PAPER] CoinGecko fallback also failed:`, cgError);
+        }
+      }
       
       if (!currentPrice || currentPrice === 0) {
         // fetchPrice already tries symbol variants, but let's try a more aggressive fallback
@@ -8334,25 +8376,43 @@ class PaperTradingExecutor {
             // Otherwise, continue to throw original error
           }
           
-          // For major coins like BTC, ETH, etc., they don't use 1000 prefix
-          // Only smaller coins like PEPE, FLOKI use 1000 prefix
-          const majorCoins = ['BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'ADA', 'DOGE', 'DOT', 'MATIC', 'AVAX', 'LINK', 'UNI', 'ATOM', 'LTC', 'ETC', 'XLM', 'ALGO', 'VET', 'FIL', 'TRX'];
-          const isMajorCoin = majorCoins.some(coin => bot.symbol.startsWith(coin));
-          
-          let suggestedFormat = '';
-          if (isMajorCoin) {
-            // Major coins: BTCUSDT works for both spot and futures, no prefix needed
-            // The issue might be API availability or network error
-            suggestedFormat = `${bot.symbol} (should work for both spot and futures - check API availability)`;
-          } else if (bot.symbol.startsWith('1000')) {
-            // Already has prefix, try without
-            suggestedFormat = bot.symbol.replace(/^1000/, '');
-          } else {
-            // Smaller coins might need prefix for futures
-            suggestedFormat = `1000${bot.symbol}`;
+          // FINAL FALLBACK: Try to get cached price from recent paper trades
+          console.log(`🔄 [PAPER] All price sources failed, trying cached price from recent trades...`);
+          try {
+            const { data: recentTrades } = await this.supabaseClient
+              .from('paper_trading_trades')
+              .select('entry_price')
+              .eq('symbol', bot.symbol)
+              .order('created_at', { ascending: false })
+              .limit(1);
+            
+            if (recentTrades && recentTrades.length > 0 && recentTrades[0].entry_price) {
+              const cachedPrice = parseFloat(recentTrades[0].entry_price);
+              if (cachedPrice && cachedPrice > 0) {
+                console.log(`✅ [PAPER] Using cached price from recent trade: $${cachedPrice}`);
+                currentPrice = cachedPrice;
+              }
+            }
+          } catch (cacheError) {
+            console.warn(`⚠️ [PAPER] Failed to get cached price:`, cacheError);
           }
           
-          throw new Error(`Invalid price for ${bot.symbol} - market data unavailable for ${tradingType} trading on ${bot.exchange}. ${isMajorCoin ? 'Major coins like BTC/ETH should work - this might be a temporary API issue.' : `Try alternative format: ${suggestedFormat}`} Please verify the symbol exists on the exchange.`);
+          // If still no price, throw error (but with more helpful message for paper trading)
+          if (!currentPrice || currentPrice === 0) {
+            const majorCoins = ['BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'ADA', 'DOGE', 'DOT', 'MATIC', 'AVAX', 'LINK', 'UNI', 'ATOM', 'LTC', 'ETC', 'XLM', 'ALGO', 'VET', 'FIL', 'TRX'];
+            const isMajorCoin = majorCoins.some(coin => bot.symbol.startsWith(coin));
+            
+            let suggestedFormat = '';
+            if (isMajorCoin) {
+              suggestedFormat = `${bot.symbol} (should work for both spot and futures - check API availability)`;
+            } else if (bot.symbol.startsWith('1000')) {
+              suggestedFormat = bot.symbol.replace(/^1000/, '');
+            } else {
+              suggestedFormat = `1000${bot.symbol}`;
+            }
+            
+            throw new Error(`[PAPER TRADING] Invalid price for ${bot.symbol} - all price sources failed (Bybit API blocked, CoinGecko unavailable, no cached price). ${isMajorCoin ? 'Major coins like BTC/ETH should work - this might be a temporary API issue.' : `Try alternative format: ${suggestedFormat}`} Please verify the symbol exists on the exchange.`);
+          }
         }
       }
       
