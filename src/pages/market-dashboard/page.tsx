@@ -566,14 +566,31 @@ export default function MarketDashboardPage() {
         )}
 
         {/* Technical Analysis Section */}
-        {marketData && marketData.length > 0 && (
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Technical Analysis</h2>
+            <div className="flex items-center gap-3">
+              {/* Pair Selector */}
+              <select
+                value={selectedSymbol || (marketData && marketData.length > 0 ? marketData[0]?.symbol : 'BTCUSDT')}
+                onChange={(e) => setSelectedSymbol(e.target.value)}
+                className="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {marketData.map((item) => (
+                  <option key={item.symbol} value={item.symbol}>
+                    {item.symbol.replace('USDT', '')}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
           <TechnicalAnalysis 
-            symbol={selectedSymbol || marketData[0]?.symbol || 'BTCUSDT'}
+            symbol={selectedSymbol || (marketData && marketData.length > 0 ? marketData[0]?.symbol : 'BTCUSDT')}
             onTimeframeChange={(timeframe) => {
               console.log('Timeframe changed to:', timeframe);
             }}
           />
-        )}
+        </Card>
 
         {/* Alerts */}
         {alerts.length > 0 && (

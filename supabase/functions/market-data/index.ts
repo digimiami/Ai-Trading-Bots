@@ -118,6 +118,149 @@ function calculateRSI(klines: any[], period: number = 14): number {
   return 100 - (100 / (1 + rs))
 }
 
+// Calculate SMA (Simple Moving Average)
+function calculateSMA(klines: any[], period: number): number {
+  if (klines.length < period) return 0
+  const closes = klines.slice(-period).map(k => parseFloat(k[4]))
+  return closes.reduce((a, b) => a + b, 0) / period
+}
+
+// Calculate EMA (Exponential Moving Average)
+function calculateEMA(klines: any[], period: number): number {
+  if (klines.length < period) return 0
+  const closes = klines.map(k => parseFloat(k[4]))
+  const multiplier = 2 / (period + 1)
+  let ema = closes.slice(0, period).reduce((a, b) => a + b, 0) / period
+  
+  for (let i = period; i < closes.length; i++) {
+    ema = (closes[i] - ema) * multiplier + ema
+  }
+  
+  return ema
+}
+
+// Calculate Stochastic Oscillator
+function calculateStochastic(klines: any[], period: number = 14): { k: number; d: number } {
+  if (klines.length < period) return { k: 50, d: 50 }
+  
+  const recent = klines.slice(-period)
+  const highs = recent.map(k => parseFloat(k[2]))
+  const lows = recent.map(k => parseFloat(k[3]))
+  const closes = recent.map(k => parseFloat(k[4]))
+  
+  const highestHigh = Math.max(...highs)
+  const lowestLow = Math.min(...lows)
+  const currentClose = closes[closes.length - 1]
+  
+  if (highestHigh === lowestLow) return { k: 50, d: 50 }
+  
+  const k = ((currentClose - lowestLow) / (highestHigh - lowestLow)) * 100
+  
+  // Calculate D (3-period SMA of K)
+  const kValues = []
+  for (let i = period - 3; i < period; i++) {
+    if (i >= 0) {
+      const h = Math.max(...highs.slice(Math.max(0, i - 3), i + 1))
+      const l = Math.min(...lows.slice(Math.max(0, i - 3), i + 1))
+      const c = closes[i]
+      if (h !== l) {
+        kValues.push(((c - l) / (h - l)) * 100)
+      }
+    }
+  }
+  const d = kValues.length > 0 ? kValues.reduce((a, b) => a + b, 0) / kValues.length : k
+  
+  return { k, d }
+}
+
+// Calculate MACD
+function calculateMACD(klines: any[]): { macd: number; signal: number; histogram: number } {
+  if (klines.length < 26) return { macd: 0, signal: 0, histogram: 0 }
+  
+  const ema12 = calculateEMA(klines, 12)
+  const ema26 = calculateEMA(klines, 26)
+  const macd = ema12 - ema26
+  
+  // Signal line (9-period EMA of MACD)
+  // Simplified: use a shorter period for signal
+  const signal = macd * 0.9 // Approximation
+  const histogram = macd - signal
+  
+  return { macd, signal, histogram }
+}
+
+// Calculate technical analysis signals
+function calculateTechnicalSignals(klines: any[]): {
+  oscillators: { sell: number; neutral: number; buy: number };
+  movingAverages: { sell: number; neutral: number; buy: number };
+  summary: { sell: number; neutral: number; buy: number };
+} {
+  const rsi = calculateRSI(klines)
+  const stochastic = calculateStochastic(klines)
+  const macd = calculateMACD(klines)
+  const sma20 = calculateSMA(klines, 20)
+  const sma50 = calculateSMA(klines, 50)
+  const sma200 = calculateSMA(klines, 200)
+  const currentPrice = parseFloat(klines[klines.length - 1][4])
+  
+  // Oscillators signals
+  let oscillatorSell = 0
+  let oscillatorNeutral = 0
+  let oscillatorBuy = 0
+  
+  // RSI signals
+  if (rsi > 70) oscillatorSell++
+  else if (rsi < 30) oscillatorBuy++
+  else oscillatorNeutral++
+  
+  // Stochastic signals
+  if (stochastic.k > 80) oscillatorSell++
+  else if (stochastic.k < 20) oscillatorBuy++
+  else oscillatorNeutral++
+  
+  // MACD signals
+  if (macd.histogram < 0 && macd.macd < macd.signal) oscillatorSell++
+  else if (macd.histogram > 0 && macd.macd > macd.signal) oscillatorBuy++
+  else oscillatorNeutral++
+  
+  // Moving Averages signals
+  let maSell = 0
+  let maNeutral = 0
+  let maBuy = 0
+  
+  // Price vs SMAs
+  if (currentPrice < sma20 && sma20 < sma50) maSell++
+  else if (currentPrice > sma20 && sma20 > sma50) maBuy++
+  else maNeutral++
+  
+  if (currentPrice < sma50 && sma50 < sma200) maSell++
+  else if (currentPrice > sma50 && sma50 > sma200) maBuy++
+  else maNeutral++
+  
+  // Summary (combine oscillators and moving averages)
+  const summarySell = oscillatorSell + maSell
+  const summaryBuy = oscillatorBuy + maBuy
+  const summaryNeutral = oscillatorNeutral + maNeutral
+  
+  return {
+    oscillators: {
+      sell: oscillatorSell,
+      neutral: oscillatorNeutral,
+      buy: oscillatorBuy
+    },
+    movingAverages: {
+      sell: maSell,
+      neutral: maNeutral,
+      buy: maBuy
+    },
+    summary: {
+      sell: summarySell,
+      neutral: summaryNeutral,
+      buy: summaryBuy
+    }
+  }
+}
+
 // Fetch ticker data from Bybit
 async function fetchTickers(symbols: string[] = []): Promise<any[]> {
   try {
@@ -507,6 +650,72 @@ serve(async (req) => {
       )
     }
     
+    // Get technical analysis
+    if (action === 'technical') {
+      const symbol = url.searchParams.get('symbol') || 'BTCUSDT'
+      const timeframe = url.searchParams.get('timeframe') || '1D'
+      
+      // Map timeframe to Bybit interval
+      const intervalMap: Record<string, string> = {
+        '1m': '1',
+        '5m': '5',
+        '15m': '15',
+        '30m': '30',
+        '1h': '60',
+        '2h': '120',
+        '4h': '240',
+        '1D': 'D',
+        '1W': 'W',
+        '1M': 'M'
+      }
+      
+      const interval = intervalMap[timeframe] || 'D'
+      const limit = timeframe === '1M' ? 50 : timeframe === '1W' ? 100 : 200
+      
+      console.log(`📊 Fetching technical analysis for ${symbol} on ${timeframe} timeframe (interval: ${interval})`)
+      
+      const klines = await fetchKlines(symbol, interval, limit)
+      
+      if (klines.length === 0) {
+        return new Response(
+          JSON.stringify({ 
+            error: 'No kline data available for this symbol/timeframe',
+            symbol,
+            timeframe
+          }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      
+      const signals = calculateTechnicalSignals(klines)
+      const rsi = calculateRSI(klines)
+      const stochastic = calculateStochastic(klines)
+      const macd = calculateMACD(klines)
+      const sma20 = calculateSMA(klines, 20)
+      const sma50 = calculateSMA(klines, 50)
+      const sma200 = calculateSMA(klines, 200)
+      const currentPrice = parseFloat(klines[klines.length - 1][4])
+      
+      return new Response(
+        JSON.stringify({
+          symbol,
+          timeframe,
+          signals,
+          indicators: {
+            rsi,
+            stochastic,
+            macd,
+            sma20,
+            sma50,
+            sma200,
+            currentPrice
+          },
+          timestamp: new Date().toISOString()
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+    
     // Get alerts (large trades, 24h highs)
     if (action === 'alerts') {
       const symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT']
@@ -549,7 +758,7 @@ serve(async (req) => {
     }
     
     return new Response(
-      JSON.stringify({ error: 'Invalid action. Use ?action=all, ?action=symbol&symbol=BTCUSDT, or ?action=alerts' }),
+      JSON.stringify({ error: 'Invalid action. Use ?action=all, ?action=symbol&symbol=BTCUSDT, ?action=technical&symbol=BTCUSDT&timeframe=1D, or ?action=alerts' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
     

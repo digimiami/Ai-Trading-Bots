@@ -28,32 +28,64 @@ const timeframes = [
 ];
 
 /**
- * Mock function to fetch technical indicators
- * In production, this would call your backend API
+ * Fetch technical indicators from API
  */
 const fetchTechnicalData = async (symbol: string, timeframe: string): Promise<TechnicalData> => {
-  // Simulate API call
-  await new Promise(resolve => setTimeout(resolve, 300));
-  
-  // Mock data - in production, fetch from your API
-  // This example shows "Strong Sell" signal like in the screenshot
-  return {
-    oscillators: {
-      sell: 0,
-      neutral: 0,
-      buy: 0
-    },
-    summary: {
-      sell: 2,
-      neutral: 0,
-      buy: 0
-    },
-    movingAverages: {
-      sell: 2,
-      neutral: 0,
-      buy: 0
+  try {
+    const supabaseUrl = (import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '').replace('/rest/v1', '');
+    const supabaseKey = import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+    
+    if (!supabaseUrl || !supabaseKey) {
+      console.error('Missing Supabase configuration');
+      throw new Error('Missing Supabase configuration');
     }
-  };
+    
+    const apiUrl = `${supabaseUrl}/functions/v1/market-data?action=technical&symbol=${symbol}&timeframe=${timeframe}`;
+    console.log('📊 Fetching technical analysis:', apiUrl);
+    
+    const response = await fetch(apiUrl, {
+      headers: {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`
+      }
+    });
+    
+    if (!response.ok) {
+      const text = await response.text();
+      console.error('Technical analysis API error:', response.status, text);
+      throw new Error(`API error: ${response.status}`);
+    }
+    
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      const text = await response.text();
+      console.error('Technical analysis API returned non-JSON:', text.substring(0, 200));
+      throw new Error('Invalid response format');
+    }
+    
+    const data = await response.json();
+    
+    if (data.error) {
+      console.error('Technical analysis API error:', data.error);
+      throw new Error(data.error);
+    }
+    
+    console.log('✅ Technical analysis received:', data);
+    
+    return {
+      oscillators: data.signals?.oscillators || { sell: 0, neutral: 0, buy: 0 },
+      summary: data.signals?.summary || { sell: 0, neutral: 0, buy: 0 },
+      movingAverages: data.signals?.movingAverages || { sell: 0, neutral: 0, buy: 0 }
+    };
+  } catch (error) {
+    console.error('Error fetching technical data:', error);
+    // Return neutral data on error
+    return {
+      oscillators: { sell: 0, neutral: 0, buy: 0 },
+      summary: { sell: 0, neutral: 0, buy: 0 },
+      movingAverages: { sell: 0, neutral: 0, buy: 0 }
+    };
+  }
 };
 
 export const TechnicalAnalysis: React.FC<TechnicalAnalysisProps> = ({ 
@@ -91,8 +123,10 @@ export const TechnicalAnalysis: React.FC<TechnicalAnalysisProps> = ({
     onTimeframeChange?.(timeframe);
   };
 
+  console.log('TechnicalAnalysis rendering with symbol:', symbol);
+
   return (
-    <div className={`bg-gray-900 rounded-xl p-6 ${className}`}>
+    <div className={`bg-gray-900 dark:bg-gray-800 rounded-xl p-6 border border-gray-700 dark:border-gray-600 shadow-xl ${className}`}>
       {/* Header */}
       <div className="mb-6">
         <div className="flex items-center gap-3 mb-4">
@@ -127,33 +161,40 @@ export const TechnicalAnalysis: React.FC<TechnicalAnalysisProps> = ({
         </div>
       </div>
 
-      {/* Loading State */}
-      {loading && (
-        <div className="flex items-center justify-center py-12">
-          <i className="ri-loader-4-line animate-spin text-4xl text-gray-400"></i>
-        </div>
-      )}
-
       {/* Gauges Grid */}
-      {!loading && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          <TechnicalGauge
-            title="Oscillators"
-            data={technicalData.oscillators}
-            className="bg-gray-800 rounded-xl p-6"
-          />
-          <TechnicalGauge
-            title="Summary"
-            data={technicalData.summary}
-            className="bg-gray-800 rounded-xl p-6"
-          />
-          <TechnicalGauge
-            title="Moving Averages"
-            data={technicalData.movingAverages}
-            className="bg-gray-800 rounded-xl p-6"
-          />
-        </div>
-      )}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        {loading ? (
+          <>
+            <div className="flex items-center justify-center py-12 bg-gray-800 rounded-xl">
+              <i className="ri-loader-4-line animate-spin text-4xl text-gray-400"></i>
+            </div>
+            <div className="flex items-center justify-center py-12 bg-gray-800 rounded-xl">
+              <i className="ri-loader-4-line animate-spin text-4xl text-gray-400"></i>
+            </div>
+            <div className="flex items-center justify-center py-12 bg-gray-800 rounded-xl">
+              <i className="ri-loader-4-line animate-spin text-4xl text-gray-400"></i>
+            </div>
+          </>
+        ) : (
+          <>
+            <TechnicalGauge
+              title="Oscillators"
+              data={technicalData.oscillators}
+              className="bg-gray-800 rounded-xl p-6"
+            />
+            <TechnicalGauge
+              title="Summary"
+              data={technicalData.summary}
+              className="bg-gray-800 rounded-xl p-6"
+            />
+            <TechnicalGauge
+              title="Moving Averages"
+              data={technicalData.movingAverages}
+              className="bg-gray-800 rounded-xl p-6"
+            />
+          </>
+        )}
+      </div>
 
       {/* Info Footer */}
       <div className="mt-8 p-4 bg-gray-800 rounded-lg border border-gray-700">

@@ -13,11 +13,13 @@ SELECT
   id,
   name,
   symbol,
-  strategy_type,
   timeframe,
   strategy_config->>'immediate_execution' as immediate_execution,
   strategy_config->>'super_aggressive' as super_aggressive,
-  strategy_config->>'immediate_trading' as immediate_trading_old
+  strategy_config->>'immediate_trading' as immediate_trading_old,
+  strategy_config->>'rsi_oversold' as rsi_oversold,
+  strategy_config->>'rsi_overbought' as rsi_overbought,
+  strategy_config->>'adx_threshold' as adx_threshold
 FROM trading_bots
 WHERE paper_trading = true
   AND status = 'running'
