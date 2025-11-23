@@ -831,8 +831,8 @@ class MarketDataFetcher {
             }
             
             try {
-              // Try primary and alternate Bybit domains for resilience
-              const baseDomains = ['https://api.bybit.com', 'https://api.bytick.com'];
+              // Use Bybit API domain
+              const baseDomains = ['https://api.bybit.com'];
               let response: Response | null = null;
               let apiUrl = '';
               
@@ -1347,7 +1347,7 @@ class MarketDataFetcher {
         
         // FINAL FALLBACK 2: Use top-of-book orderbook mid-price if tickers endpoints are blocked
         try {
-          const orderbookDomains = ['https://api.bybit.com', 'https://api.bytick.com'];
+          const orderbookDomains = ['https://api.bybit.com'];
           for (const base of orderbookDomains) {
             const obUrl = `${base}/v5/market/orderbook?category=${bybitCategory}&symbol=${symbol}&limit=1`;
             console.log(`🛟 Trying orderbook fallback for ${symbol} (${bybitCategory}): ${obUrl}`);
@@ -1627,8 +1627,8 @@ class MarketDataFetcher {
         // For now, try both spot and linear, but prefer linear for futures
         const categories = ['linear', 'spot', 'inverse'];
         
-        // Use multiple domains for redundancy (same as price fetching)
-        const baseDomains = ['https://api.bybit.com', 'https://api.bytick.com'];
+        // Use Bybit API domain
+        const baseDomains = ['https://api.bybit.com'];
         let had403Errors = false;
         
         for (const category of categories) {
@@ -5469,10 +5469,10 @@ class BotExecutor {
   }
   
   private async placeBybitOrder(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string, side: string, amount: number, price: number, tradingType: string = 'spot', bot: any = null): Promise<any> {
-    // Use multiple domains for redundancy (same as balance check)
+    // Use Bybit API domain (mainnet or testnet)
     const baseDomains = isTestnet 
       ? ['https://api-testnet.bybit.com']
-      : ['https://api.bybit.com', 'https://api.bytick.com'];
+      : ['https://api.bybit.com'];
     
     console.log(`🔑 Bybit Order Details:`);
     console.log(`   Domains: ${baseDomains.join(', ')} (isTestnet: ${isTestnet})`);
@@ -5901,10 +5901,10 @@ class BotExecutor {
     totalRequired: number;
     orderValue: number;
   }> {
-    // Use multiple domains for redundancy (same as placeBybitOrder)
+    // Use Bybit API domain (mainnet or testnet)
     const baseDomains = isTestnet
       ? ['https://api-testnet.bybit.com']
-      : ['https://api.bybit.com', 'https://api.bytick.com'];
+      : ['https://api.bybit.com'];
     
     try {
       const timestamp = Date.now().toString();
