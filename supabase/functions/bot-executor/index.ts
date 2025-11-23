@@ -4890,7 +4890,8 @@ class BotExecutor {
         exchange_order_id: orderResult.orderId || orderResult.exchangeResponse?.result?.orderId || null,
         executed_at: TimeSync.getCurrentTimeISO(),
         fee: estimatedFees,
-        pnl: 0
+        pnl: 0,
+        paper_trading: false // Explicitly mark as real trade for sound notifications
       };
 
       // Try inserting with entry_price if column exists (for backward compatibility)

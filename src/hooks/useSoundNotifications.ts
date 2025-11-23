@@ -58,14 +58,27 @@ export function useSoundNotifications() {
 
   // Listen for new real trades
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled) {
+      console.log('🔕 Sound notifications disabled');
+      return;
+    }
 
     // Get list of bot IDs that have sound notifications enabled
     const botsWithSoundEnabled = bots
       .filter(bot => bot.soundNotificationsEnabled && !bot.paperTrading)
       .map(bot => bot.id);
 
-    if (botsWithSoundEnabled.length === 0) return;
+    console.log('🔔 Sound notifications setup:', {
+      enabled,
+      totalBots: bots.length,
+      botsWithSoundEnabled: botsWithSoundEnabled.length,
+      botIds: botsWithSoundEnabled
+    });
+
+    if (botsWithSoundEnabled.length === 0) {
+      console.log('🔕 No bots with sound notifications enabled');
+      return;
+    }
 
     // Subscribe to trades table changes
     const channel = supabase
@@ -79,15 +92,36 @@ export function useSoundNotifications() {
           filter: `bot_id=in.(${botsWithSoundEnabled.join(',')})`,
         },
         (payload) => {
+          console.log('🔔 Trade INSERT event received:', payload);
           const newTrade = payload.new as any;
+          
+          console.log('🔔 Processing trade:', {
+            id: newTrade.id,
+            bot_id: newTrade.bot_id,
+            paper_trading: newTrade.paper_trading,
+            status: newTrade.status,
+            side: newTrade.side
+          });
           
           // Skip if we've already processed this trade
           if (lastTradeIdsRef.current.has(newTrade.id)) {
+            console.log('🔕 Trade already processed, skipping:', newTrade.id);
             return;
           }
 
           // Only play sound for real trades (not paper trading)
+          // Real trades have paper_trading as null, undefined, or false
           if (newTrade.paper_trading === true) {
+            console.log('🔕 Skipping paper trading trade:', newTrade.id);
+            return;
+          }
+
+          // Only play sound for trades that are opening positions (not closing)
+          // Status should be 'open', 'filled', 'pending', or 'partial' for new positions
+          const validStatuses = ['open', 'filled', 'pending', 'partial'];
+          const tradeStatus = (newTrade.status || '').toLowerCase();
+          if (tradeStatus && !validStatuses.includes(tradeStatus)) {
+            console.log('🔕 Skipping trade with status (likely closing):', newTrade.status);
             return;
           }
 
@@ -103,17 +137,28 @@ export function useSoundNotifications() {
           // Play sound notification
           if ((window as any).__playTradeSound) {
             try {
+              console.log('🔔 Playing sound notification for real trade:', newTrade.id);
               (window as any).__playTradeSound();
-              console.log(`🔔 Sound notification played for trade: ${newTrade.id} (Bot: ${newTrade.bot_id})`);
+              console.log(`✅ Sound notification played for trade: ${newTrade.id} (Bot: ${newTrade.bot_id})`);
             } catch (error) {
-              console.warn('Failed to play sound notification:', error);
+              console.error('❌ Failed to play sound notification:', error);
             }
+          } else {
+            console.warn('⚠️ Sound function not available (__playTradeSound not found)');
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('🔔 Realtime subscription status:', status);
+        if (status === 'SUBSCRIBED') {
+          console.log('✅ Successfully subscribed to trade notifications');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ Realtime channel error - sound notifications may not work');
+        }
+      });
 
     return () => {
+      console.log('🔕 Unsubscribing from trade notifications');
       supabase.removeChannel(channel);
     };
   }, [enabled, bots]);
