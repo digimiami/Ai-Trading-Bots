@@ -9508,17 +9508,28 @@ serve(async (req) => {
         console.log(`🚀 Executing ${botList.length} running bots${isCron ? ' (all users)' : ` for user ${user?.id}`}`);
         
         // Process bots in batches to avoid CPU time and worker limit errors
-        // Batch size of 5 prevents resource exhaustion while maintaining reasonable throughput
-        const BATCH_SIZE = 5;
-        const BATCH_DELAY_MS = 500; // Small delay between batches to prevent API rate limits
+        // Reduced batch size to 3 and added timeout protection to prevent 504 Gateway Timeout
+        const BATCH_SIZE = 3; // Reduced from 5 to 3 for faster batch completion
+        const BATCH_DELAY_MS = 200; // Reduced from 500ms to 200ms for faster processing
+        const MAX_EXECUTION_TIME_MS = 120000; // 120 seconds (80% of 150s Supabase limit)
+        const PER_BOT_TIMEOUT_MS = 8000; // 8 seconds max per bot
+        const executionStartTime = Date.now();
         const results: Array<PromiseSettledResult<any>> = [];
+        let processedCount = 0;
         
         for (let i = 0; i < botList.length; i += BATCH_SIZE) {
+          // Check if we're approaching the timeout limit
+          const elapsedTime = Date.now() - executionStartTime;
+          if (elapsedTime > MAX_EXECUTION_TIME_MS) {
+            console.warn(`⏰ Timeout protection: Stopping execution after ${elapsedTime}ms (processed ${processedCount}/${botList.length} bots)`);
+            break;
+          }
+          
           const batch = botList.slice(i, i + BATCH_SIZE);
           const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
           const totalBatches = Math.ceil(botList.length / BATCH_SIZE);
           
-          console.log(`\n📦 Processing batch ${batchNumber}/${totalBatches} (${batch.length} bots)...`);
+          console.log(`\n📦 Processing batch ${batchNumber}/${totalBatches} (${batch.length} bots)... [Elapsed: ${(elapsedTime / 1000).toFixed(1)}s]`);
           
           const batchResults = await Promise.allSettled(
             batch.map(async (bot) => {
@@ -9530,10 +9541,17 @@ serve(async (req) => {
               console.log(`   - User: ${bot.user_id}`);
               
               try {
+                // Add per-bot timeout to prevent individual bots from taking too long
                 const exec = new BotExecutor(supabaseClient, { id: isCron ? bot.user_id : user.id });
-                const result = await exec.executeBot(bot);
+                const result = await Promise.race([
+                  exec.executeBot(bot),
+                  new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error(`Bot execution timeout after ${PER_BOT_TIMEOUT_MS}ms`)), PER_BOT_TIMEOUT_MS)
+                  )
+                ]);
                 const duration = Date.now() - botStartTime;
                 console.log(`✅ [${bot.name}] Execution completed in ${duration}ms`);
+                processedCount++;
                 return result;
               } catch (error) {
                 const duration = Date.now() - botStartTime;
@@ -9558,6 +9576,7 @@ serve(async (req) => {
                   console.error('Failed to log error to bot activity:', logError);
                 }
                 
+                processedCount++;
                 throw error;
               }
             })
@@ -9574,11 +9593,15 @@ serve(async (req) => {
         
         const successful = results.filter(r => r.status === 'fulfilled').length;
         const failed = results.filter(r => r.status === 'rejected').length;
+        const skipped = botList.length - processedCount;
+        const totalExecutionTime = Date.now() - executionStartTime;
         
         console.log(`\n📈 === EXECUTION SUMMARY ===`);
         console.log(`✅ Successful: ${successful}`);
         console.log(`❌ Failed: ${failed}`);
-        console.log(`📊 Total: ${botList.length}`);
+        console.log(`⏭️ Skipped (timeout): ${skipped}`);
+        console.log(`📊 Total: ${botList.length} (processed: ${processedCount})`);
+        console.log(`⏱️ Total execution time: ${(totalExecutionTime / 1000).toFixed(1)}s`);
         
         if (failed > 0) {
           console.log('\n❌ Failed bot executions:');
@@ -9591,11 +9614,14 @@ serve(async (req) => {
         
         return new Response(JSON.stringify({ 
           success: true, 
-          message: `Executed ${successful} bots successfully, ${failed} failed`,
-          botsExecuted: botList.length,
+          message: `Executed ${successful} bots successfully, ${failed} failed${skipped > 0 ? `, ${skipped} skipped due to timeout` : ''}`,
+          botsExecuted: processedCount,
+          botsTotal: botList.length,
           successful,
           failed,
-          results: { successful, failed }
+          skipped,
+          executionTimeMs: totalExecutionTime,
+          results: { successful, failed, skipped }
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
