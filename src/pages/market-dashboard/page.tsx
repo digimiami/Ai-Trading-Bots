@@ -369,6 +369,8 @@ export default function MarketDashboardPage() {
             </p>
           </div>
         </div>
+        </div>
+        <Navigation />
       </div>
     );
   }
