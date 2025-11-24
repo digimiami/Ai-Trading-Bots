@@ -210,6 +210,30 @@ export function useAdmin() {
     return data.data;
   };
 
+  // NEW: Test Period Management
+  const getTestPeriodSettings = async () => {
+    const data = await callAdminFunction('getTestPeriodSettings');
+    return data.settings;
+  };
+
+  const updateTestPeriodSettings = async (settings: {
+    enabled: boolean;
+    start_date?: string;
+    end_date?: string;
+    message?: string;
+  }) => {
+    return await callAdminFunction('updateTestPeriodSettings', settings);
+  };
+
+  // NEW: Delete Users by Date Range
+  const deleteUsersByDateRange = async (start_date: string, end_date: string) => {
+    return await callAdminFunction('deleteUsersByDateRange', {
+      start_date,
+      end_date,
+      confirm: 'DELETE'
+    });
+  };
+
   return {
     loading,
     error,
@@ -222,6 +246,7 @@ export function useAdmin() {
     sendPasswordResetLink,
     getInvitationCodes,
     generateInvitationCode,
+    deleteUsersByDateRange,
     // Trading Bot Management
     getAllBots,
     adminControlBot,
@@ -239,6 +264,9 @@ export function useAdmin() {
     getLatestTrades,
     // Risk & Security
     getRiskMetrics,
-    exportData
+    exportData,
+    // Test Period Management
+    getTestPeriodSettings,
+    updateTestPeriodSettings
   };
 }

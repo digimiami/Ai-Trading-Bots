@@ -981,6 +981,209 @@ serve(async (req) => {
         }
       }
 
+      case 'getTestPeriodSettings': {
+        try {
+          const { data: settings, error: settingsError } = await supabaseClient
+            .from('test_period_settings')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single()
+
+          if (settingsError && settingsError.code !== 'PGRST116') { // PGRST116 = no rows returned
+            throw settingsError
+          }
+
+          return new Response(JSON.stringify({ 
+            settings: settings || { 
+              enabled: false, 
+              start_date: null, 
+              end_date: null, 
+              message: 'The website is currently in test mode. Some features may be limited.' 
+            } 
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        } catch (error: any) {
+          console.error('Error fetching test period settings:', error)
+          return new Response(JSON.stringify({
+            error: error?.message || 'Failed to fetch test period settings'
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+      }
+
+      case 'updateTestPeriodSettings': {
+        const { enabled, start_date, end_date, message } = params
+
+        if (enabled && (!start_date || !end_date)) {
+          return new Response(JSON.stringify({
+            error: 'Start date and end date are required when enabling test period'
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        if (enabled && new Date(start_date) >= new Date(end_date)) {
+          return new Response(JSON.stringify({
+            error: 'End date must be after start date'
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        try {
+          // Check if settings exist
+          const { data: existing, error: checkError } = await supabaseClient
+            .from('test_period_settings')
+            .select('id')
+            .limit(1)
+            .single()
+
+          let result
+          if (existing) {
+            // Update existing
+            const { data, error: updateError } = await supabaseClient
+              .from('test_period_settings')
+              .update({
+                enabled: enabled || false,
+                start_date: enabled ? start_date : null,
+                end_date: enabled ? end_date : null,
+                message: message || 'The website is currently in test mode. Some features may be limited.',
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', existing.id)
+              .select()
+              .single()
+
+            if (updateError) throw updateError
+            result = data
+          } else {
+            // Insert new
+            const { data, error: insertError } = await supabaseClient
+              .from('test_period_settings')
+              .insert({
+                enabled: enabled || false,
+                start_date: enabled ? start_date : null,
+                end_date: enabled ? end_date : null,
+                message: message || 'The website is currently in test mode. Some features may be limited.',
+                created_by: user.id
+              })
+              .select()
+              .single()
+
+            if (insertError) throw insertError
+            result = data
+          }
+
+          return new Response(JSON.stringify({
+            success: true,
+            message: enabled ? 'Test period enabled successfully' : 'Test period disabled successfully',
+            settings: result
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        } catch (error: any) {
+          console.error('Error updating test period settings:', error)
+          return new Response(JSON.stringify({
+            error: error?.message || 'Failed to update test period settings'
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+      }
+
+      case 'deleteUsersByDateRange': {
+        const { start_date, end_date, confirm } = params
+
+        if (!confirm || confirm !== 'DELETE') {
+          return new Response(JSON.stringify({
+            error: 'Confirmation required. Set confirm to "DELETE" to proceed.'
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        if (!start_date || !end_date) {
+          return new Response(JSON.stringify({
+            error: 'Start date and end date are required'
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        try {
+          // Get users created in date range
+          const { data: usersToDelete, error: fetchError } = await supabaseClient
+            .from('users')
+            .select('id, email, created_at')
+            .gte('created_at', start_date)
+            .lte('created_at', end_date)
+            .neq('role', 'admin') // Don't delete admins
+
+          if (fetchError) throw fetchError
+
+          if (!usersToDelete || usersToDelete.length === 0) {
+            return new Response(JSON.stringify({
+              success: true,
+              message: 'No users found in the specified date range',
+              deleted_count: 0
+            }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          }
+
+          let deletedCount = 0
+          const errors: string[] = []
+
+          // Delete each user
+          for (const userToDelete of usersToDelete) {
+            try {
+              // Delete from auth
+              const { error: authError } = await supabaseClient.auth.admin.deleteUser(userToDelete.id)
+              if (authError) throw authError
+
+              // Delete from database (cascade will handle related data)
+              const { error: dbError } = await supabaseClient
+                .from('users')
+                .delete()
+                .eq('id', userToDelete.id)
+
+              if (dbError) throw dbError
+
+              deletedCount++
+            } catch (userError: any) {
+              errors.push(`${userToDelete.email}: ${userError?.message || 'Unknown error'}`)
+            }
+          }
+
+          return new Response(JSON.stringify({
+            success: true,
+            message: `Deleted ${deletedCount} user(s)`,
+            deleted_count: deletedCount,
+            total_found: usersToDelete.length,
+            errors: errors.length > 0 ? errors : undefined
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        } catch (error: any) {
+          console.error('Error deleting users by date range:', error)
+          return new Response(JSON.stringify({
+            error: error?.message || 'Failed to delete users'
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+      }
+
       default:
         return new Response(JSON.stringify({ error: 'Invalid action' }), {
           status: 400,

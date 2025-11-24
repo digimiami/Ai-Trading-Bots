@@ -116,7 +116,10 @@ export default function AdminPage() {
     deleteUser,
     updateUserRole,
     updateUserStatus,
-    sendPasswordResetLink
+    sendPasswordResetLink,
+    getTestPeriodSettings,
+    updateTestPeriodSettings,
+    deleteUsersByDateRange
   } = useAdmin();
   
   const [activeTab, setActiveTab] = useState('overview');
@@ -160,6 +163,24 @@ export default function AdminPage() {
   const [newInvitation, setNewInvitation] = useState({
     email: '',
     expiresInDays: 7
+  });
+
+  // Test Period Management
+  const [testPeriodSettings, setTestPeriodSettings] = useState<any>(null);
+  const [showTestPeriodModal, setShowTestPeriodModal] = useState(false);
+  const [testPeriodForm, setTestPeriodForm] = useState({
+    enabled: false,
+    start_date: '',
+    end_date: '',
+    message: 'The website is currently in test mode. Some features may be limited.'
+  });
+
+  // Bulk Delete Users
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [bulkDeleteForm, setBulkDeleteForm] = useState({
+    start_date: '',
+    end_date: '',
+    confirm: ''
   });
 
   useEffect(() => {
@@ -445,7 +466,8 @@ export default function AdminPage() {
         financialData, 
         activityData, 
         logsData, 
-        riskData
+        riskData,
+        testPeriodData
       ] = await Promise.all([
         getUsers(),
         getInvitationCodes(),
@@ -455,7 +477,8 @@ export default function AdminPage() {
         getFinancialOverview(),
         getUserActivity(),
         getSystemLogs(),
-        getRiskMetrics()
+        getRiskMetrics(),
+        getTestPeriodSettings().catch(() => null)
       ]);
       
       console.log('✅ Admin data loaded successfully');
@@ -473,6 +496,17 @@ export default function AdminPage() {
       setUserActivity(activityData || []);
       setSystemLogs(logsData || []);
       setRiskMetrics(riskData);
+      
+      // Set test period settings
+      if (testPeriodData) {
+        setTestPeriodSettings(testPeriodData);
+        setTestPeriodForm({
+          enabled: testPeriodData.enabled || false,
+          start_date: testPeriodData.start_date ? new Date(testPeriodData.start_date).toISOString().split('T')[0] : '',
+          end_date: testPeriodData.end_date ? new Date(testPeriodData.end_date).toISOString().split('T')[0] : '',
+          message: testPeriodData.message || 'The website is currently in test mode. Some features may be limited.'
+        });
+      }
       
       // Load Pablo Ready bots if on that tab
       if (activeTab === 'pablo-ready') {
@@ -593,6 +627,70 @@ export default function AdminPage() {
       alert(`❌ Failed to generate password reset link: ${error?.message || error}`);
     } finally {
       setUserLoadingState(userId, false);
+    }
+  };
+
+  // Test Period Management Handlers
+  const handleSaveTestPeriod = async () => {
+    if (testPeriodForm.enabled && (!testPeriodForm.start_date || !testPeriodForm.end_date)) {
+      alert('❌ Start date and end date are required when enabling test period');
+      return;
+    }
+
+    if (testPeriodForm.enabled && new Date(testPeriodForm.start_date) >= new Date(testPeriodForm.end_date)) {
+      alert('❌ End date must be after start date');
+      return;
+    }
+
+    try {
+      const result = await updateTestPeriodSettings({
+        enabled: testPeriodForm.enabled,
+        start_date: testPeriodForm.enabled ? new Date(testPeriodForm.start_date).toISOString() : undefined,
+        end_date: testPeriodForm.enabled ? new Date(testPeriodForm.end_date).toISOString() : undefined,
+        message: testPeriodForm.message
+      });
+
+      setTestPeriodSettings(result.settings);
+      setShowTestPeriodModal(false);
+      alert(`✅ Test period ${testPeriodForm.enabled ? 'enabled' : 'disabled'} successfully`);
+      await loadData();
+    } catch (error: any) {
+      console.error('Error saving test period:', error);
+      alert(`❌ Failed to save test period: ${error?.message || error}`);
+    }
+  };
+
+  // Bulk Delete Users Handler
+  const handleBulkDeleteUsers = async () => {
+    if (!bulkDeleteForm.start_date || !bulkDeleteForm.end_date) {
+      alert('❌ Start date and end date are required');
+      return;
+    }
+
+    if (bulkDeleteForm.confirm !== 'DELETE') {
+      alert('❌ Please type "DELETE" in the confirmation field to proceed');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `⚠️ WARNING: This will delete ALL users created between ${bulkDeleteForm.start_date} and ${bulkDeleteForm.end_date} (excluding admins).\n\nThis action CANNOT be undone!\n\nAre you absolutely sure?`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      const result = await deleteUsersByDateRange(
+        new Date(bulkDeleteForm.start_date).toISOString(),
+        new Date(bulkDeleteForm.end_date).toISOString()
+      );
+
+      alert(`✅ ${result.deleted_count} user(s) deleted successfully${result.errors ? `\n\nErrors: ${result.errors.join(', ')}` : ''}`);
+      setShowBulkDeleteModal(false);
+      setBulkDeleteForm({ start_date: '', end_date: '', confirm: '' });
+      await loadData();
+    } catch (error: any) {
+      console.error('Error bulk deleting users:', error);
+      alert(`❌ Failed to delete users: ${error?.message || error}`);
     }
   };
 
@@ -957,10 +1055,20 @@ export default function AdminPage() {
             <Card className="p-4">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-semibold">User Management</h3>
-                <Button onClick={() => setShowCreateUser(true)}>
-                  <i className="ri-user-add-line mr-2"></i>
-                  Create User
-                </Button>
+                <div className="flex gap-2">
+                  <Button variant="secondary" onClick={() => setShowBulkDeleteModal(true)}>
+                    <i className="ri-delete-bin-7-line mr-2"></i>
+                    Bulk Delete
+                  </Button>
+                  <Button variant="secondary" onClick={() => setShowTestPeriodModal(true)}>
+                    <i className="ri-timer-line mr-2"></i>
+                    Test Period
+                  </Button>
+                  <Button onClick={() => setShowCreateUser(true)}>
+                    <i className="ri-user-add-line mr-2"></i>
+                    Create User
+                  </Button>
+                </div>
               </div>
               {loading ? (
                 <div className="text-center py-8">
@@ -2432,6 +2540,169 @@ export default function AdminPage() {
                   </Button>
                 </div>
               </form>
+            </Card>
+          </div>
+        )}
+
+        {/* Test Period Settings Modal */}
+        {showTestPeriodModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <Card className="w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto">
+              <h3 className="text-lg font-semibold mb-4">Test Period Settings</h3>
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    id="testPeriodEnabled"
+                    checked={testPeriodForm.enabled}
+                    onChange={(e) => setTestPeriodForm({...testPeriodForm, enabled: e.target.checked})}
+                    className="w-5 h-5"
+                  />
+                  <label htmlFor="testPeriodEnabled" className="text-sm font-medium">
+                    Enable Test Period
+                  </label>
+                </div>
+
+                {testPeriodForm.enabled && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                      <input
+                        type="datetime-local"
+                        value={testPeriodForm.start_date}
+                        onChange={(e) => setTestPeriodForm({...testPeriodForm, start_date: e.target.value})}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        required={testPeriodForm.enabled}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                      <input
+                        type="datetime-local"
+                        value={testPeriodForm.end_date}
+                        onChange={(e) => setTestPeriodForm({...testPeriodForm, end_date: e.target.value})}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        required={testPeriodForm.enabled}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Message</label>
+                      <textarea
+                        value={testPeriodForm.message}
+                        onChange={(e) => setTestPeriodForm({...testPeriodForm, message: e.target.value})}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        rows={3}
+                        placeholder="Message to display during test period"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {testPeriodSettings && (
+                  <div className="p-3 bg-gray-50 rounded-lg">
+                    <p className="text-sm text-gray-600">
+                      <strong>Current Status:</strong> {testPeriodSettings.enabled ? 'Enabled' : 'Disabled'}
+                      {testPeriodSettings.enabled && testPeriodSettings.start_date && (
+                        <>
+                          <br />
+                          <strong>Period:</strong> {new Date(testPeriodSettings.start_date).toLocaleString()} - {new Date(testPeriodSettings.end_date).toLocaleString()}
+                        </>
+                      )}
+                    </p>
+                  </div>
+                )}
+
+                <div className="flex space-x-3">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setShowTestPeriodModal(false)}
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    onClick={handleSaveTestPeriod}
+                    className="flex-1"
+                  >
+                    Save Settings
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* Bulk Delete Users Modal */}
+        {showBulkDeleteModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <Card className="w-full max-w-md p-6">
+              <h3 className="text-lg font-semibold mb-4 text-red-600">⚠️ Bulk Delete Users</h3>
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm text-red-600">
+                  <strong>Warning:</strong> This will permanently delete all users (except admins) created within the specified date range. This action cannot be undone!
+                </p>
+              </div>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                  <input
+                    type="date"
+                    value={bulkDeleteForm.start_date}
+                    onChange={(e) => setBulkDeleteForm({...bulkDeleteForm, start_date: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                  <input
+                    type="date"
+                    value={bulkDeleteForm.end_date}
+                    onChange={(e) => setBulkDeleteForm({...bulkDeleteForm, end_date: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Type "DELETE" to confirm
+                  </label>
+                  <input
+                    type="text"
+                    value={bulkDeleteForm.confirm}
+                    onChange={(e) => setBulkDeleteForm({...bulkDeleteForm, confirm: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    placeholder="DELETE"
+                    required
+                  />
+                </div>
+                <div className="flex space-x-3">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      setShowBulkDeleteModal(false);
+                      setBulkDeleteForm({ start_date: '', end_date: '', confirm: '' });
+                    }}
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="danger"
+                    onClick={handleBulkDeleteUsers}
+                    className="flex-1"
+                    disabled={bulkDeleteForm.confirm !== 'DELETE'}
+                  >
+                    <i className="ri-delete-bin-7-line mr-2"></i>
+                    Delete Users
+                  </Button>
+                </div>
+              </div>
             </Card>
           </div>
         )}
