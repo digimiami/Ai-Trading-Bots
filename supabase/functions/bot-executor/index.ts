@@ -6616,31 +6616,32 @@ class BotExecutor {
       }
       
       // Validate TP/SL direction. If invalid, skip setting to avoid API errors
-      const tpValue = parseFloat(takeProfitPrice);
-      const slValue = parseFloat(stopLossPrice);
+      // Use existing tpValue and slValue variables (already declared above)
+      const tpValueNum = parseFloat(takeProfitPrice);
+      const slValueNum = parseFloat(stopLossPrice);
       console.log(`\n🔍 SL/TP Final Validation:`);
       console.log(`   Position Side: ${actualPositionSide}`);
       console.log(`   Entry Price: ${entryPrice}`);
-      console.log(`   Stop Loss: ${slValue} (${actualPositionSide === 'Buy' ? 'should be <' : 'should be >'} entry)`);
-      console.log(`   Take Profit: ${tpValue} (${actualPositionSide === 'Buy' ? 'should be >' : 'should be <'} entry)`);
+      console.log(`   Stop Loss: ${slValueNum} (${actualPositionSide === 'Buy' ? 'should be <' : 'should be >'} entry)`);
+      console.log(`   Take Profit: ${tpValueNum} (${actualPositionSide === 'Buy' ? 'should be >' : 'should be <'} entry)`);
       
       // Enhanced validation with detailed error messages
       let validationError = null;
       if (actualPositionSide === 'Buy') {
         // Long: SL < Entry, TP > Entry
-        if (tpValue <= entryPrice) {
-          validationError = `Take Profit (${tpValue}) must be GREATER than entry (${entryPrice}) for Long position`;
+        if (tpValueNum <= entryPrice) {
+          validationError = `Take Profit (${tpValueNum}) must be GREATER than entry (${entryPrice}) for Long position`;
         }
-        if (slValue >= entryPrice) {
-          validationError = `Stop Loss (${slValue}) must be LESS than entry (${entryPrice}) for Long position`;
+        if (slValueNum >= entryPrice) {
+          validationError = `Stop Loss (${slValueNum}) must be LESS than entry (${entryPrice}) for Long position`;
         }
       } else {
         // Short: SL > Entry, TP < Entry
-        if (tpValue >= entryPrice) {
-          validationError = `Take Profit (${tpValue}) must be LESS than entry (${entryPrice}) for Short position`;
+        if (tpValueNum >= entryPrice) {
+          validationError = `Take Profit (${tpValueNum}) must be LESS than entry (${entryPrice}) for Short position`;
         }
-        if (slValue <= entryPrice) {
-          validationError = `Stop Loss (${slValue}) must be GREATER than entry (${entryPrice}) for Short position`;
+        if (slValueNum <= entryPrice) {
+          validationError = `Stop Loss (${slValueNum}) must be GREATER than entry (${entryPrice}) for Short position`;
         }
       }
       
