@@ -5126,8 +5126,41 @@ class BotExecutor {
         console.log(`✅ PAPER trade executed successfully`);
       } else {
         console.log(`💵 Executing REAL trade for ${bot.symbol}...`);
-        await this.executeTrade(botSnapshot, tradeSignal);
-        console.log(`✅ REAL trade executed successfully`);
+        
+        // For webhook orders, add retry logic with exponential backoff to handle rate limiting
+        const isWebhookOrder = params.source === 'manual_trade_signal';
+        const maxRetries = isWebhookOrder ? 3 : 1; // Webhook orders get 3 retries, regular orders get 1
+        const baseDelayMs = isWebhookOrder ? 2000 : 0; // 2 second base delay for webhook orders
+        
+        let lastError: Error | null = null;
+        
+        for (let retryAttempt = 0; retryAttempt < maxRetries; retryAttempt++) {
+          if (retryAttempt > 0) {
+            const delayMs = baseDelayMs * Math.pow(2, retryAttempt - 1); // Exponential backoff: 2s, 4s, 8s
+            console.log(`⏳ [WEBHOOK ORDER] Retry attempt ${retryAttempt + 1}/${maxRetries} after ${delayMs}ms delay (rate limit protection)...`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+          }
+          
+          try {
+            await this.executeTrade(botSnapshot, tradeSignal);
+            console.log(`✅ REAL trade executed successfully`);
+            break; // Success, exit retry loop
+          } catch (error) {
+            lastError = error instanceof Error ? error : new Error(String(error));
+            const errorMessage = lastError.message;
+            
+            // If it's a 403 and we have retries left, retry
+            if (isWebhookOrder && (errorMessage.includes('403') || errorMessage.includes('Forbidden')) && retryAttempt < maxRetries - 1) {
+              console.warn(`⚠️ [WEBHOOK ORDER] Got 403 error on attempt ${retryAttempt + 1}, will retry after delay...`);
+              continue;
+            }
+            
+            // If it's the last attempt or not a 403, throw the error
+            if (retryAttempt === maxRetries - 1 || !errorMessage.includes('403')) {
+              throw lastError;
+            }
+          }
+        }
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
