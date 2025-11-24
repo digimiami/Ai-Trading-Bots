@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import TechnicalAnalysis from '../../components/ui/TechnicalAnalysis';
+import Navigation from '../../components/feature/Navigation';
+import Header from '../../components/feature/Header';
 
 interface MarketData {
   symbol: string;
@@ -324,13 +326,20 @@ export default function MarketDashboardPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center py-12">
-            <i className="ri-loader-4-line animate-spin text-4xl text-blue-500"></i>
-            <p className="text-gray-600 dark:text-gray-400 mt-4">Loading market data...</p>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <Header 
+          title="Market Dashboard"
+          subtitle="Real-time cryptocurrency market data and analysis"
+        />
+        <div className="pt-20 pb-20 px-6">
+          <div className="max-w-7xl mx-auto">
+            <div className="text-center py-12">
+              <i className="ri-loader-4-line animate-spin text-4xl text-blue-500"></i>
+              <p className="text-gray-600 dark:text-gray-400 mt-4">Loading market data...</p>
+            </div>
           </div>
         </div>
+        <Navigation />
       </div>
     );
   }
@@ -338,11 +347,16 @@ export default function MarketDashboardPage() {
   // Show empty state if no data
   if (!marketData || marketData.length === 0) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center py-12">
-            <i className="ri-line-chart-line text-4xl text-gray-400 mb-4"></i>
-            <h2 className="text-2xl font-semibold text-gray-900 dark:text-white mb-2">No Market Data Available</h2>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <Header 
+          title="Market Dashboard"
+          subtitle="Real-time cryptocurrency market data and analysis"
+        />
+        <div className="pt-20 pb-20 px-6">
+          <div className="max-w-7xl mx-auto">
+            <div className="text-center py-12">
+              <i className="ri-line-chart-line text-4xl text-gray-400 mb-4"></i>
+              <h2 className="text-2xl font-semibold text-gray-900 dark:text-white mb-2">No Market Data Available</h2>
             <p className="text-gray-600 dark:text-gray-400 mb-4">
               The market data API may be temporarily unavailable or the Edge Function needs to be deployed.
             </p>
@@ -360,10 +374,15 @@ export default function MarketDashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
-      <div className="max-w-7xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <Header 
+        title="Market Dashboard"
+        subtitle="Real-time cryptocurrency market data and analysis"
+      />
+      <div className="pt-20 pb-20 px-6">
+        <div className="max-w-7xl mx-auto space-y-6">
+          {/* Header */}
+          <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Market Dashboard</h1>
             <p className="text-gray-600 dark:text-gray-400 mt-1">
@@ -815,7 +834,9 @@ export default function MarketDashboardPage() {
             </div>
           </Card>
         )}
+        </div>
       </div>
+      <Navigation />
     </div>
   );
 }

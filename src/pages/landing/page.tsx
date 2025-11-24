@@ -135,6 +135,9 @@ export default function LandingPage() {
           </div>
 
           <nav className="hidden items-center space-x-8 text-sm font-medium text-slate-200/80 md:flex">
+            <button onClick={() => navigate('/market-dashboard')} className="transition hover:text-white">
+              Market Dashboard
+            </button>
             <button onClick={() => navigate('/academy')} className="transition hover:text-white">
               Academy
             </button>
