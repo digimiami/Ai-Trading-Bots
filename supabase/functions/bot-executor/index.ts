@@ -5910,6 +5910,8 @@ class BotExecutor {
           const errorMessage = slTpError instanceof Error ? slTpError.message : String(slTpError);
           
           if (errorMessage.includes('CRITICAL') || errorMessage.includes('safety protocol')) {
+            // Read environment variable directly
+            const disableSlTpSafety = (Deno.env.get('DISABLE_SLTPSAFETY') || '').toLowerCase() === 'true';
             if (disableSlTpSafety) {
               console.warn('⚠️ SL/TP critical error detected, but DISABLE_SLTPSAFETY=true. Keeping position open and continuing.');
               // Do not abort; continue without SL/TP (position remains open).
@@ -6826,6 +6828,8 @@ class BotExecutor {
         
         // CRITICAL SAFETY: If SL/TP fails, position has NO PROTECTION - must close immediately
         console.error(`   🚨 CRITICAL: Position is OPEN but WITHOUT protection!`);
+        // Read environment variable directly
+        const disableSlTpSafety = (Deno.env.get('DISABLE_SLTPSAFETY') || '').toLowerCase() === 'true';
         if (disableSlTpSafety) {
           console.warn('⚠️ DISABLE_SLTPSAFETY=true: Skipping automatic close of unprotected position. Position remains OPEN without SL/TP. Monitor manually.');
           // Log and return without closing
@@ -7081,6 +7085,8 @@ class BotExecutor {
       const errorMessage = error instanceof Error ? error.message : String(error);
       
       if (errorMessage.includes('CRITICAL') || errorMessage.includes('safety protocol')) {
+        // Read environment variable directly
+        const disableSlTpSafety = (Deno.env.get('DISABLE_SLTPSAFETY') || '').toLowerCase() === 'true';
         if (disableSlTpSafety) {
           console.warn('⚠️ SL/TP critical error detected after safety block, but DISABLE_SLTPSAFETY=true. Continuing without abort.');
           // still log error but don't throw
