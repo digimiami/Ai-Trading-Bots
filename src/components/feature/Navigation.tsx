@@ -8,7 +8,7 @@ export default function Navigation() {
   const { user, loading } = useAuth();
 
   // Public routes that don't require login
-  const publicRoutes = ['/market-dashboard'];
+  const publicRoutes = ['/market-dashboard', '/crypto-bubbles'];
   const isPublicRoute = publicRoutes.includes(location.pathname);
 
   // For public routes, show simplified navigation
@@ -16,13 +16,14 @@ export default function Navigation() {
     const publicNavItems = [
       { path: '/', icon: 'ri-home-line', label: 'Home' },
       { path: '/market-dashboard', icon: 'ri-line-chart-line', label: 'Market' },
+      { path: '/crypto-bubbles', icon: 'ri-bubble-chart-line', label: 'Bubbles' },
       { path: '/academy', icon: 'ri-graduation-cap-line', label: 'Academy' },
       { path: '/auth', icon: 'ri-login-box-line', label: 'Sign In' }
     ];
 
     return (
       <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-blue-200/60 bg-white/95 backdrop-blur-sm shadow-[0_-6px_18px_-12px_rgba(30,64,175,0.45)] dark:border-blue-400/30 dark:bg-gray-900/95">
-        <div className="grid grid-cols-4 h-20 px-3 py-2">
+        <div className="grid grid-cols-5 h-20 px-3 py-2">
           {publicNavItems.map((item) => {
             const isActive = location.pathname === item.path;
             return (
