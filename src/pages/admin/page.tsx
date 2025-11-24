@@ -38,6 +38,8 @@ interface InvitationCode {
   used: boolean;
   created_at: string;
   expires_at: string;
+  user_limit?: number | null;
+  users_created?: number;
 }
 
 interface TradingBot {
@@ -162,7 +164,8 @@ export default function AdminPage() {
   
   const [newInvitation, setNewInvitation] = useState({
     email: '',
-    expiresInDays: 7
+    expiresInDays: 7,
+    userLimit: null as number | null
   });
 
   // Test Period Management
@@ -543,9 +546,13 @@ export default function AdminPage() {
     setError(null);
     setSuccessMessage(null);
     try {
-      const result = await generateInvitationCode(newInvitation.email, newInvitation.expiresInDays);
+      const result = await generateInvitationCode(
+        newInvitation.email, 
+        newInvitation.expiresInDays,
+        newInvitation.userLimit || undefined
+      );
       setSuccessMessage(result?.message || 'Invitation code created successfully');
-      setNewInvitation({ email: '', expiresInDays: 7 });
+      setNewInvitation({ email: '', expiresInDays: 7, userLimit: null });
       setTimeout(() => {
         setShowCreateInvitation(false);
         loadData();
@@ -1242,7 +1249,14 @@ export default function AdminPage() {
                   {invitationCodes.map((code) => (
                     <div key={code.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                       <div className="flex-1">
-                        <div className="font-mono text-sm mb-1">{code.code}</div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <div className="font-mono text-sm">{code.code}</div>
+                          <span className={`px-2 py-1 rounded-full text-xs ${
+                            code.used ? 'bg-gray-100 text-gray-800' : 'bg-green-100 text-green-800'
+                          }`}>
+                            {code.used ? 'Used' : 'Active'}
+                          </span>
+                        </div>
                         <div className="text-sm text-gray-500">
                           <span className="font-medium">Email:</span> {code.email || 'No email specified'}
                         </div>
@@ -1250,12 +1264,35 @@ export default function AdminPage() {
                           Created: {new Date(code.created_at).toLocaleDateString()} • 
                           Expires: {new Date(code.expires_at).toLocaleDateString()}
                         </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          <span className="font-medium">Users:</span> {code.users_created || 0}
+                          {code.user_limit !== null && code.user_limit !== undefined && (
+                            <> / {code.user_limit} {code.users_created >= code.user_limit && <span className="text-red-600">(Limit Reached)</span>}</>
+                          )}
+                          {(!code.user_limit || code.user_limit === null) && <span className="text-gray-400"> (Unlimited)</span>}
+                        </div>
                       </div>
-                      <span className={`px-2 py-1 rounded-full text-xs ml-4 ${
-                        code.used ? 'bg-gray-100 text-gray-800' : 'bg-green-100 text-green-800'
-                      }`}>
-                        {code.used ? 'Used' : 'Active'}
-                      </span>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        onClick={async () => {
+                          if (confirm(`Delete invitation code "${code.code}"?`)) {
+                            try {
+                              const { error } = await supabase
+                                .from('invitation_codes')
+                                .delete()
+                                .eq('id', code.id);
+                              if (error) throw error;
+                              await loadData();
+                              alert('✅ Invitation code deleted');
+                            } catch (error: any) {
+                              alert(`❌ Failed to delete: ${error?.message || error}`);
+                            }
+                          }
+                        }}
+                      >
+                        <i className="ri-delete-bin-line"></i>
+                      </Button>
                     </div>
                   ))}
                 </div>
@@ -2521,6 +2558,25 @@ export default function AdminPage() {
                     <option value={14}>14 days</option>
                     <option value={30}>30 days</option>
                   </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    User Account Limit (optional)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={newInvitation.userLimit || ''}
+                    onChange={(e) => setNewInvitation({
+                      ...newInvitation, 
+                      userLimit: e.target.value ? parseInt(e.target.value) : null
+                    })}
+                    placeholder="Unlimited (leave empty)"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Maximum number of users that can be created with this invitation code. Leave empty for unlimited.
+                  </p>
                 </div>
                 <div className="flex space-x-3">
                   <Button

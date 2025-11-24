@@ -144,8 +144,8 @@ export function useAdmin() {
     return data.codes || [];
   };
 
-  const generateInvitationCode = async (email: string, expiresInDays: number = 7) => {
-    return await callAdminFunction('generateInvitationCode', { email, expiresInDays });
+  const generateInvitationCode = async (email: string, expiresInDays: number = 7, userLimit?: number) => {
+    return await callAdminFunction('generateInvitationCode', { email, expiresInDays, userLimit });
   };
 
   // NEW: Trading Bot Management

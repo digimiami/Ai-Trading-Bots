@@ -401,7 +401,9 @@ serve(async (req) => {
         // Transform to match frontend expectations (used field)
         const codesWithUsed = (codes || []).map(code => ({
           ...code,
-          used: code.used_by !== null
+          used: code.used_by !== null,
+          users_created: code.users_created || 0,
+          user_limit: code.user_limit
         }))
         
         return new Response(JSON.stringify({ codes: codesWithUsed }), {
@@ -409,7 +411,7 @@ serve(async (req) => {
         })
 
       case 'generateInvitationCode':
-        const { email: inviteEmail, expiresInDays } = params
+        const { email: inviteEmail, expiresInDays, userLimit } = params
         
         const code = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
         const expiresAt = new Date()
@@ -420,7 +422,9 @@ serve(async (req) => {
           .insert({
             code,
             email: inviteEmail,
-            expires_at: expiresAt.toISOString()
+            expires_at: expiresAt.toISOString(),
+            user_limit: userLimit || null,
+            users_created: 0
             // Note: used_by and used_at are NULL by default, which means not used
           })
           .select()

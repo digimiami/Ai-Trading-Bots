@@ -86,6 +86,19 @@ serve(async (req) => {
         })
       }
 
+      // Check user limit if set
+      if (data.user_limit !== null && data.user_limit !== undefined) {
+        const usersCreated = data.users_created || 0
+        if (usersCreated >= data.user_limit) {
+          return new Response(JSON.stringify({
+            valid: false,
+            error: 'Invitation code has reached its user limit'
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+      }
+
       return new Response(JSON.stringify({
         valid: true,
         invitation: data
