@@ -23,6 +23,7 @@ export default function Home() {
   const { balances, loading: balancesLoading } = useExchangeBalance();
   const { modules: academyModules, lessonProgress: academyProgress, summary: academySummary, loading: academyLoading } = useAcademy();
   const [showWelcome, setShowWelcome] = useState(false);
+  const [marketTab, setMarketTab] = useState<'overview' | 'bubbles'>('overview');
   const orientationModule = useMemo(
     () => academyModules.find((module) => module.order_index === 1 || module.slug === 'orientation-setup'),
     [academyModules]
@@ -297,8 +298,101 @@ export default function Home() {
         {/* Exchange Balances */}
         <ExchangeBalanceDisplay balances={balances} />
 
-        {/* Market Overview */}
-        <MarketOverview marketData={marketData} />
+        {/* Market Overview / Crypto Bubbles Tabs */}
+        <Card className="p-0 overflow-hidden">
+          <div className="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+            <div className="flex">
+              <button
+                onClick={() => setMarketTab('overview')}
+                className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
+                  marketTab === 'overview'
+                    ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400'
+                    : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+                }`}
+              >
+                <i className="ri-line-chart-line mr-2"></i>
+                Market Overview
+              </button>
+              <button
+                onClick={() => setMarketTab('bubbles')}
+                className={`flex-1 px-6 py-4 text-sm font-medium transition-colors ${
+                  marketTab === 'bubbles'
+                    ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400'
+                    : 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200'
+                }`}
+              >
+                <i className="ri-bubble-chart-line mr-2"></i>
+                Crypto Bubbles
+              </button>
+            </div>
+          </div>
+          <div className="p-0">
+            {marketTab === 'overview' ? (
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Market Overview</h3>
+                  <button className="text-blue-600 dark:text-blue-400 text-sm font-medium">Refresh</button>
+                </div>
+                
+                <div className="space-y-3">
+                  {marketData && marketData.length > 0 ? (
+                    marketData.slice(0, 6).map((market, index) => {
+                      const getChangeColor = (change: number) => {
+                        return change >= 0 ? 'text-green-600' : 'text-red-600';
+                      };
+                      const formatPrice = (price: number) => {
+                        return price.toLocaleString('en-US', {
+                          style: 'currency',
+                          currency: 'USD',
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 4
+                        });
+                      };
+                      return (
+                        <div key={index} className="flex items-center justify-between">
+                          <div className="flex items-center space-x-3">
+                            <div className="w-8 h-8 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center">
+                              <i className="ri-currency-line text-orange-600 dark:text-orange-400 text-sm"></i>
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-900 dark:text-white">{market.symbol}</p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">RSI: {market.rsi?.toFixed(1) || 'N/A'}</p>
+                            </div>
+                          </div>
+                          
+                          <div className="text-right">
+                            <p className="font-medium text-gray-900 dark:text-white">{formatPrice(market.price)}</p>
+                            <p className={`text-sm ${getChangeColor(market.change24h)}`}>
+                              {market.change24h >= 0 ? '+' : ''}{market.change24h.toFixed(2)}%
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-center py-8">
+                      <div className="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <i className="ri-line-chart-line text-gray-400 text-lg"></i>
+                      </div>
+                      <p className="text-gray-500 dark:text-gray-400 text-sm">No market data available</p>
+                      <p className="text-gray-400 dark:text-gray-500 text-xs mt-1">Check your connection and try again</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="relative bg-gray-50 dark:bg-gray-900" style={{ height: '600px' }}>
+                <iframe
+                  src="https://cryptobubbles.net/"
+                  className="w-full h-full border-0"
+                  title="Crypto Bubbles"
+                  allow="fullscreen"
+                  style={{ minHeight: '600px' }}
+                />
+              </div>
+            )}
+          </div>
+        </Card>
 
         {/* Recent Activity */}
         <Card className="p-6">
