@@ -5497,7 +5497,7 @@ class BotExecutor {
           const shortfall = balanceCheck.totalRequired - balanceCheck.availableBalance;
           throw new Error(`Insufficient balance for ${bot.symbol} ${tradeSignal.side} order. Available: $${balanceCheck.availableBalance.toFixed(2)}, Required: $${balanceCheck.totalRequired.toFixed(2)} (order: $${orderValue.toFixed(2)} + 5% buffer). Shortfall: $${shortfall.toFixed(2)}. Please add funds to your Bybit ${tradingType === 'futures' ? 'UNIFIED/Futures' : 'Spot'} wallet.`);
         }
-        return await this.placeBybitOrder(apiKey, apiSecret, apiKeys.is_testnet, bot.symbol, tradeSignal.side, amount, price, tradingType, bot);
+        return await this.placeBybitOrder(apiKey, apiSecret, apiKeys.is_testnet, bot.symbol, tradeSignal.side, amount, price, tradingType, bot, tradeSignal);
       } else if (bot.exchange === 'okx') {
         // TODO: Add balance check for OKX
         return await this.placeOKXOrder(apiKey, apiSecret, passphrase, apiKeys.is_testnet, bot.symbol, tradeSignal.side, amount, price);
@@ -5512,7 +5512,7 @@ class BotExecutor {
     }
   }
   
-  private async placeBybitOrder(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string, side: string, amount: number, price: number, tradingType: string = 'spot', bot: any = null): Promise<any> {
+  private async placeBybitOrder(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string, side: string, amount: number, price: number, tradingType: string = 'spot', bot: any = null, tradeSignal: any = null): Promise<any> {
     // Use Bybit API domain (mainnet or testnet)
     const baseDomains = isTestnet 
       ? ['https://api-testnet.bybit.com']
@@ -5901,7 +5901,7 @@ class BotExecutor {
             // Get bot object from the outer scope - need to pass it through
             // For now, we'll get it from the bot parameter passed to placeBybitOrder
             // But we need to pass bot through the call chain
-            await this.setBybitSLTP(apiKey, apiSecret, isTestnet, symbol, capitalizedSide, entryPrice, bot);
+            await this.setBybitSLTP(apiKey, apiSecret, isTestnet, symbol, capitalizedSide, entryPrice, bot, tradeSignal);
           } else {
             console.warn('⚠️ Could not fetch position entry price, skipping SL/TP (position may have been closed)');
           }
@@ -6343,7 +6343,7 @@ class BotExecutor {
     }
   }
   
-  private async setBybitSLTP(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string, side: string, entryPrice: number, bot: any): Promise<void> {
+  private async setBybitSLTP(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string, side: string, entryPrice: number, bot: any, tradeSignal: any = null): Promise<void> {
     const baseUrl = isTestnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com';
     const recvWindow = '5000';
     
@@ -6529,77 +6529,90 @@ class BotExecutor {
         return Math.round(v / tickSize) * tickSize;
       };
 
-      // CRITICAL FIX: Use bot's configured stop_loss and take_profit percentages instead of hardcoded values
-      // Get SL/TP percentages from bot settings (fallback to defaults if not set)
-      const stopLossPercent = parseFloat(bot.stop_loss || bot.stopLoss || '2.0');
-      const takeProfitPercent = parseFloat(bot.take_profit || bot.takeProfit || '4.0');
+      // PRIORITY: Use strategy-calculated SL/TP from tradeSignal if available (ATR-based)
+      // Otherwise, fall back to bot's configured stop_loss and take_profit percentages
+      let slValue: number;
+      let tpValue: number;
       
-      console.log(`\n🛡️ SL/TP Configuration:`);
-      console.log(`   Bot Settings: SL=${bot?.stop_loss || bot?.stopLoss || '2.0'}%, TP=${bot?.take_profit || bot?.takeProfit || '4.0'}%`);
-      console.log(`   Using: SL=${stopLossPercent}%, TP=${takeProfitPercent}% (Entry: $${entryPrice})`);
-      console.log(`   ✅ Using configured values (NOT hardcoded)`);
-      
-      // Use the determined position side for SL/TP calculation
-      if (actualPositionSide === 'Buy') {
-        // Long position: SL below entry, TP above entry
-        // SL = entryPrice * (1 - stopLossPercent/100)
-        // TP = entryPrice * (1 + takeProfitPercent/100)
-        const slValue = roundToTick(entryPrice * (1 - stopLossPercent / 100));
-        const tpValue = roundToTick(entryPrice * (1 + takeProfitPercent / 100));
-        // Format prices as strings with proper precision, ensuring no scientific notation
-        stopLossPrice = Number(slValue.toFixed(tickDecimals)).toString();
-        takeProfitPrice = Number(tpValue.toFixed(tickDecimals)).toString();
+      if (tradeSignal?.stopLoss && tradeSignal?.takeProfit1) {
+        // Use strategy-calculated values (ATR-based from evaluateStrategy)
+        slValue = roundToTick(tradeSignal.stopLoss);
+        tpValue = roundToTick(tradeSignal.takeProfit1);
         
-        console.log(`📊 Long Position SL/TP Calculation:`);
-        console.log(`   Entry: ${entryPrice}, SL%: ${stopLossPercent}%, TP%: ${takeProfitPercent}%`);
-        console.log(`   SL: ${entryPrice} * (1 - ${stopLossPercent}/100) = ${slValue} → ${stopLossPrice}`);
-        console.log(`   TP: ${entryPrice} * (1 + ${takeProfitPercent}/100) = ${tpValue} → ${takeProfitPrice}`);
+        console.log(`\n🛡️ SL/TP Configuration: Using STRATEGY-CALCULATED values (ATR-based)`);
+        console.log(`   Strategy SL: $${tradeSignal.stopLoss} → ${slValue} (rounded)`);
+        console.log(`   Strategy TP1: $${tradeSignal.takeProfit1} → ${tpValue} (rounded)`);
+        if (tradeSignal.takeProfit2) {
+          console.log(`   Strategy TP2: $${tradeSignal.takeProfit2} (will use TP1 for now, TP2 can be set separately)`);
+        }
+        console.log(`   Entry Price: $${entryPrice}`);
       } else {
-        // Short position: SL above entry, TP below entry
-        // SL = entryPrice * (1 + stopLossPercent/100)
-        // TP = entryPrice * (1 - takeProfitPercent/100)
-        // CRITICAL: Ensure TP is ALWAYS below entry for shorts
-        const slValue = roundToTick(entryPrice * (1 + stopLossPercent / 100));
-        // For shorts, TP must be BELOW entry - use subtraction to ensure it's always lower
-        let tpValue = roundToTick(entryPrice * (1 - takeProfitPercent / 100));
+        // Fall back to bot percentage settings
+        const stopLossPercent = parseFloat(bot.stop_loss || bot.stopLoss || '2.0');
+        const takeProfitPercent = parseFloat(bot.take_profit || bot.takeProfit || '4.0');
         
-        // DOUBLE-CHECK: If TP is still >= entry (shouldn't happen but safety check), force it below
+        console.log(`\n🛡️ SL/TP Configuration: Using BOT PERCENTAGE settings (fallback)`);
+        console.log(`   Bot Settings: SL=${bot?.stop_loss || bot?.stopLoss || '2.0'}%, TP=${bot?.take_profit || bot?.takeProfit || '4.0'}%`);
+        console.log(`   Entry Price: $${entryPrice}`);
+        
+        // Use the determined position side for SL/TP calculation
+        if (actualPositionSide === 'Buy') {
+          // Long position: SL below entry, TP above entry
+          slValue = roundToTick(entryPrice * (1 - stopLossPercent / 100));
+          tpValue = roundToTick(entryPrice * (1 + takeProfitPercent / 100));
+        } else {
+          // Short position: SL above entry, TP below entry
+          slValue = roundToTick(entryPrice * (1 + stopLossPercent / 100));
+          tpValue = roundToTick(entryPrice * (1 - takeProfitPercent / 100));
+          
+          // DOUBLE-CHECK: If TP is still >= entry (shouldn't happen but safety check), force it below
+          if (tpValue >= entryPrice) {
+            console.error(`❌ CRITICAL: Short TP calculation resulted in TP >= Entry (${tpValue} >= ${entryPrice})`);
+            console.error(`   Forcing TP to be at least 0.1% below entry`);
+            tpValue = roundToTick(entryPrice * 0.999); // Force 0.1% below entry
+          }
+        }
+        
+        console.log(`   Calculated: SL=${slValue}, TP=${tpValue}`);
+      }
+      
+      // Format prices as strings with proper precision, ensuring no scientific notation
+      stopLossPrice = Number(slValue.toFixed(tickDecimals)).toString();
+      takeProfitPrice = Number(tpValue.toFixed(tickDecimals)).toString();
+      
+      // Validate direction based on position side
+      if (actualPositionSide === 'Buy') {
+        // Long: SL < Entry, TP > Entry
+        if (slValue >= entryPrice) {
+          console.error(`❌ CRITICAL: Long position SL (${slValue}) >= Entry (${entryPrice}) - INVALID!`);
+          console.error(`   Force correcting SL to be below entry...`);
+          slValue = roundToTick(entryPrice * 0.99); // Force 1% below entry
+          stopLossPrice = Number(slValue.toFixed(tickDecimals)).toString();
+        }
+        if (tpValue <= entryPrice) {
+          console.error(`❌ CRITICAL: Long position TP (${tpValue}) <= Entry (${entryPrice}) - INVALID!`);
+          console.error(`   Force correcting TP to be above entry...`);
+          tpValue = roundToTick(entryPrice * 1.01); // Force 1% above entry
+          takeProfitPrice = Number(tpValue.toFixed(tickDecimals)).toString();
+        }
+        console.log(`📊 Long Position SL/TP:`);
+        console.log(`   Entry: ${entryPrice}, SL: ${stopLossPrice}, TP: ${takeProfitPrice}`);
+      } else {
+        // Short: SL > Entry, TP < Entry
+        if (slValue <= entryPrice) {
+          console.error(`❌ CRITICAL: Short position SL (${slValue}) <= Entry (${entryPrice}) - INVALID!`);
+          console.error(`   Force correcting SL to be above entry...`);
+          slValue = roundToTick(entryPrice * 1.01); // Force 1% above entry
+          stopLossPrice = Number(slValue.toFixed(tickDecimals)).toString();
+        }
         if (tpValue >= entryPrice) {
-          console.error(`❌ CRITICAL: Short TP calculation resulted in TP >= Entry (${tpValue} >= ${entryPrice})`);
-          console.error(`   Forcing TP to be at least 0.1% below entry`);
-          tpValue = roundToTick(entryPrice * 0.999); // Force 0.1% below entry
+          console.error(`❌ CRITICAL: Short position TP (${tpValue}) >= Entry (${entryPrice}) - INVALID!`);
+          console.error(`   Force correcting TP to be below entry...`);
+          tpValue = roundToTick(entryPrice * 0.99); // Force 1% below entry
+          takeProfitPrice = Number(tpValue.toFixed(tickDecimals)).toString();
         }
-        
-        // Format prices as strings with proper precision, ensuring no scientific notation
-        stopLossPrice = Number(slValue.toFixed(tickDecimals)).toString();
-        takeProfitPrice = Number(tpValue.toFixed(tickDecimals)).toString();
-        
-        console.log(`📊 Short Position SL/TP Calculation:`);
-        console.log(`   Entry: ${entryPrice}, SL%: ${stopLossPercent}%, TP%: ${takeProfitPercent}%`);
-        console.log(`   SL: ${entryPrice} * (1 + ${stopLossPercent}/100) = ${slValue} → ${stopLossPrice}`);
-        console.log(`   TP: ${entryPrice} * (1 - ${takeProfitPercent}/100) = ${tpValue} → ${takeProfitPrice}`);
-        console.log(`   ✅ Validation: TP (${tpValue}) < Entry (${entryPrice}): ${tpValue < entryPrice}`);
-        console.log(`   ✅ Validation: SL (${slValue}) > Entry (${entryPrice}): ${slValue > entryPrice}`);
-        
-        // CRITICAL VALIDATION: For short, TP MUST be < Entry, SL MUST be > Entry
-        const tpNum = parseFloat(takeProfitPrice);
-        const slNum = parseFloat(stopLossPrice);
-        if (tpNum >= entryPrice) {
-          console.error(`❌ CRITICAL ERROR: Short position TP (${tpNum}) >= Entry (${entryPrice}) - INVALID!`);
-          console.error(`   This will cause Bybit API error. Force correcting...`);
-          // Force correct calculation: TP must be below entry (at least 0.1% below)
-          const correctedTp = roundToTick(entryPrice * 0.999); // 0.1% below entry as minimum
-          takeProfitPrice = Number(correctedTp.toFixed(tickDecimals)).toString();
-          console.log(`   ✅ Force corrected TP: ${takeProfitPrice} (was ${tpNum})`);
-        }
-        if (slNum <= entryPrice) {
-          console.error(`❌ CRITICAL ERROR: Short position SL (${slNum}) <= Entry (${entryPrice}) - INVALID!`);
-          console.error(`   This will cause Bybit API error. Force correcting...`);
-          // Force correct calculation: SL must be above entry (at least 0.1% above)
-          const correctedSl = roundToTick(entryPrice * 1.001); // 0.1% above entry as minimum
-          stopLossPrice = Number(correctedSl.toFixed(tickDecimals)).toString();
-          console.log(`   ✅ Force corrected SL: ${stopLossPrice} (was ${slNum})`);
-        }
+        console.log(`📊 Short Position SL/TP:`);
+        console.log(`   Entry: ${entryPrice}, SL: ${stopLossPrice}, TP: ${takeProfitPrice}`);
       }
       
       // Validate TP/SL direction. If invalid, skip setting to avoid API errors
@@ -6695,41 +6708,45 @@ class BotExecutor {
             console.warn(`⚠️ Position side changed from ${actualPositionSide} to ${finalPositionSide} - recalculating SL/TP`);
             actualPositionSide = finalPositionSide;
             
-            // Recalculate SL/TP for the correct side using bot settings
-            const stopLossPercent = parseFloat(bot.stop_loss || bot.stopLoss || '2.0');
-            const takeProfitPercent = parseFloat(bot.take_profit || bot.takeProfit || '4.0');
+            // Recalculate SL/TP for the correct side
+            // Use strategy-calculated values if available, otherwise use bot settings
+            let recalcSlValue: number;
+            let recalcTpValue: number;
             
-            if (actualPositionSide === 'Buy') {
-              const slValue = roundToTick(entryPrice * (1 - stopLossPercent / 100));
-              const tpValue = roundToTick(entryPrice * (1 + takeProfitPercent / 100));
-              stopLossPrice = Number(slValue.toFixed(tickDecimals)).toString();
-              takeProfitPrice = Number(tpValue.toFixed(tickDecimals)).toString();
-              console.log(`📊 Recalculated Long: SL=${stopLossPrice}, TP=${takeProfitPrice}`);
+            if (tradeSignal?.stopLoss && tradeSignal?.takeProfit1) {
+              // Use strategy-calculated values
+              recalcSlValue = roundToTick(tradeSignal.stopLoss);
+              recalcTpValue = roundToTick(tradeSignal.takeProfit1);
+              console.log(`📊 Recalculated using strategy values: SL=${recalcSlValue}, TP=${recalcTpValue}`);
             } else {
-              const slValue = roundToTick(entryPrice * (1 + stopLossPercent / 100));
-              const tpValue = roundToTick(entryPrice * (1 - takeProfitPercent / 100));
-              stopLossPrice = Number(slValue.toFixed(tickDecimals)).toString();
-              takeProfitPrice = Number(tpValue.toFixed(tickDecimals)).toString();
-              console.log(`📊 Recalculated Short: SL=${stopLossPrice}, TP=${takeProfitPrice}`);
+              // Use bot percentage settings
+              const stopLossPercent = parseFloat(bot.stop_loss || bot.stopLoss || '2.0');
+              const takeProfitPercent = parseFloat(bot.take_profit || bot.takeProfit || '4.0');
               
-              // Validate short position TP/SL
-              const tpNum = parseFloat(takeProfitPrice);
-              const slNum = parseFloat(stopLossPrice);
-              if (tpNum >= entryPrice) {
-                console.error(`❌ Recalculated Short TP (${tpNum}) >= Entry (${entryPrice}) - INVALID!`);
-                // Force correction
-                const correctedTp = roundToTick(entryPrice * (1 - Math.max(takeProfitPercent, 0.1) / 100));
-                takeProfitPrice = Number(correctedTp.toFixed(tickDecimals)).toString();
-                console.log(`   ✅ Corrected TP: ${takeProfitPrice}`);
+              if (actualPositionSide === 'Buy') {
+                recalcSlValue = roundToTick(entryPrice * (1 - stopLossPercent / 100));
+                recalcTpValue = roundToTick(entryPrice * (1 + takeProfitPercent / 100));
+              } else {
+                recalcSlValue = roundToTick(entryPrice * (1 + stopLossPercent / 100));
+                recalcTpValue = roundToTick(entryPrice * (1 - takeProfitPercent / 100));
+                
+                // Validate short position TP/SL
+                if (recalcTpValue >= entryPrice) {
+                  console.error(`❌ Recalculated Short TP (${recalcTpValue}) >= Entry (${entryPrice}) - INVALID!`);
+                  recalcTpValue = roundToTick(entryPrice * (1 - Math.max(takeProfitPercent, 0.1) / 100));
+                  console.log(`   ✅ Corrected TP: ${recalcTpValue}`);
+                }
+                if (recalcSlValue <= entryPrice) {
+                  console.error(`❌ Recalculated Short SL (${recalcSlValue}) <= Entry (${entryPrice}) - INVALID!`);
+                  recalcSlValue = roundToTick(entryPrice * (1 + Math.max(stopLossPercent, 0.1) / 100));
+                  console.log(`   ✅ Corrected SL: ${recalcSlValue}`);
+                }
               }
-              if (slNum <= entryPrice) {
-                console.error(`❌ Recalculated Short SL (${slNum}) <= Entry (${entryPrice}) - INVALID!`);
-                // Force correction
-                const correctedSl = roundToTick(entryPrice * (1 + Math.max(stopLossPercent, 0.1) / 100));
-                stopLossPrice = Number(correctedSl.toFixed(tickDecimals)).toString();
-                console.log(`   ✅ Corrected SL: ${stopLossPrice}`);
-              }
+              console.log(`📊 Recalculated using bot settings: SL=${recalcSlValue}, TP=${recalcTpValue}`);
             }
+            
+            stopLossPrice = Number(recalcSlValue.toFixed(tickDecimals)).toString();
+            takeProfitPrice = Number(recalcTpValue.toFixed(tickDecimals)).toString();
             console.log(`✅ Recalculated SL/TP: SL=${stopLossPrice}, TP=${takeProfitPrice} for ${actualPositionSide}`);
           }
         } else {
