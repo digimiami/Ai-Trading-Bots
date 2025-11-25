@@ -9507,27 +9507,36 @@ serve(async (req) => {
         
         console.log(`🚀 Executing ${botList.length} running bots${isCron ? ' (all users)' : ` for user ${user?.id}`}`);
         
-        // Process bots in batches to avoid CPU time and worker limit errors
-        // Reduced batch size to 3 and added timeout protection to prevent 504 Gateway Timeout
-        const BATCH_SIZE = 3; // Reduced from 5 to 3 for faster batch completion
-        const BATCH_DELAY_MS = 200; // Reduced from 500ms to 200ms for faster processing
-        const MAX_EXECUTION_TIME_MS = 120000; // 120 seconds (80% of 150s Supabase limit)
-        const PER_BOT_TIMEOUT_MS = 8000; // 8 seconds max per bot
+        // Process bots in smaller batches to avoid Supabase worker limit errors
+        // Reduced to 2 bots per batch with longer delays to prevent WORKER_LIMIT errors
+        const BATCH_SIZE = 2; // Reduced from 3 to 2 to prevent worker exhaustion
+        const BATCH_DELAY_MS = 500; // Increased from 200ms to 500ms for better resource management
+        const MAX_EXECUTION_TIME_MS = 100000; // Reduced from 120s to 100s (83% of 120s limit)
+        const PER_BOT_TIMEOUT_MS = 6000; // Reduced from 8s to 6s per bot
+        const MAX_BOTS_PER_CYCLE = 30; // Limit bots processed per cycle to prevent worker exhaustion
         const executionStartTime = Date.now();
         const results: Array<PromiseSettledResult<any>> = [];
         let processedCount = 0;
         
-        for (let i = 0; i < botList.length; i += BATCH_SIZE) {
+        // Limit the number of bots processed in this cycle
+        const botsToProcess = botList.slice(0, MAX_BOTS_PER_CYCLE);
+        const remainingBots = botList.length - botsToProcess.length;
+        
+        if (remainingBots > 0) {
+          console.log(`⚠️ Limiting execution to ${MAX_BOTS_PER_CYCLE} bots this cycle (${remainingBots} will be processed in next cycle)`);
+        }
+        
+        for (let i = 0; i < botsToProcess.length; i += BATCH_SIZE) {
           // Check if we're approaching the timeout limit
           const elapsedTime = Date.now() - executionStartTime;
           if (elapsedTime > MAX_EXECUTION_TIME_MS) {
-            console.warn(`⏰ Timeout protection: Stopping execution after ${elapsedTime}ms (processed ${processedCount}/${botList.length} bots)`);
+            console.warn(`⏰ Timeout protection: Stopping execution after ${elapsedTime}ms (processed ${processedCount}/${botsToProcess.length} bots)`);
             break;
           }
           
-          const batch = botList.slice(i, i + BATCH_SIZE);
+          const batch = botsToProcess.slice(i, i + BATCH_SIZE);
           const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
-          const totalBatches = Math.ceil(botList.length / BATCH_SIZE);
+          const totalBatches = Math.ceil(botsToProcess.length / BATCH_SIZE);
           
           console.log(`\n📦 Processing batch ${batchNumber}/${totalBatches} (${batch.length} bots)... [Elapsed: ${(elapsedTime / 1000).toFixed(1)}s]`);
           
@@ -9585,7 +9594,7 @@ serve(async (req) => {
           results.push(...batchResults);
           
           // Add delay between batches (except after the last batch)
-          if (i + BATCH_SIZE < botList.length) {
+          if (i + BATCH_SIZE < botsToProcess.length) {
             console.log(`⏳ Waiting ${BATCH_DELAY_MS}ms before next batch...`);
             await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS));
           }
@@ -9593,30 +9602,32 @@ serve(async (req) => {
         
         const successful = results.filter(r => r.status === 'fulfilled').length;
         const failed = results.filter(r => r.status === 'rejected').length;
-        const skipped = botList.length - processedCount;
+        const skipped = botsToProcess.length - processedCount;
         const totalExecutionTime = Date.now() - executionStartTime;
         
         console.log(`\n📈 === EXECUTION SUMMARY ===`);
         console.log(`✅ Successful: ${successful}`);
         console.log(`❌ Failed: ${failed}`);
         console.log(`⏭️ Skipped (timeout): ${skipped}`);
-        console.log(`📊 Total: ${botList.length} (processed: ${processedCount})`);
+        console.log(`📊 Processed: ${processedCount} / ${botsToProcess.length} (${remainingBots > 0 ? `${remainingBots} remaining for next cycle` : 'all bots'})`);
         console.log(`⏱️ Total execution time: ${(totalExecutionTime / 1000).toFixed(1)}s`);
         
         if (failed > 0) {
           console.log('\n❌ Failed bot executions:');
           results.forEach((result, index) => {
             if (result.status === 'rejected') {
-              console.error(`   - ${botList[index].name}: ${result.reason}`);
+              console.error(`   - ${botsToProcess[index].name}: ${result.reason}`);
             }
           });
         }
         
         return new Response(JSON.stringify({ 
           success: true, 
-          message: `Executed ${successful} bots successfully, ${failed} failed${skipped > 0 ? `, ${skipped} skipped due to timeout` : ''}`,
+          message: `Executed ${successful} bots successfully, ${failed} failed${skipped > 0 ? `, ${skipped} skipped due to timeout` : ''}${remainingBots > 0 ? `, ${remainingBots} bots will be processed in next cycle` : ''}`,
           botsExecuted: processedCount,
           botsTotal: botList.length,
+          botsProcessedThisCycle: botsToProcess.length,
+          botsRemaining: remainingBots,
           successful,
           failed,
           skipped,
