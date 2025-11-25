@@ -52,7 +52,7 @@ function AppRoutes() {
     if (!loading) {
       const isOnboardingCompleted = localStorage.getItem('onboarding_completed');
       const currentPath = window.location.pathname;
-      const publicRoutes = ['/', '/auth', '/onboarding', '/market-dashboard', '/crypto-bubbles'];
+      const publicRoutes = ['/', '/auth', '/onboarding', '/market-dashboard', '/crypto-bubbles', '/crypto-news'];
       
       if (!ONBOARDING_ENABLED && !isOnboardingCompleted) {
         localStorage.setItem('onboarding_completed', 'true');

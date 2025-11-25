@@ -8,8 +8,10 @@ import Card from '../../components/base/Card';
 import { useAuth } from '../../hooks/useAuth';
 import { useAdmin } from '../../hooks/useAdmin';
 import { useBotExecutor } from '../../hooks/useBotExecutor';
+import { useCryptoNews, type CryptoNewsArticle } from '../../hooks/useCryptoNews';
 import { supabase } from '../../lib/supabase';
 import WebhookTestPage from '../webhook-test/page';
+import CryptoNewsManager from './components/CryptoNewsManager';
 
 interface User {
   id: string;
@@ -185,6 +187,47 @@ export default function AdminPage() {
     end_date: '',
     confirm: ''
   });
+
+  // Crypto News Management
+  const {
+    loading: cryptoNewsLoading,
+    error: cryptoNewsError,
+    generateArticle,
+    getArticles,
+    getArticle,
+    createArticle,
+    updateArticle,
+    deleteArticle,
+    publishArticle
+  } = useCryptoNews();
+
+  const [cryptoNewsArticles, setCryptoNewsArticles] = useState<CryptoNewsArticle[]>([]);
+  const [showCreateArticle, setShowCreateArticle] = useState(false);
+  const [editingArticle, setEditingArticle] = useState<CryptoNewsArticle | null>(null);
+  const [articleForm, setArticleForm] = useState({
+    title: '',
+    content: '',
+    excerpt: '',
+    keywords: [] as string[],
+    keywordInput: '',
+    category: 'general',
+    status: 'draft' as 'draft' | 'published' | 'archived',
+    meta_title: '',
+    meta_description: '',
+    meta_keywords: [] as string[],
+    meta_keywordInput: '',
+    og_title: '',
+    og_description: '',
+    og_image_url: '',
+    twitter_card: 'summary_large_image',
+    twitter_title: '',
+    twitter_description: '',
+    canonical_url: '',
+    featured_image_url: '',
+    tags: [] as string[],
+    tagInput: ''
+  });
+  const [generatingArticle, setGeneratingArticle] = useState(false);
 
   useEffect(() => {
     console.log('🔧 Admin page loaded - User:', user?.email, 'Role:', user?.role, 'Auth Loading:', authLoading);
@@ -878,6 +921,7 @@ export default function AdminPage() {
     { id: 'users', label: 'Users', icon: 'ri-user-line' },
     { id: 'bots', label: 'Trading Bots', icon: 'ri-robot-line' },
     { id: 'pablo-ready', label: 'Pablo Ready', icon: 'ri-star-line' },
+    { id: 'crypto-news', label: 'Crypto News', icon: 'ri-newspaper-line' },
     { id: 'latest-trades', label: 'Latest Trades', icon: 'ri-exchange-line' },
     { id: 'webhook-test', label: 'Webhook Test', icon: 'ri-send-plane-line' },
     { id: 'analytics', label: 'Analytics', icon: 'ri-bar-chart-line' },
@@ -2442,6 +2486,11 @@ export default function AdminPage() {
               </div>
             </Card>
           </div>
+        )}
+
+        {/* Crypto News Tab */}
+        {activeTab === 'crypto-news' && (
+          <CryptoNewsManager />
         )}
 
         {/* Webhook Test Tab */}

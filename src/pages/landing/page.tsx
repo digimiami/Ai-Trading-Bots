@@ -141,6 +141,9 @@ export default function LandingPage() {
             <button onClick={() => navigate('/crypto-bubbles')} className="transition hover:text-white">
               Crypto Bubbles
             </button>
+            <button onClick={() => navigate('/crypto-news')} className="transition hover:text-white">
+              Crypto News
+            </button>
             <button onClick={() => navigate('/academy')} className="transition hover:text-white">
               Academy
             </button>
