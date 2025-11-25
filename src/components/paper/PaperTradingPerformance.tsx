@@ -222,53 +222,71 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
       };
 
       // Fetch current prices for open positions
+      // Use Promise.allSettled with individual timeouts to prevent one slow request from blocking others
       let positionsWithPrices: PaperPosition[] = [];
       if (openPositions && openPositions.length > 0) {
-        positionsWithPrices = await Promise.all(
-          openPositions.map(async (position: any) => {
+        const PRICE_FETCH_TIMEOUT_MS = 3000; // 3 seconds per position
+        
+        const priceFetchPromises = openPositions.map(async (position: any) => {
+          const fetchWithTimeout = async (): Promise<PaperPosition> => {
             try {
               // Fetch current price from market data via Supabase Edge Function
               const symbol = position.symbol;
 
               // Use bot-executor edge function to get current price (avoids CORS)
-              try {
-                const marketData = await apiCall(
-                  `${API_ENDPOINTS.BOT_EXECUTOR}?action=market-data&symbol=${symbol}&exchange=bybit`
-                );
+              const marketDataPromise = apiCall(
+                `${API_ENDPOINTS.BOT_EXECUTOR}?action=market-data&symbol=${symbol}&exchange=bybit`
+              );
+              
+              // Add timeout to individual price fetch
+              const timeoutPromise = new Promise<never>((_, reject) => 
+                setTimeout(() => reject(new Error('Price fetch timeout')), PRICE_FETCH_TIMEOUT_MS)
+              );
+              
+              const marketData = await Promise.race([marketDataPromise, timeoutPromise]);
+              const currentPrice = marketData?.price || 0;
+              
+              if (currentPrice > 0) {
+                // Calculate unrealized PnL
+                const entryPrice = parseFloat(position.entry_price ?? '') || 0;
+                const leverage = parseFloat(position.leverage ?? '1') || 1;
+                const marginUsed = parseFloat(position.margin_used ?? '') || 0;
                 
-                const currentPrice = marketData?.price || 0;
-                
-                if (currentPrice > 0) {
-                  // Calculate unrealized PnL
-                  const entryPrice = parseFloat(position.entry_price ?? '') || 0;
-                  const leverage = parseFloat(position.leverage ?? '1') || 1;
-                  const marginUsed = parseFloat(position.margin_used ?? '') || 0;
-                  
-                  let unrealizedPnL = 0;
-                  if (entryPrice > 0 && marginUsed !== 0) {
-                    if ((position.side || '').toLowerCase() === 'long') {
+                let unrealizedPnL = 0;
+                if (entryPrice > 0 && marginUsed !== 0) {
+                  if ((position.side || '').toLowerCase() === 'long') {
                     unrealizedPnL = ((currentPrice - entryPrice) / entryPrice) * marginUsed * leverage;
                   } else {
                     unrealizedPnL = ((entryPrice - currentPrice) / entryPrice) * marginUsed * leverage;
-                    }
                   }
-                  
-                  return normalizePosition(position, {
-                    current_price: currentPrice,
-                    unrealized_pnl: unrealizedPnL
-                  });
                 }
-              } catch (apiError) {
-                console.error(`Error fetching price for ${position.symbol} via API:`, apiError);
-                // Fallback handled below
+                
+                return normalizePosition(position, {
+                  current_price: currentPrice,
+                  unrealized_pnl: unrealizedPnL
+                });
               }
-            } catch (error) {
-              console.error(`Error fetching price for ${position.symbol}:`, error);
+            } catch (apiError) {
+              console.warn(`Price fetch timeout/error for ${position.symbol}, using stored price:`, apiError);
+              // Fallback to stored price
             }
             
             return normalizePosition(position);
-          })
-        );
+          };
+          
+          return fetchWithTimeout();
+        });
+        
+        // Use allSettled so one failure doesn't block others
+        const results = await Promise.allSettled(priceFetchPromises);
+        positionsWithPrices = results.map((result, index) => {
+          if (result.status === 'fulfilled') {
+            return result.value;
+          } else {
+            console.warn(`Failed to fetch price for position ${openPositions[index].symbol}:`, result.reason);
+            return normalizePosition(openPositions[index]);
+          }
+        });
         
         setPositions(positionsWithPrices);
       } else {
@@ -651,6 +669,7 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
     }
 
     // Set a timeout to ensure loading doesn't hang forever
+    // Increased to 20 seconds to allow for multiple price fetches
     loadingTimeoutRef.current = setTimeout(() => {
       console.warn('Paper Trading Performance: Loading timeout, showing default data');
       setLoading(false);
@@ -679,7 +698,7 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
         return prev;
       });
       setPositions([]);
-    }, 10000); // 10 second timeout
+    }, 20000); // 20 second timeout (increased from 10s)
 
     fetchPerformance();
     
