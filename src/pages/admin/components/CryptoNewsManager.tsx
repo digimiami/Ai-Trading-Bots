@@ -71,13 +71,16 @@ export default function CryptoNewsManager({ onArticlePublished }: CryptoNewsMana
 
     setGenerating(true);
     try {
+      console.log('🚀 Generating article with keywords:', articleForm.keywords);
       const result = await generateArticle(
         articleForm.keywords,
         articleForm.title || undefined,
         articleForm.category
       );
 
-      if (result.article) {
+      console.log('✅ Article generation result:', result);
+
+      if (result && result.article) {
         setArticleForm(prev => ({
           ...prev,
           title: result.article.title || prev.title,
@@ -86,9 +89,13 @@ export default function CryptoNewsManager({ onArticlePublished }: CryptoNewsMana
           reading_time: result.article.reading_time
         }));
         alert('✅ Article generated successfully! Review and edit as needed.');
+      } else {
+        throw new Error('No article data returned from API');
       }
     } catch (error: any) {
-      alert(`❌ Failed to generate article: ${error?.message || error}`);
+      console.error('❌ Article generation error:', error);
+      const errorMessage = error?.message || error?.error || String(error);
+      alert(`❌ Failed to generate article: ${errorMessage}\n\nPlease check:\n1. Edge Function is deployed\n2. DeepSeek API key is configured\n3. You have admin access`);
     } finally {
       setGenerating(false);
     }

@@ -39,17 +39,55 @@ export function useCryptoNews() {
       setLoading(true);
       setError(null);
 
-      const { data, error: invokeError } = await supabase.functions.invoke('crypto-news-management', {
-        body: { action, ...params }
+      // Get auth token
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('Not authenticated. Please log in.');
+      }
+
+      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '';
+      const functionUrl = `${supabaseUrl}/functions/v1/crypto-news-management`;
+
+      console.log('📡 Calling crypto-news-management:', { action, functionUrl });
+
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+          'apikey': import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+        },
+        body: JSON.stringify({ action, ...params })
       });
 
-      if (invokeError) {
-        console.error('Edge function invoke error:', invokeError);
-        const errorMessage = invokeError.message || 'Unknown error occurred';
+      console.log('📡 Response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Edge function error:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorText
+        });
+        
+        let errorMessage = `Failed to send request: ${response.status}`;
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.error || errorData.message || errorMessage;
+          if (errorData.details) {
+            errorMessage += `: ${errorData.details}`;
+          }
+        } catch {
+          errorMessage = errorText || errorMessage;
+        }
+        
         setError(errorMessage);
         throw new Error(errorMessage);
       }
-      
+
+      const data = await response.json();
+      console.log('✅ Response data:', data);
+
       if (data?.error) {
         console.error('Edge function returned error:', data);
         const errorMessage = data.details ? `${data.error}: ${data.details}` : (data.error || 'Unknown error occurred');
@@ -60,7 +98,7 @@ export function useCryptoNews() {
       return data;
     } catch (err: any) {
       console.error('Crypto news function error:', err);
-      const errorMessage = err.message || err.error || err.details || 'Unknown error occurred';
+      const errorMessage = err.message || err.error || err.details || 'Failed to send a request to the Edge Function';
       setError(errorMessage);
       throw new Error(errorMessage);
     } finally {

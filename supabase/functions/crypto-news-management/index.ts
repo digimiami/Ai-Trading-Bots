@@ -98,8 +98,15 @@ serve(async (req) => {
           })
         }
 
-        // Get DeepSeek API key
-        const DEEPSEEK_API_KEY = Deno.env.get('DEEPSEEK_API_KEY')
+        // Get DeepSeek API key from environment or use provided fallback
+        const DEEPSEEK_API_KEY = Deno.env.get('DEEPSEEK_API_KEY') || 'sk-1140f2af061a4ff8a2caea2e81b449bd'
+        
+        console.log('🔑 DeepSeek API Key check:', {
+          hasEnvKey: !!Deno.env.get('DEEPSEEK_API_KEY'),
+          hasFallback: !!DEEPSEEK_API_KEY,
+          keyLength: DEEPSEEK_API_KEY?.length || 0
+        })
+        
         if (!DEEPSEEK_API_KEY) {
           return new Response(JSON.stringify({
             error: 'DeepSeek API key not configured. Please set DEEPSEEK_API_KEY in Edge Function secrets.'
@@ -130,6 +137,12 @@ Requirements:
 Return the article content in markdown format.`;
 
         try {
+          console.log('📝 Generating article with DeepSeek:', {
+            keywords: keywordsStr,
+            title: title || 'Auto-generated',
+            category: category
+          })
+
           // Call DeepSeek API
           const deepseekResponse = await fetch('https://api.deepseek.com/v1/chat/completions', {
             method: 'POST',
@@ -150,9 +163,11 @@ Return the article content in markdown format.`;
                 }
               ],
               temperature: 0.7,
-              max_tokens: 3000
+              max_tokens: 4000
             })
           })
+
+          console.log('📡 DeepSeek API response status:', deepseekResponse.status)
 
           if (!deepseekResponse.ok) {
             const errorText = await deepseekResponse.text()
