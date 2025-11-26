@@ -48,15 +48,26 @@ export interface AdvancedStrategyConfig {
   // Directional Bias
   bias_mode: 'long-only' | 'short-only' | 'both' | 'auto';
   htf_timeframe:
+    | '1m'
+    | '3m'
+    | '5m'
     | '15m'
     | '30m'
+    | '45m'
     | '1h'
     | '2h'
+    | '3h'
     | '4h'
+    | '5h'
     | '6h'
+    | '7h'
+    | '8h'
+    | '9h'
+    | '10h'
     | '12h'
     | '1d'
-    | '1w';
+    | '1w'
+    | '1M';
   htf_trend_indicator:
     | 'EMA50'
     | 'EMA100'

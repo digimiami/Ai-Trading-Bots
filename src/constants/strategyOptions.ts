@@ -4,15 +4,26 @@ export const HTF_TIMEFRAME_OPTIONS: Array<{
   value: AdvancedStrategyConfig['htf_timeframe'];
   label: string;
 }> = [
-  { value: '15m', label: '15 Minutes (Aggressive)' },
+  { value: '1m', label: '1 Minute (Ultra Aggressive)' },
+  { value: '3m', label: '3 Minutes (Very Aggressive)' },
+  { value: '5m', label: '5 Minutes (Aggressive)' },
+  { value: '15m', label: '15 Minutes (Fast)' },
   { value: '30m', label: '30 Minutes (Fast HTF)' },
+  { value: '45m', label: '45 Minutes (Quick)' },
   { value: '1h', label: '1 Hour (Short-Term Bias)' },
   { value: '2h', label: '2 Hours (Balanced)' },
+  { value: '3h', label: '3 Hours (Medium)' },
   { value: '4h', label: '4 Hours (Swing Standard)' },
+  { value: '5h', label: '5 Hours (Extended)' },
   { value: '6h', label: '6 Hours (Smoother Swing)' },
+  { value: '7h', label: '7 Hours (Extended Swing)' },
+  { value: '8h', label: '8 Hours (Long Swing)' },
+  { value: '9h', label: '9 Hours (Very Long Swing)' },
+  { value: '10h', label: '10 Hours (Extended Long)' },
   { value: '12h', label: '12 Hours (Daily Proxy)' },
   { value: '1d', label: '1 Day (Macro Bias)' },
-  { value: '1w', label: '1 Week (Long-Term)' }
+  { value: '1w', label: '1 Week (Long-Term)' },
+  { value: '1M', label: '1 Month (Ultra Long-Term)' }
 ];
 
 export const HTF_TREND_INDICATOR_OPTIONS: Array<{

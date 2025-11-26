@@ -17,7 +17,7 @@ export default function EditBotPage() {
     exchange: 'bybit' as 'bybit' | 'okx',
     tradingType: 'spot' as 'spot' | 'futures',
     symbol: 'BTCUSDT',
-    timeframe: '1h' as '1m' | '5m' | '15m' | '1h' | '2h' | '3h' | '4h' | '1d' | '1w',
+    timeframe: '1h' as '1m' | '3m' | '5m' | '15m' | '30m' | '45m' | '1h' | '2h' | '3h' | '4h' | '5h' | '6h' | '7h' | '8h' | '9h' | '10h' | '12h' | '1d' | '1w' | '1M',
     leverage: 5,
     riskLevel: 'medium' as 'low' | 'medium' | 'high',
     tradeAmount: 100,
@@ -323,14 +323,25 @@ export default function EditBotPage() {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
                       <option value="1m">1 Minute</option>
+                      <option value="3m">3 Minutes</option>
                       <option value="5m">5 Minutes</option>
                       <option value="15m">15 Minutes</option>
+                      <option value="30m">30 Minutes</option>
+                      <option value="45m">45 Minutes</option>
                       <option value="1h">1 Hour</option>
                       <option value="2h">2 Hours</option>
                       <option value="3h">3 Hours</option>
                       <option value="4h">4 Hours</option>
+                      <option value="5h">5 Hours</option>
+                      <option value="6h">6 Hours</option>
+                      <option value="7h">7 Hours</option>
+                      <option value="8h">8 Hours</option>
+                      <option value="9h">9 Hours</option>
+                      <option value="10h">10 Hours</option>
+                      <option value="12h">12 Hours</option>
                       <option value="1d">1 Day</option>
                       <option value="1w">1 Week</option>
+                      <option value="1M">1 Month</option>
                     </select>
                     <p className="text-xs text-gray-500 mt-1">
                       Chart interval for technical analysis
