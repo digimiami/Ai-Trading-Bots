@@ -62,6 +62,7 @@ export default function MarketDashboardPage() {
   const [wsConnected, setWsConnected] = useState(false);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [priceUpdates, setPriceUpdates] = useState<Map<string, number>>(new Map());
+  const [activeTab, setActiveTab] = useState<'overview' | 'knowledge'>('overview');
 
   // Fetch market data
   const fetchMarketData = async () => {
@@ -403,6 +404,37 @@ export default function MarketDashboardPage() {
           </Button>
         </div>
 
+        {/* Tabs Navigation */}
+        <div className="border-b border-gray-200 dark:border-gray-700">
+          <nav className="flex space-x-8" aria-label="Tabs">
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`${
+                activeTab === 'overview'
+                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+              } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors`}
+            >
+              <i className="ri-line-chart-line mr-2"></i>
+              Overview
+            </button>
+            <button
+              onClick={() => setActiveTab('knowledge')}
+              className={`${
+                activeTab === 'knowledge'
+                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+              } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors`}
+            >
+              <i className="ri-book-open-line mr-2"></i>
+              Knowledge & Recommendations
+            </button>
+          </nav>
+        </div>
+
+        {/* Overview Tab Content */}
+        {activeTab === 'overview' && (
+          <>
         {/* Crypto Fear & Greed Index */}
         {fearGreedIndex && (
           <Card className="p-6">
@@ -835,6 +867,200 @@ export default function MarketDashboardPage() {
               </table>
             </div>
           </Card>
+        )}
+          </>
+        )}
+
+        {/* Knowledge Tab Content */}
+        {activeTab === 'knowledge' && (
+          <div className="space-y-6">
+            <Card className="p-6">
+              <div className="flex items-center gap-3 mb-6">
+                <i className="ri-lightbulb-line text-3xl text-yellow-500"></i>
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Trading Bot Testing Guide</h2>
+                  <p className="text-gray-600 dark:text-gray-400">Learn how to properly test your trading bots before risking real money</p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Phase 1: Paper Trading */}
+            <Card className="p-6">
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
+                  <span className="text-blue-600 dark:text-blue-400 font-bold">1</span>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Phase 1: Paper Trading (FREE)</h3>
+                  <div className="space-y-4 text-gray-700 dark:text-gray-300">
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white mb-1">⏱️ Duration: 1-4 Weeks Minimum</p>
+                      <p className="text-sm">Start here! Use virtual money to test your bot's strategy without any financial risk.</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white mb-1">💰 Recommended Balance: $10,000 (Virtual)</p>
+                      <p className="text-sm">This is your default paper trading balance - completely free!</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white mb-1">✅ What to Verify:</p>
+                      <ul className="list-disc list-inside space-y-1 text-sm ml-2">
+                        <li>20-30+ trades executed successfully</li>
+                        <li>Win rate above 50% (depends on strategy)</li>
+                        <li>No technical errors or timeouts</li>
+                        <li>Stop Loss (SL) and Take Profit (TP) triggers correctly</li>
+                        <li>Bot runs consistently over different market conditions</li>
+                      </ul>
+                    </div>
+                    <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                      <p className="font-medium text-blue-900 dark:text-blue-300 mb-1">💡 Why Paper Trading First?</p>
+                      <ul className="list-disc list-inside space-y-1 text-sm text-blue-800 dark:text-blue-200 ml-2">
+                        <li>Uses REAL market data (same prices as real trading)</li>
+                        <li>Zero financial risk - perfect for learning</li>
+                        <li>Helps identify bugs before they cost money</li>
+                        <li>Validates your strategy without emotional stress</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            {/* Phase 2: Small Real Money Testing */}
+            <Card className="p-6">
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center">
+                  <span className="text-green-600 dark:text-green-400 font-bold">2</span>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Phase 2: Small Real-Money Testing</h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">Only after paper trading shows promising results!</p>
+                  <div className="space-y-4 text-gray-700 dark:text-gray-300">
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white mb-1">💰 Recommended Starting Capital: $100-$500</p>
+                      <p className="text-sm">This is enough to cover fees and make meaningful trades, but small enough that mistakes won't hurt.</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white mb-1">⏱️ Duration: 2-4 Weeks Minimum</p>
+                      <p className="text-sm">Run your bot long enough to see consistent patterns and verify real-world execution.</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white mb-1">⚙️ Recommended Trade Settings:</p>
+                      <ul className="list-disc list-inside space-y-1 text-sm ml-2">
+                        <li>Base Amount: $20-$50 per trade</li>
+                        <li>Leverage: 2x-3x (conservative)</li>
+                        <li>Risk Level: Low-Medium</li>
+                        <li>Total per trade: ~$60-$150</li>
+                      </ul>
+                    </div>
+                    <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
+                      <p className="font-medium text-green-900 dark:text-green-300 mb-1">📊 Example Setup:</p>
+                      <div className="text-sm text-green-800 dark:text-green-200 space-y-1">
+                        <p>• Base: $30 × Leverage: 2x × Risk: Low (1x) = $60 per trade</p>
+                        <p>• With $300 capital: ~5 trades possible (safe buffer)</p>
+                        <p>• This gives you room to learn without overexposing your capital</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            {/* Phase 3: Scale Up Gradually */}
+            <Card className="p-6">
+              <div className="flex items-start gap-4">
+                <div className="flex-shrink-0 w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900 flex items-center justify-center">
+                  <span className="text-purple-600 dark:text-purple-400 font-bold">3</span>
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Phase 3: Scale Up Gradually</h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">Only after consistent profitability in Phase 2!</p>
+                  <div className="space-y-4 text-gray-700 dark:text-gray-300">
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-white mb-1">📈 Scaling Timeline:</p>
+                      <ul className="list-disc list-inside space-y-1 text-sm ml-2">
+                        <li>Month 1: $100-$500 (testing phase)</li>
+                        <li>Month 2: $500-$1000 (if profitable)</li>
+                        <li>Month 3+: Scale based on performance</li>
+                      </ul>
+                    </div>
+                    <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg">
+                      <p className="font-medium text-purple-900 dark:text-purple-300 mb-1">⚠️ Golden Rules:</p>
+                      <ul className="list-disc list-inside space-y-1 text-sm text-purple-800 dark:text-purple-200 ml-2">
+                        <li>Never risk more than you can afford to lose</li>
+                        <li>Only scale up if consistently profitable</li>
+                        <li>Always keep a safety buffer (don't use 100% of capital)</li>
+                        <li>Monitor closely when increasing position sizes</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            {/* Quick Reference */}
+            <Card className="p-6 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20">
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">📋 Quick Reference</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <p className="font-medium text-gray-900 dark:text-white mb-2">Minimum Viable Test:</p>
+                  <ul className="list-disc list-inside space-y-1 text-sm text-gray-700 dark:text-gray-300 ml-2">
+                    <li>Paper Trading: 2 weeks, 20-30 trades</li>
+                    <li>Real Test: 1 month, $200-$300 capital</li>
+                    <li>Trade Size: $30-$50 base, 2x leverage</li>
+                  </ul>
+                </div>
+                <div>
+                  <p className="font-medium text-gray-900 dark:text-white mb-2">Red Flags to Watch:</p>
+                  <ul className="list-disc list-inside space-y-1 text-sm text-red-600 dark:text-red-400 ml-2">
+                    <li>Win rate below 40%</li>
+                    <li>CPU timeout errors</li>
+                    <li>Orders not executing</li>
+                    <li>Consistent losses daily</li>
+                  </ul>
+                </div>
+              </div>
+            </Card>
+
+            {/* Recommended Testing Strategy */}
+            <Card className="p-6">
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">🎯 Recommended Testing Strategy</h3>
+              <div className="space-y-4">
+                <div className="border-l-4 border-blue-500 pl-4">
+                  <p className="font-medium text-gray-900 dark:text-white">Week 1-2: Paper Trading</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Enable paper trading mode, run 24/7, monitor closely, fix any bugs</p>
+                </div>
+                <div className="border-l-4 border-green-500 pl-4">
+                  <p className="font-medium text-gray-900 dark:text-white">Week 3: Review Paper Results</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Win rate &gt; 50%? Proceed. Win rate &lt; 40%? Adjust strategy first.</p>
+                </div>
+                <div className="border-l-4 border-purple-500 pl-4">
+                  <p className="font-medium text-gray-900 dark:text-white">Week 4+: Small Real Money</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Start with $200-$300, run 1 bot only, monitor daily, don't increase size yet</p>
+                </div>
+                <div className="border-l-4 border-orange-500 pl-4">
+                  <p className="font-medium text-gray-900 dark:text-white">Month 2+: Scale If Profitable</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">If profitable, increase slowly. If not, go back to paper trading and optimize</p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Important Notes */}
+            <Card className="p-6 border-2 border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-900/20">
+              <div className="flex items-start gap-3">
+                <i className="ri-error-warning-line text-2xl text-yellow-600 dark:text-yellow-400"></i>
+                <div>
+                  <h3 className="text-lg font-semibold text-yellow-900 dark:text-yellow-300 mb-2">⚠️ Before Using Real Money</h3>
+                  <ul className="list-disc list-inside space-y-1 text-sm text-yellow-800 dark:text-yellow-200 ml-2">
+                    <li>Fix any CPU timeout errors (currently blocking trades!)</li>
+                    <li>Test in paper trading for at least 2 weeks</li>
+                    <li>Verify 20+ trades execute correctly</li>
+                    <li>Confirm win rate is acceptable for your strategy</li>
+                    <li>Understand that past performance doesn't guarantee future results</li>
+                  </ul>
+                </div>
+              </div>
+            </Card>
+          </div>
         )}
         </div>
       </div>
