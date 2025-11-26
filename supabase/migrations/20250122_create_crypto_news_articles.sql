@@ -44,11 +44,14 @@ CREATE INDEX IF NOT EXISTS idx_crypto_news_author ON crypto_news_articles(author
 -- Enable RLS
 ALTER TABLE crypto_news_articles ENABLE ROW LEVEL SECURITY;
 
--- Policy: Public can read published articles
+-- Policy: Public can read published articles (no authentication required)
 CREATE POLICY "Public can view published articles"
   ON crypto_news_articles
   FOR SELECT
   USING (status = 'published');
+
+-- Ensure the policy allows anonymous access
+-- This policy works for both authenticated and unauthenticated users
 
 -- Policy: Admins can manage all articles
 CREATE POLICY "Admins can manage articles"

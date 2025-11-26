@@ -27,45 +27,47 @@ export default function CryptoNewsPage() {
   const loadArticles = async () => {
     try {
       setLoading(true);
-      // Use public endpoint for published articles
-      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '';
-      const cleanUrl = supabaseUrl.replace('/rest/v1', '');
-      const functionUrl = `${cleanUrl}/functions/v1/crypto-news-management`;
-
-      // Use GET method for public endpoints to avoid CORS preflight issues
-      const url = new URL(functionUrl);
-      url.searchParams.set('action', 'getPublishedArticles');
       
-      const response = await fetch(url.toString(), {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || ''
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to load articles: ${response.status}`);
+      // Direct database query using public anon key (no auth required)
+      // RLS policy allows public read access to published articles
+      const { data: articlesData, error: dbError } = await supabase
+        .from('crypto_news_articles')
+        .select('*')
+        .eq('status', 'published')
+        .order('published_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false });
+      
+      if (dbError) {
+        console.error('Database query error:', dbError);
+        throw dbError;
       }
-
-      const data = await response.json();
-      setArticles(data.articles || []);
+      
+      setArticles(articlesData || []);
     } catch (error) {
       console.error('Error loading articles:', error);
-      // Fallback: try direct database query if Edge Function fails
+      // Fallback: try Edge Function if direct query fails
       try {
-        const { data: articlesData, error: dbError } = await supabase
-          .from('crypto_news_articles')
-          .select('*')
-          .eq('status', 'published')
-          .order('published_at', { ascending: false })
-          .order('created_at', { ascending: false });
+        const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '';
+        const cleanUrl = supabaseUrl.replace('/rest/v1', '');
+        const functionUrl = `${cleanUrl}/functions/v1/crypto-news-management`;
+
+        const url = new URL(functionUrl);
+        url.searchParams.set('action', 'getPublishedArticles');
         
-        if (!dbError && articlesData) {
-          setArticles(articlesData);
+        const response = await fetch(url.toString(), {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+          }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setArticles(data.articles || []);
         }
       } catch (fallbackError) {
-        console.error('Fallback query also failed:', fallbackError);
+        console.error('Fallback Edge Function also failed:', fallbackError);
       }
     } finally {
       setLoading(false);
@@ -75,54 +77,60 @@ export default function CryptoNewsPage() {
   const loadArticle = async (articleSlug: string) => {
     try {
       setLoading(true);
-      // Use public endpoint for published articles
-      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '';
-      const cleanUrl = supabaseUrl.replace('/rest/v1', '');
-      const functionUrl = `${cleanUrl}/functions/v1/crypto-news-management`;
-
-      // Use GET method for public endpoints to avoid CORS preflight issues
-      const url = new URL(functionUrl);
-      url.searchParams.set('action', 'getPublishedArticle');
-      url.searchParams.set('slug', articleSlug);
       
-      const response = await fetch(url.toString(), {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || ''
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to load article: ${response.status}`);
+      // Direct database query using public anon key (no auth required)
+      // RLS policy allows public read access to published articles
+      const { data: articleData, error: dbError } = await supabase
+        .from('crypto_news_articles')
+        .select('*')
+        .eq('slug', articleSlug)
+        .eq('status', 'published')
+        .single();
+      
+      if (dbError) {
+        console.error('Database query error:', dbError);
+        throw dbError;
       }
-
-      const data = await response.json();
-      if (data.article) {
-        setSelectedArticle(data.article);
-        // Increment view count
+      
+      if (articleData) {
+        setSelectedArticle(articleData);
+        // Increment view count (this might fail if RLS doesn't allow update, but that's OK)
         await supabase
           .from('crypto_news_articles')
-          .update({ view_count: (data.article.view_count || 0) + 1 })
-          .eq('id', data.article.id)
-          .catch(() => {});
+          .update({ view_count: (articleData.view_count || 0) + 1 })
+          .eq('id', articleData.id)
+          .catch((err) => {
+            console.warn('Could not increment view count (may require auth):', err);
+          });
       }
     } catch (error) {
       console.error('Error loading article:', error);
-      // Fallback: try direct database query
+      // Fallback: try Edge Function if direct query fails
       try {
-        const { data: articleData, error: dbError } = await supabase
-          .from('crypto_news_articles')
-          .select('*')
-          .eq('slug', articleSlug)
-          .eq('status', 'published')
-          .single();
+        const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '';
+        const cleanUrl = supabaseUrl.replace('/rest/v1', '');
+        const functionUrl = `${cleanUrl}/functions/v1/crypto-news-management`;
+
+        const url = new URL(functionUrl);
+        url.searchParams.set('action', 'getPublishedArticle');
+        url.searchParams.set('slug', articleSlug);
         
-        if (!dbError && articleData) {
-          setSelectedArticle(articleData);
+        const response = await fetch(url.toString(), {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+          }
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.article) {
+            setSelectedArticle(data.article);
+          }
         }
       } catch (fallbackError) {
-        console.error('Fallback query also failed:', fallbackError);
+        console.error('Fallback Edge Function also failed:', fallbackError);
       }
     } finally {
       setLoading(false);
