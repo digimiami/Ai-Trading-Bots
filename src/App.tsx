@@ -15,6 +15,10 @@ function AppRoutes() {
   const navigate = useNavigate();
   const location = useLocation();
   
+  // Use key to force remount on route change (fixes lazy loading issues)
+  // MUST be called before any conditional returns (Rules of Hooks)
+  const [key, setKey] = useState(0);
+  
   // Initialize bot executor for automatic trading (only when user is logged in)
   useBotExecutor();
   
@@ -72,6 +76,11 @@ function AppRoutes() {
     }
   }, [user, loading, navigate]);
 
+  useEffect(() => {
+    // Force remount on route change
+    setKey(prev => prev + 1);
+  }, [location.pathname]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
@@ -84,14 +93,6 @@ function AppRoutes() {
       </div>
     );
   }
-
-  // Use key to force remount on route change (fixes lazy loading issues)
-  const [key, setKey] = useState(0);
-  
-  useEffect(() => {
-    // Force remount on route change
-    setKey(prev => prev + 1);
-  }, [location.pathname]);
 
   return (
     <Suspense fallback={
