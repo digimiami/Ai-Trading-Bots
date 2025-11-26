@@ -27,10 +27,43 @@ export default function CryptoNewsPage() {
   const loadArticles = async () => {
     try {
       setLoading(true);
-      const articlesData = await getArticles('published');
-      setArticles(articlesData);
+      // Use public endpoint for published articles
+      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '';
+      const cleanUrl = supabaseUrl.replace('/rest/v1', '');
+      const functionUrl = `${cleanUrl}/functions/v1/crypto-news-management`;
+
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+        },
+        body: JSON.stringify({ action: 'getPublishedArticles' })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to load articles: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setArticles(data.articles || []);
     } catch (error) {
       console.error('Error loading articles:', error);
+      // Fallback: try direct database query if Edge Function fails
+      try {
+        const { data: articlesData, error: dbError } = await supabase
+          .from('crypto_news_articles')
+          .select('*')
+          .eq('status', 'published')
+          .order('published_at', { ascending: false })
+          .order('created_at', { ascending: false });
+        
+        if (!dbError && articlesData) {
+          setArticles(articlesData);
+        }
+      } catch (fallbackError) {
+        console.error('Fallback query also failed:', fallbackError);
+      }
     } finally {
       setLoading(false);
     }
@@ -39,26 +72,82 @@ export default function CryptoNewsPage() {
   const loadArticle = async (articleSlug: string) => {
     try {
       setLoading(true);
-      const article = await getArticle(undefined, articleSlug);
-      if (article) {
-        setSelectedArticle(article);
-        // Increment view count (only for published articles)
-        if (article.status === 'published') {
-          await supabase
-            .from('crypto_news_articles')
-            .update({ view_count: (article.view_count || 0) + 1 })
-            .eq('id', article.id)
-            .catch(() => {});
-        }
+      // Use public endpoint for published articles
+      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '';
+      const cleanUrl = supabaseUrl.replace('/rest/v1', '');
+      const functionUrl = `${cleanUrl}/functions/v1/crypto-news-management`;
+
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+        },
+        body: JSON.stringify({ action: 'getPublishedArticle', slug: articleSlug })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to load article: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data.article) {
+        setSelectedArticle(data.article);
+        // Increment view count
+        await supabase
+          .from('crypto_news_articles')
+          .update({ view_count: (data.article.view_count || 0) + 1 })
+          .eq('id', data.article.id)
+          .catch(() => {});
       }
     } catch (error) {
       console.error('Error loading article:', error);
+      // Fallback: try direct database query
+      try {
+        const { data: articleData, error: dbError } = await supabase
+          .from('crypto_news_articles')
+          .select('*')
+          .eq('slug', articleSlug)
+          .eq('status', 'published')
+          .single();
+        
+        if (!dbError && articleData) {
+          setSelectedArticle(articleData);
+        }
+      } catch (fallbackError) {
+        console.error('Fallback query also failed:', fallbackError);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const categories = ['all', 'general', 'bitcoin', 'ethereum', 'altcoins', 'defi', 'nft', 'trading', 'analysis'];
+  const categories = [
+    'all', 
+    'general', 
+    'bitcoin', 
+    'ethereum', 
+    'xrp',
+    'solana',
+    'cardano',
+    'polkadot',
+    'dogecoin',
+    'shiba',
+    'ondo',
+    'xml',
+    'binance-coin',
+    'polygon',
+    'avalanche',
+    'chainlink',
+    'litecoin',
+    'uniswap',
+    'altcoins', 
+    'defi', 
+    'nft', 
+    'trading', 
+    'analysis',
+    'market-update'
+  ];
   const filteredArticles = categoryFilter === 'all' 
     ? articles 
     : articles.filter(a => a.category === categoryFilter);

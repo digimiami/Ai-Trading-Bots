@@ -19,6 +19,96 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
+    // Parse request to check action
+    let body: any = {}
+    let action: string | null = null
+    let params: any = {}
+    
+    try {
+      if (req.method === 'POST' || req.method === 'PUT') {
+        const bodyText = await req.text()
+        if (bodyText) {
+          body = JSON.parse(bodyText)
+          action = body.action
+          params = { ...body }
+          delete params.action
+        }
+      } else if (req.method === 'GET') {
+        const url = new URL(req.url)
+        action = url.searchParams.get('action')
+        params = Object.fromEntries(url.searchParams.entries())
+      }
+    } catch (e) {
+      // Ignore parse errors for now
+    }
+
+    // Public actions that don't require authentication
+    const publicActions = ['getPublishedArticles', 'getPublishedArticle']
+    const isPublicAction = action && publicActions.includes(action)
+
+    if (isPublicAction) {
+      // Use service role for public access to published articles
+      const { status, limit = 50, offset = 0, slug } = params
+
+      if (action === 'getPublishedArticles') {
+        const { data: articles, error: articlesError } = await supabaseClient
+          .from('crypto_news_articles')
+          .select('*')
+          .eq('status', 'published')
+          .order('published_at', { ascending: false, nullsFirst: false })
+          .order('created_at', { ascending: false })
+          .range(offset, offset + limit - 1)
+
+        if (articlesError) {
+          console.error('Error fetching published articles:', articlesError)
+          return new Response(JSON.stringify({ 
+            error: 'Failed to fetch articles',
+            details: articlesError.message 
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        return new Response(JSON.stringify({ articles: articles || [] }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      if (action === 'getPublishedArticle') {
+        if (!slug) {
+          return new Response(JSON.stringify({ error: 'Slug is required' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        const { data: article, error: articleError } = await supabaseClient
+          .from('crypto_news_articles')
+          .select('*')
+          .eq('slug', slug)
+          .eq('status', 'published')
+          .single()
+
+        if (articleError || !article) {
+          return new Response(JSON.stringify({ 
+            error: 'Article not found',
+            details: articleError?.message 
+          }), {
+            status: 404,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        return new Response(JSON.stringify({ article }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+    }
+
+    // All other actions require admin authentication
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Missing Authorization header' }), {
@@ -50,41 +140,33 @@ serve(async (req) => {
       })
     }
 
-    // Parse request body
-    let body: any = {}
-    let action: string | null = null
-    let params: any = {}
-    
-    try {
-      if (req.method === 'POST' || req.method === 'PUT') {
-        const bodyText = await req.text()
-        if (bodyText) {
-          body = JSON.parse(bodyText)
-          action = body.action
-          params = { ...body }
-          delete params.action
+    // Re-parse body if not already parsed (for admin actions)
+    if (!action) {
+      try {
+        if (req.method === 'POST' || req.method === 'PUT') {
+          const bodyText = await req.text()
+          if (bodyText) {
+            body = JSON.parse(bodyText)
+            action = body.action
+            params = { ...body }
+            delete params.action
+          }
+        } else if (req.method === 'GET') {
+          const url = new URL(req.url)
+          action = url.searchParams.get('action')
+          params = Object.fromEntries(url.searchParams.entries())
         }
-      } else if (req.method === 'GET') {
-        const url = new URL(req.url)
-        action = url.searchParams.get('action')
-        params = Object.fromEntries(url.searchParams.entries())
+      } catch (e) {
+        return new Response(JSON.stringify({ 
+          error: 'Invalid request body',
+          details: e.message 
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
       }
-    } catch (e) {
-      return new Response(JSON.stringify({ 
-        error: 'Invalid request body',
-        details: e.message 
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
     }
 
-    if (!action) {
-      return new Response(JSON.stringify({ error: 'Action parameter required' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
-    }
 
     switch (action) {
       case 'generateArticle': {
@@ -227,6 +309,25 @@ Return the article content in markdown format.`;
           const wordCount = content.split(/\s+/).length
           const readingTime = Math.max(1, Math.ceil(wordCount / 200))
 
+          // Auto-generate SEO meta tags
+          const metaTitle = title || articleTitle
+          const metaDescription = excerpt.length > 160 ? excerpt.substring(0, 157) + '...' : excerpt
+          const metaKeywords = keywords
+          const ogTitle = metaTitle
+          const ogDescription = excerpt
+          const twitterTitle = metaTitle
+          const twitterDescription = excerpt
+          
+          // Generate tags from keywords and category
+          const autoTags = [
+            ...keywords.map(k => k.toLowerCase()),
+            category.toLowerCase(),
+            'crypto',
+            'cryptocurrency',
+            'blockchain',
+            'trading'
+          ].filter((v, i, a) => a.indexOf(v) === i) // Remove duplicates
+
           return new Response(JSON.stringify({
             success: true,
             article: {
@@ -235,7 +336,17 @@ Return the article content in markdown format.`;
               excerpt: excerpt,
               keywords: keywords,
               category: category,
-              reading_time: readingTime
+              reading_time: readingTime,
+              // Auto-filled SEO meta tags
+              meta_title: metaTitle,
+              meta_description: metaDescription,
+              meta_keywords: metaKeywords,
+              og_title: ogTitle,
+              og_description: ogDescription,
+              twitter_card: 'summary_large_image',
+              twitter_title: twitterTitle,
+              twitter_description: twitterDescription,
+              tags: autoTags
             }
           }), {
             status: 200,

@@ -86,9 +86,18 @@ export default function CryptoNewsManager({ onArticlePublished }: CryptoNewsMana
           title: result.article.title || prev.title,
           content: result.article.content || prev.content,
           excerpt: result.article.excerpt || prev.excerpt,
-          reading_time: result.article.reading_time
+          reading_time: result.article.reading_time,
+          // Auto-fill SEO meta tags
+          meta_title: result.article.meta_title || result.article.title || prev.title,
+          meta_description: result.article.meta_description || result.article.excerpt || prev.excerpt,
+          meta_keywords: result.article.meta_keywords || result.article.keywords || prev.keywords,
+          og_title: result.article.og_title || result.article.title || prev.title,
+          og_description: result.article.og_description || result.article.excerpt || prev.excerpt,
+          twitter_title: result.article.twitter_title || result.article.title || prev.title,
+          twitter_description: result.article.twitter_description || result.article.excerpt || prev.excerpt,
+          tags: result.article.tags || prev.tags
         }));
-        alert('✅ Article generated successfully! Review and edit as needed.');
+        alert('✅ Article generated successfully with SEO meta tags! Review and edit as needed.');
       } else {
         throw new Error('No article data returned from API');
       }
@@ -446,13 +455,28 @@ export default function CryptoNewsManager({ onArticlePublished }: CryptoNewsMana
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                   >
                     <option value="general">General</option>
-                    <option value="bitcoin">Bitcoin</option>
-                    <option value="ethereum">Ethereum</option>
+                    <option value="bitcoin">Bitcoin (BTC)</option>
+                    <option value="ethereum">Ethereum (ETH)</option>
+                    <option value="xrp">XRP</option>
+                    <option value="solana">Solana (SOL)</option>
+                    <option value="cardano">Cardano (ADA)</option>
+                    <option value="polkadot">Polkadot (DOT)</option>
+                    <option value="dogecoin">Dogecoin (DOGE)</option>
+                    <option value="shiba">Shiba Inu (SHIB)</option>
+                    <option value="ondo">ONDO</option>
+                    <option value="xml">XML</option>
+                    <option value="binance-coin">Binance Coin (BNB)</option>
+                    <option value="polygon">Polygon (MATIC)</option>
+                    <option value="avalanche">Avalanche (AVAX)</option>
+                    <option value="chainlink">Chainlink (LINK)</option>
+                    <option value="litecoin">Litecoin (LTC)</option>
+                    <option value="uniswap">Uniswap (UNI)</option>
                     <option value="altcoins">Altcoins</option>
                     <option value="defi">DeFi</option>
                     <option value="nft">NFT</option>
                     <option value="trading">Trading</option>
                     <option value="analysis">Analysis</option>
+                    <option value="market-update">Market Update</option>
                   </select>
                 </div>
               </div>
