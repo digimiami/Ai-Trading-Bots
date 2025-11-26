@@ -5,6 +5,7 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE',
+  'Access-Control-Max-Age': '86400',
 }
 
 serve(async (req) => {
@@ -171,27 +172,49 @@ Return the article content in markdown format.`;
 
           if (!deepseekResponse.ok) {
             const errorText = await deepseekResponse.text()
-            console.error('DeepSeek API error:', errorText)
+            console.error('❌ DeepSeek API error:', {
+              status: deepseekResponse.status,
+              statusText: deepseekResponse.statusText,
+              errorText
+            })
             return new Response(JSON.stringify({
-              error: 'Failed to generate article',
-              details: errorText
+              error: 'Failed to generate article from DeepSeek API',
+              details: errorText,
+              status: deepseekResponse.status
             }), {
               status: 500,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              headers: { 
+                ...corsHeaders, 
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+              }
             })
           }
 
           const deepseekData = await deepseekResponse.json()
+          console.log('✅ DeepSeek API response received:', {
+            hasChoices: !!deepseekData.choices,
+            choicesLength: deepseekData.choices?.length || 0
+          })
+
           const generatedContent = deepseekData.choices?.[0]?.message?.content || ''
 
           if (!generatedContent) {
+            console.error('❌ No content in DeepSeek response:', deepseekData)
             return new Response(JSON.stringify({
-              error: 'No content generated from DeepSeek API'
+              error: 'No content generated from DeepSeek API',
+              details: 'DeepSeek API returned empty content. Response: ' + JSON.stringify(deepseekData).substring(0, 200)
             }), {
               status: 500,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              headers: { 
+                ...corsHeaders, 
+                'Content-Type': 'application/json',
+                'Access-Control-Allow-Origin': '*'
+              }
             })
           }
+
+          console.log('✅ Generated content length:', generatedContent.length)
 
           // Extract title and content
           const articleTitle = title || `Crypto News: ${keywordsStr}`
@@ -215,16 +238,27 @@ Return the article content in markdown format.`;
               reading_time: readingTime
             }
           }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            status: 200,
+            headers: { 
+              ...corsHeaders, 
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*'
+            }
           })
         } catch (error: any) {
-          console.error('Error generating article:', error)
+          console.error('❌ Error generating article:', error)
+          console.error('❌ Error stack:', error?.stack)
           return new Response(JSON.stringify({
             error: 'Failed to generate article',
-            details: error?.message || String(error)
+            details: error?.message || String(error),
+            type: error?.name || 'UnknownError'
           }), {
             status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            headers: { 
+              ...corsHeaders, 
+              'Content-Type': 'application/json',
+              'Access-Control-Allow-Origin': '*'
+            }
           })
         }
       }
@@ -530,14 +564,25 @@ Return the article content in markdown format.`;
         })
     }
 
-  } catch (error) {
-    console.error('Crypto news management error:', error)
+  } catch (error: any) {
+    console.error('❌ Crypto news management error:', error)
+    console.error('❌ Error stack:', error?.stack)
+    console.error('❌ Error details:', JSON.stringify(error, Object.getOwnPropertyNames(error)))
+    
+    // Ensure CORS headers are always included
     return new Response(JSON.stringify({ 
       error: error?.message || 'Internal server error',
-      details: String(error)
+      details: error?.details || String(error),
+      stack: error?.stack
     }), {
       status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      headers: { 
+        ...corsHeaders, 
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+        'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE'
+      }
     })
   }
 })

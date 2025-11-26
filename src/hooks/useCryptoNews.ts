@@ -45,10 +45,22 @@ export function useCryptoNews() {
         throw new Error('Not authenticated. Please log in.');
       }
 
-      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '';
+      // Get Supabase URL - handle both formats
+      let supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '';
+      
+      // Remove /rest/v1 if present
+      if (supabaseUrl.includes('/rest/v1')) {
+        supabaseUrl = supabaseUrl.replace('/rest/v1', '');
+      }
+      
       const functionUrl = `${supabaseUrl}/functions/v1/crypto-news-management`;
 
-      console.log('📡 Calling crypto-news-management:', { action, functionUrl });
+      console.log('📡 Calling crypto-news-management:', { 
+        action, 
+        functionUrl,
+        hasSession: !!session,
+        supabaseUrl 
+      });
 
       const response = await fetch(functionUrl, {
         method: 'POST',
