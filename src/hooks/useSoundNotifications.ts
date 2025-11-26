@@ -13,20 +13,34 @@ export function useSoundNotifications() {
   const lastTradeIdsRef = useRef<Set<string>>(new Set());
   const [volume, setVolume] = useState(0.7);
 
-  // Initialize audio element
+  // Initialize audio element - only on user interaction
   useEffect(() => {
     // Create audio context - handle browser autoplay policy
     let audioContext: AudioContext | null = null;
+    let userInteracted = false;
     
     const initAudioContext = async () => {
       try {
-        audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        // Only create AudioContext after user interaction
+        if (!userInteracted) {
+          console.log('🔔 AudioContext requires user interaction - waiting...');
+          return null;
+        }
+        
+        if (!audioContext || audioContext.state === 'closed') {
+          audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        }
         
         // Resume audio context if suspended (browser autoplay policy)
         if (audioContext.state === 'suspended') {
           console.log('🔔 AudioContext suspended, attempting to resume...');
-          await audioContext.resume();
-          console.log('✅ AudioContext resumed:', audioContext.state);
+          try {
+            await audioContext.resume();
+            console.log('✅ AudioContext resumed:', audioContext.state);
+          } catch (resumeError) {
+            console.warn('⚠️ Could not resume AudioContext:', resumeError);
+            // Don't fail - we'll try again on next play
+          }
         }
         
         return audioContext;
@@ -35,6 +49,21 @@ export function useSoundNotifications() {
         return null;
       }
     };
+    
+    // Listen for user interaction to enable audio
+    const enableAudio = async () => {
+      if (!userInteracted) {
+        userInteracted = true;
+        console.log('🔔 User interaction detected - enabling audio');
+        await initAudioContext();
+      }
+    };
+    
+    // Add event listeners for user interaction
+    const events = ['click', 'touchstart', 'keydown'];
+    events.forEach(event => {
+      document.addEventListener(event, enableAudio, { once: true });
+    });
     
     const createNotificationSound = async () => {
       try {
@@ -82,15 +111,15 @@ export function useSoundNotifications() {
       }
     };
 
-    // Initialize audio context on mount
-    initAudioContext().then(() => {
-      console.log('🔔 AudioContext initialized for sound notifications');
-    });
-
     // Store the function for later use
     (window as any).__playTradeSound = createNotificationSound;
 
     return () => {
+      // Remove event listeners
+      events.forEach(event => {
+        document.removeEventListener(event, enableAudio);
+      });
+      
       if (audioContext && audioContext.state !== 'closed') {
         audioContext.close().catch(console.error);
       }

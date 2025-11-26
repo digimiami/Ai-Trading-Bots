@@ -98,7 +98,14 @@ serve(async (req) => {
 
           if (usersError) {
             console.error('Error fetching users:', usersError)
-            throw usersError
+            return new Response(JSON.stringify({ 
+              users: [],
+              error: 'Failed to fetch users',
+              details: usersError.message 
+            }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
           }
           
           const usersWithStats = await Promise.all(

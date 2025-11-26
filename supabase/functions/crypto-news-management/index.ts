@@ -48,6 +48,27 @@ serve(async (req) => {
     const publicActions = ['getPublishedArticles', 'getPublishedArticle']
     const isPublicAction = action && publicActions.includes(action)
 
+    // Skip auth check for public actions
+    if (!isPublicAction) {
+      // Check authentication for non-public actions
+      const authHeader = req.headers.get('Authorization')
+      if (!authHeader) {
+        return new Response(JSON.stringify({ error: 'Missing Authorization header' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      const token = authHeader.replace('Bearer ', '')
+      const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token)
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+    }
+
     if (isPublicAction) {
       // Use service role for public access to published articles
       const { status, limit = 50, offset = 0, slug } = params

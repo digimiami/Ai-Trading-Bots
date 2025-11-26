@@ -198,6 +198,7 @@ export function useAuth() {
     let isMounted = true
     let sessionLoaded = false
     let manuallyRestoredSession = false // Track if we restored from localStorage
+    let authStateChangeTimeout: ReturnType<typeof setTimeout> | null = null
     
     // Get initial session with timeout and better error handling
     const sessionPromise = Promise.race([
@@ -425,45 +426,54 @@ export function useAuth() {
       }
     }, 8000) // Reduced since we have Promise.race now
     
-    // Listen for auth changes
+    // Listen for auth changes (debounced to prevent excessive re-renders)
     let subscription: any = null
     try {
       const { data } = supabase.auth.onAuthStateChange(
         async (event, session) => {
-          console.log('🔐 Auth state changed:', event, session?.user?.email)
-          if (!isMounted) return
-          
-          // If we just manually restored a session, ignore auth state changes that would clear it
-          // unless it's a SIGNED_IN event (which confirms our restoration worked)
-          if (manuallyRestoredSession && !session && event !== 'SIGNED_IN') {
-            console.log('⚠️ Ignoring auth state change - session was manually restored')
-            return
+          // Clear any pending timeout
+          if (authStateChangeTimeout) {
+            clearTimeout(authStateChangeTimeout)
           }
           
-          // Only clear user if we're not in the middle of a manual restoration
-          if (session?.user) {
-            const access = await fetchUserAccess(session.user.id)
-            if (access.status !== 'active') {
-              console.warn('⚠️ Auth change detected inactive user, signing out:', { email: session.user.email, status: access.status })
-              await supabase.auth.signOut()
-              setSession(null)
-              setUser(null)
-              setLoading(false)
-              manuallyRestoredSession = false
+          // Debounce auth state changes (only process after 300ms of no changes)
+          authStateChangeTimeout = setTimeout(async () => {
+            if (!isMounted) return
+            
+            console.log('🔐 Auth state changed:', event, session?.user?.email)
+            
+            // If we just manually restored a session, ignore auth state changes that would clear it
+            // unless it's a SIGNED_IN event (which confirms our restoration worked)
+            if (manuallyRestoredSession && !session && event !== 'SIGNED_IN') {
+              console.log('⚠️ Ignoring auth state change - session was manually restored')
               return
             }
-            setUser({ ...session.user, role: access.role || 'user', status: access.status || 'active' })
-            setSession(session)
-            console.log('✅ User set from auth state:', { email: session.user.email, access })
-            manuallyRestoredSession = false // Clear flag when we get a real auth state
-          } else if (!manuallyRestoredSession) {
-            // Only clear if we haven't manually restored
-            setSession(null)
-            setUser(null)
-            console.log('❌ User cleared from auth state')
-          }
-          
-          setLoading(false)
+            
+            // Only clear user if we're not in the middle of a manual restoration
+            if (session?.user) {
+              const access = await fetchUserAccess(session.user.id)
+              if (access.status !== 'active') {
+                console.warn('⚠️ Auth change detected inactive user, signing out:', { email: session.user.email, status: access.status })
+                await supabase.auth.signOut()
+                setSession(null)
+                setUser(null)
+                setLoading(false)
+                manuallyRestoredSession = false
+                return
+              }
+              setUser({ ...session.user, role: access.role || 'user', status: access.status || 'active' })
+              setSession(session)
+              console.log('✅ User set from auth state:', { email: session.user.email, access })
+              manuallyRestoredSession = false // Clear flag when we get a real auth state
+            } else if (!manuallyRestoredSession) {
+              // Only clear if we haven't manually restored
+              setSession(null)
+              setUser(null)
+              console.log('❌ User cleared from auth state')
+            }
+            
+            setLoading(false)
+          }, 300) // 300ms debounce
         }
       )
       subscription = data?.subscription
@@ -478,6 +488,9 @@ export function useAuth() {
     return () => {
       isMounted = false
       clearTimeout(timeout)
+      if (authStateChangeTimeout) {
+        clearTimeout(authStateChangeTimeout)
+      }
       if (subscription) {
         subscription.unsubscribe()
       }

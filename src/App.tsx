@@ -1,7 +1,7 @@
 
 import { BrowserRouter } from 'react-router-dom';
-import { Suspense, useEffect } from 'react';
-import { useRoutes, useNavigate } from 'react-router-dom';
+import { Suspense, useEffect, useState } from 'react';
+import { useRoutes, useNavigate, useLocation } from 'react-router-dom';
 import routes from './router/config';
 import { useAuth } from './hooks/useAuth';
 import { useBotExecutor } from './hooks/useBotExecutor';
@@ -13,6 +13,7 @@ function AppRoutes() {
   const element = useRoutes(routes);
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   
   // Initialize bot executor for automatic trading (only when user is logged in)
   useBotExecutor();
@@ -84,6 +85,14 @@ function AppRoutes() {
     );
   }
 
+  // Use key to force remount on route change (fixes lazy loading issues)
+  const [key, setKey] = useState(0);
+  
+  useEffect(() => {
+    // Force remount on route change
+    setKey(prev => prev + 1);
+  }, [location.pathname]);
+
   return (
     <Suspense fallback={
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
@@ -95,7 +104,9 @@ function AppRoutes() {
         </div>
       </div>
     }>
-      {element}
+      <div key={key}>
+        {element}
+      </div>
     </Suspense>
   );
 }
