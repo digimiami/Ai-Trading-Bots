@@ -19,14 +19,15 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // Parse request to check action
+    // Parse request to check action (clone request body for reuse)
     let body: any = {}
     let action: string | null = null
     let params: any = {}
+    let bodyText: string | null = null
     
     try {
       if (req.method === 'POST' || req.method === 'PUT') {
-        const bodyText = await req.text()
+        bodyText = await req.text()
         if (bodyText) {
           body = JSON.parse(bodyText)
           action = body.action
@@ -39,7 +40,8 @@ serve(async (req) => {
         params = Object.fromEntries(url.searchParams.entries())
       }
     } catch (e) {
-      // Ignore parse errors for now
+      console.error('Error parsing request:', e)
+      // Continue - might be a public action
     }
 
     // Public actions that don't require authentication
@@ -140,31 +142,14 @@ serve(async (req) => {
       })
     }
 
-    // Re-parse body if not already parsed (for admin actions)
-    if (!action) {
-      try {
-        if (req.method === 'POST' || req.method === 'PUT') {
-          const bodyText = await req.text()
-          if (bodyText) {
-            body = JSON.parse(bodyText)
-            action = body.action
-            params = { ...body }
-            delete params.action
-          }
-        } else if (req.method === 'GET') {
-          const url = new URL(req.url)
-          action = url.searchParams.get('action')
-          params = Object.fromEntries(url.searchParams.entries())
-        }
-      } catch (e) {
-        return new Response(JSON.stringify({ 
-          error: 'Invalid request body',
-          details: e.message 
-        }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
-      }
+    // If action not found and not public, try to parse again (shouldn't happen but safety check)
+    if (!action && !isPublicAction) {
+      return new Response(JSON.stringify({ 
+        error: 'Action parameter required'
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
     }
 
 
@@ -328,6 +313,11 @@ Return the article content in markdown format.`;
             'trading'
           ].filter((v, i, a) => a.indexOf(v) === i) // Remove duplicates
 
+          // Generate featured image URL using Unsplash API (free, no key required for basic usage)
+          // Using a placeholder service that generates images based on keywords
+          const imageKeywords = keywords.slice(0, 3).join(',') || category || 'cryptocurrency'
+          const featuredImageUrl = `https://source.unsplash.com/800x450/?${encodeURIComponent(imageKeywords)},cryptocurrency,blockchain`
+
           return new Response(JSON.stringify({
             success: true,
             article: {
@@ -346,7 +336,9 @@ Return the article content in markdown format.`;
               twitter_card: 'summary_large_image',
               twitter_title: twitterTitle,
               twitter_description: twitterDescription,
-              tags: autoTags
+              tags: autoTags,
+              // Auto-generated featured image
+              featured_image_url: featuredImageUrl
             }
           }), {
             status: 200,

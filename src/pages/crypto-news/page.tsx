@@ -32,13 +32,16 @@ export default function CryptoNewsPage() {
       const cleanUrl = supabaseUrl.replace('/rest/v1', '');
       const functionUrl = `${cleanUrl}/functions/v1/crypto-news-management`;
 
-      const response = await fetch(functionUrl, {
-        method: 'POST',
+      // Use GET method for public endpoints to avoid CORS preflight issues
+      const url = new URL(functionUrl);
+      url.searchParams.set('action', 'getPublishedArticles');
+      
+      const response = await fetch(url.toString(), {
+        method: 'GET',
         headers: {
           'Content-Type': 'application/json',
           'apikey': import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || ''
-        },
-        body: JSON.stringify({ action: 'getPublishedArticles' })
+        }
       });
 
       if (!response.ok) {
@@ -77,13 +80,17 @@ export default function CryptoNewsPage() {
       const cleanUrl = supabaseUrl.replace('/rest/v1', '');
       const functionUrl = `${cleanUrl}/functions/v1/crypto-news-management`;
 
-      const response = await fetch(functionUrl, {
-        method: 'POST',
+      // Use GET method for public endpoints to avoid CORS preflight issues
+      const url = new URL(functionUrl);
+      url.searchParams.set('action', 'getPublishedArticle');
+      url.searchParams.set('slug', articleSlug);
+      
+      const response = await fetch(url.toString(), {
+        method: 'GET',
         headers: {
           'Content-Type': 'application/json',
           'apikey': import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || ''
-        },
-        body: JSON.stringify({ action: 'getPublishedArticle', slug: articleSlug })
+        }
       });
 
       if (!response.ok) {
@@ -267,14 +274,21 @@ export default function CryptoNewsPage() {
                 <Card
                   key={article.id}
                   className="p-6 cursor-pointer hover:shadow-lg transition-shadow"
-                  onClick={() => navigate(`/crypto-news/${article.slug}`)}
+                  onClick={() => navigate(`/crypto-news/${article.slug || article.id}`)}
                 >
-                  {article.featured_image_url && (
+                  {article.featured_image_url ? (
                     <img
                       src={article.featured_image_url}
                       alt={article.title}
                       className="w-full h-48 object-cover rounded-lg mb-4"
                     />
+                  ) : (
+                    <div className="w-full h-48 bg-gradient-to-br from-purple-500 to-blue-600 rounded-lg mb-4 flex items-center justify-center">
+                      <div className="text-white text-center">
+                        <i className="ri-image-line text-4xl mb-2"></i>
+                        <p className="text-sm font-medium">{article.category || 'Crypto'}</p>
+                      </div>
+                    </div>
                   )}
                   <div className="flex items-center gap-2 text-xs text-gray-500 mb-2">
                     <span>{new Date(article.published_at || article.created_at).toLocaleDateString()}</span>
@@ -293,9 +307,15 @@ export default function CryptoNewsPage() {
                         {article.category}
                       </span>
                     )}
-                    <span className="text-blue-600 dark:text-blue-400 text-sm font-medium">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/crypto-news/${article.slug || article.id}`);
+                      }}
+                      className="text-blue-600 dark:text-blue-400 text-sm font-medium hover:underline flex items-center gap-1"
+                    >
                       Read more <i className="ri-arrow-right-line"></i>
-                    </span>
+                    </button>
                   </div>
                 </Card>
               ))}
