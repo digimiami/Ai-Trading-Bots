@@ -1,5 +1,6 @@
 
 import { useNavigate, useLocation } from 'react-router-dom';
+import LanguageSwitcher from '../ui/LanguageSwitcher';
 
 interface HeaderProps {
   title: string;
@@ -40,6 +41,7 @@ export function Header({ title, subtitle, showBack = false, action, rightAction 
         </div>
         
         <div className="flex items-center space-x-2">
+          <LanguageSwitcher />
           {showHelpButton && (
             <button
               onClick={() => navigate('/help')}

@@ -1,11 +1,13 @@
 
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/useAuth';
 
 export default function Navigation() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, loading } = useAuth();
+  const { t } = useTranslation();
 
   // Public routes that don't require login
   const publicRoutes = ['/market-dashboard', '/crypto-bubbles', '/crypto-news'];
@@ -14,11 +16,11 @@ export default function Navigation() {
   // For public routes, show simplified navigation
   if (isPublicRoute) {
     const publicNavItems = [
-      { path: '/', icon: 'ri-home-line', label: 'Home' },
-      { path: '/market-dashboard', icon: 'ri-line-chart-line', label: 'Market' },
+      { path: '/', icon: 'ri-home-line', label: t('nav.home') },
+      { path: '/market-dashboard', icon: 'ri-line-chart-line', label: t('nav.market') },
       { path: '/crypto-bubbles', icon: 'ri-bubble-chart-line', label: 'Bubbles' },
       { path: '/crypto-news', icon: 'ri-newspaper-line', label: 'News' },
-      { path: '/academy', icon: 'ri-graduation-cap-line', label: 'Academy' },
+      { path: '/academy', icon: 'ri-graduation-cap-line', label: t('nav.academy') },
       { path: '/auth', icon: 'ri-login-box-line', label: 'Sign In' }
     ];
 
@@ -66,19 +68,19 @@ export default function Navigation() {
   }
 
   const navItems = [
-    { path: '/dashboard', icon: 'ri-home-line', label: 'Home' },
-    { path: '/academy', icon: 'ri-graduation-cap-line', label: 'Academy' },
+    { path: '/dashboard', icon: 'ri-home-line', label: t('nav.home') },
+    { path: '/academy', icon: 'ri-graduation-cap-line', label: t('nav.academy') },
     { path: '/pablo-ready', icon: 'ri-star-line', label: 'Pablo Ready' },
-    { path: '/market-dashboard', icon: 'ri-line-chart-line', label: 'Market' },
-    { path: '/bots', icon: 'ri-robot-line', label: 'Bots' },
+    { path: '/market-dashboard', icon: 'ri-line-chart-line', label: t('nav.market') },
+    { path: '/bots', icon: 'ri-robot-line', label: t('nav.bots') },
     { path: '/backtest', icon: 'ri-test-tube-line', label: 'Backtest' },
     { path: '/bot-activity', icon: 'ri-file-list-line', label: 'Activity' },
-    { path: '/trades', icon: 'ri-exchange-line', label: 'Trades' },
-    { path: '/performance', icon: 'ri-line-chart-line', label: 'Performance' },
+    { path: '/trades', icon: 'ri-exchange-line', label: t('nav.trades') },
+    { path: '/performance', icon: 'ri-line-chart-line', label: t('nav.performance') },
     { path: '/transaction-log', icon: 'ri-bar-chart-2-line', label: 'Log' },
-    { path: '/paper-trading', icon: 'ri-edit-box-line', label: 'Paper' },
+    { path: '/paper-trading', icon: 'ri-edit-box-line', label: t('nav.paperTrading') },
     { path: '/futures-pairs-finder', icon: 'ri-search-line', label: 'Futures' },
-    { path: '/settings', icon: 'ri-settings-line', label: 'Settings' }
+    { path: '/settings', icon: 'ri-settings-line', label: t('nav.settings') }
   ];
 
   // Add AI/ML Dashboard if feature is enabled

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import TechnicalAnalysis from '../../components/ui/TechnicalAnalysis';
@@ -63,6 +64,7 @@ export default function MarketDashboardPage() {
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [priceUpdates, setPriceUpdates] = useState<Map<string, number>>(new Map());
   const [activeTab, setActiveTab] = useState<'overview' | 'knowledge' | 'tips'>('overview');
+  const { t } = useTranslation();
 
   // Fetch market data
   const fetchMarketData = async () => {
@@ -416,7 +418,7 @@ export default function MarketDashboardPage() {
               } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors`}
             >
               <i className="ri-line-chart-line mr-2"></i>
-              Overview
+              {t('market.overview')}
             </button>
             <button
               onClick={() => setActiveTab('knowledge')}
@@ -427,7 +429,7 @@ export default function MarketDashboardPage() {
               } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors`}
             >
               <i className="ri-book-open-line mr-2"></i>
-              Knowledge & Recommendations
+              {t('market.knowledge')}
             </button>
             <button
               onClick={() => setActiveTab('tips')}
@@ -438,7 +440,7 @@ export default function MarketDashboardPage() {
               } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors`}
             >
               <i className="ri-lightbulb-flash-line mr-2"></i>
-              Trading Tips
+              {t('market.tips')}
             </button>
           </nav>
         </div>
