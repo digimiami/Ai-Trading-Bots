@@ -1484,10 +1484,10 @@ export default function MarketDashboardPage() {
                 Market Conditions & Timing Tips
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
-                  <p className="font-semibold text-gray-900 dark:text-white mb-2">📊 Trade Trending Markets, Avoid Ranging</p>
-                  <p className="text-sm text-gray-700 dark:text-gray-300">Use ADX to identify trends. ADX > 25 = trending (good for trading). ADX < 20 = ranging (avoid or use mean reversion).</p>
-                </div>
+                  <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-2">📊 Trade Trending Markets, Avoid Ranging</p>
+                    <p className="text-sm text-gray-700 dark:text-gray-300">Use ADX to identify trends. ADX &gt; 25 = trending (good for trading). ADX &lt; 20 = ranging (avoid or use mean reversion).</p>
+                  </div>
                 <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
                   <p className="font-semibold text-gray-900 dark:text-white mb-2">⚡ Avoid Trading During Low Volume</p>
                   <p className="text-sm text-gray-700 dark:text-gray-300">Low volume = wide spreads, high slippage, unpredictable moves. Wait for volume to pick up.</p>
