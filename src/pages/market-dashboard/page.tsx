@@ -62,7 +62,7 @@ export default function MarketDashboardPage() {
   const [wsConnected, setWsConnected] = useState(false);
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [priceUpdates, setPriceUpdates] = useState<Map<string, number>>(new Map());
-  const [activeTab, setActiveTab] = useState<'overview' | 'knowledge'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'knowledge' | 'tips'>('overview');
 
   // Fetch market data
   const fetchMarketData = async () => {
@@ -428,6 +428,17 @@ export default function MarketDashboardPage() {
             >
               <i className="ri-book-open-line mr-2"></i>
               Knowledge & Recommendations
+            </button>
+            <button
+              onClick={() => setActiveTab('tips')}
+              className={`${
+                activeTab === 'tips'
+                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300'
+              } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors`}
+            >
+              <i className="ri-lightbulb-flash-line mr-2"></i>
+              Trading Tips
             </button>
           </nav>
         </div>
@@ -1337,6 +1348,342 @@ export default function MarketDashboardPage() {
                       <li><strong>Features:</strong> Custom filters, ML enabled</li>
                     </ul>
                   </div>
+                </div>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* Trading Tips Tab Content */}
+        {activeTab === 'tips' && (
+          <div className="space-y-6">
+            <Card className="p-6">
+              <div className="flex items-center gap-3 mb-6">
+                <i className="ri-lightbulb-flash-line text-3xl text-yellow-500"></i>
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Trading Tips for Better Results</h2>
+                  <p className="text-gray-600 dark:text-gray-400">Expert tips and best practices to improve your trading performance</p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Risk Management Tips */}
+            <Card className="p-6 border-l-4 border-red-500">
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                <i className="ri-shield-line text-red-500"></i>
+                Risk Management Tips
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">💡 Never Risk More Than 1-2% Per Trade</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Risk only 1-2% of your total capital per trade. This means even 10 losing trades in a row only cost you 10-20% of your account.</p>
+                </div>
+                <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">🎯 Always Use Stop Loss</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Never trade without a stop loss. It's your safety net that prevents catastrophic losses when trades go against you.</p>
+                </div>
+                <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">📊 Keep Risk-Reward Ratio at 1:2 or Better</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">If you risk $100, aim to make at least $200. This way, you only need 33% win rate to be profitable.</p>
+                </div>
+                <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">💰 Don't Trade with Money You Can't Afford to Lose</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Only trade with disposable income. Never risk money needed for bills, rent, or emergencies.</p>
+                </div>
+                <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">⏸️ Set Daily Loss Limits</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">If you lose X% in a day, stop trading. Emotional revenge trading after losses usually leads to bigger losses.</p>
+                </div>
+                <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">🔄 Diversify Your Positions</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Don't put all your capital in one trade or one asset. Spread risk across multiple positions (but limit concurrent trades).</p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Strategy & Execution Tips */}
+            <Card className="p-6 border-l-4 border-blue-500">
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                <i className="ri-strategy-line text-blue-500"></i>
+                Strategy & Execution Tips
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">📈 Trade in the Direction of the Trend</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Use higher timeframe analysis to determine the overall trend. It's easier to profit when trading with the trend than against it.</p>
+                </div>
+                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">⏰ Trade During High Volume Hours</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Higher volume = better liquidity = tighter spreads and less slippage. Avoid trading during low-liquidity periods.</p>
+                </div>
+                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">🎯 Wait for Multiple Confirmations</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Don't trade on a single indicator. Wait for RSI, ADX, EMA, and volume to align before entering.</p>
+                </div>
+                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">📊 Use Multiple Timeframe Analysis</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Check 4h/daily for trend direction, then use 1h/15m for entry timing. This improves your win rate significantly.</p>
+                </div>
+                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">🚫 Avoid Overtrading</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Quality over quantity. Set a cooldown between trades. Not every market condition requires a trade.</p>
+                </div>
+                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">⚡ Use Paper Trading First</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Always test new strategies in paper trading mode first. Validate your approach before risking real money.</p>
+                </div>
+                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">📝 Keep a Trading Journal</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Record your trades, reasons for entry/exit, and outcomes. Review regularly to identify patterns and improve.</p>
+                </div>
+                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">🎲 Let Winners Run, Cut Losers Fast</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Use trailing stops to protect profits on winning trades. Exit losing trades quickly - don't hope they'll recover.</p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Leverage & Position Sizing Tips */}
+            <Card className="p-6 border-l-4 border-purple-500">
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                <i className="ri-exchange-funds-line text-purple-500"></i>
+                Leverage & Position Sizing Tips
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">⚡ Start with Low Leverage</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Begin with 2x-3x leverage. Only increase after consistent profitability. Higher leverage amplifies both gains AND losses.</p>
+                </div>
+                <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">💰 Never Use Maximum Leverage</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Even if exchange offers 100x, don't use it. 5x-10x is risky enough. Most professional traders use 3x-5x maximum.</p>
+                </div>
+                <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">📊 Size Positions Based on Volatility</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">More volatile pairs = smaller positions. Less volatile pairs = can use slightly larger positions (still respect risk limits).</p>
+                </div>
+                <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">🎯 Maintain Margin Buffer</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Keep 30-50% of your capital free as margin buffer. This prevents liquidation during adverse price movements.</p>
+                </div>
+                <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">⚖️ Reduce Leverage in Uncertain Markets</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">During high volatility or news events, reduce leverage or avoid trading. Protect your capital first.</p>
+                </div>
+                <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">📈 Scale Position Size with Confidence</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Only increase position sizes when your strategy is consistently profitable. Scale gradually, not all at once.</p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Market Conditions Tips */}
+            <Card className="p-6 border-l-4 border-green-500">
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                <i className="ri-bar-chart-line text-green-500"></i>
+                Market Conditions & Timing Tips
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">📊 Trade Trending Markets, Avoid Ranging</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Use ADX to identify trends. ADX > 25 = trending (good for trading). ADX < 20 = ranging (avoid or use mean reversion).</p>
+                </div>
+                <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">⚡ Avoid Trading During Low Volume</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Low volume = wide spreads, high slippage, unpredictable moves. Wait for volume to pick up.</p>
+                </div>
+                <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">📰 Be Cautious Around News Events</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Major news can cause sudden price spikes. Either avoid trading or use wider stops during news events.</p>
+                </div>
+                <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">🌙 Consider Market Sessions</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Different times = different volatility. Asian session = lower volatility. US/EU overlap = highest volatility and volume.</p>
+                </div>
+                <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">📈 Trade Liquid Pairs</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Stick to major pairs (BTC, ETH, SOL, BNB, XRP) with high 24h volume. Avoid low-liquidity altcoins - they're harder to exit.</p>
+                </div>
+                <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">🎯 Use Volatility Filters</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Set minimum ATR or BB Width thresholds. Too low volatility = choppy markets. Too high = unpredictable moves.</p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Psychology & Mindset Tips */}
+            <Card className="p-6 border-l-4 border-orange-500">
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                <i className="ri-brain-line text-orange-500"></i>
+                Psychology & Mindset Tips
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-orange-50 dark:bg-orange-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">🧠 Remove Emotions from Trading</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Let your bot execute the strategy. Don't manually override trades based on fear or greed. Trust your system.</p>
+                </div>
+                <div className="bg-orange-50 dark:bg-orange-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">💪 Accept Losses as Part of Trading</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Not every trade will win. Losses are normal. Focus on overall profitability, not individual trades.</p>
+                </div>
+                <div className="bg-orange-50 dark:bg-orange-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">🚫 Don't Chase Losses</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">After a loss, don't increase position size or change strategy to "win it back." This leads to bigger losses.</p>
+                </div>
+                <div className="bg-orange-50 dark:bg-orange-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">✅ Stick to Your Trading Plan</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Create a plan, test it, then stick to it. Don't change settings after every loss. Give strategies time to work.</p>
+                </div>
+                <div className="bg-orange-50 dark:bg-orange-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">📚 Continuously Learn & Adapt</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Markets change. Review your trades monthly, learn from mistakes, and adjust strategies based on market conditions.</p>
+                </div>
+                <div className="bg-orange-50 dark:bg-orange-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">⏸️ Take Breaks When Needed</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">If you're on a losing streak or feeling emotional, pause trading. Come back with a clear mind.</p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Stop Loss & Take Profit Tips */}
+            <Card className="p-6 border-l-4 border-indigo-500">
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                <i className="ri-price-tag-3-line text-indigo-500"></i>
+                Stop Loss & Take Profit Tips
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">🛑 Never Move Stop Loss Against You</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Once a trade goes against you, don't widen the stop loss hoping it will recover. Accept the loss and move on.</p>
+                </div>
+                <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">📈 Use Trailing Stops for Winners</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">After TP1 is hit, use trailing stops to lock in profits while allowing room for further gains.</p>
+                </div>
+                <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">🎯 Set Stop Loss Based on ATR, Not Percentage</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">ATR-based stops adapt to volatility. Volatile pairs get wider stops, calm pairs get tighter stops.</p>
+                </div>
+                <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">💰 Take Partial Profits</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Close 50% at TP1 (1:1 risk-reward), let the rest ride to TP2. This locks in profits while maintaining upside.</p>
+                </div>
+                <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">✅ Move Stop Loss to Breakeven</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Once price moves 0.8R in your favor, move stop loss to entry price. This ensures at worst, you break even.</p>
+                </div>
+                <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">⏰ Use Time Stops</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">If a trade hasn't hit TP or SL after 24-48 hours, consider closing it. Markets that don't move often reverse.</p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Bot Management Tips */}
+            <Card className="p-6 border-l-4 border-teal-500">
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                <i className="ri-robot-line text-teal-500"></i>
+                Bot Management Tips
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-teal-50 dark:bg-teal-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">🔧 Monitor Your Bots Regularly</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Check logs daily. Ensure orders are executing correctly, stop losses are working, and there are no errors.</p>
+                </div>
+                <div className="bg-teal-50 dark:bg-teal-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">📊 Review Performance Weekly</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Analyze win rate, average profit/loss, and drawdowns. Adjust settings if performance degrades.</p>
+                </div>
+                <div className="bg-teal-50 dark:bg-teal-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">🔄 Update Settings Based on Market Conditions</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Markets change. What worked last month might not work this month. Adapt your bots to current market regime.</p>
+                </div>
+                <div className="bg-teal-50 dark:bg-teal-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">🚫 Don't Over-Optimize</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Too many filters and conditions can cause overfitting. Keep strategies simple and robust.</p>
+                </div>
+                <div className="bg-teal-50 dark:bg-teal-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">⚡ Use Multiple Bots for Different Strategies</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">One bot for trends, one for reversals. Diversify strategies across different market conditions.</p>
+                </div>
+                <div className="bg-teal-50 dark:bg-teal-900/20 p-4 rounded-lg">
+                  <p className="font-semibold text-gray-900 dark:text-white mb-2">🛡️ Use Safety Limits</p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300">Enable daily/weekly loss limits and max consecutive losses. Let the bot protect itself from catastrophic drawdowns.</p>
+                </div>
+              </div>
+            </Card>
+
+            {/* Common Mistakes to Avoid */}
+            <Card className="p-6 border-2 border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20">
+              <h3 className="text-xl font-semibold text-red-900 dark:text-red-300 mb-4 flex items-center gap-2">
+                <i className="ri-error-warning-line text-red-600"></i>
+                Common Mistakes to Avoid
+              </h3>
+              <div className="space-y-3 text-sm">
+                <div className="flex items-start gap-3">
+                  <i className="ri-close-circle-line text-red-500 text-xl mt-0.5"></i>
+                  <div>
+                    <p className="font-semibold text-gray-900 dark:text-white">Trading without stop loss</p>
+                    <p className="text-gray-700 dark:text-gray-300">One bad trade can wipe out months of profits. Always use stop loss.</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <i className="ri-close-circle-line text-red-500 text-xl mt-0.5"></i>
+                  <div>
+                    <p className="font-semibold text-gray-900 dark:text-white">Using too much leverage</p>
+                    <p className="text-gray-700 dark:text-gray-300">10x+ leverage is gambling, not trading. Even 5x is very risky.</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <i className="ri-close-circle-line text-red-500 text-xl mt-0.5"></i>
+                  <div>
+                    <p className="font-semibold text-gray-900 dark:text-white">Overtrading</p>
+                    <p className="text-gray-700 dark:text-gray-300">More trades ≠ more profits. Quality setups are rare - be patient.</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <i className="ri-close-circle-line text-red-500 text-xl mt-0.5"></i>
+                  <div>
+                    <p className="font-semibold text-gray-900 dark:text-white">Ignoring market conditions</p>
+                    <p className="text-gray-700 dark:text-gray-300">Trading during low liquidity or major news events increases risk significantly.</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <i className="ri-close-circle-line text-red-500 text-xl mt-0.5"></i>
+                  <div>
+                    <p className="font-semibold text-gray-900 dark:text-white">Changing strategy after losses</p>
+                    <p className="text-gray-700 dark:text-gray-300">Give strategies time. One bad week doesn't mean the strategy is broken.</p>
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <i className="ri-close-circle-line text-red-500 text-xl mt-0.5"></i>
+                  <div>
+                    <p className="font-semibold text-gray-900 dark:text-white">Not testing in paper trading first</p>
+                    <p className="text-gray-700 dark:text-gray-300">Always validate new strategies with paper trading before using real money.</p>
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            {/* Quick Reference */}
+            <Card className="p-6 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20">
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">⚡ Quick Reference: Golden Rules</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                <div className="bg-white dark:bg-gray-800 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <p className="font-semibold text-gray-900 dark:text-white">💰 Risk Management</p>
+                  <p className="text-gray-700 dark:text-gray-300 text-xs mt-1">1-2% risk per trade, always use stop loss, keep risk-reward 1:2+</p>
+                </div>
+                <div className="bg-white dark:bg-gray-800 p-3 rounded-lg border border-purple-200 dark:border-purple-800">
+                  <p className="font-semibold text-gray-900 dark:text-white">⚡ Leverage</p>
+                  <p className="text-gray-700 dark:text-gray-300 text-xs mt-1">Start low (2x-3x), never exceed 5x-10x, reduce in volatile markets</p>
+                </div>
+                <div className="bg-white dark:bg-gray-800 p-3 rounded-lg border border-green-200 dark:border-green-800">
+                  <p className="font-semibold text-gray-900 dark:text-white">📊 Strategy</p>
+                  <p className="text-gray-700 dark:text-gray-300 text-xs mt-1">Trade with trend, wait for confirmations, use multiple timeframes</p>
+                </div>
+                <div className="bg-white dark:bg-gray-800 p-3 rounded-lg border border-orange-200 dark:border-orange-800">
+                  <p className="font-semibold text-gray-900 dark:text-white">🧠 Psychology</p>
+                  <p className="text-gray-700 dark:text-gray-300 text-xs mt-1">Remove emotions, accept losses, stick to plan, take breaks</p>
                 </div>
               </div>
             </Card>
