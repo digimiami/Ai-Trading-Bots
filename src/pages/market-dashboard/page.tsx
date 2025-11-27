@@ -1060,6 +1060,286 @@ export default function MarketDashboardPage() {
                 </div>
               </div>
             </Card>
+
+            {/* Bot Settings Guide */}
+            <Card className="p-6">
+              <div className="flex items-center gap-3 mb-6">
+                <i className="ri-settings-3-line text-3xl text-blue-500"></i>
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Complete Bot Settings Guide</h2>
+                  <p className="text-gray-600 dark:text-gray-400">Detailed explanation of every bot setting and how they work together</p>
+                </div>
+              </div>
+
+              {/* Basic Configuration */}
+              <div className="mb-8">
+                <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4 border-b-2 border-blue-500 pb-2">1. Basic Configuration</h3>
+                <div className="space-y-4 text-sm">
+                  <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-2">📛 Bot Name</p>
+                    <p className="text-gray-700 dark:text-gray-300">Your bot's identifier. Used for display in dashboard and logs.</p>
+                  </div>
+                  <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-2">🏦 Exchange</p>
+                    <p className="text-gray-700 dark:text-gray-300 mb-1">Options: Bybit, OKX, Bitunix</p>
+                    <p className="text-gray-600 dark:text-gray-400 text-xs">Determines which exchange API to use. Different exchanges have different fee structures and pair availability.</p>
+                  </div>
+                  <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-2">💱 Trading Type</p>
+                    <p className="text-gray-700 dark:text-gray-300 mb-1">Options: Spot, Futures</p>
+                    <ul className="list-disc list-inside text-gray-600 dark:text-gray-400 text-xs ml-2 space-y-1">
+                      <li><strong>Spot:</strong> Direct asset purchase (no leverage)</li>
+                      <li><strong>Futures:</strong> Perpetual contracts (supports leverage, margin trading)</li>
+                    </ul>
+                  </div>
+                  <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-2">📊 Trading Pair (Symbol)</p>
+                    <p className="text-gray-700 dark:text-gray-300 mb-1">The crypto pair to trade (e.g., BTCUSDT, ETHUSDT)</p>
+                    <p className="text-gray-600 dark:text-gray-400 text-xs">You can trade a single pair or multiple pairs. Determines which market the bot analyzes.</p>
+                  </div>
+                  <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-2">⏰ Time Frame</p>
+                    <p className="text-gray-700 dark:text-gray-300 mb-1">Options: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 1d, etc.</p>
+                    <ul className="list-disc list-inside text-gray-600 dark:text-gray-400 text-xs ml-2 space-y-1">
+                      <li><strong>Lower timeframes</strong> (1m-15m) = More signals, faster execution</li>
+                      <li><strong>Higher timeframes</strong> (4h-1d) = Fewer signals, more reliable trends</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* Trade Sizing & Risk */}
+              <div className="mb-8">
+                <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4 border-b-2 border-red-500 pb-2">2. Trade Sizing & Risk Settings</h3>
+                <div className="space-y-4 text-sm">
+                  <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border border-red-200 dark:border-red-800">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-2">💰 Trade Amount (USD)</p>
+                    <p className="text-gray-700 dark:text-gray-300 mb-1">Range: $10-$10,000 | Default: $100</p>
+                    <p className="text-gray-600 dark:text-gray-400 text-xs mb-2">Base capital per trade. This is multiplied by leverage and risk level.</p>
+                    <p className="text-xs font-mono bg-white dark:bg-gray-800 p-2 rounded">Formula: Total = Trade Amount × Leverage × Risk Multiplier</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">Example: $50 × 3x × 1.5 = $225 per trade</p>
+                  </div>
+                  <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border border-red-200 dark:border-red-800">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-2">⚡ Leverage</p>
+                    <p className="text-gray-700 dark:text-gray-300 mb-1">Options: 1x, 2x, 3x, 5x, 10x, 20x | Default: 5x</p>
+                    <p className="text-gray-600 dark:text-gray-400 text-xs mb-2">Multiplies your position size. Only works with Futures trading.</p>
+                    <ul className="list-disc list-inside text-gray-600 dark:text-gray-400 text-xs ml-2 space-y-1">
+                      <li><strong>1x:</strong> No leverage (spot equivalent)</li>
+                      <li><strong>Higher leverage:</strong> Larger positions, higher risk/reward</li>
+                      <li><strong>⚠️ Warning:</strong> Higher leverage increases liquidation risk</li>
+                    </ul>
+                  </div>
+                  <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border border-red-200 dark:border-red-800">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-2">📊 Risk Level</p>
+                    <p className="text-gray-700 dark:text-gray-300 mb-1">Options: Low (1.0x), Medium (1.5x), High (2.0x) | Default: Medium</p>
+                    <p className="text-gray-600 dark:text-gray-400 text-xs">Multiplier for trade size. Medium risk = 50% larger positions than low risk.</p>
+                  </div>
+                  <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border border-red-200 dark:border-red-800">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-2">🛑 Stop Loss (%)</p>
+                    <p className="text-gray-700 dark:text-gray-300 mb-1">Range: 0.5%-10% | Default: 2.0%</p>
+                    <p className="text-gray-600 dark:text-gray-400 text-xs mb-2">Maximum loss percentage before auto-closing position.</p>
+                    <ul className="list-disc list-inside text-gray-600 dark:text-gray-400 text-xs ml-2 space-y-1">
+                      <li><strong>LONG:</strong> Closes if price drops by this %</li>
+                      <li><strong>SHORT:</strong> Closes if price rises by this %</li>
+                      <li>Smaller = tighter risk, but higher chance of premature exits</li>
+                    </ul>
+                  </div>
+                  <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border border-red-200 dark:border-red-800">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-2">🎯 Take Profit (%)</p>
+                    <p className="text-gray-700 dark:text-gray-300 mb-1">Range: 1%-20% | Default: 4.0%</p>
+                    <p className="text-gray-600 dark:text-gray-400 text-xs mb-2">Target profit percentage before auto-closing position.</p>
+                    <ul className="list-disc list-inside text-gray-600 dark:text-gray-400 text-xs ml-2 space-y-1">
+                      <li><strong>LONG:</strong> Closes when price rises by this %</li>
+                      <li><strong>SHORT:</strong> Closes when price drops by this %</li>
+                      <li>Higher = larger potential gains, but may take longer</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* Strategy Parameters */}
+              <div className="mb-8">
+                <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4 border-b-2 border-purple-500 pb-2">3. Strategy Parameters</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                  <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg border border-purple-200 dark:border-purple-800">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-1">📈 RSI Threshold</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">Range: 30-90 | Default: 70</p>
+                    <p className="text-xs text-gray-700 dark:text-gray-300 mt-1">RSI &gt; threshold = Overbought (SELL). RSI &lt; 30 = Oversold (BUY). Lower = more conservative.</p>
+                  </div>
+                  <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg border border-purple-200 dark:border-purple-800">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-1">📊 ADX Threshold</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">Range: 10-50 | Default: 25</p>
+                    <p className="text-xs text-gray-700 dark:text-gray-300 mt-1">Trend strength filter. ADX &gt; threshold = strong trend. Higher = only trade strong trends.</p>
+                  </div>
+                  <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg border border-purple-200 dark:border-purple-800">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-1">📏 BB Width Threshold</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">Range: 0.01-0.1 | Default: 0.02</p>
+                    <p className="text-xs text-gray-700 dark:text-gray-300 mt-1">Volatility filter. Narrow = low volatility. Wide = high volatility. Filters out choppy markets.</p>
+                  </div>
+                  <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg border border-purple-200 dark:border-purple-800">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-1">📉 EMA Slope</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">Range: 0.1-2.0 | Default: 0.5</p>
+                    <p className="text-xs text-gray-700 dark:text-gray-300 mt-1">Measures trend steepness. Higher value = requires steeper trends to trade.</p>
+                  </div>
+                  <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg border border-purple-200 dark:border-purple-800">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-1">⚡ ATR Percentage</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">Range: 1%-10% | Default: 2.5%</p>
+                    <p className="text-xs text-gray-700 dark:text-gray-300 mt-1">Volatility measurement. Used to size stops and take profits dynamically based on market volatility.</p>
+                  </div>
+                  <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg border border-purple-200 dark:border-purple-800">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-1">📊 VWAP Distance</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">Range: 0.5-3.0 | Default: 1.2</p>
+                    <p className="text-xs text-gray-700 dark:text-gray-300 mt-1">Distance from Volume Weighted Average Price. Higher = trade only when price deviates significantly.</p>
+                  </div>
+                  <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg border border-purple-200 dark:border-purple-800">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-1">🚀 Momentum Threshold</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">Range: 0.1-2.0 | Default: 0.8</p>
+                    <p className="text-xs text-gray-700 dark:text-gray-300 mt-1">Requires strong price momentum to enter. Higher threshold = only trade strong moves.</p>
+                  </div>
+                  <div className="bg-purple-50 dark:bg-purple-900/20 p-4 rounded-lg border border-purple-200 dark:border-purple-800">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-1">🤖 ML Prediction</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">Enabled/Disabled</p>
+                    <p className="text-xs text-gray-700 dark:text-gray-300 mt-1">AI/ML trade signals. Requires minimum samples before activating (see Advanced Settings).</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Advanced Settings Summary */}
+              <div className="mb-8">
+                <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4 border-b-2 border-indigo-500 pb-2">4. Advanced Strategy Configuration</h3>
+                <div className="space-y-4 text-sm">
+                  <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-lg border border-indigo-200 dark:border-indigo-800">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-2">🎯 Directional Bias</p>
+                    <ul className="list-disc list-inside text-gray-700 dark:text-gray-300 text-xs ml-2 space-y-1">
+                      <li><strong>Bias Mode:</strong> Auto (follows HTF trend), Long Only, Short Only, or Both</li>
+                      <li><strong>HTF Timeframe:</strong> Higher timeframe for trend analysis (default: 4h)</li>
+                      <li><strong>HTF Trend Indicator:</strong> EMA200, Supertrend, VWAP, etc. to determine trend</li>
+                      <li><strong>ADX Min (HTF):</strong> Minimum ADX on higher timeframe (default: 23) - requires strong HTF trends</li>
+                    </ul>
+                  </div>
+                  <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-lg border border-indigo-200 dark:border-indigo-800">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-2">📊 Regime Filter</p>
+                    <ul className="list-disc list-inside text-gray-700 dark:text-gray-300 text-xs ml-2 space-y-1">
+                      <li><strong>Regime Mode:</strong> Auto Detect, Trend Only, or Mean Reversion Only</li>
+                      <li><strong>ADX Trend Min:</strong> ADX ≥ this = trending market (default: 25)</li>
+                      <li><strong>ADX Mean Rev Max:</strong> ADX ≤ this = ranging market (default: 19)</li>
+                    </ul>
+                  </div>
+                  <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-lg border border-indigo-200 dark:border-indigo-800">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-2">⏰ Session/Timing</p>
+                    <ul className="list-disc list-inside text-gray-700 dark:text-gray-300 text-xs ml-2 space-y-1">
+                      <li><strong>Trading Hours:</strong> Restrict trading to specific UTC hours (default: 24/7)</li>
+                      <li><strong>Cooldown (Bars):</strong> Wait X bars between trades (default: 8) - prevents overtrading</li>
+                      <li>Example: 8 bars on 1h timeframe = 8 hours between trades</li>
+                    </ul>
+                  </div>
+                  <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-lg border border-indigo-200 dark:border-indigo-800">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-2">🛡️ Risk Management</p>
+                    <ul className="list-disc list-inside text-gray-700 dark:text-gray-300 text-xs ml-2 space-y-1">
+                      <li><strong>Risk Per Trade:</strong> % of account risked per trade (default: 0.75%)</li>
+                      <li><strong>Daily Loss Limit:</strong> Auto-pause if daily loss exceeds % (default: 3%)</li>
+                      <li><strong>Weekly Loss Limit:</strong> Auto-pause if weekly loss exceeds % (default: 6%)</li>
+                      <li><strong>Max Trades/Day:</strong> Maximum trades per 24 hours (default: 8)</li>
+                      <li><strong>Max Concurrent:</strong> Max open positions simultaneously (default: 2)</li>
+                      <li><strong>Max Consecutive Losses:</strong> Auto-pause after X losses (default: 5)</li>
+                    </ul>
+                  </div>
+                  <div className="bg-indigo-50 dark:bg-indigo-900/20 p-4 rounded-lg border border-indigo-200 dark:border-indigo-800">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-2">🎯 Exit Strategy</p>
+                    <ul className="list-disc list-inside text-gray-700 dark:text-gray-300 text-xs ml-2 space-y-1">
+                      <li><strong>TP1 (R):</strong> First take profit in Risk units (default: 1.0R = 1:1 risk-reward)</li>
+                      <li><strong>TP2 (R):</strong> Second take profit (default: 2.0R = 2:1 risk-reward)</li>
+                      <li><strong>TP1 Size:</strong> % of position to close at TP1 (default: 50%)</li>
+                      <li><strong>SL ATR Multiplier:</strong> Dynamic stop loss = ATR × multiplier (default: 1.3)</li>
+                      <li><strong>Trailing Stop:</strong> Protects profits after TP1 is hit</li>
+                      <li><strong>Time Stop:</strong> Auto-close position after X hours (default: 48h)</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              {/* How Settings Work Together */}
+              <div className="mb-8">
+                <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4 border-b-2 border-green-500 pb-2">5. How Settings Work Together</h3>
+                <div className="space-y-4 text-sm">
+                  <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-200 dark:border-green-800">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-2">💰 Trade Size Calculation Example</p>
+                    <div className="font-mono bg-white dark:bg-gray-800 p-3 rounded text-xs space-y-1">
+                      <p>Base Amount: $50</p>
+                      <p>Leverage: 3x</p>
+                      <p>Risk Level: Medium (1.5x multiplier)</p>
+                      <p className="border-t border-gray-300 dark:border-gray-600 pt-2 mt-2">Calculation:</p>
+                      <p>$50 × 3 × 1.5 = $225 total trade value</p>
+                      <p className="text-gray-600 dark:text-gray-400">If BTC price = $100,000:</p>
+                      <p>Quantity = $225 / $100,000 = 0.00225 BTC</p>
+                    </div>
+                  </div>
+                  <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-200 dark:border-green-800">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-2">🛡️ Risk Management Flow</p>
+                    <ol className="list-decimal list-inside text-gray-700 dark:text-gray-300 text-xs ml-2 space-y-1">
+                      <li>Daily Loss Limit: If bot loses 3% today → Auto-pause</li>
+                      <li>Weekly Loss Limit: If bot loses 6% this week → Auto-pause</li>
+                      <li>Max Consecutive Losses: After 5 losses in a row → Auto-pause</li>
+                      <li>Max Trades/Day: After 8 trades today → No more trades until tomorrow</li>
+                    </ol>
+                  </div>
+                  <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-200 dark:border-green-800">
+                    <p className="font-semibold text-gray-900 dark:text-white mb-2">⚙️ Strategy Decision Flow</p>
+                    <ol className="list-decimal list-inside text-gray-700 dark:text-gray-300 text-xs ml-2 space-y-1">
+                      <li>Check HTF trend (Bias Mode)</li>
+                      <li>Check market regime (Trending or Ranging)</li>
+                      <li>Check volatility (ATR, BB Width)</li>
+                      <li>Check liquidity (24h Volume, Spread)</li>
+                      <li>Check indicators (RSI, ADX, EMA)</li>
+                      <li>Check timing (Trading hours, Cooldown)</li>
+                      <li>Calculate entry signal</li>
+                      <li>Calculate position size</li>
+                      <li>Place order with Stop Loss & Take Profit</li>
+                    </ol>
+                  </div>
+                </div>
+              </div>
+
+              {/* Recommended Settings */}
+              <div>
+                <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4 border-b-2 border-orange-500 pb-2">6. Recommended Settings by Experience Level</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                  <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border-2 border-blue-300 dark:border-blue-700">
+                    <p className="font-bold text-blue-900 dark:text-blue-300 mb-3 text-center">🐣 Beginner</p>
+                    <ul className="space-y-2 text-xs text-gray-700 dark:text-gray-300">
+                      <li><strong>Leverage:</strong> 2x-3x</li>
+                      <li><strong>Risk Level:</strong> Low</li>
+                      <li><strong>Trade Amount:</strong> $20-$50</li>
+                      <li><strong>Stop Loss:</strong> 2%</li>
+                      <li><strong>Take Profit:</strong> 4%</li>
+                      <li><strong>Cooldown:</strong> 10-15 bars</li>
+                    </ul>
+                  </div>
+                  <div className="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg border-2 border-yellow-300 dark:border-yellow-700">
+                    <p className="font-bold text-yellow-900 dark:text-yellow-300 mb-3 text-center">⚖️ Intermediate</p>
+                    <ul className="space-y-2 text-xs text-gray-700 dark:text-gray-300">
+                      <li><strong>Leverage:</strong> 3x-5x</li>
+                      <li><strong>Risk Level:</strong> Medium</li>
+                      <li><strong>Trade Amount:</strong> $50-$100</li>
+                      <li><strong>Stop Loss:</strong> 2%</li>
+                      <li><strong>Take Profit:</strong> 3-5%</li>
+                      <li><strong>Cooldown:</strong> 5-10 bars</li>
+                    </ul>
+                  </div>
+                  <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border-2 border-red-300 dark:border-red-700">
+                    <p className="font-bold text-red-900 dark:text-red-300 mb-3 text-center">🚀 Advanced</p>
+                    <ul className="space-y-2 text-xs text-gray-700 dark:text-gray-300">
+                      <li><strong>Leverage:</strong> 5x-10x</li>
+                      <li><strong>Risk Level:</strong> Medium-High</li>
+                      <li><strong>Trade Amount:</strong> $100+</li>
+                      <li><strong>Stop Loss:</strong> Dynamic (ATR-based)</li>
+                      <li><strong>Take Profit:</strong> Dynamic (ATR-based)</li>
+                      <li><strong>Features:</strong> Custom filters, ML enabled</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </Card>
           </div>
         )}
         </div>
