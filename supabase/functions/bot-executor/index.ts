@@ -5535,22 +5535,34 @@ class BotExecutor {
       
       const tradingType = bot.tradingType || bot.trading_type || 'spot';
       
-      // For spot trading: can only buy with USDT (can't sell if we don't own the asset)
+      // For spot trading:
+      // - BUY: Uses USDT balance (checked by checkBybitBalance)
+      // - SELL: Uses asset balance (e.g., ETH, BTC) - also checked by checkBybitBalance
       // For futures: can both buy (long) and sell (short)
-      if (tradingType === 'spot' && (tradeSignal.side.toLowerCase() === 'sell')) {
-        console.log(`⚠️ Spot trading: Cannot sell ${bot.symbol} without owning it. Skipping sell signal.`);
-        throw new Error('Cannot sell on spot market without owning the asset. Only buy orders are supported for spot trading.');
-      }
+      // Balance checks are handled below by checkBybitBalance() function
       
       // Check balance before placing order
       const orderValue = amount * price;
       
       if (bot.exchange === 'bybit') {
         // Check balance for Bybit before placing order
-        const balanceCheck = await this.checkBybitBalance(apiKey, apiSecret, apiKeys.is_testnet, bot.symbol, tradeSignal.side, orderValue, tradingType);
+        const balanceCheck = await this.checkBybitBalance(apiKey, apiSecret, apiKeys.is_testnet, bot.symbol, tradeSignal.side, orderValue, tradingType, amount);
         if (!balanceCheck.hasBalance) {
           const shortfall = balanceCheck.totalRequired - balanceCheck.availableBalance;
-          throw new Error(`Insufficient balance for ${bot.symbol} ${tradeSignal.side} order. Available: $${balanceCheck.availableBalance.toFixed(2)}, Required: $${balanceCheck.totalRequired.toFixed(2)} (order: $${orderValue.toFixed(2)} + 5% buffer). Shortfall: $${shortfall.toFixed(2)}. Please add funds to your Bybit ${tradingType === 'futures' ? 'UNIFIED/Futures' : 'Spot'} wallet.`);
+          
+          // Provide more specific error messages based on order type
+          if (tradingType === 'spot' && tradeSignal.side.toLowerCase() === 'sell') {
+            // Extract asset name for better error message
+            let baseAsset = bot.symbol;
+            if (bot.symbol.endsWith('USDT')) {
+              baseAsset = bot.symbol.replace(/USDT$/, '');
+              // Handle prefixes like 1000PEPE, 10000SATS
+              baseAsset = baseAsset.replace(/^(1000|10000)/, '');
+            }
+            throw new Error(`Insufficient ${baseAsset} balance to sell ${bot.symbol}. Available: ${balanceCheck.availableBalance.toFixed(8)} ${baseAsset}, Required: ${balanceCheck.totalRequired.toFixed(8)} ${baseAsset}. Shortfall: ${shortfall.toFixed(8)} ${baseAsset}. You can only sell assets you own.`);
+          } else {
+            throw new Error(`Insufficient balance for ${bot.symbol} ${tradeSignal.side} order. Available: $${balanceCheck.availableBalance.toFixed(2)}, Required: $${balanceCheck.totalRequired.toFixed(2)} (order: $${orderValue.toFixed(2)} + 5% buffer). Shortfall: $${shortfall.toFixed(2)}. Please add funds to your Bybit ${tradingType === 'futures' ? 'UNIFIED/Futures' : 'Spot'} wallet.`);
+          }
         }
         return await this.placeBybitOrder(apiKey, apiSecret, apiKeys.is_testnet, bot.symbol, tradeSignal.side, amount, price, tradingType, bot, tradeSignal);
       } else if (bot.exchange === 'okx') {
@@ -5996,7 +6008,7 @@ class BotExecutor {
    * Check if account has sufficient balance for order
    * Returns balance check result with details
    */
-  private async checkBybitBalance(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string, side: string, orderValue: number, tradingType: string): Promise<{
+  private async checkBybitBalance(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string, side: string, orderValue: number, tradingType: string, amount?: number): Promise<{
     hasBalance: boolean;
     availableBalance: number;
     totalRequired: number;
@@ -6185,8 +6197,22 @@ class BotExecutor {
           };
         }
       } else {
-        // For spot, check spot wallet balance
-        const queryParams = `accountType=SPOT&coin=USDT`;
+        // For spot trading
+        const isSellOrder = side.toLowerCase() === 'sell';
+        
+        // Extract base asset from symbol (e.g., "ETHUSDT" → "ETH")
+        // Handle formats like: ETHUSDT, BTCUSDT, 1000PEPEUSDT, etc.
+        let baseAsset = symbol;
+        if (symbol.endsWith('USDT')) {
+          baseAsset = symbol.replace(/USDT$/, '');
+          // Handle prefixes like 1000PEPE, 10000SATS
+          baseAsset = baseAsset.replace(/^(1000|10000)/, '');
+        }
+        
+        const coinToCheck = isSellOrder ? baseAsset : 'USDT';
+        console.log(`💰 Spot ${side} order: Checking ${coinToCheck} balance for ${symbol}`);
+        
+        const queryParams = `accountType=SPOT&coin=${coinToCheck}`;
         const signaturePayload = timestamp + apiKey + recvWindow + queryParams;
         const signature = await this.createBybitSignature(signaturePayload, apiSecret);
         
@@ -6196,7 +6222,7 @@ class BotExecutor {
         
         for (const domain of baseDomains) {
           try {
-            console.log(`🔄 Checking spot balance via ${domain}...`);
+            console.log(`🔄 Checking spot ${coinToCheck} balance via ${domain}...`);
             response = await fetch(`${domain}/v5/account/wallet-balance?${queryParams}`, {
               method: 'GET',
               headers: {
@@ -6210,58 +6236,52 @@ class BotExecutor {
             // Check content-type before parsing JSON
             const contentType = response.headers.get('content-type') || '';
             if (!contentType.includes('application/json')) {
-              // If 403 and we have more domains to try, continue to next domain
               if (response.status === 403 && baseDomains.indexOf(domain) < baseDomains.length - 1) {
                 console.warn(`⚠️ Got 403 from ${domain}, trying alternate domain...`);
-                continue; // Try next domain
+                continue;
               }
               
               const errorText = await response.text().catch(() => '');
               const errorPreview = errorText.substring(0, 500);
               console.warn(`⚠️ Bybit balance API returned non-JSON response (${contentType}):`, errorPreview);
-              // Return unknown balance status - let order attempt happen
               return {
                 hasBalance: true, // Assume sufficient if we can't check
                 availableBalance: 0,
-                totalRequired: orderValue * 1.05,
+                totalRequired: isSellOrder && amount ? amount * 1.01 : orderValue * 1.05,
                 orderValue: orderValue
               };
             }
             
             data = await response.json();
             
-            // If we got a valid response, use it
             if (data && typeof data === 'object') {
-              console.log(`✅ Successfully received spot balance response from ${domain}`);
-              break; // Success, exit loop
+              console.log(`✅ Successfully received spot ${coinToCheck} balance response from ${domain}`);
+              break;
             }
           } catch (fetchError: any) {
-            // If it's a 403 and we have more domains, try next one
             if (response?.status === 403 && baseDomains.indexOf(domain) < baseDomains.length - 1) {
               console.warn(`⚠️ Error from ${domain} (HTTP ${response.status}), trying alternate domain...`);
               continue;
             }
             
-            // If it's the last domain, return unknown balance status
             if (baseDomains.indexOf(domain) === baseDomains.length - 1) {
               console.warn(`⚠️ All spot balance check domains failed, assuming sufficient balance`);
               return {
-                hasBalance: true, // Assume sufficient if we can't check
+                hasBalance: true,
                 availableBalance: 0,
-                totalRequired: orderValue * 1.05,
+                totalRequired: isSellOrder && amount ? amount * 1.01 : orderValue * 1.05,
                 orderValue: orderValue
               };
             }
           }
         }
         
-        // If we exhausted all domains without success, return unknown balance status
         if (!response || !data) {
           console.warn(`⚠️ Spot balance check failed on all domains, assuming sufficient balance`);
           return {
-            hasBalance: true, // Assume sufficient if we can't check
+            hasBalance: true,
             availableBalance: 0,
-            totalRequired: orderValue * 1.05,
+            totalRequired: isSellOrder && amount ? amount * 1.01 : orderValue * 1.05,
             orderValue: orderValue
           };
         }
@@ -6269,9 +6289,9 @@ class BotExecutor {
         if (data.retCode !== 0) {
           console.warn(`⚠️ Failed to check balance (retCode: ${data.retCode}), proceeding with order attempt:`, data.retMsg);
           return {
-            hasBalance: true, // Assume sufficient if we can't check
+            hasBalance: true,
             availableBalance: 0,
-            totalRequired: orderValue * 1.05,
+            totalRequired: isSellOrder && amount ? amount * 1.01 : orderValue * 1.05,
             orderValue: orderValue
           };
         }
@@ -6281,40 +6301,86 @@ class BotExecutor {
         if (!wallet) {
           console.warn('⚠️ Could not parse balance response, proceeding with order attempt');
           return {
-            hasBalance: true, // Assume sufficient if we can't parse
+            hasBalance: true,
             availableBalance: 0,
-            totalRequired: orderValue * 1.05,
+            totalRequired: isSellOrder && amount ? amount * 1.01 : orderValue * 1.05,
             orderValue: orderValue
           };
         }
         
         const availableBalance = parseFloat(wallet.availableToWithdraw || wallet.availableBalance || '0');
-        const requiredValue = orderValue;
         
-        console.log(`💰 Balance check for ${symbol} ${side}: Available=$${availableBalance.toFixed(2)}, Required=$${requiredValue.toFixed(2)}`);
-        
-        // Add 5% buffer for fees
-        const buffer = requiredValue * 0.05;
-        const totalRequired = requiredValue + buffer;
-        
-        if (availableBalance >= totalRequired) {
-          console.log(`✅ Sufficient balance: $${availableBalance.toFixed(2)} >= $${totalRequired.toFixed(2)} (required + 5% buffer)`);
-          return {
-            hasBalance: true,
-            availableBalance: availableBalance,
-            totalRequired: totalRequired,
-            orderValue: orderValue
-          };
+        if (isSellOrder) {
+          // For SELL orders, check asset quantity (not USD value)
+          // amount is the quantity to sell (e.g., 0.1 ETH)
+          if (!amount || amount <= 0) {
+            console.warn('⚠️ Invalid amount for spot sell order, proceeding with order attempt');
+            return {
+              hasBalance: true,
+              availableBalance: availableBalance,
+              totalRequired: 0,
+              orderValue: orderValue
+            };
+          }
+          
+          const requiredQuantity = amount;
+          const buffer = requiredQuantity * 0.01; // 1% buffer
+          const totalRequired = requiredQuantity + buffer;
+          
+          console.log(`💰 Spot SELL balance check for ${symbol}:`);
+          console.log(`   Available ${baseAsset}: ${availableBalance.toFixed(8)}`);
+          console.log(`   Required to sell: ${requiredQuantity.toFixed(8)} ${baseAsset}`);
+          console.log(`   Total required (with 1% buffer): ${totalRequired.toFixed(8)} ${baseAsset}`);
+          
+          if (availableBalance >= totalRequired) {
+            console.log(`✅ Sufficient ${baseAsset} balance: ${availableBalance.toFixed(8)} >= ${totalRequired.toFixed(8)}`);
+            return {
+              hasBalance: true,
+              availableBalance: availableBalance,
+              totalRequired: totalRequired,
+              orderValue: orderValue
+            };
+          } else {
+            const shortfall = totalRequired - availableBalance;
+            console.warn(`⚠️ Insufficient ${baseAsset} balance: ${availableBalance.toFixed(8)} < ${totalRequired.toFixed(8)}`);
+            console.warn(`   Shortfall: ${shortfall.toFixed(8)} ${baseAsset}`);
+            return {
+              hasBalance: false,
+              availableBalance: availableBalance,
+              totalRequired: totalRequired,
+              orderValue: orderValue
+            };
+          }
         } else {
-          const shortfall = totalRequired - availableBalance;
-          console.warn(`⚠️ Insufficient balance: $${availableBalance.toFixed(2)} < $${totalRequired.toFixed(2)} (required + 5% buffer)`);
-          console.warn(`💡 Tip: Add at least $${Math.ceil(shortfall)} to your Bybit Spot wallet to enable trading`);
-          return {
-            hasBalance: false,
-            availableBalance: availableBalance,
-            totalRequired: totalRequired,
-            orderValue: orderValue
-          };
+          // For BUY orders, check USDT balance (existing logic)
+          const requiredValue = orderValue;
+          
+          console.log(`💰 Spot BUY balance check for ${symbol}:`);
+          console.log(`   Available USDT: $${availableBalance.toFixed(2)}`);
+          console.log(`   Required: $${requiredValue.toFixed(2)}`);
+          
+          const buffer = requiredValue * 0.05;
+          const totalRequired = requiredValue + buffer;
+          
+          if (availableBalance >= totalRequired) {
+            console.log(`✅ Sufficient USDT balance: $${availableBalance.toFixed(2)} >= $${totalRequired.toFixed(2)} (required + 5% buffer)`);
+            return {
+              hasBalance: true,
+              availableBalance: availableBalance,
+              totalRequired: totalRequired,
+              orderValue: orderValue
+            };
+          } else {
+            const shortfall = totalRequired - availableBalance;
+            console.warn(`⚠️ Insufficient USDT balance: $${availableBalance.toFixed(2)} < $${totalRequired.toFixed(2)} (required + 5% buffer)`);
+            console.warn(`💡 Tip: Add at least $${Math.ceil(shortfall)} USDT to your Bybit Spot wallet to enable trading`);
+            return {
+              hasBalance: false,
+              availableBalance: availableBalance,
+              totalRequired: totalRequired,
+              orderValue: orderValue
+            };
+          }
         }
       }
     } catch (error) {
