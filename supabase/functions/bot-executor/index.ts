@@ -2336,6 +2336,49 @@ class BotExecutor {
           return; // Stop execution - wait for cooldown
         }
         
+        // Early validation: Check if user exists before attempting paper trading
+        // This prevents foreign key constraint violations
+        if (bot.paper_trading) {
+          try {
+            const { data: userExists, error: userCheckError } = await this.supabaseClient
+              .from('users')
+              .select('id')
+              .eq('id', bot.user_id)
+              .maybeSingle();
+            
+            if (userCheckError || !userExists) {
+              const errorMsg = `User ${bot.user_id} does not exist in users table. Bot may belong to deleted user. Skipping execution.`;
+              console.error(`❌ [PAPER] ${errorMsg}`);
+              await this.addBotLog(bot.id, {
+                level: 'error',
+                category: 'error',
+                message: errorMsg,
+                details: { 
+                  bot_id: bot.id,
+                  bot_name: bot.name,
+                  user_id: bot.user_id,
+                  error: userCheckError?.message || 'User not found'
+                }
+              });
+              return; // Skip execution for bots with invalid user_id
+            }
+          } catch (userValidationError: any) {
+            console.error(`❌ [PAPER] Error validating user existence:`, userValidationError);
+            await this.addBotLog(bot.id, {
+              level: 'error',
+              category: 'error',
+              message: `Failed to validate user existence: ${userValidationError.message}`,
+              details: { 
+                bot_id: bot.id,
+                bot_name: bot.name,
+                user_id: bot.user_id,
+                error: userValidationError.message
+              }
+            });
+            return; // Skip execution if validation fails
+          }
+        }
+        
         // 🕐 TRADING HOURS CHECK - Check if current hour is in allowed trading hours (for paper trading too)
         const tradingHoursCheck = this.checkTradingHours(bot);
         if (!tradingHoursCheck.canTrade) {
@@ -8583,6 +8626,20 @@ class PaperTradingExecutor {
   // Get or create paper trading account
   private async getPaperAccount(): Promise<any> {
     try {
+      // First, verify that the user exists in the users table
+      // This prevents foreign key constraint violations
+      const { data: userExists, error: userCheckError } = await this.supabaseClient
+        .from('users')
+        .select('id')
+        .eq('id', this.user.id)
+        .maybeSingle();
+      
+      if (userCheckError || !userExists) {
+        const errorMsg = `User ${this.user.id} does not exist in users table. Cannot create paper trading account.`;
+        console.error(`❌ [PAPER] ${errorMsg}`);
+        throw new Error(errorMsg);
+      }
+      
       let { data: account, error: fetchError } = await this.supabaseClient
         .from('paper_trading_accounts')
         .select('*')
@@ -8607,6 +8664,14 @@ class PaperTradingExecutor {
         
         if (insertError) {
           console.error(`❌ [PAPER] Failed to create account:`, insertError);
+          
+          // Check if it's a foreign key constraint violation
+          if (insertError.code === '23503' || insertError.message?.includes('foreign key constraint')) {
+            const errorMsg = `User ${this.user.id} does not exist in users table. Bot may belong to deleted user.`;
+            console.error(`❌ [PAPER] ${errorMsg}`);
+            throw new Error(errorMsg);
+          }
+          
           throw new Error(`Failed to create paper trading account: ${insertError.message}`);
         }
         
