@@ -2130,6 +2130,31 @@ class BotExecutor {
         return;
       }
       
+      // Validate symbol - skip bots with invalid/placeholder symbols
+      const invalidSymbols = ['CUSTOM', 'UNKNOWN', 'N/A', 'TBD', ''];
+      const normalizedSymbol = (bot.symbol || '').toUpperCase().trim();
+      if (invalidSymbols.includes(normalizedSymbol) || !bot.symbol || bot.symbol.trim() === '') {
+        const errorMsg = `Invalid symbol "${bot.symbol}". Bot must have a valid trading pair (e.g., BTCUSDT, ETHUSDT). Please update the bot configuration.`;
+        console.error(`❌ ${errorMsg}`);
+        await this.addBotLog(bot.id, {
+          level: 'error',
+          category: 'error',
+          message: errorMsg,
+          details: {
+            bot_id: bot.id,
+            bot_name: bot.name,
+            symbol: bot.symbol,
+            reason: 'Invalid or placeholder symbol'
+          }
+        });
+        const executionTime = Date.now() - executionStartTime;
+        console.log(`\n❌ === BOT EXECUTION SKIPPED ===`);
+        console.log(`   Bot ID: ${botId}`);
+        console.log(`   Reason: Invalid symbol "${bot.symbol}"`);
+        console.log(`   Execution Time: ${executionTime}ms\n`);
+        return;
+      }
+      
       // Check if bot is in webhook-only mode (skip scheduled execution, but manual signals already processed above)
       // Manual signals are processed first (above), so webhook-only bots can still trade via webhooks
       if (bot.webhook_only === true) {
