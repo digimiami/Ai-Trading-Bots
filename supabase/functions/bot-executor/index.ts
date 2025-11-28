@@ -389,7 +389,11 @@ function roundToStep(value: number, step?: number) {
 
 function normalizeOrderParams(qty: number, price: number, c: Constraints) {
   let q = qty;
-  if (c.qtyStep) q = roundToStep(q, c.qtyStep);
+  // Round to nearest step size (not floor) for quantity to get closest valid value
+  if (c.qtyStep && c.qtyStep > 0) {
+    const factor = 1 / c.qtyStep;
+    q = Math.round(q * factor) / factor;
+  }
   if (typeof c.minQty === 'number' && q < c.minQty) q = c.minQty;
   if (typeof c.maxQty === 'number' && q > c.maxQty) q = c.maxQty;
   let p = price;
@@ -5608,20 +5612,49 @@ class BotExecutor {
       const constraints = getQuantityConstraints(symbol);
       // Clamp amount to min/max FIRST, then round
       let qty = Math.max(constraints.min, Math.min(constraints.max, amount));
+      
+      // Round to nearest step size using precise arithmetic to avoid floating point errors
       if (stepSize > 0) {
-        // Use more precise rounding to avoid floating point errors
+        // Use precise rounding: multiply by factor, round, then divide
+        // This ensures we get exactly the nearest step size
         const factor = 1 / stepSize;
-        qty = Math.floor(qty * factor) / factor;
-        // Re-clamp after rounding to ensure we don't exceed max due to rounding errors
-        qty = Math.max(constraints.min, Math.min(constraints.max, qty));
+        // Round to nearest step (not floor) for quantity
+        qty = Math.round(qty * factor) / factor;
       }
+      
+      // Re-clamp after rounding to ensure we don't exceed max due to rounding errors
+      qty = Math.max(constraints.min, Math.min(constraints.max, qty));
+      
       // Calculate decimals for formatting - ensure we have enough precision
       // For stepSize 0.1, we need 1 decimal place; for 0.01, we need 2, etc.
       const stepDecimals = stepSize < 1 ? stepSize.toString().split('.')[1]?.length || 0 : 0;
-      // Ensure qty is properly rounded to step size and formatted
-      const roundedQty = Math.round(qty / stepSize) * stepSize;
-      // Format with appropriate decimals, but use Number() to remove unnecessary trailing zeros
-      const formattedQty = Number(roundedQty.toFixed(stepDecimals)).toString();
+      
+      // Format with appropriate decimals, ensuring proper precision
+      // Round one more time to handle any floating point precision issues
+      if (stepSize > 0) {
+        const factor = 1 / stepSize;
+        qty = Math.round(qty * factor) / factor;
+      }
+      
+      // Format the quantity string with exact decimal places
+      let formattedQty: string;
+      if (stepSize >= 1) {
+        // For integer step sizes, format as integer
+        formattedQty = Math.round(qty).toString();
+      } else {
+        // For decimal step sizes, format with exact decimal places
+        // Use toFixed to ensure exact decimal representation, then parseFloat to remove trailing zeros
+        formattedQty = parseFloat(qty.toFixed(stepDecimals)).toString();
+      }
+      
+      // Final validation: parse the formatted quantity and verify it's valid
+      const parsedFormattedQty = parseFloat(formattedQty);
+      if (isNaN(parsedFormattedQty) || parsedFormattedQty < constraints.min || parsedFormattedQty > constraints.max) {
+        throw new Error(`Invalid quantity ${formattedQty} for ${symbol} after rounding. Min: ${constraints.min}, Max: ${constraints.max}, Step: ${stepSize}`);
+      }
+      
+      // Log the final quantity for debugging
+      console.log(`📏 Quantity rounding for ${symbol}: ${amount} → ${qty} → ${formattedQty} (stepSize: ${stepSize}, decimals: ${stepDecimals})`);
       
       // Bybit V5 API requires capitalized side: "Buy" or "Sell"
       const capitalizedSide = side.charAt(0).toUpperCase() + side.slice(1).toLowerCase();
@@ -5898,17 +5931,48 @@ class BotExecutor {
           
           console.error(`❌ Quantity validation failed for ${symbol}: ${formattedQty}`);
           console.error(`📏 Constraints: min=${constraints.min}, max=${constraints.max}`);
+          console.error(`📏 Step size: ${stepSize}`);
           console.error(`💰 Price: $${currentMarketPrice}`);
           const orderValue = parseFloat(formattedQty) * currentMarketPrice;
           console.error(`💰 Order value: $${orderValue.toFixed(2)}`);
           console.error(`📋 Bybit error message: ${data.retMsg}`);
           
+          // Try to fetch actual symbol info from Bybit to verify step size
+          let actualStepSize = stepSize;
+          try {
+            const symbolInfoUrl = `${baseDomains[0]}/v5/market/instruments-info?category=${bybitCategory}&symbol=${symbol}`;
+            const symbolInfoResponse = await fetch(symbolInfoUrl);
+            if (symbolInfoResponse.ok) {
+              const symbolInfoData = await symbolInfoResponse.json();
+              if (symbolInfoData.retCode === 0 && symbolInfoData.result?.list?.[0]) {
+                const symbolInfo = symbolInfoData.result.list[0];
+                const lotSizeFilter = symbolInfo.lotSizeFilter;
+                if (lotSizeFilter) {
+                  actualStepSize = parseFloat(lotSizeFilter.qtyStep || stepSize.toString());
+                  const actualMin = parseFloat(lotSizeFilter.minOrderQty || constraints.min.toString());
+                  const actualMax = parseFloat(lotSizeFilter.maxOrderQty || constraints.max.toString());
+                  console.log(`📊 Bybit symbol info for ${symbol}: stepSize=${actualStepSize}, min=${actualMin}, max=${actualMax}`);
+                  
+                  // If step size differs, log a warning
+                  if (Math.abs(actualStepSize - stepSize) > 0.0001) {
+                    console.warn(`⚠️ Step size mismatch for ${symbol}: configured=${stepSize}, Bybit=${actualStepSize}`);
+                  }
+                }
+              }
+            }
+          } catch (symbolInfoError) {
+            console.warn('Could not fetch symbol info from Bybit:', symbolInfoError);
+          }
+          
           // Provide more helpful error message
-          let errorMsg = `Invalid quantity for ${symbol}: ${formattedQty}. Min: ${constraints.min}, Max: ${constraints.max}.`;
+          let errorMsg = `Invalid quantity for ${symbol}: ${formattedQty}. Min: ${constraints.min}, Max: ${constraints.max}, Step: ${stepSize}`;
+          if (Math.abs(actualStepSize - stepSize) > 0.0001) {
+            errorMsg += ` (Bybit actual step: ${actualStepSize})`;
+          }
           if (orderValue > 10000) {
             errorMsg += ` Order value ($${orderValue.toFixed(2)}) may be too high. Please reduce trade amount.`;
           } else if (data.retMsg?.toLowerCase().includes('qty') || data.retMsg?.toLowerCase().includes('quantity')) {
-            errorMsg += ` Bybit rejected quantity. Try reducing trade amount or check if ${symbol} has different limits on Bybit.`;
+            errorMsg += ` Bybit rejected quantity. The quantity may not match the required step size (${actualStepSize}). Try reducing trade amount or check if ${symbol} has different limits on Bybit.`;
           } else {
             errorMsg += ` Bybit API error: ${data.retMsg || 'Unknown error'}.`;
           }
