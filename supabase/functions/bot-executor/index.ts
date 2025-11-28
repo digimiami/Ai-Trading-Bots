@@ -5637,20 +5637,41 @@ class BotExecutor {
       }
       
       // Format the quantity string with exact decimal places
+      // CRITICAL: Use toFixed() string directly to preserve exact precision - don't parseFloat() it
+      // as that can introduce floating point errors or remove trailing zeros needed for step size matching
       let formattedQty: string;
       if (stepSize >= 1) {
         // For integer step sizes, format as integer
         formattedQty = Math.round(qty).toString();
       } else {
-        // For decimal step sizes, format with exact decimal places
-        // Use toFixed to ensure exact decimal representation, then parseFloat to remove trailing zeros
-        formattedQty = parseFloat(qty.toFixed(stepDecimals)).toString();
+        // For decimal step sizes, use toFixed() directly to ensure exact decimal places
+        // This ensures the string matches Bybit's step size requirements exactly
+        formattedQty = qty.toFixed(stepDecimals);
+        
+        // Remove trailing zeros only if they're beyond the step size precision
+        // But keep at least stepDecimals decimal places to match step size
+        // Example: stepSize 0.001 (3 decimals) -> "0.004" not "0.0040" or "0.00400"
+        // We'll keep the toFixed() result as-is to ensure exact match
       }
       
-      // Final validation: parse the formatted quantity and verify it's valid
+      // Final validation: verify the formatted quantity matches step size exactly
       const parsedFormattedQty = parseFloat(formattedQty);
       if (isNaN(parsedFormattedQty) || parsedFormattedQty < constraints.min || parsedFormattedQty > constraints.max) {
         throw new Error(`Invalid quantity ${formattedQty} for ${symbol} after rounding. Min: ${constraints.min}, Max: ${constraints.max}, Step: ${stepSize}`);
+      }
+      
+      // Verify the quantity is exactly on a step size boundary
+      if (stepSize > 0) {
+        const remainder = (parsedFormattedQty % stepSize);
+        // Allow for tiny floating point errors (less than 0.0000001)
+        const epsilon = 0.0000001;
+        if (remainder > epsilon && (stepSize - remainder) > epsilon) {
+          // Re-round if there's a significant remainder
+          const factor = 1 / stepSize;
+          const correctedQty = Math.round(parsedFormattedQty * factor) / factor;
+          formattedQty = correctedQty.toFixed(stepDecimals);
+          console.log(`🔧 Corrected quantity from ${parsedFormattedQty} to ${formattedQty} to match step size ${stepSize} exactly`);
+        }
       }
       
       // Log the final quantity for debugging
