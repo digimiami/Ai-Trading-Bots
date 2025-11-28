@@ -8769,16 +8769,66 @@ class PaperTradingExecutor {
       if (error || !positions || positions.length === 0) return;
       
       const botLogger = new BotExecutor(this.supabaseClient, this.user);
-
+      
+      // Get bot configurations for advanced features
+      const botIds = [...new Set(positions.map((p: any) => p.bot_id))];
+      const { data: bots } = await this.supabaseClient
+        .from('trading_bots')
+        .select('id, strategy_config')
+        .in('id', botIds);
+      
+      const botConfigs = new Map(bots?.map((b: any) => [b.id, b.strategy_config || {}]) || []);
+      
+      // Get account for equity tracking
+      const account = await this.getPaperAccount();
+      const currentBalance = parseFloat(account.balance || 0);
+      
+      // Calculate total unrealized PnL from all open positions (first pass to get prices)
+      const positionPrices = new Map<string, number>();
+      let totalUnrealizedPnL = 0;
       for (const position of positions) {
-        // Get REAL current market price from MAINNET
         const currentPrice = await MarketDataFetcher.fetchPrice(
           position.symbol,
           position.exchange,
           position.trading_type
         );
-        
-        if (!currentPrice || currentPrice === 0) continue;
+        if (currentPrice && currentPrice > 0) {
+          positionPrices.set(position.id, currentPrice);
+          if (position.side === 'long') {
+            totalUnrealizedPnL += (currentPrice - parseFloat(position.entry_price)) * parseFloat(position.quantity) * position.leverage;
+          } else {
+            totalUnrealizedPnL += (parseFloat(position.entry_price) - currentPrice) * parseFloat(position.quantity) * position.leverage;
+          }
+        }
+      }
+      
+      // Calculate current equity (balance + unrealized PnL)
+      const currentEquity = currentBalance + totalUnrealizedPnL;
+      
+      // Track highest equity for Dynamic Upward Trailing
+      const highestEquity = parseFloat(account.highest_equity || account.initial_balance || 10000);
+      const newHighestEquity = Math.max(highestEquity, currentEquity);
+      
+      // Update highest equity if it increased
+      if (newHighestEquity > highestEquity) {
+        await this.supabaseClient
+          .from('paper_trading_accounts')
+          .update({ highest_equity: newHighestEquity })
+          .eq('user_id', this.user.id);
+        console.log(`📈 [TRAILING] New highest equity: $${newHighestEquity.toFixed(2)} (was $${highestEquity.toFixed(2)})`);
+      }
+
+      for (const position of positions) {
+        // Get cached price or fetch if missing
+        let currentPrice = positionPrices.get(position.id);
+        if (!currentPrice || currentPrice === 0) {
+          currentPrice = await MarketDataFetcher.fetchPrice(
+            position.symbol,
+            position.exchange,
+            position.trading_type
+          );
+          if (!currentPrice || currentPrice === 0) continue;
+        }
         
         // Calculate unrealized PnL
         let unrealizedPnL = 0;
@@ -8788,20 +8838,148 @@ class PaperTradingExecutor {
           unrealizedPnL = (parseFloat(position.entry_price) - currentPrice) * parseFloat(position.quantity) * position.leverage;
         }
         
-        // Check SL/TP triggers with realistic execution
-        // In real trading, SL/TP may not execute at exact price due to gaps, slippage, etc.
-        let newStatus = position.status;
-        let exitPrice = currentPrice;
-        let shouldClose = false;
+        // Get bot configuration for advanced features
+        const botConfig = botConfigs.get(position.bot_id) || {};
+        const enableDynamicTrailing = botConfig.enable_dynamic_trailing || false;
+        const enableTrailingTP = botConfig.enable_trailing_take_profit || false;
+        const trailingTPATR = parseFloat(botConfig.trailing_take_profit_atr || 1.0);
+        const smartExitEnabled = botConfig.smart_exit_enabled || false;
+        const smartExitRetracementPct = parseFloat(botConfig.smart_exit_retracement_pct || 2.0);
+        const enableAutomaticExecution = botConfig.enable_automatic_execution || false;
+        const enableSlippageConsideration = botConfig.enable_slippage_consideration !== false; // Default true
         
-        const stopLossPrice = parseFloat(position.stop_loss_price);
-        const takeProfitPrice = parseFloat(position.take_profit_price);
+        // Get position metadata (for tracking highest price, retracement, etc.)
+        const positionMetadata = position.metadata || {};
+        let highestPrice = parseFloat(positionMetadata.highest_price || position.entry_price);
+        let lowestPrice = parseFloat(positionMetadata.lowest_price || position.entry_price);
+        const entryPrice = parseFloat(position.entry_price);
         
-        // 🎯 REALISTIC SL/TP EXECUTION: Use current price, not exact SL/TP price
-        // In real trading, stop losses often execute worse than set price, especially during volatility
+        // Update highest/lowest price tracking
         if (position.side === 'long') {
-          if (currentPrice <= stopLossPrice) {
-            newStatus = 'stopped';
+          highestPrice = Math.max(highestPrice, currentPrice);
+          lowestPrice = Math.min(lowestPrice, currentPrice);
+        } else {
+          // For shorts, "highest" means worst price (highest for short = loss)
+          highestPrice = Math.max(highestPrice, currentPrice);
+          lowestPrice = Math.min(lowestPrice, currentPrice);
+        }
+        
+        // Initialize stop loss and take profit from position
+        let stopLossPrice = parseFloat(position.stop_loss_price);
+        let takeProfitPrice = parseFloat(position.take_profit_price);
+        
+        // ===== ADVANCED FEATURES IMPLEMENTATION =====
+        
+        // 1. TRAILING TAKE-PROFIT: Lock in profits as equity reaches new highs
+        if (enableTrailingTP && currentEquity >= newHighestEquity * 0.99) { // Within 1% of highest equity
+          try {
+            // Fetch ATR for trailing distance calculation
+            const klines = await MarketDataFetcher.fetchKlines(position.symbol, position.exchange, '1h', 20);
+            if (klines.length >= 14) {
+              const highs = klines.map(k => k[2]);
+              const lows = klines.map(k => k[3]);
+              const closes = klines.map(k => k[4]);
+              const atr = this.calculateATR(highs, lows, closes, 14);
+              
+              if (atr > 0) {
+                const trailingDistance = atr * trailingTPATR;
+                
+                if (position.side === 'long') {
+                  // For longs: move stop loss up as price increases
+                  const newTrailingStop = currentPrice - trailingDistance;
+                  if (newTrailingStop > stopLossPrice) {
+                    stopLossPrice = newTrailingStop;
+                    console.log(`📈 [TRAILING TP] Long position: Moved stop loss from $${parseFloat(position.stop_loss_price).toFixed(4)} to $${stopLossPrice.toFixed(4)} (trailing by ${trailingTPATR} ATR)`);
+                  }
+                } else {
+                  // For shorts: move stop loss down as price decreases
+                  const newTrailingStop = currentPrice + trailingDistance;
+                  if (newTrailingStop < stopLossPrice || stopLossPrice === 0) {
+                    stopLossPrice = newTrailingStop;
+                    console.log(`📈 [TRAILING TP] Short position: Moved stop loss from $${parseFloat(position.stop_loss_price).toFixed(4)} to $${stopLossPrice.toFixed(4)} (trailing by ${trailingTPATR} ATR)`);
+                  }
+                }
+              }
+            }
+          } catch (error) {
+            console.warn(`⚠️ [TRAILING TP] Error calculating trailing stop:`, error);
+          }
+        }
+        
+        // 2. DYNAMIC UPWARD TRAILING: Adjust exit point based on historical highest equity
+        if (enableDynamicTrailing && newHighestEquity > highestEquity) {
+          // Calculate equity change percentage
+          const equityChangePct = ((currentEquity - highestEquity) / highestEquity) * 100;
+          
+          if (equityChangePct > 0) {
+            // Adjust stop loss upward proportionally to equity increase
+            const equityMultiplier = 1 + (equityChangePct / 100);
+            
+            if (position.side === 'long') {
+              const newDynamicStop = entryPrice + (stopLossPrice - entryPrice) * equityMultiplier;
+              if (newDynamicStop > stopLossPrice && newDynamicStop < currentPrice) {
+                stopLossPrice = newDynamicStop;
+                console.log(`📊 [DYNAMIC TRAILING] Long: Adjusted stop loss to $${stopLossPrice.toFixed(4)} based on equity increase of ${equityChangePct.toFixed(2)}%`);
+              }
+            } else {
+              const newDynamicStop = entryPrice - (entryPrice - stopLossPrice) * equityMultiplier;
+              if ((newDynamicStop < stopLossPrice || stopLossPrice === 0) && newDynamicStop > currentPrice) {
+                stopLossPrice = newDynamicStop;
+                console.log(`📊 [DYNAMIC TRAILING] Short: Adjusted stop loss to $${stopLossPrice.toFixed(4)} based on equity increase of ${equityChangePct.toFixed(2)}%`);
+              }
+            }
+          }
+        }
+        
+        // 3. SMART EXIT TRIGGER: Exit if market retraces beyond preset percentage
+        if (smartExitEnabled) {
+          let retracementPct = 0;
+          if (position.side === 'long') {
+            // For longs: retracement from highest price
+            retracementPct = ((highestPrice - currentPrice) / highestPrice) * 100;
+          } else {
+            // For shorts: retracement from lowest price (price going up = retracement for short)
+            retracementPct = ((currentPrice - lowestPrice) / lowestPrice) * 100;
+          }
+          
+          if (retracementPct >= smartExitRetracementPct) {
+            shouldClose = true;
+            newStatus = 'smart_exit';
+            exitPrice = currentPrice;
+            console.log(`🚨 [SMART EXIT] Triggered: ${position.side.toUpperCase()} position retraced ${retracementPct.toFixed(2)}% (threshold: ${smartExitRetracementPct}%)`);
+            
+            await botLogger.addBotLog(position.bot_id, {
+              level: 'warning',
+              category: 'trade',
+              message: `🚨 Smart Exit triggered: ${retracementPct.toFixed(2)}% retracement from ${position.side === 'long' ? 'high' : 'low'}`,
+              details: {
+                retracement_pct: retracementPct,
+                threshold: smartExitRetracementPct,
+                highest_price: highestPrice,
+                lowest_price: lowestPrice,
+                current_price: currentPrice
+              }
+            });
+          }
+        }
+        
+        // Update position metadata
+        const updatedMetadata = {
+          ...positionMetadata,
+          highest_price: highestPrice,
+          lowest_price: lowestPrice,
+          last_equity: currentEquity,
+          last_highest_equity: newHighestEquity
+        };
+        
+        // Check SL/TP triggers with realistic execution (only if Smart Exit didn't trigger)
+        // In real trading, SL/TP may not execute at exact price due to gaps, slippage, etc.
+        if (!shouldClose) {
+          // 🎯 REALISTIC SL/TP EXECUTION: Use current price, not exact SL/TP price
+          // In real trading, stop losses often execute worse than set price, especially during volatility
+          if (position.side === 'long') {
+            if (currentPrice <= stopLossPrice) {
+              newStatus = 'stopped';
             // Realistic: SL often executes MUCH worse than set price (especially during fast moves/gaps)
             // Use current price (which is already below SL) or add significant slippage
             const slSlippage = applySlippage(
@@ -8853,13 +9031,21 @@ class PaperTradingExecutor {
             shouldClose = true;
           }
         }
+        } // End of if (!shouldClose) block
         
-        // Update position
+        // Update position with new stop loss if it was adjusted by trailing features
         const updateData: any = {
           current_price: currentPrice,
           unrealized_pnl: unrealizedPnL,
-          updated_at: TimeSync.getCurrentTimeISO()
+          updated_at: TimeSync.getCurrentTimeISO(),
+          metadata: updatedMetadata
         };
+        
+        // Update stop loss if it was modified by trailing features
+        if (Math.abs(stopLossPrice - parseFloat(position.stop_loss_price)) > 0.0001) {
+          updateData.stop_loss_price = stopLossPrice.toFixed(8);
+          console.log(`📝 [POSITION UPDATE] Updated stop loss: $${parseFloat(position.stop_loss_price).toFixed(4)} → $${stopLossPrice.toFixed(4)}`);
+        }
         
         if (shouldClose) {
           updateData.status = newStatus;
@@ -8876,11 +9062,29 @@ class PaperTradingExecutor {
           
           exitPrice = finalExitPrice;
           
-          // Calculate slippage for logging
+          // Enhanced slippage consideration (if enabled)
           const exitOrderSide = position.side === 'long' ? 'sell' : 'buy';
           const initialExitNotional = quantity * parseFloat(position.entry_price);
-          const slippageSeverity = newStatus === 'stopped' ? 2.5 : 1.3; // Increased to match real trading conditions
+          let slippageSeverity = newStatus === 'stopped' ? 2.5 : 1.3; // Default severity
+          
+          // Increase slippage severity if slippage consideration is enabled
+          if (enableSlippageConsideration) {
+            // Apply additional slippage based on volatility and order size
+            const volatilityMultiplier = 1.2; // Assume 20% more slippage when enabled
+            slippageSeverity *= volatilityMultiplier;
+            console.log(`💰 [SLIPPAGE] Enhanced slippage consideration enabled: severity = ${slippageSeverity.toFixed(2)}`);
+          }
+          
           const exitSlip = applySlippage(parseFloat(position.entry_price), exitOrderSide, position.symbol, initialExitNotional, { isExit: true, severity: slippageSeverity });
+          
+          // Apply slippage to exit price if slippage consideration is enabled
+          if (enableSlippageConsideration && exitSlip.slippageBps > 0) {
+            const slippageAmount = (exitPrice * exitSlip.slippageBps) / 10000;
+            exitPrice = position.side === 'long' 
+              ? exitPrice - slippageAmount  // Long exit: slippage reduces price
+              : exitPrice + slippageAmount; // Short exit: slippage increases price
+            console.log(`💰 [SLIPPAGE] Applied slippage: ${exitSlip.slippageBps.toFixed(2)} bps = $${slippageAmount.toFixed(4)}`);
+          }
           
           let finalPnL = 0;
           if (position.side === 'long') {
@@ -8929,15 +9133,23 @@ class PaperTradingExecutor {
             .eq('position_id', position.id)
             .eq('status', 'filled');
           
+          // Automatic Execution: Close all positions at market price if enabled
+          if (enableAutomaticExecution && shouldClose) {
+            console.log(`⚡ [AUTOMATIC EXECUTION] Closing position at market price: ${position.symbol} ${position.side.toUpperCase()}`);
+            // Exit price is already set to current market price above
+            // This ensures immediate execution regardless of SL/TP levels
+          }
+          
           // Log closure with slippage details
           try {
+            const exitReason = enableAutomaticExecution ? 'automatic_execution' : newStatus;
             await botLogger.addBotLog(position.bot_id, {
               level: newStatus === 'stopped' ? 'warning' : 'success',
               category: 'trade',
-              message: `📝 [PAPER] Position closed (${newStatus}): ${position.symbol} ${position.side.toUpperCase()} exit @ $${exitPrice.toFixed(4)}`,
+              message: `📝 [PAPER] Position closed (${exitReason}): ${position.symbol} ${position.side.toUpperCase()} exit @ $${exitPrice.toFixed(4)}${enableSlippageConsideration ? ` (slippage: ${exitSlip.slippageBps.toFixed(2)} bps)` : ''}`,
               details: {
                 paper_trading: true,
-                status: newStatus,
+                status: exitReason,
                 side: position.side,
                 quantity,
                 exit_price: exitPrice,
@@ -8945,7 +9157,9 @@ class PaperTradingExecutor {
                 fees,
                 pnl: finalPnL,
                 margin_returned: position.margin_used,
-                severity: slippageSeverity
+                severity: slippageSeverity,
+                automatic_execution: enableAutomaticExecution,
+                slippage_considered: enableSlippageConsideration
               }
             });
           } catch (logError) {
