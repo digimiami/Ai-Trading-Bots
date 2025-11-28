@@ -6569,12 +6569,18 @@ class BotExecutor {
           actualPositionSide = positionSize > 0 ? 'Buy' : 'Sell';
           
           // Also check position.side if available (some Bybit responses include this)
+          // CRITICAL: Always trust Bybit's reported side when available - it's the source of truth
           const bybitPositionSide = position.side;
-          if (bybitPositionSide && bybitPositionSide !== actualPositionSide) {
-            console.warn(`⚠️ Position side mismatch: size indicates ${actualPositionSide} but Bybit reports ${bybitPositionSide}`);
-            // Trust Bybit's reported side over our calculation
+          if (bybitPositionSide) {
+            // Always use Bybit's reported side as it's authoritative
             actualPositionSide = bybitPositionSide === 'Buy' ? 'Buy' : 'Sell';
-            console.log(`   Using Bybit reported side: ${actualPositionSide}`);
+            if (actualPositionSide !== (positionSize > 0 ? 'Buy' : 'Sell')) {
+              console.warn(`⚠️ Position side mismatch: size indicates ${positionSize > 0 ? 'Buy' : 'Sell'} but Bybit reports ${bybitPositionSide} - using Bybit's side`);
+            }
+            console.log(`   ✅ Using Bybit reported side: ${actualPositionSide} (authoritative)`);
+          } else {
+            // Fallback to size-based detection only if Bybit doesn't report side
+            console.log(`   ℹ️ Bybit didn't report side, using size-based detection: ${actualPositionSide}`);
           }
           
           console.log(`📊 Actual position side for ${symbol}: ${actualPositionSide} (size: ${positionSize}, Bybit side: ${bybitPositionSide || 'not reported'})`);
@@ -6888,8 +6894,16 @@ class BotExecutor {
         });
         if (finalPosition) {
           const finalSize = parseFloat(finalPosition.size || '0');
-          finalPositionSide = finalSize > 0 ? 'Buy' : 'Sell';
-          console.log(`🔍 Final position check before SL/TP: ${finalPositionSide} (size: ${finalSize})`);
+          // CRITICAL: Always trust Bybit's reported side when available
+          const finalBybitSide = finalPosition.side;
+          if (finalBybitSide) {
+            finalPositionSide = finalBybitSide === 'Buy' ? 'Buy' : 'Sell';
+            console.log(`🔍 Final position check before SL/TP: ${finalPositionSide} (Bybit reported side, size: ${finalSize})`);
+          } else {
+            // Fallback to size-based detection only if Bybit doesn't report side
+            finalPositionSide = finalSize > 0 ? 'Buy' : 'Sell';
+            console.log(`🔍 Final position check before SL/TP: ${finalPositionSide} (size-based, size: ${finalSize})`);
+          }
           
           // If position side changed, recalculate SL/TP
           if (finalPositionSide !== actualPositionSide) {
@@ -8854,8 +8868,23 @@ class PaperTradingExecutor {
         throw new Error(`Order value $${orderValue.toFixed(2)} below minimum $${minOrderValue} for ${bot.symbol}. This happens in real trading too.`);
       }
 
+      // For paper trading, allow trades even with low balance (it's simulated)
+      // But log a warning if balance is very low
       if (marginRequired > availableBalance) {
-        throw new Error(`Insufficient paper balance: Need $${marginRequired.toFixed(2)}, Have $${availableBalance.toFixed(2)}`);
+        // Check if balance is critically low (less than 10% of required margin)
+        const balanceRatio = availableBalance / marginRequired;
+        if (balanceRatio < 0.1) {
+          // Balance is critically low - still allow trade but log warning
+          console.warn(`⚠️ [PAPER] Low balance warning: Need $${marginRequired.toFixed(2)}, Have $${availableBalance.toFixed(2)} (${(balanceRatio * 100).toFixed(1)}%)`);
+          console.warn(`   Allowing trade to proceed (paper trading mode - balance will go negative)`);
+          // For paper trading, we allow negative balance to simulate margin trading
+        } else {
+          // Balance is somewhat sufficient but not enough - still allow with warning
+          console.warn(`⚠️ [PAPER] Insufficient balance: Need $${marginRequired.toFixed(2)}, Have $${availableBalance.toFixed(2)}`);
+          console.warn(`   Allowing trade to proceed (paper trading mode)`);
+        }
+        // Don't throw error - allow trade to proceed in paper trading mode
+        // The balance will go negative, which is acceptable for paper trading simulation
       }
 
       // Determine position side after sizing (long/short)
@@ -8883,8 +8912,10 @@ class PaperTradingExecutor {
       const feeRate = resolveFeeRate(bot.exchange, bot.tradingType || bot.trading_type || 'futures');
       const estimatedEntryFees = notional * feeRate;
 
-      // Deduct margin from account
+      // Deduct margin from account (allow negative balance in paper trading)
       const newBalance = availableBalance - marginRequired;
+      // For paper trading, negative balance is allowed (simulates margin trading)
+      console.log(`💰 [PAPER] Balance update: $${availableBalance.toFixed(2)} → $${newBalance.toFixed(2)} (margin: $${marginRequired.toFixed(2)})`);
       await this.supabaseClient
         .from('paper_trading_accounts')
         .update({
