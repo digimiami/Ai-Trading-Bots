@@ -89,7 +89,22 @@ export default function EditBotPage() {
     // ML/AI Settings
     use_ml_prediction: true,
     ml_confidence_threshold: 0.6,
-    ml_min_samples: 100
+    ml_min_samples: 100,
+    
+    // Advanced Exit & Trailing Features
+    enable_dynamic_trailing: false,
+    enable_trailing_take_profit: false,
+    trailing_take_profit_atr: 1.0,
+    smart_exit_enabled: false,
+    smart_exit_retracement_pct: 2.0,
+    enable_automatic_execution: false,
+    enable_slippage_consideration: true,
+    flexible_strategy_integration: [],
+    
+    // Pair-Based Win Rate Calculation
+    enable_pair_win_rate: false,
+    min_trades_for_pair_win_rate: 3,
+    pair_win_rate_update_frequency: 'real-time' as 'real-time' | 'on-close' | 'periodic'
   });
 
   const [isUpdating, setIsUpdating] = useState(false);
@@ -767,6 +782,339 @@ export default function EditBotPage() {
                     </div>
                   </div>
                 </div>
+                </div>
+
+                {/* Advanced Exit & Trailing Features */}
+                <div className="border-l-4 border-purple-500 pl-4 mt-6">
+                  <h3 className="text-md font-semibold text-gray-800 mb-3">🚀 Advanced Exit & Trailing Features</h3>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Advanced profit protection and exit strategies to maximize gains and minimize losses.
+                  </p>
+                  
+                  <div className="space-y-6">
+                    {/* Dynamic Upward Trailing */}
+                    <div className="bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                            <i className="ri-line-chart-line text-purple-600"></i>
+                            Dynamic Upward Trailing
+                          </h4>
+                          <p className="text-xs text-gray-600 mt-1">
+                            Automatically move up the exit point based on the user's historical highest equity
+                          </p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={advancedConfig.enable_dynamic_trailing || false}
+                            onChange={(e) => setAdvancedConfig(prev => ({ ...prev, enable_dynamic_trailing: e.target.checked } as any))}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                        </label>
+                      </div>
+                      {advancedConfig.enable_dynamic_trailing && (
+                        <div className="mt-3 p-3 bg-white rounded border border-purple-200">
+                          <p className="text-xs text-purple-700">
+                            <i className="ri-information-line mr-1"></i>
+                            The bot will track your account's highest equity and automatically adjust exit points upward as equity reaches new highs.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Trailing Take-Profit */}
+                    <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                            <i className="ri-money-dollar-circle-line text-green-600"></i>
+                            Trailing Take-Profit
+                          </h4>
+                          <p className="text-xs text-gray-600 mt-1">
+                            Lock in profits automatically as equity reaches new highs — no hassle, no delays
+                          </p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={advancedConfig.enable_trailing_take_profit || false}
+                            onChange={(e) => setAdvancedConfig(prev => ({ ...prev, enable_trailing_take_profit: e.target.checked } as any))}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-green-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                        </label>
+                      </div>
+                      {advancedConfig.enable_trailing_take_profit && (
+                        <div className="mt-3 space-y-3">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Trailing TP Distance (ATR Multiplier): {advancedConfig.trailing_take_profit_atr || 1.0}
+                            </label>
+                            <input
+                              type="range"
+                              value={advancedConfig.trailing_take_profit_atr || 1.0}
+                              onChange={(e) => setAdvancedConfig(prev => ({ ...prev, trailing_take_profit_atr: parseFloat(e.target.value) } as any))}
+                              className="w-full"
+                              min="0.5"
+                              max="3.0"
+                              step="0.1"
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                              Distance from highest equity to trailing stop (in ATR multiples)
+                            </p>
+                          </div>
+                          <div className="p-3 bg-white rounded border border-green-200">
+                            <p className="text-xs text-green-700">
+                              <i className="ri-information-line mr-1"></i>
+                              As your equity reaches new highs, the trailing stop will automatically move up to lock in profits.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Smart Exit Trigger */}
+                    <div className="bg-gradient-to-r from-orange-50 to-red-50 border border-orange-200 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                            <i className="ri-alarm-warning-line text-orange-600"></i>
+                            Smart Exit Trigger
+                          </h4>
+                          <p className="text-xs text-gray-600 mt-1">
+                            Exit trades instantly if the market retraces beyond your preset percentage
+                          </p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={advancedConfig.smart_exit_enabled || false}
+                            onChange={(e) => setAdvancedConfig(prev => ({ ...prev, smart_exit_enabled: e.target.checked } as any))}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-orange-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600"></div>
+                        </label>
+                      </div>
+                      {advancedConfig.smart_exit_enabled && (
+                        <div className="mt-3 space-y-3">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Retracement Trigger (%): {advancedConfig.smart_exit_retracement_pct || 2.0}%
+                            </label>
+                            <input
+                              type="range"
+                              value={advancedConfig.smart_exit_retracement_pct || 2.0}
+                              onChange={(e) => setAdvancedConfig(prev => ({ ...prev, smart_exit_retracement_pct: parseFloat(e.target.value) } as any))}
+                              className="w-full"
+                              min="0.5"
+                              max="5.0"
+                              step="0.1"
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                              Exit position if price retraces this percentage from the highest point
+                            </p>
+                          </div>
+                          <div className="p-3 bg-white rounded border border-orange-200">
+                            <p className="text-xs text-orange-700">
+                              <i className="ri-information-line mr-1"></i>
+                              Protects profits by exiting immediately when market reverses beyond your threshold.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Automatic Execution */}
+                    <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                            <i className="ri-play-circle-line text-blue-600"></i>
+                            Automatic Execution
+                          </h4>
+                          <p className="text-xs text-gray-600 mt-1">
+                            Closes all positions at market price once triggered
+                          </p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={advancedConfig.enable_automatic_execution || false}
+                            onChange={(e) => setAdvancedConfig(prev => ({ ...prev, enable_automatic_execution: e.target.checked } as any))}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                        </label>
+                      </div>
+                      {advancedConfig.enable_automatic_execution && (
+                        <div className="mt-3 p-3 bg-white rounded border border-blue-200">
+                          <p className="text-xs text-blue-700">
+                            <i className="ri-information-line mr-1"></i>
+                            When exit conditions are met, all positions will be closed immediately at current market price.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Slippage Consideration */}
+                    <div className="bg-gradient-to-r from-gray-50 to-slate-50 border border-gray-200 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                            <i className="ri-alert-line text-gray-600"></i>
+                            Slippage Consideration
+                          </h4>
+                          <p className="text-xs text-gray-600 mt-1">
+                            Final account equity may vary from the exit equity due to slippage
+                          </p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={advancedConfig.enable_slippage_consideration || false}
+                            onChange={(e) => setAdvancedConfig(prev => ({ ...prev, enable_slippage_consideration: e.target.checked } as any))}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-gray-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gray-600"></div>
+                        </label>
+                      </div>
+                      {advancedConfig.enable_slippage_consideration && (
+                        <div className="mt-3 p-3 bg-white rounded border border-gray-200">
+                          <p className="text-xs text-gray-700">
+                            <i className="ri-information-line mr-1"></i>
+                            The bot will account for slippage when calculating exit prices. Actual execution price may differ from expected price, especially during high volatility.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Flexible Strategy Integration */}
+                    <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-4">
+                      <div className="mb-3">
+                        <h4 className="font-semibold text-gray-900 flex items-center gap-2 mb-1">
+                          <i className="ri-links-line text-indigo-600"></i>
+                          Flexible Strategy Integration
+                        </h4>
+                        <p className="text-xs text-gray-600">
+                          Integrate Spot Grid, Futures Grid, and Futures Combo Bots — trade your way!
+                        </p>
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        {['spot_grid', 'futures_grid', 'futures_combo'].map((strategy) => (
+                          <label key={strategy} className="flex items-center gap-2 p-2 bg-white rounded border border-indigo-200 hover:bg-indigo-50 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={(advancedConfig.flexible_strategy_integration || []).includes(strategy)}
+                              onChange={(e) => {
+                                const current = advancedConfig.flexible_strategy_integration || [];
+                                if (e.target.checked) {
+                                  setAdvancedConfig(prev => ({ ...prev, flexible_strategy_integration: [...current, strategy] } as any));
+                                } else {
+                                  setAdvancedConfig(prev => ({ ...prev, flexible_strategy_integration: current.filter((s: string) => s !== strategy) } as any));
+                                }
+                              }}
+                              className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                            />
+                            <span className="text-sm text-gray-700 capitalize">
+                              {strategy.replace('_', ' ')}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                      {(advancedConfig.flexible_strategy_integration || []).length > 0 && (
+                        <div className="mt-3 p-3 bg-white rounded border border-indigo-200">
+                          <p className="text-xs text-indigo-700">
+                            <i className="ri-information-line mr-1"></i>
+                            Selected strategies will be integrated with this bot's trading logic for enhanced flexibility.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Pair-Based Win Rate Calculation */}
+                <div className="border-l-4 border-teal-500 pl-4 mt-6">
+                  <h3 className="text-md font-semibold text-gray-800 mb-3">📊 Pair-Based Win Rate Calculation</h3>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Track and calculate win rate separately for each trading pair in real-time.
+                  </p>
+                  
+                  <div className="bg-gradient-to-r from-teal-50 to-cyan-50 border border-teal-200 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                          <i className="ri-bar-chart-line text-teal-600"></i>
+                          Real-Time Pair Win Rate
+                        </h4>
+                        <p className="text-xs text-gray-600 mt-1">
+                          Calculate win rate separately for each trading pair and update in real-time
+                        </p>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={advancedConfig.enable_pair_win_rate || false}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, enable_pair_win_rate: e.target.checked } as any))}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-teal-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal-600"></div>
+                      </label>
+                    </div>
+                    {advancedConfig.enable_pair_win_rate && (
+                      <div className="mt-3 space-y-3">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Minimum Trades Before Display: {advancedConfig.min_trades_for_pair_win_rate || 3}
+                          </label>
+                          <input
+                            type="range"
+                            value={advancedConfig.min_trades_for_pair_win_rate || 3}
+                            onChange={(e) => setAdvancedConfig(prev => ({ ...prev, min_trades_for_pair_win_rate: parseInt(e.target.value) } as any))}
+                            className="w-full"
+                            min="1"
+                            max="10"
+                            step="1"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            Minimum number of trades per pair before showing win rate (prevents misleading stats with few trades)
+                          </p>
+                        </div>
+                        
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Update Frequency
+                          </label>
+                          <select
+                            value={advancedConfig.pair_win_rate_update_frequency || 'real-time'}
+                            onChange={(e) => setAdvancedConfig(prev => ({ ...prev, pair_win_rate_update_frequency: e.target.value } as any))}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                          >
+                            <option value="real-time">Real-Time (Update on every trade close)</option>
+                            <option value="on-close">On Close (Update when position closes)</option>
+                            <option value="periodic">Periodic (Update every 5 minutes)</option>
+                          </select>
+                          <p className="text-xs text-gray-500 mt-1">
+                            How often to recalculate and update pair win rates
+                          </p>
+                        </div>
+                        
+                        <div className="p-3 bg-white rounded border border-teal-200">
+                          <p className="text-xs text-teal-700">
+                            <i className="ri-information-line mr-1"></i>
+                            <strong>Real-Time Tracking:</strong> Win rate is calculated separately for each trading pair (e.g., BTCUSDT, ETHUSDT). 
+                            This helps identify which pairs perform best and optimize your trading strategy per pair.
+                          </p>
+                          <p className="text-xs text-teal-700 mt-2">
+                            <i className="ri-database-line mr-1"></i>
+                            Statistics tracked: Total trades, Winning trades, Losing trades, Win rate %, Total PnL, Average PnL per trade, Best/Worst trade.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Strategy Settings */}
