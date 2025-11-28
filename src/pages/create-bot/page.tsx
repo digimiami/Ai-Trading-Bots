@@ -184,7 +184,11 @@ export default function CreateBotPage() {
                 smart_exit_enabled: false,
                 smart_exit_retracement_pct: 2.0,
                 enable_slippage_consideration: true,
-                strategy_integration: []
+                strategy_integration: [],
+                // Pair-Based Win Rate Calculation
+                enable_pair_win_rate: false,
+                pair_win_rate_min_trades: 3,
+                pair_win_rate_update_frequency: 'realtime'
               };
               setAdvancedConfig({ ...defaultConfig, ...parsedConfig } as AdvancedStrategyConfig);
             }
@@ -279,7 +283,11 @@ export default function CreateBotPage() {
           smart_exit_enabled: false,
           smart_exit_retracement_pct: 2.0,
           enable_slippage_consideration: true,
-          strategy_integration: []
+          strategy_integration: [],
+          // Pair-Based Win Rate Calculation
+          enable_pair_win_rate: false,
+          pair_win_rate_min_trades: 3,
+          pair_win_rate_update_frequency: 'realtime'
         }
   );
   
@@ -1879,6 +1887,88 @@ All settings have been applied to your bot configuration.`;
                           </div>
                         )}
                       </div>
+                    </div>
+                  </div>
+
+                  {/* Pair-Based Win Rate Calculation */}
+                  <div className="border-l-4 border-teal-500 pl-4 mt-6">
+                    <h3 className="text-md font-semibold text-gray-800 mb-3">📊 Pair-Based Win Rate Calculation</h3>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Track and calculate win rate separately for each trading pair in real-time.
+                    </p>
+                    
+                    <div className="bg-gradient-to-r from-teal-50 to-cyan-50 border border-teal-200 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                            <i className="ri-bar-chart-line text-teal-600"></i>
+                            Real-Time Pair Win Rate
+                          </h4>
+                          <p className="text-xs text-gray-600 mt-1">
+                            Calculate win rate separately for each trading pair and update in real-time
+                          </p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={advancedConfig.enable_pair_win_rate || false}
+                            onChange={(e) => setAdvancedConfig(prev => ({ ...prev, enable_pair_win_rate: e.target.checked } as any))}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-teal-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal-600"></div>
+                        </label>
+                      </div>
+                      {advancedConfig.enable_pair_win_rate && (
+                        <div className="mt-3 space-y-3">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Minimum Trades Before Display: {advancedConfig.pair_win_rate_min_trades || 3}
+                            </label>
+                            <input
+                              type="range"
+                              value={advancedConfig.pair_win_rate_min_trades || 3}
+                              onChange={(e) => setAdvancedConfig(prev => ({ ...prev, pair_win_rate_min_trades: parseInt(e.target.value) } as any))}
+                              className="w-full"
+                              min="1"
+                              max="10"
+                              step="1"
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                              Minimum number of trades per pair before showing win rate (prevents misleading stats with few trades)
+                            </p>
+                          </div>
+                          
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Update Frequency
+                            </label>
+                            <select
+                              value={advancedConfig.pair_win_rate_update_frequency || 'realtime'}
+                              onChange={(e) => setAdvancedConfig(prev => ({ ...prev, pair_win_rate_update_frequency: e.target.value } as any))}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500"
+                            >
+                              <option value="realtime">Real-Time (Update on every trade close)</option>
+                              <option value="on_close">On Close (Update when position closes)</option>
+                              <option value="periodic">Periodic (Update every 5 minutes)</option>
+                            </select>
+                            <p className="text-xs text-gray-500 mt-1">
+                              How often to recalculate and update pair win rates
+                            </p>
+                          </div>
+                          
+                          <div className="p-3 bg-white rounded border border-teal-200">
+                            <p className="text-xs text-teal-700">
+                              <i className="ri-information-line mr-1"></i>
+                              <strong>Real-Time Tracking:</strong> Win rate is calculated separately for each trading pair (e.g., BTCUSDT, ETHUSDT). 
+                              This helps identify which pairs perform best and optimize your trading strategy per pair.
+                            </p>
+                            <p className="text-xs text-teal-700 mt-2">
+                              <i className="ri-database-line mr-1"></i>
+                              Statistics tracked: Total trades, Winning trades, Losing trades, Win rate %, Total PnL, Average PnL per trade, Best/Worst trade.
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 

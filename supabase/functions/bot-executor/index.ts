@@ -7513,6 +7513,116 @@ class BotExecutor {
         currentPnL: runningPnL
       }
     });
+    
+    // Update pair statistics if enabled
+    await this.updatePairStatistics(botId, trade);
+  }
+  
+  /**
+   * Update pair-based win rate statistics in real-time
+   */
+  private async updatePairStatistics(botId: string, trade: any): Promise<void> {
+    try {
+      // Get bot configuration
+      const { data: bot } = await this.supabaseClient
+        .from('trading_bots')
+        .select('id, user_id, strategy_config, symbol, exchange')
+        .eq('id', botId)
+        .single();
+      
+      if (!bot) return;
+      
+      const strategyConfig = bot.strategy_config || {};
+      const enablePairWinRate = strategyConfig.enable_pair_win_rate || false;
+      
+      // Only update if pair win rate is enabled
+      if (!enablePairWinRate) return;
+      
+      // Only process closed/completed trades with PnL
+      if (!trade || !trade.pnl || trade.status !== 'closed' && trade.status !== 'completed') return;
+      
+      const symbol = trade.symbol || bot.symbol;
+      const exchange = trade.exchange || bot.exchange;
+      const pnl = parseFloat(trade.pnl || 0);
+      const isWin = pnl > 0;
+      
+      // Get or create pair statistics
+      const { data: existingStats } = await this.supabaseClient
+        .from('bot_pair_statistics')
+        .select('*')
+        .eq('bot_id', botId)
+        .eq('symbol', symbol)
+        .eq('exchange', exchange)
+        .maybeSingle();
+      
+      if (existingStats) {
+        // Update existing statistics
+        const newTotalTrades = existingStats.total_trades + 1;
+        const newWinningTrades = existingStats.winning_trades + (isWin ? 1 : 0);
+        const newLosingTrades = existingStats.losing_trades + (isWin ? 0 : 1);
+        const newWinRate = newTotalTrades > 0 ? (newWinningTrades / newTotalTrades) * 100 : 0;
+        const newTotalPnL = parseFloat(existingStats.total_pnl || 0) + pnl;
+        const newAvgPnL = newTotalPnL / newTotalTrades;
+        const newBestPnL = isWin ? Math.max(parseFloat(existingStats.best_trade_pnl || 0), pnl) : parseFloat(existingStats.best_trade_pnl || 0);
+        const newWorstPnL = !isWin ? Math.min(parseFloat(existingStats.worst_trade_pnl || 0), pnl) : parseFloat(existingStats.worst_trade_pnl || 0);
+        
+        await this.supabaseClient
+          .from('bot_pair_statistics')
+          .update({
+            total_trades: newTotalTrades,
+            winning_trades: newWinningTrades,
+            losing_trades: newLosingTrades,
+            win_rate: Math.round(newWinRate * 100) / 100, // Round to 2 decimals
+            total_pnl: newTotalPnL,
+            avg_pnl_per_trade: newAvgPnL,
+            best_trade_pnl: newBestPnL,
+            worst_trade_pnl: newWorstPnL,
+            last_trade_at: trade.executed_at || trade.closed_at || TimeSync.getCurrentTimeISO(),
+            updated_at: TimeSync.getCurrentTimeISO()
+          })
+          .eq('id', existingStats.id);
+        
+        console.log(`📊 [PAIR WIN RATE] Updated ${symbol}: ${newWinningTrades}/${newTotalTrades} = ${newWinRate.toFixed(2)}% (${isWin ? 'WIN' : 'LOSS'})`);
+      } else {
+        // Create new pair statistics
+        await this.supabaseClient
+          .from('bot_pair_statistics')
+          .insert({
+            bot_id: botId,
+            user_id: bot.user_id,
+            symbol: symbol,
+            exchange: exchange,
+            total_trades: 1,
+            winning_trades: isWin ? 1 : 0,
+            losing_trades: isWin ? 0 : 1,
+            win_rate: isWin ? 100.00 : 0.00,
+            total_pnl: pnl,
+            avg_pnl_per_trade: pnl,
+            best_trade_pnl: isWin ? pnl : 0,
+            worst_trade_pnl: !isWin ? pnl : 0,
+            last_trade_at: trade.executed_at || trade.closed_at || TimeSync.getCurrentTimeISO()
+          });
+        
+        console.log(`📊 [PAIR WIN RATE] Created ${symbol}: ${isWin ? 'WIN' : 'LOSS'} (1/1 = ${isWin ? 100 : 0}%)`);
+      }
+      
+      // Log pair win rate update
+      await this.addBotLog(botId, {
+        level: 'info',
+        category: 'statistics',
+        message: `📊 Pair Win Rate Updated: ${symbol} - ${isWin ? 'WIN' : 'LOSS'} (${pnl > 0 ? '+' : ''}$${pnl.toFixed(2)})`,
+        details: {
+          symbol,
+          exchange,
+          pnl,
+          is_win: isWin,
+          pair_win_rate_enabled: true
+        }
+      });
+    } catch (error) {
+      console.warn('⚠️ Failed to update pair statistics:', error);
+      // Don't throw - this is non-critical
+    }
   }
   
   /**
@@ -9168,6 +9278,16 @@ class PaperTradingExecutor {
           
           // Update bot performance
           await this.updateBotPerformance(position.bot_id, finalPnL);
+          
+          // Update pair statistics for paper trading
+          await this.updatePairStatisticsPaper(position.bot_id, {
+            symbol: position.symbol,
+            exchange: position.exchange,
+            pnl: finalPnL,
+            status: 'closed',
+            executed_at: TimeSync.getCurrentTimeISO(),
+            closed_at: TimeSync.getCurrentTimeISO()
+          });
         }
         
         await this.supabaseClient
@@ -9177,6 +9297,99 @@ class PaperTradingExecutor {
       }
     } catch (error) {
       console.error('Error updating paper positions:', error);
+    }
+  }
+  
+  /**
+   * Update pair-based win rate statistics for paper trading
+   */
+  private async updatePairStatisticsPaper(botId: string, trade: any): Promise<void> {
+    try {
+      // Get bot configuration
+      const { data: bot } = await this.supabaseClient
+        .from('trading_bots')
+        .select('id, user_id, strategy_config, symbol, exchange')
+        .eq('id', botId)
+        .single();
+      
+      if (!bot) return;
+      
+      const strategyConfig = bot.strategy_config || {};
+      const enablePairWinRate = strategyConfig.enable_pair_win_rate || false;
+      
+      // Only update if pair win rate is enabled
+      if (!enablePairWinRate) return;
+      
+      // Only process closed trades with PnL
+      if (!trade || !trade.pnl || trade.status !== 'closed') return;
+      
+      const symbol = trade.symbol;
+      const exchange = trade.exchange;
+      const pnl = parseFloat(trade.pnl || 0);
+      const isWin = pnl > 0;
+      
+      // Get or create pair statistics
+      const { data: existingStats } = await this.supabaseClient
+        .from('bot_pair_statistics')
+        .select('*')
+        .eq('bot_id', botId)
+        .eq('symbol', symbol)
+        .eq('exchange', exchange)
+        .maybeSingle();
+      
+      if (existingStats) {
+        // Update existing statistics
+        const newTotalTrades = existingStats.total_trades + 1;
+        const newWinningTrades = existingStats.winning_trades + (isWin ? 1 : 0);
+        const newLosingTrades = existingStats.losing_trades + (isWin ? 0 : 1);
+        const newWinRate = newTotalTrades > 0 ? (newWinningTrades / newTotalTrades) * 100 : 0;
+        const newTotalPnL = parseFloat(existingStats.total_pnl || 0) + pnl;
+        const newAvgPnL = newTotalPnL / newTotalTrades;
+        const newBestPnL = isWin ? Math.max(parseFloat(existingStats.best_trade_pnl || 0), pnl) : parseFloat(existingStats.best_trade_pnl || 0);
+        const newWorstPnL = !isWin ? Math.min(parseFloat(existingStats.worst_trade_pnl || 0), pnl) : parseFloat(existingStats.worst_trade_pnl || 0);
+        
+        await this.supabaseClient
+          .from('bot_pair_statistics')
+          .update({
+            total_trades: newTotalTrades,
+            winning_trades: newWinningTrades,
+            losing_trades: newLosingTrades,
+            win_rate: Math.round(newWinRate * 100) / 100,
+            total_pnl: newTotalPnL,
+            avg_pnl_per_trade: newAvgPnL,
+            best_trade_pnl: newBestPnL,
+            worst_trade_pnl: newWorstPnL,
+            last_trade_at: trade.executed_at || trade.closed_at || TimeSync.getCurrentTimeISO(),
+            updated_at: TimeSync.getCurrentTimeISO()
+          })
+          .eq('id', existingStats.id);
+        
+        console.log(`📊 [PAPER PAIR WIN RATE] Updated ${symbol}: ${newWinningTrades}/${newTotalTrades} = ${newWinRate.toFixed(2)}% (${isWin ? 'WIN' : 'LOSS'})`);
+      } else {
+        // Create new pair statistics
+        await this.supabaseClient
+          .from('bot_pair_statistics')
+          .insert({
+            bot_id: botId,
+            user_id: bot.user_id,
+            symbol: symbol,
+            exchange: exchange,
+            total_trades: 1,
+            winning_trades: isWin ? 1 : 0,
+            losing_trades: isWin ? 0 : 1,
+            win_rate: isWin ? 100.00 : 0.00,
+            total_pnl: pnl,
+            avg_pnl_per_trade: pnl,
+            best_trade_pnl: isWin ? pnl : 0,
+            worst_trade_pnl: !isWin ? pnl : 0,
+            last_trade_at: trade.executed_at || trade.closed_at || TimeSync.getCurrentTimeISO()
+          });
+        
+        console.log(`📊 [PAPER PAIR WIN RATE] Created ${symbol}: ${isWin ? 'WIN' : 'LOSS'} (1/1 = ${isWin ? 100 : 0}%)`);
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to update paper pair statistics:', error);
+      // Don't throw - this is non-critical
     }
   }
   

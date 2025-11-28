@@ -151,6 +151,11 @@ export interface AdvancedStrategyConfig {
   smart_exit_retracement_pct?: number; // Percentage retracement to trigger smart exit (e.g., 2.0 = 2%)
   enable_slippage_consideration?: boolean; // Show slippage warnings
   strategy_integration?: string[]; // Array of strategy types to integrate (e.g., ['spot_grid', 'futures_grid', 'futures_combo'])
+  
+  // Pair-Based Win Rate Calculation
+  enable_pair_win_rate?: boolean; // Enable real-time win rate calculation per trading pair
+  pair_win_rate_min_trades?: number; // Minimum trades required before showing pair win rate (default: 3)
+  pair_win_rate_update_frequency?: 'realtime' | 'on_close' | 'periodic'; // How often to update (default: 'realtime')
 }
 
 export interface ManualTradeSignal {
