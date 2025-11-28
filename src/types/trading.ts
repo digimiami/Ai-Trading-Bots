@@ -141,6 +141,16 @@ export interface AdvancedStrategyConfig {
   use_ml_prediction?: boolean;
   ml_confidence_threshold?: number;
   ml_min_samples?: number;
+  
+  // Advanced Exit & Trailing Features
+  enable_dynamic_trailing?: boolean; // Dynamic upward trailing based on historical highest equity
+  enable_automatic_execution?: boolean; // Close all positions at market price once triggered
+  enable_trailing_take_profit?: boolean; // Lock in profits as equity reaches new highs
+  trailing_take_profit_atr?: number; // ATR multiplier for trailing TP
+  smart_exit_enabled?: boolean; // Exit trades if market retraces beyond preset percentage
+  smart_exit_retracement_pct?: number; // Percentage retracement to trigger smart exit (e.g., 2.0 = 2%)
+  enable_slippage_consideration?: boolean; // Show slippage warnings
+  strategy_integration?: string[]; // Array of strategy types to integrate (e.g., ['spot_grid', 'futures_grid', 'futures_combo'])
 }
 
 export interface ManualTradeSignal {
