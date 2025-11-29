@@ -1536,6 +1536,11 @@ class MarketDataFetcher {
             (r.retMsg?.toLowerCase().includes('symbol invalid') || r.retMsg?.toLowerCase().includes('params error: symbol'))
           );
           
+          console.log(`🔍 Category fallback check: alternativeCategory=${alternativeCategory}, apiResponses.length=${apiResponses.length}, allInvalidSymbol=${allInvalidSymbol}`);
+          if (apiResponses.length > 0) {
+            console.log(`🔍 Sample response: retCode=${apiResponses[0]?.retCode}, retMsg=${apiResponses[0]?.retMsg}`);
+          }
+          
           if (allInvalidSymbol) {
             console.log(`🔄 All attempts returned "symbol invalid" for ${bybitCategory} category. Trying alternative category: ${alternativeCategory}...`);
             try {
