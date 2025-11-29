@@ -59,6 +59,11 @@ function formatNotificationMessage(type: string, data: any): string {
   };
 
   const icon = emoji[type as keyof typeof emoji] || '📢';
+  
+  // Format balance information if available
+  const balanceSection = data.account_balance !== undefined 
+    ? `\n💵 Account Balance: $${typeof data.account_balance === 'number' ? data.account_balance.toFixed(2) : data.account_balance}`
+    : '';
 
   switch (type) {
     case 'trade_executed':
@@ -68,38 +73,44 @@ function formatNotificationMessage(type: string, data: any): string {
              `Side: ${data.side.toUpperCase()}\n` +
              `Price: $${data.price}\n` +
              `Amount: ${data.amount}\n` +
-             `${data.order_id ? `Order ID: ${data.order_id}` : ''}`;
+             `${data.order_id ? `Order ID: ${data.order_id}\n` : ''}` +
+             balanceSection;
 
     case 'bot_started':
       return `${icon} <b>Bot Started</b>\n\n` +
              `${data.bot_name} is now running\n` +
              `Symbol: ${data.symbol}\n` +
-             `Exchange: ${data.exchange.toUpperCase()}`;
+             `Exchange: ${data.exchange.toUpperCase()}` +
+             balanceSection;
 
     case 'bot_stopped':
       return `${icon} <b>Bot Stopped</b>\n\n` +
              `${data.bot_name} has been stopped\n` +
              `Symbol: ${data.symbol}\n` +
-             `Reason: ${data.reason || 'Manual stop'}`;
+             `Reason: ${data.reason || 'Manual stop'}` +
+             balanceSection;
 
     case 'error_occurred':
       return `${icon} <b>Error Alert</b>\n\n` +
              `Bot: ${data.bot_name}\n` +
              `Error: ${data.error_message}\n` +
-             `${data.details ? `Details: ${data.details}` : ''}`;
+             `${data.details ? `Details: ${data.details}\n` : ''}` +
+             balanceSection;
 
     case 'profit_alert':
       return `${icon} <b>Profit Alert!</b>\n\n` +
              `Bot: ${data.bot_name}\n` +
              `Profit: $${data.profit}\n` +
              `Win Rate: ${data.win_rate}%\n` +
-             `Total P&L: $${data.total_pnl}`;
+             `Total P&L: $${data.total_pnl}` +
+             balanceSection;
 
     case 'loss_alert':
       return `${icon} <b>Loss Alert</b>\n\n` +
              `Bot: ${data.bot_name}\n` +
              `Loss: $${data.loss}\n` +
-             `Action: ${data.action || 'Review bot settings'}`;
+             `Action: ${data.action || 'Review bot settings'}` +
+             balanceSection;
 
     case 'daily_summary':
       return `${icon} <b>Daily Summary</b>\n\n` +
@@ -107,7 +118,8 @@ function formatNotificationMessage(type: string, data: any): string {
              `Win Rate: ${data.win_rate}%\n` +
              `Total P&L: ${data.total_pnl >= 0 ? '+' : ''}$${data.total_pnl}\n` +
              `Active Bots: ${data.active_bots}\n` +
-             `Best Performer: ${data.best_bot}`;
+             `Best Performer: ${data.best_bot}` +
+             balanceSection;
 
     default:
       return `${icon} <b>Notification</b>\n\n${data.message || 'No message provided'}`;
@@ -366,8 +378,47 @@ serve(async (req) => {
           )
         }
 
+        // Fetch account balance for the user
+        let accountBalance: number | null = null;
+        try {
+          // Check if this is a paper trading bot
+          const isPaperTrading = notificationData.paper_trading || notificationData.is_paper_trading;
+          
+          if (isPaperTrading) {
+            // Get paper trading account balance
+            const { data: paperAccount, error: paperError } = await queryClient
+              .from('paper_trading_accounts')
+              .select('balance')
+              .eq('user_id', user.id)
+              .single();
+            
+            if (!paperError && paperAccount) {
+              accountBalance = parseFloat(paperAccount.balance || '0');
+              console.log(`📊 Paper trading balance: $${accountBalance.toFixed(2)}`);
+            }
+          } else {
+            // For real trading, check if balance was passed in notification data
+            // (bot-executor will fetch and pass it)
+            if (notificationData.account_balance !== undefined) {
+              accountBalance = typeof notificationData.account_balance === 'number' 
+                ? notificationData.account_balance 
+                : parseFloat(notificationData.account_balance || '0');
+              console.log(`📊 Real trading balance: $${accountBalance.toFixed(2)}`);
+            }
+          }
+        } catch (balanceError: any) {
+          console.warn('⚠️ Failed to fetch account balance for notification:', balanceError?.message || balanceError);
+          // Don't fail the notification if balance fetch fails
+        }
+
+        // Add balance to notification data if available
+        const notificationDataWithBalance = {
+          ...notificationData,
+          account_balance: accountBalance
+        };
+
         // Format and send message
-        const message = formatNotificationMessage(notification_type, notificationData);
+        const message = formatNotificationMessage(notification_type, notificationDataWithBalance);
         
         const telegramResult = await sendTelegramMessage(
           config.bot_token,

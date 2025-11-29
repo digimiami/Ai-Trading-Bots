@@ -8585,6 +8585,59 @@ class BotExecutor {
         return;
       }
 
+      // Fetch account balance for notification
+      let accountBalance: number | null = null;
+      try {
+        if (bot.paper_trading) {
+          // Get paper trading account balance
+          const paperAccount = await this.getPaperAccount();
+          if (paperAccount && paperAccount.balance !== undefined) {
+            accountBalance = parseFloat(paperAccount.balance || '0');
+            console.log(`📊 Paper trading balance for notification: $${accountBalance.toFixed(2)}`);
+          }
+        } else {
+          // For real trading, try to get balance from API keys
+          // Get API keys for the bot
+          const apiKeysResp = await this.supabaseClient
+            .from('api_keys')
+            .select('*')
+            .eq('user_id', bot.user_id)
+            .eq('exchange', bot.exchange)
+            .eq('is_testnet', false)
+            .eq('is_active', true)
+            .single();
+          
+          if (apiKeysResp.data && !apiKeysResp.error) {
+            const apiKeys = apiKeysResp.data;
+            const tradingType = bot.tradingType || bot.trading_type || 'futures';
+            
+            // Try to check balance (this will give us the available balance)
+            try {
+              const balanceCheck = await this.checkBybitBalance(
+                apiKeys.api_key,
+                apiKeys.api_secret,
+                apiKeys.is_testnet,
+                bot.symbol,
+                'buy', // Use 'buy' to check USDT balance
+                1, // Minimal order value just to get balance
+                tradingType
+              );
+              
+              if (balanceCheck && balanceCheck.availableBalance > 0) {
+                accountBalance = balanceCheck.availableBalance;
+                console.log(`📊 Real trading balance for notification: $${accountBalance.toFixed(2)}`);
+              }
+            } catch (balanceError: any) {
+              console.warn('⚠️ Failed to fetch balance for Telegram notification:', balanceError?.message || balanceError);
+              // Don't fail notification if balance fetch fails
+            }
+          }
+        }
+      } catch (balanceError: any) {
+        console.warn('⚠️ Failed to fetch account balance for Telegram notification:', balanceError?.message || balanceError);
+        // Don't fail notification if balance fetch fails
+      }
+
       // When called from cron, we don't have a user session, but we have user_id from the trade/bot
       // Use service role key to call the function and pass user_id in body
       // The telegram-notifier will handle user lookup internally
@@ -8625,7 +8678,10 @@ class BotExecutor {
             price: trade.price || trade.entry_price,
             amount: trade.amount || trade.size,
             order_id: trade.exchange_order_id || orderResult?.orderId,
-            user_id: this.user?.id || trade.user_id || bot.user_id // Pass user_id explicitly
+            user_id: this.user?.id || trade.user_id || bot.user_id, // Pass user_id explicitly
+            paper_trading: bot.paper_trading || false,
+            exchange: bot.exchange,
+            account_balance: accountBalance // Include account balance
           }
         })
       });
