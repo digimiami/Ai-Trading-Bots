@@ -1526,6 +1526,47 @@ class MarketDataFetcher {
         
         console.warn(`⚠️ Symbol ${symbol} not found in ${bybitCategory} category on Bybit. Tried variants: ${symbolVariants.join(', ')}`);
         
+        // CATEGORY FALLBACK: If all attempts returned "symbol invalid", try alternative category
+        // Some symbols (like SHIBUSDT) might only be available in spot, not linear/futures
+        const alternativeCategory = bybitCategory === 'linear' ? 'spot' : bybitCategory === 'spot' ? 'linear' : null;
+        if (alternativeCategory && apiResponses.length > 0) {
+          // Check if all attempts returned "symbol invalid" - indicates category mismatch
+          const allInvalidSymbol = apiResponses.every(r => 
+            r.retCode === 10001 && 
+            (r.retMsg?.toLowerCase().includes('symbol invalid') || r.retMsg?.toLowerCase().includes('params error: symbol'))
+          );
+          
+          if (allInvalidSymbol) {
+            console.log(`🔄 All attempts returned "symbol invalid" for ${bybitCategory} category. Trying alternative category: ${alternativeCategory}...`);
+            try {
+              const altTickersList = await this.getTickersWithCache(alternativeCategory, exchange);
+              if (altTickersList && altTickersList.length > 0) {
+                for (const symbolVariant of symbolVariants) {
+                  const ticker = altTickersList.find((t: any) => t.symbol === symbolVariant);
+                  if (ticker && ticker.lastPrice) {
+                    const price = parseFloat(ticker.lastPrice);
+                    if (price > 0 && isFinite(price)) {
+                      console.log(`✅ Found price in ${alternativeCategory} category: ${symbolVariant} = $${price} (original: ${symbol}, requested: ${bybitCategory})`);
+                      // Log warning about category mismatch
+                      if (logCallback) {
+                        await logCallback(`⚠️ Symbol ${symbol} found in ${alternativeCategory} category but bot is configured for ${bybitCategory}. Consider updating bot trading type.`, {
+                          symbol,
+                          requestedCategory: bybitCategory,
+                          foundCategory: alternativeCategory,
+                          price
+                        });
+                      }
+                      return price;
+                    }
+                  }
+                }
+              }
+            } catch (altCategoryErr: any) {
+              console.warn(`⚠️ Alternative category ${alternativeCategory} lookup failed:`, altCategoryErr?.message || altCategoryErr);
+            }
+          }
+        }
+        
         // Log all API responses for debugging
         if (apiResponses.length > 0) {
           console.error(`❌ Price fetch failed for ${symbol}. API Response Summary:`);
