@@ -8589,14 +8589,14 @@ class BotExecutor {
       let accountBalance: number | null = null;
       try {
         if (bot.paper_trading) {
-          // Get paper trading account balance
+          // Get paper trading account balance (available balance)
           const paperAccount = await this.getPaperAccount();
-          if (paperAccount && paperAccount.balance !== undefined) {
+          if (paperAccount && paperAccount.balance !== undefined && paperAccount.balance !== null) {
             accountBalance = parseFloat(paperAccount.balance || '0');
-            console.log(`📊 Paper trading balance for notification: $${accountBalance.toFixed(2)}`);
+            console.log(`📊 Paper trading available balance for notification: $${accountBalance.toFixed(2)}`);
           }
         } else {
-          // For real trading, try to get balance from API keys
+          // For real trading, fetch available balance directly from exchange
           // Get API keys for the bot
           const apiKeysResp = await this.supabaseClient
             .from('api_keys')
@@ -8611,24 +8611,97 @@ class BotExecutor {
             const apiKeys = apiKeysResp.data;
             const tradingType = bot.tradingType || bot.trading_type || 'futures';
             
-            // Try to check balance (this will give us the available balance)
+            // Fetch available balance directly from Bybit API
             try {
-              const balanceCheck = await this.checkBybitBalance(
-                apiKeys.api_key,
-                apiKeys.api_secret,
-                apiKeys.is_testnet,
-                bot.symbol,
-                'buy', // Use 'buy' to check USDT balance
-                1, // Minimal order value just to get balance
-                tradingType
-              );
+              const baseDomains = apiKeys.is_testnet
+                ? ['https://api-testnet.bybit.com']
+                : ['https://api.bybit.com'];
               
-              if (balanceCheck && balanceCheck.availableBalance > 0) {
-                accountBalance = balanceCheck.availableBalance;
-                console.log(`📊 Real trading balance for notification: $${accountBalance.toFixed(2)}`);
+              const timestamp = Date.now().toString();
+              const recvWindow = '5000';
+              const categoryMap: { [key: string]: string } = {
+                'spot': 'spot',
+                'futures': 'linear'
+              };
+              const bybitCategory = categoryMap[tradingType] || 'linear';
+              
+              // For futures/linear, get total equity (available balance)
+              if (bybitCategory === 'linear') {
+                const queryParams = `accountType=UNIFIED`;
+                const signaturePayload = timestamp + apiKeys.api_key + recvWindow + queryParams;
+                const signature = await this.createBybitSignature(signaturePayload, apiKeys.api_secret);
+                
+                for (const domain of baseDomains) {
+                  try {
+                    const response = await fetch(`${domain}/v5/account/wallet-balance?${queryParams}`, {
+                      method: 'GET',
+                      headers: {
+                        'X-BAPI-API-KEY': apiKeys.api_key,
+                        'X-BAPI-TIMESTAMP': timestamp,
+                        'X-BAPI-RECV-WINDOW': recvWindow,
+                        'X-BAPI-SIGN': signature,
+                      },
+                    });
+                    
+                    if (response.ok) {
+                      const data = await response.json();
+                      if (data.retCode === 0 && data.result?.list?.[0]) {
+                        const accountInfo = data.result.list[0];
+                        // Use totalAvailableBalance or totalEquity as available balance
+                        accountBalance = parseFloat(
+                          accountInfo.totalAvailableBalance || 
+                          accountInfo.totalEquity || 
+                          accountInfo.totalWalletBalance || 
+                          '0'
+                        );
+                        console.log(`📊 Real trading available balance (futures): $${accountBalance.toFixed(2)}`);
+                        break;
+                      }
+                    }
+                  } catch (fetchError) {
+                    console.warn(`⚠️ Failed to fetch balance from ${domain}:`, fetchError);
+                  }
+                }
+              } else {
+                // For spot, get USDT available balance
+                const queryParams = `accountType=SPOT&coin=USDT`;
+                const signaturePayload = timestamp + apiKeys.api_key + recvWindow + queryParams;
+                const signature = await this.createBybitSignature(signaturePayload, apiKeys.api_secret);
+                
+                for (const domain of baseDomains) {
+                  try {
+                    const response = await fetch(`${domain}/v5/account/wallet-balance?${queryParams}`, {
+                      method: 'GET',
+                      headers: {
+                        'X-BAPI-API-KEY': apiKeys.api_key,
+                        'X-BAPI-TIMESTAMP': timestamp,
+                        'X-BAPI-RECV-WINDOW': recvWindow,
+                        'X-BAPI-SIGN': signature,
+                      },
+                    });
+                    
+                    if (response.ok) {
+                      const data = await response.json();
+                      if (data.retCode === 0 && data.result?.list?.[0]?.coin?.[0]) {
+                        const wallet = data.result.list[0].coin[0];
+                        // Use availableToWithdraw or availableBalance
+                        accountBalance = parseFloat(
+                          wallet.availableToWithdraw || 
+                          wallet.availableBalance || 
+                          wallet.walletBalance || 
+                          '0'
+                        );
+                        console.log(`📊 Real trading available balance (spot): $${accountBalance.toFixed(2)}`);
+                        break;
+                      }
+                    }
+                  } catch (fetchError) {
+                    console.warn(`⚠️ Failed to fetch balance from ${domain}:`, fetchError);
+                  }
+                }
               }
             } catch (balanceError: any) {
-              console.warn('⚠️ Failed to fetch balance for Telegram notification:', balanceError?.message || balanceError);
+              console.warn('⚠️ Failed to fetch available balance for Telegram notification:', balanceError?.message || balanceError);
               // Don't fail notification if balance fetch fails
             }
           }

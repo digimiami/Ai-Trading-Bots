@@ -61,8 +61,8 @@ function formatNotificationMessage(type: string, data: any): string {
   const icon = emoji[type as keyof typeof emoji] || '📢';
   
   // Format balance information if available
-  const balanceSection = data.account_balance !== undefined 
-    ? `\n💵 Account Balance: $${typeof data.account_balance === 'number' ? data.account_balance.toFixed(2) : data.account_balance}`
+  const balanceSection = data.account_balance !== undefined && data.account_balance !== null
+    ? `\n💵 Available Balance: $${typeof data.account_balance === 'number' ? data.account_balance.toFixed(2) : parseFloat(data.account_balance || '0').toFixed(2)}`
     : '';
 
   switch (type) {
@@ -381,30 +381,31 @@ serve(async (req) => {
         // Fetch account balance for the user
         let accountBalance: number | null = null;
         try {
-          // Check if this is a paper trading bot
-          const isPaperTrading = notificationData.paper_trading || notificationData.is_paper_trading;
-          
-          if (isPaperTrading) {
-            // Get paper trading account balance
-            const { data: paperAccount, error: paperError } = await queryClient
-              .from('paper_trading_accounts')
-              .select('balance')
-              .eq('user_id', user.id)
-              .single();
-            
-            if (!paperError && paperAccount) {
-              accountBalance = parseFloat(paperAccount.balance || '0');
-              console.log(`📊 Paper trading balance: $${accountBalance.toFixed(2)}`);
-            }
+          // Check if balance was passed in notification data (preferred - bot-executor fetches it)
+          if (notificationData.account_balance !== undefined && notificationData.account_balance !== null) {
+            accountBalance = typeof notificationData.account_balance === 'number' 
+              ? notificationData.account_balance 
+              : parseFloat(notificationData.account_balance || '0');
+            console.log(`📊 Account balance from notification data: $${accountBalance.toFixed(2)}`);
           } else {
-            // For real trading, check if balance was passed in notification data
-            // (bot-executor will fetch and pass it)
-            if (notificationData.account_balance !== undefined) {
-              accountBalance = typeof notificationData.account_balance === 'number' 
-                ? notificationData.account_balance 
-                : parseFloat(notificationData.account_balance || '0');
-              console.log(`📊 Real trading balance: $${accountBalance.toFixed(2)}`);
+            // Fallback: fetch balance ourselves if not provided
+            const isPaperTrading = notificationData.paper_trading || notificationData.is_paper_trading;
+            
+            if (isPaperTrading) {
+              // Get paper trading account available balance
+              const { data: paperAccount, error: paperError } = await queryClient
+                .from('paper_trading_accounts')
+                .select('balance')
+                .eq('user_id', user.id)
+                .single();
+              
+              if (!paperError && paperAccount && paperAccount.balance !== null && paperAccount.balance !== undefined) {
+                accountBalance = parseFloat(paperAccount.balance || '0');
+                console.log(`📊 Paper trading available balance: $${accountBalance.toFixed(2)}`);
+              }
             }
+            // For real trading, we rely on bot-executor to pass the balance
+            // If not provided, we can't fetch it here without API keys
           }
         } catch (balanceError: any) {
           console.warn('⚠️ Failed to fetch account balance for notification:', balanceError?.message || balanceError);
