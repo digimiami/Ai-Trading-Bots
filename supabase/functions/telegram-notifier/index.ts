@@ -378,17 +378,17 @@ serve(async (req) => {
           )
         }
 
-        // Fetch account balance for the user
+        // ALWAYS fetch account balance for ALL notification types
         let accountBalance: number | null = null;
         try {
-          // Check if balance was passed in notification data (preferred - bot-executor fetches it)
+          // First, check if balance was passed in notification data (preferred - bot-executor fetches it)
           if (notificationData.account_balance !== undefined && notificationData.account_balance !== null) {
             accountBalance = typeof notificationData.account_balance === 'number' 
               ? notificationData.account_balance 
               : parseFloat(notificationData.account_balance || '0');
             console.log(`📊 Account balance from notification data: $${accountBalance.toFixed(2)}`);
           } else {
-            // Fallback: fetch balance ourselves if not provided
+            // Fetch balance ourselves for ALL notification types
             const isPaperTrading = notificationData.paper_trading || notificationData.is_paper_trading;
             
             if (isPaperTrading) {
@@ -403,9 +403,133 @@ serve(async (req) => {
                 accountBalance = parseFloat(paperAccount.balance || '0');
                 console.log(`📊 Paper trading available balance: $${accountBalance.toFixed(2)}`);
               }
+            } else {
+              // For real trading, fetch balance from exchange API
+              // Get exchange info from notification data or try to get from user's API keys
+              const exchange = notificationData.exchange || 'bybit';
+              const tradingType = notificationData.trading_type || notificationData.tradingType || 'futures';
+              
+              // Get API keys for the user
+              const { data: apiKeys, error: apiKeysError } = await queryClient
+                .from('api_keys')
+                .select('*')
+                .eq('user_id', user.id)
+                .eq('exchange', exchange)
+                .eq('is_testnet', false)
+                .eq('is_active', true)
+                .limit(1)
+                .single();
+              
+              if (!apiKeysError && apiKeys) {
+                // Fetch balance directly from exchange API
+                const baseDomains = apiKeys.is_testnet
+                  ? ['https://api-testnet.bybit.com']
+                  : ['https://api.bybit.com'];
+                
+                const timestamp = Date.now().toString();
+                const recvWindow = '5000';
+                const categoryMap: { [key: string]: string } = {
+                  'spot': 'spot',
+                  'futures': 'linear'
+                };
+                const bybitCategory = categoryMap[tradingType] || 'linear';
+                
+                // Create signature for Bybit API (same as bot-executor)
+                const createSignature = async (payload: string, secret: string): Promise<string> => {
+                  const encoder = new TextEncoder();
+                  const keyData = encoder.encode(secret);
+                  const messageData = encoder.encode(payload);
+                  const cryptoKey = await crypto.subtle.importKey(
+                    'raw',
+                    keyData,
+                    { name: 'HMAC', hash: 'SHA-256' },
+                    false,
+                    ['sign']
+                  );
+                  const signature = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+                  const hashArray = Array.from(new Uint8Array(signature));
+                  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+                };
+                
+                // For futures/linear, get total available balance
+                if (bybitCategory === 'linear') {
+                  const queryParams = `accountType=UNIFIED`;
+                  const signaturePayload = timestamp + apiKeys.api_key + recvWindow + queryParams;
+                  const signature = await createSignature(signaturePayload, apiKeys.api_secret);
+                  
+                  for (const domain of baseDomains) {
+                    try {
+                      const response = await fetch(`${domain}/v5/account/wallet-balance?${queryParams}`, {
+                        method: 'GET',
+                        headers: {
+                          'X-BAPI-API-KEY': apiKeys.api_key,
+                          'X-BAPI-TIMESTAMP': timestamp,
+                          'X-BAPI-RECV-WINDOW': recvWindow,
+                          'X-BAPI-SIGN': signature,
+                        },
+                      });
+                      
+                      if (response.ok) {
+                        const data = await response.json();
+                        if (data.retCode === 0 && data.result?.list?.[0]) {
+                          const accountInfo = data.result.list[0];
+                          // Use totalAvailableBalance or totalEquity as available balance
+                          accountBalance = parseFloat(
+                            accountInfo.totalAvailableBalance || 
+                            accountInfo.totalEquity || 
+                            accountInfo.totalWalletBalance || 
+                            '0'
+                          );
+                          console.log(`📊 Real trading available balance (futures): $${accountBalance.toFixed(2)}`);
+                          break;
+                        }
+                      }
+                    } catch (fetchError) {
+                      console.warn(`⚠️ Failed to fetch balance from ${domain}:`, fetchError);
+                    }
+                  }
+                } else {
+                  // For spot, get USDT available balance
+                  const queryParams = `accountType=SPOT&coin=USDT`;
+                  const signaturePayload = timestamp + apiKeys.api_key + recvWindow + queryParams;
+                  const signature = await createSignature(signaturePayload, apiKeys.api_secret);
+                  
+                  for (const domain of baseDomains) {
+                    try {
+                      const response = await fetch(`${domain}/v5/account/wallet-balance?${queryParams}`, {
+                        method: 'GET',
+                        headers: {
+                          'X-BAPI-API-KEY': apiKeys.api_key,
+                          'X-BAPI-TIMESTAMP': timestamp,
+                          'X-BAPI-RECV-WINDOW': recvWindow,
+                          'X-BAPI-SIGN': signature,
+                        },
+                      });
+                      
+                      if (response.ok) {
+                        const data = await response.json();
+                        if (data.retCode === 0 && data.result?.list?.[0]?.coin?.[0]) {
+                          const wallet = data.result.list[0].coin[0];
+                          // Use availableToWithdraw or availableBalance
+                          accountBalance = parseFloat(
+                            wallet.availableToWithdraw || 
+                            wallet.availableBalance || 
+                            wallet.walletBalance || 
+                            '0'
+                          );
+                          console.log(`📊 Real trading available balance (spot): $${accountBalance.toFixed(2)}`);
+                          break;
+                        }
+                      }
+                    } catch (fetchError) {
+                      console.warn(`⚠️ Failed to fetch balance from ${domain}:`, fetchError);
+                    }
+                  }
+                }
+              } else {
+                console.warn(`⚠️ No active API keys found for user ${user.id} on exchange ${exchange}`);
+              }
             }
-            // For real trading, we rely on bot-executor to pass the balance
-            // If not provided, we can't fetch it here without API keys
           }
         } catch (balanceError: any) {
           console.warn('⚠️ Failed to fetch account balance for notification:', balanceError?.message || balanceError);
