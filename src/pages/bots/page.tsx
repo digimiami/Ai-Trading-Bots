@@ -16,7 +16,7 @@ import { supabase } from '../../lib/supabase';
 
 export default function BotsPage() {
   const navigate = useNavigate();
-  const { bots, loading, fetchBots, startBot, stopBot, pauseBot, updateBot, deleteBot, createBot } = useBots();
+  const { bots, loading, fetchBots, startBot, stopBot, pauseBot, updateBot, deleteBot, createBot, getBotById } = useBots();
   const { playTestSound } = useSoundNotifications();
   const { activities, addLog } = useBotActivity(bots);
   const { isExecuting, lastExecution, timeSync, executeBot, executeAllBots } = useBotExecutor();
@@ -36,6 +36,9 @@ export default function BotsPage() {
   const [webhookActionLoading, setWebhookActionLoading] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [refreshing, setRefreshing] = useState(false);
+  const [showCloneModal, setShowCloneModal] = useState(false);
+  const [cloneBotId, setCloneBotId] = useState('');
+  const [cloning, setCloning] = useState(false);
   const isWebhookView = viewMode === 'webhook';
   
   // Get trade limits for all bots
