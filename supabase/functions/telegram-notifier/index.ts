@@ -60,10 +60,17 @@ function formatNotificationMessage(type: string, data: any): string {
 
   const icon = emoji[type as keyof typeof emoji] || '📢';
   
-  // Format balance information if available
-  const balanceSection = data.account_balance !== undefined && data.account_balance !== null
-    ? `\n💵 Available Balance: $${typeof data.account_balance === 'number' ? data.account_balance.toFixed(2) : parseFloat(data.account_balance || '0').toFixed(2)}`
-    : '';
+  // Format balance information - ALWAYS show balance (even if 0 or failed)
+  let balanceText = 'N/A';
+  if (data.account_balance !== undefined && data.account_balance !== null) {
+    const balanceValue = typeof data.account_balance === 'number' 
+      ? data.account_balance 
+      : parseFloat(data.account_balance || '0');
+    balanceText = `$${balanceValue.toFixed(2)}`;
+  } else if (data.balance_fetch_error) {
+    balanceText = 'Error fetching';
+  }
+  const balanceSection = `\n💵 Available Balance: ${balanceText}`;
 
   switch (type) {
     case 'trade_executed':
@@ -380,14 +387,18 @@ serve(async (req) => {
 
         // ALWAYS fetch account balance for ALL notification types
         let accountBalance: number | null = null;
+        let balanceFetchError: string | null = null;
         try {
+          console.log(`🔍 Fetching balance for notification type: ${notification_type}, user_id: ${user.id}`);
+          
           // First, check if balance was passed in notification data (preferred - bot-executor fetches it)
           if (notificationData.account_balance !== undefined && notificationData.account_balance !== null) {
             accountBalance = typeof notificationData.account_balance === 'number' 
               ? notificationData.account_balance 
               : parseFloat(notificationData.account_balance || '0');
-            console.log(`📊 Account balance from notification data: $${accountBalance.toFixed(2)}`);
+            console.log(`✅ Account balance from notification data: $${accountBalance.toFixed(2)}`);
           } else {
+            console.log(`⚠️ Balance not in notification data, fetching from exchange...`);
             // Fetch balance ourselves for ALL notification types
             const isPaperTrading = notificationData.paper_trading || notificationData.is_paper_trading;
             
@@ -527,20 +538,26 @@ serve(async (req) => {
                   }
                 }
               } else {
-                console.warn(`⚠️ No active API keys found for user ${user.id} on exchange ${exchange}`);
+                balanceFetchError = `No active API keys found for user ${user.id} on exchange ${exchange}`;
+                console.warn(`⚠️ ${balanceFetchError}`);
               }
             }
           }
         } catch (balanceError: any) {
-          console.warn('⚠️ Failed to fetch account balance for notification:', balanceError?.message || balanceError);
-          // Don't fail the notification if balance fetch fails
+          balanceFetchError = balanceError?.message || String(balanceError);
+          console.error('❌ Failed to fetch account balance for notification:', balanceFetchError);
+          // Don't fail the notification if balance fetch fails, but log the error
         }
 
-        // Add balance to notification data if available
+        // ALWAYS add balance to notification data (even if null/0/error)
+        // This ensures balance section always appears in the message
         const notificationDataWithBalance = {
           ...notificationData,
-          account_balance: accountBalance
+          account_balance: accountBalance !== null ? accountBalance : 0, // Default to 0 if null
+          balance_fetch_error: balanceFetchError || null
         };
+        
+        console.log(`📊 Final balance for notification: ${accountBalance !== null ? `$${accountBalance.toFixed(2)}` : 'null'}, error: ${balanceFetchError || 'none'}`);
 
         // Format and send message
         const message = formatNotificationMessage(notification_type, notificationDataWithBalance);
