@@ -397,6 +397,7 @@ export const useBots = () => {
     error,
     fetchBots,
     createBot,
+    getBotById,
     startBot,
     stopBot,
     pauseBot,

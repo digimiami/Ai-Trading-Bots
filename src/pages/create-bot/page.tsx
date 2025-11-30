@@ -20,7 +20,8 @@ export default function CreateBotPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const { createBot, getBotById } = useBots();
+  const { createBot } = useBots();
+  const { getBotById } = useBots();
   
   // Check if coming from backtest
   const backtestData = location.state as any;
