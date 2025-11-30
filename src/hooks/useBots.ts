@@ -61,6 +61,35 @@ export const useBots = () => {
     }
   };
 
+  const getBotById = async (botId: string): Promise<TradingBot | null> => {
+    try {
+      const accessToken = await requireAccessToken();
+
+      const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management?action=get-by-id&botId=${botId}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Bot fetch error:', response.status, errorText);
+        throw new Error(`Failed to fetch bot: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data.bot) {
+        return data.bot;
+      }
+      return null;
+    } catch (err) {
+      console.error('Error fetching bot by ID:', err);
+      throw err;
+    }
+  };
+
   const createBot = async (botData: Omit<TradingBot, 'id' | 'createdAt'>) => {
     try {
       const accessToken = await requireAccessToken();

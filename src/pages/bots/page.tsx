@@ -594,6 +594,36 @@ export default function BotsPage() {
     }
   };
 
+  const handleCloneBotById = async () => {
+    if (!cloneBotId.trim()) {
+      alert('Please enter a bot ID');
+      return;
+    }
+
+    setCloning(true);
+    try {
+      // Fetch the bot by ID (can be from any user)
+      const sourceBot = await getBotById(cloneBotId.trim());
+      
+      if (!sourceBot) {
+        alert('❌ Bot not found. Please check the bot ID.');
+        return;
+      }
+
+      // Clone the bot
+      await handleCloneBot(sourceBot);
+      
+      // Reset form
+      setCloneBotId('');
+      setShowCloneModal(false);
+    } catch (error: any) {
+      console.error('Failed to clone bot by ID:', error);
+      alert(`❌ Failed to clone bot: ${error.message || 'Unknown error'}`);
+    } finally {
+      setCloning(false);
+    }
+  };
+
   const handleCloneBot = async (bot: TradingBot) => {
     try {
       // Generate a unique name for the cloned bot

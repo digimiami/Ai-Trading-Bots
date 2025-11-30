@@ -35,6 +35,51 @@ serve(async (req) => {
     const action = url.searchParams.get('action') || 'list'
 
     if (req.method === 'GET') {
+      if (action === 'get-by-id') {
+        // Get bot by ID (public read - allows cloning from other users)
+        const botId = url.searchParams.get('botId')
+        
+        if (!botId) {
+          return new Response(
+            JSON.stringify({ error: 'botId parameter is required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        // Use service role client to bypass RLS and allow reading any bot
+        const serviceClient = createClient(
+          Deno.env.get('SUPABASE_URL') ?? '',
+          Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+        )
+
+        const { data: bot, error } = await serviceClient
+          .from('trading_bots')
+          .select('*')
+          .eq('id', botId)
+          .single()
+
+        if (error) {
+          console.error('Error fetching bot by ID:', error)
+          return new Response(
+            JSON.stringify({ error: error.message || 'Bot not found' }),
+            { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        if (!bot) {
+          return new Response(
+            JSON.stringify({ error: 'Bot not found' }),
+            { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        // Return bot data (without sensitive user info)
+        return new Response(
+          JSON.stringify({ bot }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
       if (action === 'list') {
         const { data: bots, error } = await supabaseClient
           .from('trading_bots')
