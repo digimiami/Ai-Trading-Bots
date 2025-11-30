@@ -7,6 +7,11 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
 }
 
+// Simple encryption/decryption (same as api-keys function)
+function decrypt(encryptedText: string): string {
+  return atob(encryptedText) // Base64 decoding
+}
+
 interface TelegramConfig {
   bot_token: string;
   chat_id: string;
@@ -432,6 +437,19 @@ serve(async (req) => {
                 .single();
               
               if (!apiKeysError && apiKeys) {
+                // CRITICAL: Decrypt API keys before using them (same as api-keys function)
+                let decryptedApiKey: string;
+                let decryptedApiSecret: string;
+                try {
+                  decryptedApiKey = decrypt(apiKeys.api_key);
+                  decryptedApiSecret = decrypt(apiKeys.api_secret);
+                  console.log(`🔑 API keys decrypted successfully for user ${user.id}`);
+                } catch (decryptError: any) {
+                  console.error(`❌ Failed to decrypt API keys:`, decryptError);
+                  balanceFetchError = `Failed to decrypt API keys: ${decryptError?.message || decryptError}`;
+                  throw decryptError;
+                }
+                
                 // Use the SAME method as api-keys function (which works correctly for dashboard)
                 const baseUrl = apiKeys.is_testnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com';
                 
@@ -457,7 +475,7 @@ serve(async (req) => {
                 
                 // Use UNIFIED account type (same as dashboard)
                 const params = {
-                  api_key: apiKeys.api_key,
+                  api_key: decryptedApiKey, // Use DECRYPTED key
                   accountType: 'UNIFIED',
                   recv_window: recvWindow,
                   timestamp: timestamp
@@ -470,8 +488,8 @@ serve(async (req) => {
                   .join('&');
                 
                 // Create signature string (same as api-keys)
-                const signatureString = timestamp + apiKeys.api_key + recvWindow + sortedParams;
-                const signature = await createSignature(signatureString, apiKeys.api_secret);
+                const signatureString = timestamp + decryptedApiKey + recvWindow + sortedParams; // Use DECRYPTED key
+                const signature = await createSignature(signatureString, decryptedApiSecret); // Use DECRYPTED secret
                 
                 const finalUrl = `${baseUrl}/v5/account/wallet-balance?${sortedParams}`;
                 
@@ -480,7 +498,7 @@ serve(async (req) => {
                   const response = await fetch(finalUrl, {
                     method: 'GET',
                     headers: {
-                      'X-BAPI-API-KEY': apiKeys.api_key,
+                      'X-BAPI-API-KEY': decryptedApiKey, // Use DECRYPTED key
                       'X-BAPI-SIGN': signature,
                       'X-BAPI-TIMESTAMP': timestamp,
                       'X-BAPI-RECV-WINDOW': recvWindow,
