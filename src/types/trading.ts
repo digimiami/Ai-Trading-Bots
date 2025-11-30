@@ -30,6 +30,7 @@ export interface TradingBot {
   symbols?: string[]; // Array of trading pairs for multi-pair bots
   customPairs?: string; // Raw user input for custom pairs
   soundNotificationsEnabled?: boolean; // Enable/disable sound notifications for real trades
+  timeframe?: string; // Trading timeframe
 }
 
 export interface TradingStrategy {
