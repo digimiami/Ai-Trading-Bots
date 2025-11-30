@@ -20,7 +20,7 @@ export default function CreateBotPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const { createBot } = useBots();
+  const { createBot, getBotById } = useBots();
   
   // Check if coming from backtest
   const backtestData = location.state as any;
@@ -29,6 +29,13 @@ export default function CreateBotPage() {
   // Check if coming from Pablo Ready template
   const isFromPabloReady = searchParams.get('template') === 'pablo-ready';
   const pabloReadyBotId = searchParams.get('botId');
+  
+  // Check if cloning from bot ID
+  const cloneBotId = searchParams.get('cloneBotId');
+  const [showCloneModal, setShowCloneModal] = useState(false);
+  const [cloneBotIdInput, setCloneBotIdInput] = useState('');
+  const [isLoadingClone, setIsLoadingClone] = useState(false);
+  const [cloneError, setCloneError] = useState<string | null>(null);
   
   // Get initial values from URL params (for navigation from Futures Pairs Finder or Pablo Ready)
   const urlSymbol = searchParams.get('symbol') || 'BTCUSDT';
@@ -80,6 +87,70 @@ export default function CreateBotPage() {
   const [customSymbolError, setCustomSymbolError] = useState<string>('');
   const [useMultiplePairs, setUseMultiplePairs] = useState<boolean>(false);
   const [customPairs, setCustomPairs] = useState<string>('');
+
+  // Load bot to clone if cloneBotId is provided
+  useEffect(() => {
+    if (cloneBotId) {
+      const loadBotToClone = async () => {
+        try {
+          setIsLoadingClone(true);
+          setCloneError(null);
+          
+          const bot = await getBotById(cloneBotId);
+          
+          if (!bot) {
+            setCloneError('Bot not found. Please check the bot ID.');
+            setIsLoadingClone(false);
+            return;
+          }
+
+          // Populate form with cloned bot data
+          setFormData(prev => ({
+            ...prev,
+            name: `${bot.name} (Clone)`,
+            exchange: bot.exchange,
+            tradingType: bot.tradingType || 'spot',
+            symbol: bot.symbol || '',
+            timeframe: bot.timeframe || '1h',
+            leverage: bot.leverage || 5,
+            riskLevel: bot.riskLevel || 'medium',
+            tradeAmount: bot.tradeAmount || 100,
+            stopLoss: bot.stopLoss || 2.0,
+            takeProfit: bot.takeProfit || 4.0,
+            paperTrading: bot.paperTrading || false,
+            soundNotificationsEnabled: bot.soundNotificationsEnabled || false
+          }));
+
+          // Set strategy if available
+          if (bot.strategy) {
+            setStrategy(bot.strategy as TradingStrategy);
+          }
+
+          // Set advanced config if available
+          if (bot.strategyConfig) {
+            setAdvancedConfig(bot.strategyConfig as AdvancedStrategyConfig);
+          }
+
+          // Handle multiple pairs
+          if (bot.symbols && Array.isArray(bot.symbols) && bot.symbols.length > 1) {
+            setUseMultiplePairs(true);
+            setCustomPairs(bot.symbols.join(', '));
+          } else if (bot.customPairs) {
+            setUseMultiplePairs(true);
+            setCustomPairs(bot.customPairs);
+          }
+
+          setIsLoadingClone(false);
+        } catch (err: any) {
+          console.error('Error loading bot to clone:', err);
+          setCloneError(err.message || 'Failed to load bot. Please check the bot ID.');
+          setIsLoadingClone(false);
+        }
+      };
+
+      loadBotToClone();
+    }
+  }, [cloneBotId, getBotById]);
 
   // Load Pablo Ready bot data if template is provided
   useEffect(() => {
@@ -413,6 +484,70 @@ export default function CreateBotPage() {
     }
   };
 
+  const handleCloneBot = async () => {
+    if (!cloneBotIdInput.trim()) {
+      setCloneError('Please enter a bot ID');
+      return;
+    }
+
+    try {
+      setIsLoadingClone(true);
+      setCloneError(null);
+      
+      const bot = await getBotById(cloneBotIdInput.trim());
+      
+      if (!bot) {
+        setCloneError('Bot not found. Please check the bot ID.');
+        setIsLoadingClone(false);
+        return;
+      }
+
+      // Populate form with cloned bot data
+      setFormData(prev => ({
+        ...prev,
+        name: `${bot.name} (Clone)`,
+        exchange: bot.exchange,
+        tradingType: bot.tradingType || 'spot',
+        symbol: bot.symbol || '',
+        timeframe: bot.timeframe || '1h',
+        leverage: bot.leverage || 5,
+        riskLevel: bot.riskLevel || 'medium',
+        tradeAmount: bot.tradeAmount || 100,
+        stopLoss: bot.stopLoss || 2.0,
+        takeProfit: bot.takeProfit || 4.0,
+        paperTrading: bot.paperTrading || false,
+        soundNotificationsEnabled: bot.soundNotificationsEnabled || false
+      }));
+
+      // Set strategy if available
+      if (bot.strategy) {
+        setStrategy(bot.strategy as TradingStrategy);
+      }
+
+      // Set advanced config if available
+      if (bot.strategyConfig) {
+        setAdvancedConfig(bot.strategyConfig as AdvancedStrategyConfig);
+      }
+
+      // Handle multiple pairs
+      if (bot.symbols && Array.isArray(bot.symbols) && bot.symbols.length > 1) {
+        setUseMultiplePairs(true);
+        setCustomPairs(bot.symbols.join(', '));
+      } else if (bot.customPairs) {
+        setUseMultiplePairs(true);
+        setCustomPairs(bot.customPairs);
+      }
+
+      setShowCloneModal(false);
+      setCloneBotIdInput('');
+      setIsLoadingClone(false);
+    } catch (err: any) {
+      console.error('Error cloning bot:', err);
+      setCloneError(err.message || 'Failed to load bot. Please check the bot ID.');
+      setIsLoadingClone(false);
+    }
+  };
+
   const handleInputChange = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
@@ -503,15 +638,101 @@ All settings have been applied to your bot configuration.`;
       
       <div className="pt-16 pb-6 px-4">
         <div className="max-w-2xl mx-auto">
-          <div className="flex items-center mb-6">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center">
+              <button
+                onClick={() => navigate('/bots')}
+                className="mr-3 p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <i className="ri-arrow-left-line text-xl"></i>
+              </button>
+              <h1 className="text-2xl font-bold text-gray-900">Create New Bot</h1>
+            </div>
             <button
-              onClick={() => navigate('/bots')}
-              className="mr-3 p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              onClick={() => setShowCloneModal(true)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
             >
-              <i className="ri-arrow-left-line text-xl"></i>
+              <i className="ri-file-copy-line"></i>
+              Clone Bot
             </button>
-            <h1 className="text-2xl font-bold text-gray-900">Create New Bot</h1>
           </div>
+
+          {/* Clone Bot Modal */}
+          {showCloneModal && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <Card className="p-6 max-w-md w-full mx-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-bold text-gray-900">Clone Bot by ID</h2>
+                  <button
+                    onClick={() => {
+                      setShowCloneModal(false);
+                      setCloneBotIdInput('');
+                      setCloneError(null);
+                    }}
+                    className="text-gray-500 hover:text-gray-700"
+                  >
+                    <i className="ri-close-line text-xl"></i>
+                  </button>
+                </div>
+                
+                <p className="text-sm text-gray-600 mb-4">
+                  Enter a bot ID to clone its configuration. You can clone bots from any user.
+                </p>
+                
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Bot ID
+                  </label>
+                  <input
+                    type="text"
+                    value={cloneBotIdInput}
+                    onChange={(e) => setCloneBotIdInput(e.target.value)}
+                    placeholder="e.g., 123e4567-e89b-12d3-a456-426614174000"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    disabled={isLoadingClone}
+                  />
+                </div>
+                
+                {cloneError && (
+                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-sm text-red-700">{cloneError}</p>
+                  </div>
+                )}
+                
+                {isLoadingClone && (
+                  <div className="mb-4 text-center">
+                    <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                    <p className="text-sm text-gray-600 mt-2">Loading bot configuration...</p>
+                  </div>
+                )}
+                
+                <div className="flex gap-3">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      setShowCloneModal(false);
+                      setCloneBotIdInput('');
+                      setCloneError(null);
+                    }}
+                    className="flex-1"
+                    disabled={isLoadingClone}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    onClick={handleCloneBot}
+                    loading={isLoadingClone}
+                    className="flex-1"
+                  >
+                    Clone Bot
+                  </Button>
+                </div>
+              </Card>
+            </div>
+          )}
 
           {error && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
