@@ -8753,7 +8753,9 @@ class BotExecutor {
             order_id: trade.exchange_order_id || orderResult?.orderId,
             user_id: this.user?.id || trade.user_id || bot.user_id, // Pass user_id explicitly
             paper_trading: bot.paper_trading || false,
-            exchange: bot.exchange,
+            exchange: bot.exchange || 'bybit', // Always include exchange
+            trading_type: bot.tradingType || bot.trading_type || 'futures', // Always include trading type
+            tradingType: bot.tradingType || bot.trading_type || 'futures', // Include both variations
             account_balance: accountBalance // Include account balance
           }
         })
