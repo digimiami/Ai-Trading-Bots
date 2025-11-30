@@ -432,20 +432,13 @@ serve(async (req) => {
                 .single();
               
               if (!apiKeysError && apiKeys) {
-                // Fetch balance directly from exchange API
-                const baseDomains = apiKeys.is_testnet
-                  ? ['https://api-testnet.bybit.com']
-                  : ['https://api.bybit.com'];
+                // Use the SAME method as api-keys function (which works correctly for dashboard)
+                const baseUrl = apiKeys.is_testnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com';
                 
                 const timestamp = Date.now().toString();
                 const recvWindow = '5000';
-                const categoryMap: { [key: string]: string } = {
-                  'spot': 'spot',
-                  'futures': 'linear'
-                };
-                const bybitCategory = categoryMap[tradingType] || 'linear';
                 
-                // Create signature for Bybit API (same as bot-executor)
+                // Create signature using the SAME method as api-keys function
                 const createSignature = async (payload: string, secret: string): Promise<string> => {
                   const encoder = new TextEncoder();
                   const keyData = encoder.encode(secret);
@@ -462,80 +455,82 @@ serve(async (req) => {
                   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
                 };
                 
-                // For futures/linear, get total available balance
-                if (bybitCategory === 'linear') {
-                  const queryParams = `accountType=UNIFIED`;
-                  const signaturePayload = timestamp + apiKeys.api_key + recvWindow + queryParams;
-                  const signature = await createSignature(signaturePayload, apiKeys.api_secret);
+                // Use UNIFIED account type (same as dashboard)
+                const params = {
+                  api_key: apiKeys.api_key,
+                  accountType: 'UNIFIED',
+                  recv_window: recvWindow,
+                  timestamp: timestamp
+                };
+                
+                // Sort parameters alphabetically (same as api-keys)
+                const sortedParams = Object.keys(params)
+                  .sort()
+                  .map(key => `${key}=${params[key]}`)
+                  .join('&');
+                
+                // Create signature string (same as api-keys)
+                const signatureString = timestamp + apiKeys.api_key + recvWindow + sortedParams;
+                const signature = await createSignature(signatureString, apiKeys.api_secret);
+                
+                const finalUrl = `${baseUrl}/v5/account/wallet-balance?${sortedParams}`;
+                
+                try {
+                  console.log(`🔍 Fetching balance from: ${finalUrl}`);
+                  const response = await fetch(finalUrl, {
+                    method: 'GET',
+                    headers: {
+                      'X-BAPI-API-KEY': apiKeys.api_key,
+                      'X-BAPI-SIGN': signature,
+                      'X-BAPI-TIMESTAMP': timestamp,
+                      'X-BAPI-RECV-WINDOW': recvWindow,
+                      'Content-Type': 'application/json',
+                    }
+                  });
                   
-                  for (const domain of baseDomains) {
-                    try {
-                      const response = await fetch(`${domain}/v5/account/wallet-balance?${queryParams}`, {
-                        method: 'GET',
-                        headers: {
-                          'X-BAPI-API-KEY': apiKeys.api_key,
-                          'X-BAPI-TIMESTAMP': timestamp,
-                          'X-BAPI-RECV-WINDOW': recvWindow,
-                          'X-BAPI-SIGN': signature,
-                        },
-                      });
+                  if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error(`❌ Bybit API HTTP Error: ${response.status}`, errorText);
+                    balanceFetchError = `HTTP ${response.status}: ${errorText.substring(0, 100)}`;
+                  } else {
+                    const data = await response.json();
+                    console.log(`📊 Bybit API Response:`, JSON.stringify(data, null, 2));
+                    
+                    if (data.retCode !== 0) {
+                      console.error(`❌ Bybit API Error: ${data.retCode} - ${data.retMsg}`);
+                      balanceFetchError = `API Error ${data.retCode}: ${data.retMsg}`;
+                    } else if (data.result?.list?.[0]) {
+                      const account = data.result.list[0];
+                      console.log(`📊 Account data:`, JSON.stringify(account, null, 2));
                       
-                      if (response.ok) {
-                        const data = await response.json();
-                        if (data.retCode === 0 && data.result?.list?.[0]) {
-                          const accountInfo = data.result.list[0];
-                          // Use totalAvailableBalance or totalEquity as available balance
-                          accountBalance = parseFloat(
-                            accountInfo.totalAvailableBalance || 
-                            accountInfo.totalEquity || 
-                            accountInfo.totalWalletBalance || 
-                            '0'
-                          );
-                          console.log(`📊 Real trading available balance (futures): $${accountBalance.toFixed(2)}`);
-                          break;
+                      // Use totalWalletBalance (same as dashboard) - this is what shows $784.02
+                      if (account.totalWalletBalance && parseFloat(account.totalWalletBalance) > 0) {
+                        accountBalance = parseFloat(account.totalWalletBalance);
+                        console.log(`✅ Found available balance: $${accountBalance.toFixed(2)}`);
+                      } else {
+                        // Fallback: calculate from coins
+                        const coins = account.coin || [];
+                        let calculatedBalance = 0;
+                        for (const coin of coins) {
+                          const free = parseFloat(coin.free || '0');
+                          calculatedBalance += free;
+                        }
+                        if (calculatedBalance > 0) {
+                          accountBalance = calculatedBalance;
+                          console.log(`✅ Calculated balance from coins: $${accountBalance.toFixed(2)}`);
+                        } else {
+                          console.warn(`⚠️ No balance found in account data`);
+                          balanceFetchError = 'No balance data in account';
                         }
                       }
-                    } catch (fetchError) {
-                      console.warn(`⚠️ Failed to fetch balance from ${domain}:`, fetchError);
+                    } else {
+                      console.warn(`⚠️ No account data in response`);
+                      balanceFetchError = 'No account data found';
                     }
                   }
-                } else {
-                  // For spot, get USDT available balance
-                  const queryParams = `accountType=SPOT&coin=USDT`;
-                  const signaturePayload = timestamp + apiKeys.api_key + recvWindow + queryParams;
-                  const signature = await createSignature(signaturePayload, apiKeys.api_secret);
-                  
-                  for (const domain of baseDomains) {
-                    try {
-                      const response = await fetch(`${domain}/v5/account/wallet-balance?${queryParams}`, {
-                        method: 'GET',
-                        headers: {
-                          'X-BAPI-API-KEY': apiKeys.api_key,
-                          'X-BAPI-TIMESTAMP': timestamp,
-                          'X-BAPI-RECV-WINDOW': recvWindow,
-                          'X-BAPI-SIGN': signature,
-                        },
-                      });
-                      
-                      if (response.ok) {
-                        const data = await response.json();
-                        if (data.retCode === 0 && data.result?.list?.[0]?.coin?.[0]) {
-                          const wallet = data.result.list[0].coin[0];
-                          // Use availableToWithdraw or availableBalance
-                          accountBalance = parseFloat(
-                            wallet.availableToWithdraw || 
-                            wallet.availableBalance || 
-                            wallet.walletBalance || 
-                            '0'
-                          );
-                          console.log(`📊 Real trading available balance (spot): $${accountBalance.toFixed(2)}`);
-                          break;
-                        }
-                      }
-                    } catch (fetchError) {
-                      console.warn(`⚠️ Failed to fetch balance from ${domain}:`, fetchError);
-                    }
-                  }
+                } catch (fetchError: any) {
+                  console.error(`❌ Failed to fetch balance:`, fetchError);
+                  balanceFetchError = fetchError?.message || String(fetchError);
                 }
               } else {
                 balanceFetchError = `No active API keys found for user ${user.id} on exchange ${exchange}`;
