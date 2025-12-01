@@ -133,7 +133,7 @@ export default function Navigation() {
       {/* Overlay */}
       {isMobileMenuOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm"
           onClick={() => setIsMobileMenuOpen(false)}
         />
       )}
@@ -143,20 +143,26 @@ export default function Navigation() {
         className={`fixed bottom-0 left-0 right-0 z-50 bg-white dark:bg-gray-900 border-t border-blue-200/60 dark:border-blue-400/30 rounded-t-2xl shadow-2xl transition-transform duration-300 ease-out md:hidden ${
           isMobileMenuOpen ? 'translate-y-0' : 'translate-y-full'
         }`}
-        style={{ maxHeight: '80vh' }}
+        style={{ maxHeight: '85vh', paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Menu</h2>
+        {/* Handle bar */}
+        <div className="flex justify-center pt-2 pb-1">
+          <div className="w-12 h-1 bg-gray-300 dark:bg-gray-600 rounded-full"></div>
+        </div>
+        
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Navigation</h2>
           <button
             onClick={() => setIsMobileMenuOpen(false)}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors touch-manipulation"
+            aria-label="Close menu"
           >
             <i className="ri-close-line text-2xl text-gray-600 dark:text-gray-300"></i>
           </button>
         </div>
         
-        <div className="overflow-y-auto" style={{ maxHeight: 'calc(80vh - 73px)' }}>
-          <div className="grid grid-cols-2 gap-2 p-4">
+        <div className="overflow-y-auto overscroll-contain" style={{ maxHeight: 'calc(85vh - 80px)' }}>
+          <div className="grid grid-cols-2 gap-3 p-4">
             {navItems.map((item) => {
               const isActive = location.pathname === item.path;
               return (
@@ -166,10 +172,10 @@ export default function Navigation() {
                     navigate(item.path);
                     setIsMobileMenuOpen(false);
                   }}
-                  className={`group relative flex flex-col items-center justify-center gap-2 p-4 rounded-xl transition-all duration-150 ${
+                  className={`group relative flex flex-col items-center justify-center gap-2 p-4 rounded-xl transition-all duration-150 touch-manipulation ${
                     isActive
                       ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-300 border-2 border-blue-500'
-                      : 'bg-gray-50 dark:bg-gray-800 text-slate-600 dark:text-slate-300 border-2 border-transparent hover:border-blue-300 dark:hover:border-blue-500/60'
+                      : 'bg-gray-50 dark:bg-gray-800 text-slate-600 dark:text-slate-300 border-2 border-transparent active:border-blue-300 dark:active:border-blue-500/60'
                   }`}
                 >
                   <span
@@ -181,7 +187,7 @@ export default function Navigation() {
                   >
                     <i className={`${item.icon} text-xl`}></i>
                   </span>
-                  <span className="text-sm font-semibold text-center">
+                  <span className="text-xs sm:text-sm font-semibold text-center leading-tight">
                     {item.label}
                   </span>
                 </button>
@@ -193,32 +199,35 @@ export default function Navigation() {
     </>
   );
 
-  // Mobile: Show hamburger button + drawer, Desktop: Show bottom nav
+  // Mobile: Show hamburger button + drawer + compact bottom nav
   if (isMobile) {
+    // Most important nav items for quick access
+    const quickNavItems = navItems.slice(0, 5);
+    
     return (
       <>
-        {/* Mobile Hamburger Button */}
+        {/* Mobile Hamburger Button - Positioned above bottom nav */}
         <button
           onClick={() => setIsMobileMenuOpen(true)}
-          className="fixed bottom-4 right-4 z-40 h-14 w-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg shadow-blue-500/50 flex items-center justify-center transition-all duration-200 active:scale-95 md:hidden"
+          className="fixed bottom-20 right-4 z-40 h-12 w-12 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-full shadow-lg shadow-blue-500/50 flex items-center justify-center transition-all duration-200 active:scale-95 md:hidden touch-manipulation"
           aria-label="Open menu"
         >
-          <i className={`ri-menu-line text-2xl transition-transform duration-300 ${isMobileMenuOpen ? 'rotate-90' : ''}`}></i>
+          <i className={`ri-menu-line text-xl transition-transform duration-300 ${isMobileMenuOpen ? 'rotate-90' : ''}`}></i>
         </button>
 
         {/* Mobile Menu Drawer */}
         <MobileMenuDrawer />
 
-        {/* Bottom Quick Nav (Mobile) - Show only 5 most important items */}
-        <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-blue-200/60 bg-white/95 backdrop-blur-sm shadow-[0_-6px_18px_-12px_rgba(30,64,175,0.45)] dark:border-blue-400/30 dark:bg-gray-900/95 md:hidden">
-          <div className="flex h-16 overflow-x-auto px-2 py-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-            {navItems.slice(0, 5).map((item) => {
+        {/* Bottom Quick Nav (Mobile) - Show 5 most important items with better spacing */}
+        <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-blue-200/60 bg-white/95 backdrop-blur-sm shadow-[0_-6px_18px_-12px_rgba(30,64,175,0.45)] dark:border-blue-400/30 dark:bg-gray-900/95 safe-area-inset-bottom md:hidden">
+          <div className="flex h-16 overflow-x-auto px-2 py-1.5 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] snap-x snap-mandatory">
+            {quickNavItems.map((item) => {
               const isActive = location.pathname === item.path;
               return (
                 <button
                   key={item.path}
                   onClick={() => navigate(item.path)}
-                  className={`group relative flex flex-col items-center justify-center gap-0.5 rounded-xl transition-all duration-150 min-w-[60px] flex-shrink-0 px-1 ${
+                  className={`group relative flex flex-col items-center justify-center gap-0.5 rounded-xl transition-all duration-150 min-w-[64px] flex-shrink-0 px-1 touch-manipulation snap-center ${
                     isActive
                       ? 'text-blue-600 dark:text-blue-300'
                       : 'text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-300'
@@ -233,7 +242,7 @@ export default function Navigation() {
                   >
                     <i className={`${item.icon} text-lg`}></i>
                   </span>
-                  <span className="text-[0.65rem] font-semibold uppercase tracking-wide whitespace-nowrap drop-shadow-sm">
+                  <span className="text-[0.65rem] font-semibold uppercase tracking-wide whitespace-nowrap drop-shadow-sm leading-tight text-center">
                     {item.label}
                   </span>
                   {isActive && (
@@ -248,15 +257,15 @@ export default function Navigation() {
     );
   }
 
-  // Desktop: Original bottom navigation
+  // Desktop/Tablet: Bottom navigation with improved responsiveness
   return (
     <>
       <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-blue-200/60 bg-white/95 backdrop-blur-sm shadow-[0_-6px_18px_-12px_rgba(30,64,175,0.45)] dark:border-blue-400/30 dark:bg-gray-900/95">
         <div
           className={
             useScrollable
-              ? 'flex h-20 overflow-x-auto px-2 py-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]'
-              : `grid ${gridCols} h-20 px-3 py-2`
+              ? 'flex h-18 sm:h-20 overflow-x-auto px-2 py-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] snap-x snap-mandatory'
+              : `grid ${gridCols} h-18 sm:h-20 px-2 sm:px-3 py-1.5 sm:py-2`
           }
         >
           {navItems.map((item) => {
@@ -265,8 +274,8 @@ export default function Navigation() {
               <button
                 key={item.path}
                 onClick={() => navigate(item.path)}
-                className={`group relative flex flex-col items-center justify-center gap-1 rounded-xl transition-all duration-150 ${
-                  useScrollable ? 'min-w-[80px] px-3 flex-shrink-0' : 'px-2'
+                className={`group relative flex flex-col items-center justify-center gap-0.5 sm:gap-1 rounded-xl transition-all duration-150 touch-manipulation ${
+                  useScrollable ? 'min-w-[70px] sm:min-w-[80px] px-2 sm:px-3 flex-shrink-0 snap-center' : 'px-1 sm:px-2'
                 } ${
                   isActive
                     ? 'text-blue-600 dark:text-blue-300'
@@ -274,19 +283,19 @@ export default function Navigation() {
                 }`}
               >
                 <span
-                  className={`flex h-11 w-11 items-center justify-center rounded-full border transition-all duration-150 ${
+                  className={`flex h-9 w-9 sm:h-11 sm:w-11 items-center justify-center rounded-full border transition-all duration-150 ${
                     isActive
                       ? 'border-blue-500 bg-blue-600 text-white shadow-lg shadow-blue-500/30'
                       : 'border-slate-200 bg-slate-50 text-inherit group-hover:border-blue-300 group-hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800 dark:group-hover:border-blue-500/60 dark:group-hover:bg-slate-800'
                   }`}
                 >
-                  <i className={`${item.icon} text-[1.35rem]`}></i>
+                  <i className={`${item.icon} text-lg sm:text-[1.35rem]`}></i>
                 </span>
-                <span className="text-[0.72rem] font-semibold uppercase tracking-wide whitespace-nowrap drop-shadow-sm">
+                <span className="text-[0.65rem] sm:text-[0.72rem] font-semibold uppercase tracking-wide whitespace-nowrap drop-shadow-sm leading-tight text-center">
                   {item.label}
                 </span>
                 {isActive && (
-                  <span className="absolute bottom-0 h-1 w-10 rounded-full bg-gradient-to-r from-blue-500 via-blue-400 to-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.45)]" />
+                  <span className="absolute bottom-0 h-0.5 sm:h-1 w-8 sm:w-10 rounded-full bg-gradient-to-r from-blue-500 via-blue-400 to-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.45)]" />
                 )}
               </button>
             );
