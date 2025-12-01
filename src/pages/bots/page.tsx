@@ -13,6 +13,7 @@ import { useBotExecutor } from '../../hooks/useBotExecutor';
 import { useBotTradeLimits } from '../../hooks/useBotTradeLimits';
 import { useSoundNotifications } from '../../hooks/useSoundNotifications';
 import { supabase } from '../../lib/supabase';
+import DropdownMenu, { DropdownMenuItem } from '../../components/ui/DropdownMenu';
 
 export default function BotsPage() {
   const navigate = useNavigate();
@@ -788,70 +789,129 @@ export default function BotsPage() {
       <Header 
         title="Trading Bots"
         action={
-          <div className="flex space-x-2">
-            <Button
-              variant="warning"
-              size="sm"
-              onClick={executeAllBots}
-              disabled={isExecuting || filteredBots.filter(bot => bot.status === 'running').length === 0}
-            >
-              <i className="ri-play-circle-line mr-1"></i>
-              Execute All
-            </Button>
-            <Button
-              variant="success"
-              size="sm"
-              onClick={handleStartAll}
-              disabled={bulkLoading || filteredBots.filter(bot => bot.status === 'stopped' || bot.status === 'paused').length === 0}
-            >
-              <i className="ri-play-line mr-1"></i>
-              Start All
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleStopAll}
-              disabled={bulkLoading || filteredBots.filter(bot => bot.status === 'running' || bot.status === 'paused').length === 0}
-            >
-              <i className="ri-stop-line mr-1"></i>
-              Stop All
-            </Button>
-            <Button
-              variant="info"
-              size="sm"
-              onClick={() => setShowCloneModal(true)}
-              title="Clone a bot by ID from any user"
-            >
-              <i className="ri-file-copy-2-line mr-1"></i>
-              Clone by ID
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleResetAll}
-              disabled={bulkLoading || filteredBots.length === 0}
-            >
-              <i className="ri-refresh-line mr-1"></i>
-              Reset All
-            </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              onClick={handleDeleteAll}
-              disabled={bulkLoading || filteredBots.length === 0}
-            >
-              <i className="ri-delete-bin-line mr-1"></i>
-              Delete All
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => navigate('/create-bot')}
-            >
-              <i className="ri-add-line mr-1"></i>
-              New Bot
-            </Button>
-          </div>
+          <>
+            {/* Desktop: Show all buttons */}
+            <div className="hidden md:flex space-x-2">
+              <Button
+                variant="warning"
+                size="sm"
+                onClick={executeAllBots}
+                disabled={isExecuting || filteredBots.filter(bot => bot.status === 'running').length === 0}
+              >
+                <i className="ri-play-circle-line mr-1"></i>
+                Execute All
+              </Button>
+              <Button
+                variant="success"
+                size="sm"
+                onClick={handleStartAll}
+                disabled={bulkLoading || filteredBots.filter(bot => bot.status === 'stopped' || bot.status === 'paused').length === 0}
+              >
+                <i className="ri-play-line mr-1"></i>
+                Start All
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleStopAll}
+                disabled={bulkLoading || filteredBots.filter(bot => bot.status === 'running' || bot.status === 'paused').length === 0}
+              >
+                <i className="ri-stop-line mr-1"></i>
+                Stop All
+              </Button>
+              <Button
+                variant="info"
+                size="sm"
+                onClick={() => setShowCloneModal(true)}
+                title="Clone a bot by ID from any user"
+              >
+                <i className="ri-file-copy-2-line mr-1"></i>
+                Clone by ID
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleResetAll}
+                disabled={bulkLoading || filteredBots.length === 0}
+              >
+                <i className="ri-refresh-line mr-1"></i>
+                Reset All
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={handleDeleteAll}
+                disabled={bulkLoading || filteredBots.length === 0}
+              >
+                <i className="ri-delete-bin-line mr-1"></i>
+                Delete All
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => navigate('/create-bot')}
+              >
+                <i className="ri-add-line mr-1"></i>
+                New Bot
+              </Button>
+            </div>
+
+            {/* Mobile: Dropdown menu with all actions */}
+            <div className="md:hidden">
+              <DropdownMenu
+                trigger={
+                  <button className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors touch-manipulation">
+                    <i className="ri-more-2-line text-xl text-gray-600 dark:text-gray-300"></i>
+                  </button>
+                }
+                items={[
+                  {
+                    label: 'Execute All',
+                    icon: 'ri-play-circle-line',
+                    onClick: executeAllBots,
+                    disabled: isExecuting || filteredBots.filter(bot => bot.status === 'running').length === 0,
+                  },
+                  {
+                    label: 'Start All',
+                    icon: 'ri-play-line',
+                    onClick: handleStartAll,
+                    disabled: bulkLoading || filteredBots.filter(bot => bot.status === 'stopped' || bot.status === 'paused').length === 0,
+                  },
+                  {
+                    label: 'Stop All',
+                    icon: 'ri-stop-line',
+                    onClick: handleStopAll,
+                    disabled: bulkLoading || filteredBots.filter(bot => bot.status === 'running' || bot.status === 'paused').length === 0,
+                  },
+                  {
+                    label: 'Clone by ID',
+                    icon: 'ri-file-copy-2-line',
+                    onClick: () => setShowCloneModal(true),
+                  },
+                  {
+                    label: 'Reset All',
+                    icon: 'ri-refresh-line',
+                    onClick: handleResetAll,
+                    disabled: bulkLoading || filteredBots.length === 0,
+                  },
+                  {
+                    label: 'Delete All',
+                    icon: 'ri-delete-bin-line',
+                    onClick: handleDeleteAll,
+                    disabled: bulkLoading || filteredBots.length === 0,
+                    danger: true,
+                  },
+                  { divider: true },
+                  {
+                    label: 'New Bot',
+                    icon: 'ri-add-line',
+                    onClick: () => navigate('/create-bot'),
+                  },
+                ] as DropdownMenuItem[]}
+                align="right"
+              />
+            </div>
+          </>
         }
       />
       

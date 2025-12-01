@@ -28,7 +28,36 @@ export default function DropdownMenu({
   header
 }: DropdownMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [position, setPosition] = useState<'left' | 'right'>(align);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
+
+  // Calculate position to prevent going off-screen
+  useEffect(() => {
+    if (isOpen && triggerRef.current && dropdownRef.current) {
+      const triggerRect = triggerRef.current.getBoundingClientRect();
+      const dropdownWidth = 256; // w-64 = 256px
+      const viewportWidth = window.innerWidth;
+      
+      // Check if dropdown would go off-screen on the right
+      if (align === 'right') {
+        const rightEdge = triggerRect.right;
+        if (rightEdge - dropdownWidth < 8) { // 8px margin
+          setPosition('left');
+        } else {
+          setPosition('right');
+        }
+      } else {
+        // Check if dropdown would go off-screen on the left
+        const leftEdge = triggerRect.left;
+        if (leftEdge + dropdownWidth > viewportWidth - 8) { // 8px margin
+          setPosition('right');
+        } else {
+          setPosition('left');
+        }
+      }
+    }
+  }, [isOpen, align]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -65,7 +94,7 @@ export default function DropdownMenu({
 
   return (
     <div className={`relative ${className}`} ref={dropdownRef}>
-      <div onClick={handleToggle} className="cursor-pointer">
+      <div ref={triggerRef} onClick={handleToggle} className="cursor-pointer">
         {trigger}
       </div>
 
@@ -83,8 +112,11 @@ export default function DropdownMenu({
           {/* Dropdown Menu */}
           <div
             className={`absolute ${
-              align === 'right' ? 'right-0' : 'left-0'
+              position === 'right' ? 'right-0' : 'left-0'
             } mt-2 w-56 sm:w-64 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200`}
+            style={{
+              maxWidth: 'calc(100vw - 16px)', // Ensure it doesn't exceed viewport
+            }}
           >
             {header && (
               <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
