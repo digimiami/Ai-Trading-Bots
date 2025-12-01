@@ -503,7 +503,7 @@ serve(async (req) => {
       { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }
-  
+
   try {
     const url = new URL(req.url)
     const action = url.searchParams.get('action')
