@@ -147,6 +147,9 @@ export default function LandingPage() {
             <button onClick={() => navigate('/academy')} className="transition hover:text-white">
               Academy
             </button>
+            <button onClick={() => navigate('/contact')} className="transition hover:text-white">
+              Contact
+            </button>
             <button onClick={() => document.getElementById('capabilities')?.scrollIntoView({ behavior: 'smooth' })} className="transition hover:text-white">
               Platform
             </button>
@@ -490,6 +493,9 @@ export default function LandingPage() {
             </button>
             <button onClick={() => document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' })} className="text-slate-300/80 transition hover:text-white">
               Pricing
+            </button>
+            <button onClick={() => navigate('/contact')} className="text-slate-300/80 transition hover:text-white">
+              Contact
             </button>
             <button onClick={() => navigate('/privacy')} className="text-slate-300/80 transition hover:text-white">
               Privacy
