@@ -28,46 +28,55 @@ export default function CryptoNewsPage() {
     try {
       setLoading(true);
       
-      // Direct database query using public anon key (no auth required)
-      // RLS policy allows public read access to published articles
-      const { data: articlesData, error: dbError } = await supabase
-        .from('crypto_news_articles')
-        .select('*')
-        .eq('status', 'published')
-        .order('published_at', { ascending: false, nullsFirst: false })
-        .order('created_at', { ascending: false });
+      // Use Edge Function as primary method (more reliable with RLS)
+      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '';
+      const cleanUrl = supabaseUrl.replace('/rest/v1', '').replace(/\/$/, '');
+      const functionUrl = `${cleanUrl}/functions/v1/crypto-news-management`;
+
+      const url = new URL(functionUrl);
+      url.searchParams.set('action', 'getPublishedArticles');
       
-      if (dbError) {
-        console.error('Database query error:', dbError);
-        throw dbError;
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+        }
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Edge Function error:', response.status, errorText);
+        throw new Error(`Failed to fetch articles: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data.error) {
+        console.error('Edge Function returned error:', data);
+        throw new Error(data.error);
       }
       
-      setArticles(articlesData || []);
+      setArticles(data.articles || []);
     } catch (error) {
       console.error('Error loading articles:', error);
-      // Fallback: try Edge Function if direct query fails
+      // Fallback: try direct database query if Edge Function fails
       try {
-        const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '';
-        const cleanUrl = supabaseUrl.replace('/rest/v1', '');
-        const functionUrl = `${cleanUrl}/functions/v1/crypto-news-management`;
-
-        const url = new URL(functionUrl);
-        url.searchParams.set('action', 'getPublishedArticles');
+        const { data: articlesData, error: dbError } = await supabase
+          .from('crypto_news_articles')
+          .select('*')
+          .eq('status', 'published')
+          .order('published_at', { ascending: false, nullsFirst: false })
+          .order('created_at', { ascending: false });
         
-        const response = await fetch(url.toString(), {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || ''
-          }
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          setArticles(data.articles || []);
+        if (dbError) {
+          console.error('Database query error:', dbError);
+          setArticles([]);
+        } else {
+          setArticles(articlesData || []);
         }
       } catch (fallbackError) {
-        console.error('Fallback Edge Function also failed:', fallbackError);
+        console.error('Fallback database query also failed:', fallbackError);
+        setArticles([]);
       }
     } finally {
       setLoading(false);
@@ -78,59 +87,66 @@ export default function CryptoNewsPage() {
     try {
       setLoading(true);
       
-      // Direct database query using public anon key (no auth required)
-      // RLS policy allows public read access to published articles
-      const { data: articleData, error: dbError } = await supabase
-        .from('crypto_news_articles')
-        .select('*')
-        .eq('slug', articleSlug)
-        .eq('status', 'published')
-        .single();
+      // Use Edge Function as primary method (more reliable with RLS)
+      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '';
+      const cleanUrl = supabaseUrl.replace('/rest/v1', '').replace(/\/$/, '');
+      const functionUrl = `${cleanUrl}/functions/v1/crypto-news-management`;
+
+      const url = new URL(functionUrl);
+      url.searchParams.set('action', 'getPublishedArticle');
+      url.searchParams.set('slug', articleSlug);
       
-      if (dbError) {
-        console.error('Database query error:', dbError);
-        throw dbError;
+      const response = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+        }
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Edge Function error:', response.status, errorText);
+        throw new Error(`Failed to fetch article: ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data.error) {
+        console.error('Edge Function returned error:', data);
+        throw new Error(data.error);
       }
       
-      if (articleData) {
-        setSelectedArticle(articleData);
-        // Increment view count (this might fail if RLS doesn't allow update, but that's OK)
+      if (data.article) {
+        setSelectedArticle(data.article);
+        // Try to increment view count (this might fail if RLS doesn't allow update, but that's OK)
         await supabase
           .from('crypto_news_articles')
-          .update({ view_count: (articleData.view_count || 0) + 1 })
-          .eq('id', articleData.id)
+          .update({ view_count: (data.article.view_count || 0) + 1 })
+          .eq('id', data.article.id)
           .catch((err) => {
             console.warn('Could not increment view count (may require auth):', err);
           });
       }
     } catch (error) {
       console.error('Error loading article:', error);
-      // Fallback: try Edge Function if direct query fails
+      // Fallback: try direct database query if Edge Function fails
       try {
-        const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '';
-        const cleanUrl = supabaseUrl.replace('/rest/v1', '');
-        const functionUrl = `${cleanUrl}/functions/v1/crypto-news-management`;
-
-        const url = new URL(functionUrl);
-        url.searchParams.set('action', 'getPublishedArticle');
-        url.searchParams.set('slug', articleSlug);
+        const { data: articleData, error: dbError } = await supabase
+          .from('crypto_news_articles')
+          .select('*')
+          .eq('slug', articleSlug)
+          .eq('status', 'published')
+          .single();
         
-        const response = await fetch(url.toString(), {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || ''
-          }
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          if (data.article) {
-            setSelectedArticle(data.article);
-          }
+        if (dbError) {
+          console.error('Database query error:', dbError);
+          setSelectedArticle(null);
+        } else if (articleData) {
+          setSelectedArticle(articleData);
         }
       } catch (fallbackError) {
-        console.error('Fallback Edge Function also failed:', fallbackError);
+        console.error('Fallback database query also failed:', fallbackError);
+        setSelectedArticle(null);
       }
     } finally {
       setLoading(false);
