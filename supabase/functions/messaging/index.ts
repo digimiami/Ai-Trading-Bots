@@ -268,18 +268,37 @@ serve(async (req) => {
       // Get messages (inbox)
       case 'getMessages': {
         const { type = 'inbox', limit = 50, offset = 0 } = params // type: 'inbox', 'sent', 'all'
-
-        let query = supabaseClient
-          .from('messages')
-          .select(`
-            *,
-            sender:users(id, name, email),
-            recipient:users(id, name, email),
-            parent:messages(id, subject, body)
-          `)
+        
+        console.log(`📨 Fetching messages - Type: ${type}, User: ${user.id}, Admin: ${isAdmin}`)
 
         if (isAdmin && type === 'admin') {
-          // Admins can see all messages - no filter needed
+          // Admins can see all messages - use explicit foreign key references
+          const { data: messages, error: messagesError } = await supabaseClient
+            .from('messages')
+            .select(`
+              *,
+              sender:users!sender_id(id, name, email),
+              recipient:users!recipient_id(id, name, email),
+              parent:messages!parent_message_id(id, subject, body)
+            `)
+            .order('created_at', { ascending: false })
+            .range(offset, offset + limit - 1)
+
+          if (messagesError) {
+            console.error('Error fetching admin messages:', messagesError)
+            return new Response(JSON.stringify({ 
+              error: 'Failed to fetch messages',
+              details: messagesError.message 
+            }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          }
+
+          return new Response(JSON.stringify({ messages: messages || [] }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
         } else if (type === 'inbox') {
           // Messages received by user (including broadcasts)
           // Use separate queries and combine, or use a union approach
@@ -326,10 +345,16 @@ serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         } else if (type === 'sent') {
-          // Messages sent by user
-          query = query.eq('sender_id', user.id)
-          
-          const { data: messages, error: messagesError } = await query
+          // Messages sent by user - use explicit foreign key references
+          const { data: messages, error: messagesError } = await supabaseClient
+            .from('messages')
+            .select(`
+              *,
+              sender:users!sender_id(id, name, email),
+              recipient:users!recipient_id(id, name, email),
+              parent:messages!parent_message_id(id, subject, body)
+            `)
+            .eq('sender_id', user.id)
             .order('created_at', { ascending: false })
             .range(offset, offset + limit - 1)
 
@@ -344,6 +369,7 @@ serve(async (req) => {
             })
           }
 
+          console.log(`✅ Fetched ${messages?.length || 0} sent messages for user ${user.id}`)
           return new Response(JSON.stringify({ messages: messages || [] }), {
             status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -408,23 +434,13 @@ serve(async (req) => {
           })
         }
 
-        const { data: messages, error: messagesError } = await query
-          .order('created_at', { ascending: false })
-          .range(offset, offset + limit - 1)
-
-        if (messagesError) {
-          console.error('Error fetching messages:', messagesError)
-          return new Response(JSON.stringify({ 
-            error: 'Failed to fetch messages',
-            details: messagesError.message 
-          }), {
-            status: 500,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          })
-        }
-
-        return new Response(JSON.stringify({ messages: messages || [] }), {
-          status: 200,
+        // If type doesn't match any known type, return error
+        console.error(`❌ Unknown message type: ${type}`)
+        return new Response(JSON.stringify({ 
+          error: 'Invalid message type',
+          details: `Type "${type}" is not supported. Use 'inbox', 'sent', 'all', or 'admin' (admin only).`
+        }), {
+          status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
       }

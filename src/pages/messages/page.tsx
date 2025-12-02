@@ -27,6 +27,7 @@ export default function MessagesPage() {
   const isAdmin = user?.role === 'admin'
 
   useEffect(() => {
+    console.log('📨 MessagesPage: Tab changed to', activeTab, '- Loading messages...')
     loadMessages()
   }, [activeTab])
 
@@ -34,10 +35,13 @@ export default function MessagesPage() {
     try {
       setLoading(true)
       const type = activeTab === 'sent' ? 'sent' : 'inbox'
+      console.log('📨 MessagesPage: Loading messages, type:', type)
       const msgs = await getMessages({ type, limit: 100 })
+      console.log('📨 MessagesPage: Received', msgs.length, 'messages')
       setMessages(msgs)
     } catch (error) {
-      console.error('Error loading messages:', error)
+      console.error('📨 MessagesPage: Error loading messages:', error)
+      setMessages([]) // Set empty array on error
     } finally {
       setLoading(false)
     }

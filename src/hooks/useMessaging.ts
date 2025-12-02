@@ -50,8 +50,15 @@ export function useMessaging() {
   }
 
   const getMessages = async (params: GetMessagesParams = {}): Promise<Message[]> => {
-    const data = await callMessagingFunction('getMessages', params)
-    return data.messages || []
+    try {
+      console.log('📨 useMessaging: Fetching messages with params:', params)
+      const data = await callMessagingFunction('getMessages', params)
+      console.log('📨 useMessaging: Received messages:', data.messages?.length || 0)
+      return data.messages || []
+    } catch (error) {
+      console.error('📨 useMessaging: Error fetching messages:', error)
+      throw error
+    }
   }
 
   const getMessage = async (messageId: string): Promise<Message> => {
