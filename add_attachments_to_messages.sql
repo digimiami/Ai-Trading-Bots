@@ -48,10 +48,13 @@ DROP POLICY IF EXISTS "Users can delete their own attachments" ON storage.object
 DROP POLICY IF EXISTS "Message attachments are publicly viewable" ON storage.objects;
 
 -- Create storage policy for message attachments upload
+-- File path structure: messages/{user_id}/{filename}
+-- So we check the second folder (index 2) for the user ID
 CREATE POLICY "Users can upload message attachments" ON storage.objects
 FOR INSERT WITH CHECK (
   bucket_id = 'message-attachments' 
-  AND auth.uid()::text = (storage.foldername(name))[1]
+  AND (storage.foldername(name))[1] = 'messages'
+  AND auth.uid()::text = (storage.foldername(name))[2]
 );
 
 -- Create storage policy for message attachments read
@@ -59,10 +62,12 @@ CREATE POLICY "Users can read message attachments" ON storage.objects
 FOR SELECT USING (bucket_id = 'message-attachments');
 
 -- Create storage policy for message attachments delete
+-- File path structure: messages/{user_id}/{filename}
 CREATE POLICY "Users can delete their own attachments" ON storage.objects
 FOR DELETE USING (
   bucket_id = 'message-attachments' 
-  AND auth.uid()::text = (storage.foldername(name))[1]
+  AND (storage.foldername(name))[1] = 'messages'
+  AND auth.uid()::text = (storage.foldername(name))[2]
 );
 
 -- Make attachments publicly viewable (since messages can be shared)
