@@ -125,7 +125,7 @@ Return the article content in markdown format.`
       'analysis'
     ].filter((v, i, a) => a.indexOf(v) === i)
 
-    // Create article
+    // Create article with ALL SEO meta tags auto-filled
     const articleData: any = {
       title: articleTitle,
       slug: slug + '-' + Date.now(), // Ensure uniqueness
@@ -134,16 +134,25 @@ Return the article content in markdown format.`
       keywords: keywords,
       category: category,
       reading_time: readingTime,
+      // All SEO Meta Tags - Auto-filled
       meta_title: metaTitle,
       meta_description: metaDescription,
       meta_keywords: metaKeywords,
+      // Open Graph Tags
       og_title: ogTitle,
       og_description: ogDescription,
-      twitter_card: 'summary_large_image',
+      og_image_url: ogImageUrl,
+      // Twitter Card Tags
+      twitter_card: twitterCard,
       twitter_title: twitterTitle,
       twitter_description: twitterDescription,
-      tags: autoTags,
+      // Canonical URL
+      canonical_url: canonicalUrl,
+      // Featured Image (based on keywords)
       featured_image_url: featuredImageUrl,
+      // Tags
+      tags: autoTags,
+      // Status
       status: autoPublish ? 'published' : 'draft',
       published_at: autoPublish ? new Date().toISOString() : null
     }
@@ -475,14 +484,35 @@ Return the article content in markdown format.`;
           const wordCount = content.split(/\s+/).length
           const readingTime = Math.max(1, Math.ceil(wordCount / 200))
 
-          // Auto-generate SEO meta tags
-          const metaTitle = title || articleTitle
+          // Auto-generate comprehensive SEO meta tags
+          const metaTitle = (title || articleTitle).length > 60 
+            ? (title || articleTitle).substring(0, 57) + '...' 
+            : (title || articleTitle)
           const metaDescription = excerpt.length > 160 ? excerpt.substring(0, 157) + '...' : excerpt
-          const metaKeywords = keywords
+          const metaKeywords = [...keywords, category, 'crypto', 'cryptocurrency', 'blockchain', 'trading', 'news']
+            .map(k => k.toLowerCase())
+            .filter((v, i, a) => a.indexOf(v) === i)
+          
+          // Open Graph tags
           const ogTitle = metaTitle
-          const ogDescription = excerpt
+          const ogDescription = metaDescription
+          // Generate featured image URL based on keywords and category
+          const imageKeywords = keywords.slice(0, 3).join(',') || category || 'cryptocurrency'
+          const featuredImageUrl = `https://source.unsplash.com/1200x630/?${encodeURIComponent(imageKeywords)},cryptocurrency,blockchain,digital,finance`
+          const ogImageUrl = featuredImageUrl // Use same image for OG
+          
+          // Twitter Card tags
+          const twitterCard = 'summary_large_image'
           const twitterTitle = metaTitle
-          const twitterDescription = excerpt
+          const twitterDescription = metaDescription
+          
+          // Canonical URL (will be set when article is published)
+          const baseUrl = Deno.env.get('SITE_URL') || 'https://your-site.com'
+          const slug = (title || articleTitle).toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .substring(0, 100)
+          const canonicalUrl = `${baseUrl}/crypto-news/${slug}`
           
           // Generate tags from keywords and category
           const autoTags = [
@@ -491,13 +521,10 @@ Return the article content in markdown format.`;
             'crypto',
             'cryptocurrency',
             'blockchain',
-            'trading'
+            'trading',
+            'news',
+            'analysis'
           ].filter((v, i, a) => a.indexOf(v) === i) // Remove duplicates
-
-          // Generate featured image URL using Unsplash API (free, no key required for basic usage)
-          // Using a placeholder service that generates images based on keywords
-          const imageKeywords = keywords.slice(0, 3).join(',') || category || 'cryptocurrency'
-          const featuredImageUrl = `https://source.unsplash.com/800x450/?${encodeURIComponent(imageKeywords)},cryptocurrency,blockchain`
 
           return new Response(JSON.stringify({
             success: true,
@@ -508,18 +535,24 @@ Return the article content in markdown format.`;
               keywords: keywords,
               category: category,
               reading_time: readingTime,
-              // Auto-filled SEO meta tags
+              // All SEO Meta Tags - Auto-filled
               meta_title: metaTitle,
               meta_description: metaDescription,
               meta_keywords: metaKeywords,
+              // Open Graph Tags
               og_title: ogTitle,
               og_description: ogDescription,
-              twitter_card: 'summary_large_image',
+              og_image_url: ogImageUrl,
+              // Twitter Card Tags
+              twitter_card: twitterCard,
               twitter_title: twitterTitle,
               twitter_description: twitterDescription,
-              tags: autoTags,
-              // Auto-generated featured image
-              featured_image_url: featuredImageUrl
+              // Canonical URL
+              canonical_url: canonicalUrl,
+              // Featured Image (based on keywords)
+              featured_image_url: featuredImageUrl,
+              // Tags
+              tags: autoTags
             }
           }), {
             status: 200,
