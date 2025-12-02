@@ -14,6 +14,7 @@ import { useMarketData } from '../../hooks/useMarketData';
 import { useExchangeBalance } from '../../hooks/useExchangeBalance';
 import { useAcademy, isModuleCompleted } from '../../hooks/useAcademy';
 import ExchangeBalanceDisplay from './components/ExchangeBalance';
+import NotificationBell from '../../components/feature/NotificationBell';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -92,12 +93,7 @@ export default function Home() {
               <i className="ri-refresh-line mr-1"></i>
               Reset
             </Button>
-            <button
-              onClick={() => navigate('/help')}
-              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
-            >
-              <i className="ri-notification-line text-xl text-gray-600 dark:text-gray-300"></i>
-            </button>
+            <NotificationBell />
             <button
               onClick={() => navigate('/contact')}
               className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"

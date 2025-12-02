@@ -1,0 +1,510 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE',
+}
+
+serve(async (req) => {
+  // Handle CORS preflight requests
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
+  try {
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    )
+
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Missing Authorization header' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    const token = authHeader.replace('Bearer ', '')
+    
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token)
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    // Get user role
+    const { data: userData, error: userError } = await supabaseClient
+      .from('users')
+      .select('role, name')
+      .eq('id', user.id)
+      .single()
+
+    if (userError) {
+      return new Response(JSON.stringify({ error: 'Failed to get user data' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    const isAdmin = userData?.role === 'admin'
+
+    // Parse request body
+    let body: any = {}
+    let action: string | null = null
+    let params: any = {}
+    
+    try {
+      if (req.method === 'POST' || req.method === 'PUT') {
+        const bodyText = await req.text()
+        if (bodyText) {
+          body = JSON.parse(bodyText)
+          action = body.action
+          params = { ...body }
+          delete params.action
+        }
+      } else if (req.method === 'GET') {
+        const url = new URL(req.url)
+        action = url.searchParams.get('action')
+        params = Object.fromEntries(url.searchParams.entries())
+      }
+    } catch (e) {
+      console.error('Error parsing request:', e)
+      return new Response(JSON.stringify({ 
+        error: 'Invalid request body',
+        details: e.message 
+      }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    if (!action) {
+      return new Response(JSON.stringify({ error: 'Action parameter required' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    console.log('📨 Processing messaging action:', action, 'User:', user.id, 'Admin:', isAdmin)
+
+    switch (action) {
+      // Send a message
+      case 'sendMessage': {
+        const { recipientId, recipientUsername, subject, body: messageBody, parentMessageId, isBroadcast } = params
+
+        if (!messageBody) {
+          return new Response(JSON.stringify({ error: 'Message body is required' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        let finalRecipientId: string | null = null
+
+        // Handle broadcast messages (admin only)
+        if (isBroadcast === true) {
+          if (!isAdmin) {
+            return new Response(JSON.stringify({ error: 'Only admins can send broadcast messages' }), {
+              status: 403,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          }
+          finalRecipientId = null // null recipient_id means broadcast
+        } else {
+          // Find recipient by ID or username
+          if (recipientId) {
+            finalRecipientId = recipientId
+          } else if (recipientUsername) {
+            // Use the function to find user by username
+            const { data: recipientData, error: findError } = await supabaseClient
+              .rpc('get_user_by_username', { username: recipientUsername })
+            
+            if (findError || !recipientData || recipientData.length === 0) {
+              return new Response(JSON.stringify({ error: 'User not found' }), {
+                status: 404,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              })
+            }
+            finalRecipientId = recipientData[0].id
+          } else {
+            return new Response(JSON.stringify({ error: 'Recipient ID or username is required' }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          }
+
+          // Users can't send messages to themselves
+          if (finalRecipientId === user.id) {
+            return new Response(JSON.stringify({ error: 'Cannot send message to yourself' }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          }
+        }
+
+        // Insert message
+        const { data: message, error: insertError } = await supabaseClient
+          .from('messages')
+          .insert({
+            sender_id: user.id,
+            recipient_id: finalRecipientId,
+            subject: subject || null,
+            body: messageBody,
+            is_broadcast: isBroadcast === true,
+            parent_message_id: parentMessageId || null
+          })
+          .select()
+          .single()
+
+        if (insertError) {
+          console.error('Error inserting message:', insertError)
+          return new Response(JSON.stringify({ 
+            error: 'Failed to send message',
+            details: insertError.message 
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        return new Response(JSON.stringify({ message }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      // Get messages (inbox)
+      case 'getMessages': {
+        const { type = 'inbox', limit = 50, offset = 0 } = params // type: 'inbox', 'sent', 'all'
+
+        let query = supabaseClient
+          .from('messages')
+          .select(`
+            *,
+            sender:users!messages_sender_id_fkey(id, name, email),
+            recipient:users!messages_recipient_id_fkey(id, name, email),
+            parent:messages!messages_parent_message_id_fkey(id, subject, body)
+          `)
+
+        if (type === 'inbox') {
+          // Messages received by user (including broadcasts)
+          query = query.or(`recipient_id.eq.${user.id},is_broadcast.eq.true`)
+        } else if (type === 'sent') {
+          // Messages sent by user
+          query = query.eq('sender_id', user.id)
+        } else if (type === 'all') {
+          // All messages user is involved in
+          query = query.or(`sender_id.eq.${user.id},recipient_id.eq.${user.id},is_broadcast.eq.true`)
+        }
+
+        if (isAdmin && type === 'admin') {
+          // Admins can see all messages
+          query = supabaseClient
+            .from('messages')
+            .select(`
+              *,
+              sender:users!messages_sender_id_fkey(id, name, email),
+              recipient:users!messages_recipient_id_fkey(id, name, email),
+              parent:messages!messages_parent_message_id_fkey(id, subject, body)
+            `)
+        }
+
+        const { data: messages, error: messagesError } = await query
+          .order('created_at', { ascending: false })
+          .range(offset, offset + limit - 1)
+
+        if (messagesError) {
+          console.error('Error fetching messages:', messagesError)
+          return new Response(JSON.stringify({ 
+            error: 'Failed to fetch messages',
+            details: messagesError.message 
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        return new Response(JSON.stringify({ messages: messages || [] }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      // Get a single message
+      case 'getMessage': {
+        const { messageId } = params
+
+        if (!messageId) {
+          return new Response(JSON.stringify({ error: 'Message ID is required' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        const { data: message, error: messageError } = await supabaseClient
+          .from('messages')
+          .select(`
+            *,
+            sender:users!messages_sender_id_fkey(id, name, email),
+            recipient:users!messages_recipient_id_fkey(id, name, email),
+            parent:messages!messages_parent_message_id_fkey(id, subject, body)
+          `)
+          .eq('id', messageId)
+          .single()
+
+        if (messageError) {
+          return new Response(JSON.stringify({ 
+            error: 'Message not found',
+            details: messageError.message 
+          }), {
+            status: 404,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        // Check if user has access to this message
+        if (!isAdmin && message.sender_id !== user.id && message.recipient_id !== user.id && !message.is_broadcast) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        return new Response(JSON.stringify({ message }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      // Mark message as read
+      case 'markAsRead': {
+        const { messageId } = params
+
+        if (!messageId) {
+          return new Response(JSON.stringify({ error: 'Message ID is required' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        // Check if user is recipient
+        const { data: message, error: checkError } = await supabaseClient
+          .from('messages')
+          .select('recipient_id, is_broadcast')
+          .eq('id', messageId)
+          .single()
+
+        if (checkError || !message) {
+          return new Response(JSON.stringify({ error: 'Message not found' }), {
+            status: 404,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        if (!isAdmin && message.recipient_id !== user.id && !message.is_broadcast) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        const { data: updatedMessage, error: updateError } = await supabaseClient
+          .from('messages')
+          .update({ 
+            is_read: true,
+            read_at: new Date().toISOString()
+          })
+          .eq('id', messageId)
+          .select()
+          .single()
+
+        if (updateError) {
+          console.error('Error updating message:', updateError)
+          return new Response(JSON.stringify({ 
+            error: 'Failed to mark message as read',
+            details: updateError.message 
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        return new Response(JSON.stringify({ message: updatedMessage }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      // Get unread message count
+      case 'getUnreadCount': {
+        const { data: count, error: countError } = await supabaseClient
+          .rpc('get_unread_message_count', { user_id: user.id })
+
+        if (countError) {
+          console.error('Error getting unread count:', countError)
+          // Fallback: manual count
+          const { count: manualCount } = await supabaseClient
+            .from('messages')
+            .select('*', { count: 'exact', head: true })
+            .or(`recipient_id.eq.${user.id},is_broadcast.eq.true`)
+            .eq('is_read', false)
+
+          return new Response(JSON.stringify({ count: manualCount || 0 }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        return new Response(JSON.stringify({ count: count || 0 }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      // Get conversation thread
+      case 'getConversation': {
+        const { otherUserId, limit = 50, offset = 0 } = params
+
+        if (!otherUserId) {
+          return new Response(JSON.stringify({ error: 'Other user ID is required' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        // Get all messages between current user and other user
+        const { data: messages, error: messagesError } = await supabaseClient
+          .from('messages')
+          .select(`
+            *,
+            sender:users!messages_sender_id_fkey(id, name, email),
+            recipient:users!messages_recipient_id_fkey(id, name, email)
+          `)
+          .or(`and(sender_id.eq.${user.id},recipient_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},recipient_id.eq.${user.id})`)
+          .order('created_at', { ascending: false })
+          .range(offset, offset + limit - 1)
+
+        if (messagesError) {
+          console.error('Error fetching conversation:', messagesError)
+          return new Response(JSON.stringify({ 
+            error: 'Failed to fetch conversation',
+            details: messagesError.message 
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        return new Response(JSON.stringify({ messages: messages || [] }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      // Search users by username (for finding users to message)
+      case 'searchUsers': {
+        const { query: searchQuery, limit = 20 } = params
+
+        if (!searchQuery || searchQuery.length < 2) {
+          return new Response(JSON.stringify({ error: 'Search query must be at least 2 characters' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        const { data: users, error: usersError } = await supabaseClient
+          .from('users')
+          .select('id, name, email')
+          .or(`name.ilike.%${searchQuery}%,email.ilike.%${searchQuery}%`)
+          .neq('id', user.id) // Don't include current user
+          .limit(limit)
+
+        if (usersError) {
+          console.error('Error searching users:', usersError)
+          return new Response(JSON.stringify({ 
+            error: 'Failed to search users',
+            details: usersError.message 
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        return new Response(JSON.stringify({ users: users || [] }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      // Admin: Get all users for broadcast
+      case 'getAllUsers': {
+        if (!isAdmin) {
+          return new Response(JSON.stringify({ error: 'Admin access required' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        const { data: users, error: usersError } = await supabaseClient
+          .from('users')
+          .select('id, name, email, role')
+          .order('name', { ascending: true })
+
+        if (usersError) {
+          console.error('Error fetching users:', usersError)
+          return new Response(JSON.stringify({ 
+            error: 'Failed to fetch users',
+            details: usersError.message 
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        return new Response(JSON.stringify({ users: users || [] }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      default:
+        return new Response(JSON.stringify({ 
+          error: 'Invalid action',
+          availableActions: [
+            'sendMessage',
+            'getMessages',
+            'getMessage',
+            'markAsRead',
+            'getUnreadCount',
+            'getConversation',
+            'searchUsers',
+            'getAllUsers'
+          ]
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+    }
+  } catch (error: any) {
+    console.error('❌ Messaging function error:', error)
+    return new Response(JSON.stringify({ 
+      error: 'Internal server error',
+      details: error?.message || String(error)
+    }), {
+      status: 500,
+      headers: { 
+        ...corsHeaders, 
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+        'Access-Control-Allow-Methods': 'POST, GET, OPTIONS, PUT, DELETE'
+      }
+    })
+  }
+})
+

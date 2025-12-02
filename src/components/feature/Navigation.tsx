@@ -100,6 +100,7 @@ export default function Navigation() {
     { path: '/paper-trading', icon: 'ri-edit-box-line', label: t('nav.paperTrading') },
     { path: '/futures-pairs-finder', icon: 'ri-search-line', label: 'Futures' },
     { path: '/contact', icon: 'ri-customer-service-line', label: 'Contact' },
+    { path: '/messages', icon: 'ri-message-3-line', label: 'Messages' },
     { path: '/settings', icon: 'ri-settings-line', label: t('nav.settings') }
   ];
 

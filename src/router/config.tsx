@@ -31,6 +31,7 @@ const PabloReady = lazy(() => import('../pages/pablo-ready/page'));
 const MarketDashboard = lazy(() => import('../pages/market-dashboard/page'));
 const CryptoBubbles = lazy(() => import('../pages/crypto-bubbles/page'));
 const CryptoNews = lazy(() => import('../pages/crypto-news/page'));
+const Messages = lazy(() => import('../pages/messages/page'));
 const NotFound = lazy(() => import('../pages/NotFound'));
 const Privacy = lazy(() => import('../pages/legal/privacy'));
 const Terms = lazy(() => import('../pages/legal/terms'));
@@ -123,6 +124,10 @@ const routes: RouteObject[] = [
   {
     path: '/contact',
     element: <Contact />
+  },
+  {
+    path: '/messages',
+    element: <Messages />
   },
   {
     path: '/admin',
