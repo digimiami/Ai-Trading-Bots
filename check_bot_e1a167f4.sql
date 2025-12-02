@@ -119,8 +119,7 @@ SELECT
     status,
     executed_at,
     exchange_order_id,
-    created_at,
-    updated_at
+    created_at
 FROM trades
 WHERE bot_id = 'e1a167f4-e7c8-4b60-9b42-86e6e5bb4874'
 ORDER BY COALESCE(executed_at, created_at) DESC
