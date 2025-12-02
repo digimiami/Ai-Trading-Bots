@@ -521,6 +521,7 @@ export default function CryptoNewsManager({ onArticlePublished }: CryptoNewsMana
           </div>
         )}
       </Card>
+      )}
 
       {/* Create/Edit Article Modal */}
       {(showCreateModal || showEditModal) && (
