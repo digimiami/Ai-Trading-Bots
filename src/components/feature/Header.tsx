@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import LanguageSwitcher from '../ui/LanguageSwitcher';
 import DropdownMenu, { DropdownMenuItem } from '../ui/DropdownMenu';
 import { useAuth } from '../../hooks/useAuth';
+import NotificationBell from './NotificationBell';
 
 interface HeaderProps {
   title: string;
@@ -38,6 +39,11 @@ export function Header({ title, subtitle, showBack = false, action, rightAction 
       label: 'Profile',
       icon: 'ri-user-line',
       onClick: () => navigate('/settings?tab=profile'),
+    },
+    {
+      label: 'Messages',
+      icon: 'ri-message-3-line',
+      onClick: () => navigate('/messages'),
     },
     {
       label: 'Settings',
@@ -100,6 +106,9 @@ export function Header({ title, subtitle, showBack = false, action, rightAction 
         
         <div className="flex items-center space-x-1 sm:space-x-2 flex-shrink-0">
           <LanguageSwitcher />
+          
+          {/* Notification Bell (if authenticated) */}
+          {isAuthenticated && <NotificationBell />}
           
           {/* Help Menu Dropdown */}
           {showHelpButton && (

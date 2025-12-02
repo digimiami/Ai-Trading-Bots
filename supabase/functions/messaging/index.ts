@@ -191,20 +191,12 @@ serve(async (req) => {
             parent:messages!messages_parent_message_id_fkey(id, subject, body)
           `)
 
-        if (type === 'inbox') {
-          // Messages received by user (including broadcasts)
-          query = query.or(`recipient_id.eq.${user.id},is_broadcast.eq.true`)
-        } else if (type === 'sent') {
-          // Messages sent by user
-          query = query.eq('sender_id', user.id)
-        } else if (type === 'all') {
-          // All messages user is involved in
-          query = query.or(`sender_id.eq.${user.id},recipient_id.eq.${user.id},is_broadcast.eq.true`)
-        }
-
         if (isAdmin && type === 'admin') {
-          // Admins can see all messages
-          query = supabaseClient
+          // Admins can see all messages - no filter needed
+        } else if (type === 'inbox') {
+          // Messages received by user (including broadcasts)
+          // Use separate queries and combine, or use a union approach
+          const { data: directMessages, error: directError } = await supabaseClient
             .from('messages')
             .select(`
               *,
@@ -212,6 +204,101 @@ serve(async (req) => {
               recipient:users!messages_recipient_id_fkey(id, name, email),
               parent:messages!messages_parent_message_id_fkey(id, subject, body)
             `)
+            .eq('recipient_id', user.id)
+            .eq('is_broadcast', false)
+
+          const { data: broadcastMessages, error: broadcastError } = await supabaseClient
+            .from('messages')
+            .select(`
+              *,
+              sender:users!messages_sender_id_fkey(id, name, email),
+              recipient:users!messages_recipient_id_fkey(id, name, email),
+              parent:messages!messages_parent_message_id_fkey(id, subject, body)
+            `)
+            .eq('is_broadcast', true)
+
+          if (directError || broadcastError) {
+            console.error('Error fetching messages:', directError || broadcastError)
+            return new Response(JSON.stringify({ 
+              error: 'Failed to fetch messages',
+              details: (directError || broadcastError)?.message 
+            }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          }
+
+          const allMessages = [...(directMessages || []), ...(broadcastMessages || [])]
+          const sortedMessages = allMessages.sort((a, b) => 
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          )
+          const paginatedMessages = sortedMessages.slice(offset, offset + limit)
+
+          return new Response(JSON.stringify({ messages: paginatedMessages }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        } else if (type === 'sent') {
+          // Messages sent by user
+          query = query.eq('sender_id', user.id)
+        } else if (type === 'all') {
+          // All messages user is involved in - use separate queries
+          const { data: sentMessages, error: sentError } = await supabaseClient
+            .from('messages')
+            .select(`
+              *,
+              sender:users!messages_sender_id_fkey(id, name, email),
+              recipient:users!messages_recipient_id_fkey(id, name, email),
+              parent:messages!messages_parent_message_id_fkey(id, subject, body)
+            `)
+            .eq('sender_id', user.id)
+
+          const { data: receivedMessages, error: receivedError } = await supabaseClient
+            .from('messages')
+            .select(`
+              *,
+              sender:users!messages_sender_id_fkey(id, name, email),
+              recipient:users!messages_recipient_id_fkey(id, name, email),
+              parent:messages!messages_parent_message_id_fkey(id, subject, body)
+            `)
+            .eq('recipient_id', user.id)
+
+          const { data: broadcastMessages, error: broadcastError } = await supabaseClient
+            .from('messages')
+            .select(`
+              *,
+              sender:users!messages_sender_id_fkey(id, name, email),
+              recipient:users!messages_recipient_id_fkey(id, name, email),
+              parent:messages!messages_parent_message_id_fkey(id, subject, body)
+            `)
+            .eq('is_broadcast', true)
+
+          if (sentError || receivedError || broadcastError) {
+            console.error('Error fetching messages:', sentError || receivedError || broadcastError)
+            return new Response(JSON.stringify({ 
+              error: 'Failed to fetch messages',
+              details: (sentError || receivedError || broadcastError)?.message 
+            }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          }
+
+          // Combine and deduplicate messages
+          const messageMap = new Map()
+          ;[...(sentMessages || []), ...(receivedMessages || []), ...(broadcastMessages || [])].forEach(msg => {
+            messageMap.set(msg.id, msg)
+          })
+          const allMessages = Array.from(messageMap.values())
+          const sortedMessages = allMessages.sort((a, b) => 
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          )
+          const paginatedMessages = sortedMessages.slice(offset, offset + limit)
+
+          return new Response(JSON.stringify({ messages: paginatedMessages }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
         }
 
         const { data: messages, error: messagesError } = await query
