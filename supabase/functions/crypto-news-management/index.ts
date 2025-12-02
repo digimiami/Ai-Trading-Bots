@@ -36,6 +36,130 @@ function getFeaturedImageUrl(keywords: string, category: string = 'general'): st
   return `https://picsum.photos/seed/crypto-${seed}/1200/630`
 }
 
+// Function to find and link related articles based on keywords and tags
+async function findAndLinkRelatedArticles(
+  supabaseClient: any,
+  articleId: string,
+  keywords: string[],
+  tags: string[],
+  category: string,
+  maxRelated: number = 5
+): Promise<void> {
+  try {
+    // Normalize keywords and tags for matching
+    const normalizedKeywords = keywords.map(k => k.toLowerCase().trim())
+    const normalizedTags = tags.map(t => t.toLowerCase().trim())
+    const allSearchTerms = [...normalizedKeywords, ...normalizedTags, category.toLowerCase()]
+    
+    // Find related articles by matching keywords, tags, or category
+    const { data: allArticles, error: fetchError } = await supabaseClient
+      .from('crypto_news_articles')
+      .select('id, keywords, tags, category, title, slug, published_at')
+      .neq('id', articleId) // Exclude current article
+      .eq('status', 'published') // Only link to published articles
+      .order('published_at', { ascending: false, nullsFirst: false })
+      .limit(100) // Get a larger pool to score from
+
+    if (fetchError || !allArticles) {
+      console.warn('Error fetching articles for linking:', fetchError)
+      return
+    }
+
+    // Score articles based on keyword/tag matches
+    const scoredArticles = allArticles.map((article: any) => {
+      const articleKeywords = (article.keywords || []).map((k: string) => k.toLowerCase().trim())
+      const articleTags = (article.tags || []).map((t: string) => t.toLowerCase().trim())
+      const articleCategory = (article.category || '').toLowerCase()
+      
+      let score = 0
+      
+      // Exact keyword matches (higher weight)
+      normalizedKeywords.forEach(keyword => {
+        if (articleKeywords.includes(keyword)) score += 3
+        if (articleTags.includes(keyword)) score += 2
+      })
+      
+      // Tag matches
+      normalizedTags.forEach(tag => {
+        if (articleTags.includes(tag)) score += 2
+        if (articleKeywords.includes(tag)) score += 1
+      })
+      
+      // Category match
+      if (articleCategory === category.toLowerCase()) {
+        score += 1
+      }
+      
+      // Partial keyword matches (lower weight)
+      normalizedKeywords.forEach(keyword => {
+        articleKeywords.forEach((ak: string) => {
+          if (ak.includes(keyword) || keyword.includes(ak)) score += 0.5
+        })
+      })
+      
+      return { ...article, score }
+    })
+    
+    // Sort by score and get top matches
+    const relatedArticles = scoredArticles
+      .filter((a: any) => a.score > 0)
+      .sort((a: any, b: any) => b.score - a.score)
+      .slice(0, maxRelated)
+      .map((a: any) => ({
+        id: a.id,
+        title: a.title,
+        slug: a.slug,
+        score: a.score
+      }))
+
+    if (relatedArticles.length === 0) {
+      console.log(`No related articles found for article ${articleId}`)
+      return
+    }
+
+    // Update current article with related articles
+    const { error: updateError } = await supabaseClient
+      .from('crypto_news_articles')
+      .update({ 
+        related_articles: relatedArticles.map((a: any) => a.id)
+      })
+      .eq('id', articleId)
+
+    if (updateError) {
+      console.error('Error updating related articles:', updateError)
+      return
+    }
+
+    // Also update the related articles to link back to this one (bidirectional linking)
+    for (const relatedArticle of relatedArticles) {
+      const { data: existingArticle } = await supabaseClient
+        .from('crypto_news_articles')
+        .select('related_articles')
+        .eq('id', relatedArticle.id)
+        .single()
+
+      const existingRelated = existingArticle?.related_articles || []
+      const updatedRelated = Array.isArray(existingRelated) 
+        ? [...new Set([...existingRelated, articleId])] // Add current article, remove duplicates
+        : [articleId]
+
+      // Limit to maxRelated to prevent too many links
+      if (updatedRelated.length > maxRelated) {
+        updatedRelated.splice(maxRelated)
+      }
+
+      await supabaseClient
+        .from('crypto_news_articles')
+        .update({ related_articles: updatedRelated })
+        .eq('id', relatedArticle.id)
+    }
+
+    console.log(`✅ Linked ${relatedArticles.length} related articles to article ${articleId}`)
+  } catch (error: any) {
+    console.error('Error in findAndLinkRelatedArticles:', error)
+  }
+}
+
 // Helper function to generate article for a keyword (used by auto-posting)
 async function generateArticleForKeyword(
   supabaseClient: any,
@@ -197,6 +321,17 @@ Return the article content in markdown format.`
 
     if (createError) {
       return { success: false, error: createError.message }
+    }
+
+    // Auto-link related articles if article is published
+    if (autoPublish && article) {
+      await findAndLinkRelatedArticles(
+        supabaseClient,
+        article.id,
+        keywords,
+        autoTags,
+        category
+      )
     }
 
     return { success: true, article }
@@ -752,6 +887,17 @@ Return the article content in markdown format.`;
 
         if (createError) throw createError
 
+        // Auto-link related articles if article is published
+        if (article && status === 'published') {
+          await findAndLinkRelatedArticles(
+            supabaseClient,
+            article.id,
+            keywords || [],
+            tags || [],
+            category || 'general'
+          )
+        }
+
         return new Response(JSON.stringify({
           success: true,
           article
@@ -839,6 +985,21 @@ Return the article content in markdown format.`;
 
         if (updateError) throw updateError
 
+        // Auto-link related articles if article is published or just became published
+        if (article && (status === 'published' || article.status === 'published')) {
+          const articleKeywords = keywords !== undefined ? keywords : article.keywords || []
+          const articleTags = tags !== undefined ? tags : article.tags || []
+          const articleCategory = category !== undefined ? category : article.category || 'general'
+          
+          await findAndLinkRelatedArticles(
+            supabaseClient,
+            id,
+            articleKeywords,
+            articleTags,
+            articleCategory
+          )
+        }
+
         return new Response(JSON.stringify({
           success: true,
           article
@@ -897,6 +1058,21 @@ Return the article content in markdown format.`;
           .single()
 
         if (updateError) throw updateError
+
+        // Auto-link related articles when publishing
+        if (article) {
+          const articleKeywords = article.keywords || []
+          const articleTags = article.tags || []
+          const articleCategory = article.category || 'general'
+          
+          await findAndLinkRelatedArticles(
+            supabaseClient,
+            id,
+            articleKeywords,
+            articleTags,
+            articleCategory
+          )
+        }
 
         return new Response(JSON.stringify({
           success: true,
