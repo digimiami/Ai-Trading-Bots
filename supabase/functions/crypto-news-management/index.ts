@@ -8,6 +8,34 @@ const corsHeaders = {
   'Access-Control-Max-Age': '86400',
 }
 
+// Function to get featured image URL from multiple sources with fallbacks
+function getFeaturedImageUrl(keywords: string, category: string = 'general'): string {
+  // Clean and prepare search terms
+  const searchTerm = keywords.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim() || category || 'cryptocurrency'
+  
+  // Map categories to specific crypto-themed Unsplash images (direct image IDs)
+  const categoryImageMap: Record<string, string> = {
+    'bitcoin': 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=1200&h=630&fit=crop&q=80',
+    'ethereum': 'https://images.unsplash.com/photo-1639322537504-6427a16b0a28?w=1200&h=630&fit=crop&q=80',
+    'xrp': 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=1200&h=630&fit=crop&q=80',
+    'solana': 'https://images.unsplash.com/photo-1639322537504-6427a16b0a28?w=1200&h=630&fit=crop&q=80',
+    'cardano': 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=1200&h=630&fit=crop&q=80',
+    'polkadot': 'https://images.unsplash.com/photo-1639322537504-6427a16b0a28?w=1200&h=630&fit=crop&q=80',
+    'dogecoin': 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=1200&h=630&fit=crop&q=80',
+    'shiba': 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=1200&h=630&fit=crop&q=80',
+    'general': 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=1200&h=630&fit=crop&q=80'
+  }
+  
+  // Try category-specific image first
+  if (categoryImageMap[category.toLowerCase()]) {
+    return categoryImageMap[category.toLowerCase()]
+  }
+  
+  // Fallback: Use Picsum with seeded random based on keywords (always returns same image for same seed)
+  const seed = searchTerm.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
+  return `https://picsum.photos/seed/crypto-${seed}/1200/630`
+}
+
 // Helper function to generate article for a keyword (used by auto-posting)
 async function generateArticleForKeyword(
   supabaseClient: any,
@@ -101,7 +129,7 @@ Return the article content in markdown format.`
     const ogDescription = metaDescription
     // Generate featured image URL based on keywords and category
     const imageKeywords = keywords.slice(0, 3).join(',') || category || 'cryptocurrency'
-    const featuredImageUrl = `https://source.unsplash.com/1200x630/?${encodeURIComponent(imageKeywords)},cryptocurrency,blockchain,digital,finance`
+    const featuredImageUrl = getFeaturedImageUrl(imageKeywords, category)
     const ogImageUrl = featuredImageUrl // Use same image for OG
     
     // Twitter Card tags
@@ -502,7 +530,7 @@ Return the article content in markdown format.`;
           const ogDescription = metaDescription
           // Generate featured image URL based on keywords and category
           const imageKeywords = keywords.slice(0, 3).join(',') || category || 'cryptocurrency'
-          const featuredImageUrl = `https://source.unsplash.com/1200x630/?${encodeURIComponent(imageKeywords)},cryptocurrency,blockchain,digital,finance`
+          const featuredImageUrl = getFeaturedImageUrl(imageKeywords, category)
           const ogImageUrl = featuredImageUrl // Use same image for OG
           
           // Twitter Card tags
