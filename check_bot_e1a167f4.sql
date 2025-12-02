@@ -92,17 +92,17 @@ SELECT
     COUNT(*) as total_trades,
     COUNT(CASE WHEN pnl > 0 THEN 1 END) as winning_trades,
     COUNT(CASE WHEN pnl < 0 THEN 1 END) as losing_trades,
-    COUNT(CASE WHEN pnl = 0 THEN 1 END) as breakeven_trades,
-    ROUND(COUNT(CASE WHEN pnl > 0 THEN 1 END)::numeric / NULLIF(COUNT(*), 0) * 100, 2) as win_rate_pct,
-    ROUND(SUM(pnl)::numeric, 2) as total_pnl,
+    COUNT(CASE WHEN pnl = 0 OR pnl IS NULL THEN 1 END) as breakeven_trades,
+    ROUND(COUNT(CASE WHEN pnl > 0 THEN 1 END)::numeric / NULLIF(COUNT(CASE WHEN pnl IS NOT NULL THEN 1 END), 0) * 100, 2) as win_rate_pct,
+    ROUND(SUM(COALESCE(pnl, 0))::numeric, 2) as total_pnl,
     ROUND(AVG(CASE WHEN pnl > 0 THEN pnl END)::numeric, 2) as avg_win,
     ROUND(AVG(CASE WHEN pnl < 0 THEN pnl END)::numeric, 2) as avg_loss,
     ROUND(ABS(AVG(CASE WHEN pnl > 0 THEN pnl END)::numeric / NULLIF(AVG(CASE WHEN pnl < 0 THEN pnl END)::numeric, 0)), 2) as profit_factor,
-    MIN(created_at) as first_trade,
-    MAX(created_at) as last_trade
+    MIN(COALESCE(executed_at, created_at)) as first_trade,
+    MAX(COALESCE(executed_at, created_at)) as last_trade
 FROM trades
 WHERE bot_id = 'e1a167f4-e7c8-4b60-9b42-86e6e5bb4874'
-  AND created_at >= NOW() - INTERVAL '30 days';
+  AND COALESCE(executed_at, created_at) >= NOW() - INTERVAL '30 days';
 
 -- =====================================================
 -- CHECK RECENT TRADES DETAILS (Last 10 trades)
@@ -112,21 +112,18 @@ SELECT
     id,
     symbol,
     side,
-    entry_price,
-    exit_price,
-    quantity,
+    price,
+    amount,
     pnl,
-    pnl_percentage,
     fee,
+    status,
+    executed_at,
+    exchange_order_id,
     created_at,
-    closed_at,
-    CASE 
-        WHEN closed_at IS NOT NULL THEN EXTRACT(EPOCH FROM (closed_at - created_at)) / 3600
-        ELSE NULL
-    END as hold_time_hours
+    updated_at
 FROM trades
 WHERE bot_id = 'e1a167f4-e7c8-4b60-9b42-86e6e5bb4874'
-ORDER BY created_at DESC
+ORDER BY COALESCE(executed_at, created_at) DESC
 LIMIT 10;
 
 -- =====================================================
