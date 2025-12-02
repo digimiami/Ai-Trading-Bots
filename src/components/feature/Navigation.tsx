@@ -39,6 +39,7 @@ export default function Navigation() {
       { path: '/crypto-bubbles', icon: 'ri-bubble-chart-line', label: 'Bubbles' },
       { path: '/crypto-news', icon: 'ri-newspaper-line', label: 'News' },
       { path: '/academy', icon: 'ri-graduation-cap-line', label: t('nav.academy') },
+      { path: '/contact', icon: 'ri-customer-service-line', label: 'Contact' },
       { path: '/auth', icon: 'ri-login-box-line', label: 'Sign In' }
     ];
 
@@ -98,6 +99,7 @@ export default function Navigation() {
     { path: '/transaction-log', icon: 'ri-bar-chart-2-line', label: 'Log' },
     { path: '/paper-trading', icon: 'ri-edit-box-line', label: t('nav.paperTrading') },
     { path: '/futures-pairs-finder', icon: 'ri-search-line', label: 'Futures' },
+    { path: '/contact', icon: 'ri-customer-service-line', label: 'Contact' },
     { path: '/settings', icon: 'ri-settings-line', label: t('nav.settings') }
   ];
 

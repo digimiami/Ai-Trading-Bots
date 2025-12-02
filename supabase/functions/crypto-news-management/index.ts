@@ -8,6 +8,151 @@ const corsHeaders = {
   'Access-Control-Max-Age': '86400',
 }
 
+// Helper function to generate article for a keyword (used by auto-posting)
+async function generateArticleForKeyword(
+  supabaseClient: any,
+  keywords: string[],
+  category: string,
+  autoPublish: boolean,
+  authorId: string | null
+): Promise<{ success: boolean; article?: any; error?: string }> {
+  try {
+    const DEEPSEEK_API_KEY = Deno.env.get('DEEPSEEK_API_KEY') || 'sk-1140f2af061a4ff8a2caea2e81b449bd'
+    
+    if (!DEEPSEEK_API_KEY) {
+      return { success: false, error: 'DeepSeek API key not configured' }
+    }
+
+    const keywordsStr = keywords.join(', ')
+    const prompt = `Write a comprehensive, SEO-optimized cryptocurrency news article.
+
+Keywords to focus on: ${keywordsStr}
+Category: ${category}
+
+Requirements:
+1. Write a professional, engaging article (800-1500 words)
+2. Include the keywords naturally throughout the article
+3. Write in a journalistic style suitable for a crypto news website
+4. Include relevant statistics, trends, and analysis
+5. Make it SEO-friendly with proper headings and structure
+6. Include an engaging introduction and conclusion
+7. Use markdown formatting for headings, lists, and emphasis
+
+Return the article content in markdown format.`
+
+    const deepseekResponse = await fetch('https://api.deepseek.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${DEEPSEEK_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'deepseek-chat',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are an expert cryptocurrency journalist and SEO content writer. Write engaging, informative, and SEO-optimized articles about cryptocurrency and blockchain technology.'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ],
+        temperature: 0.7,
+        max_tokens: 4000
+      })
+    })
+
+    if (!deepseekResponse.ok) {
+      const errorText = await deepseekResponse.text()
+      return { success: false, error: `DeepSeek API error: ${deepseekResponse.status}` }
+    }
+
+    const deepseekData = await deepseekResponse.json()
+    const generatedContent = deepseekData.choices?.[0]?.message?.content || ''
+
+    if (!generatedContent) {
+      return { success: false, error: 'No content generated from DeepSeek API' }
+    }
+
+    // Extract title from content (first line or generate from keywords)
+    const firstLine = generatedContent.split('\n')[0].replace(/^#+\s*/, '').trim()
+    const articleTitle = firstLine.length > 10 ? firstLine : `Crypto News: ${keywordsStr}`
+    const content = generatedContent
+    const excerpt = content.substring(0, 200).replace(/\n/g, ' ').trim() + '...'
+    const wordCount = content.split(/\s+/).length
+    const readingTime = Math.max(1, Math.ceil(wordCount / 200))
+
+    // Generate slug
+    const slug = articleTitle.toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .substring(0, 100)
+
+    // Auto-generate SEO meta tags
+    const metaTitle = articleTitle
+    const metaDescription = excerpt.length > 160 ? excerpt.substring(0, 157) + '...' : excerpt
+    const metaKeywords = keywords
+    const ogTitle = metaTitle
+    const ogDescription = excerpt
+    const twitterTitle = metaTitle
+    const twitterDescription = excerpt
+    
+    const autoTags = [
+      ...keywords.map(k => k.toLowerCase()),
+      category.toLowerCase(),
+      'crypto',
+      'cryptocurrency',
+      'blockchain',
+      'trading'
+    ].filter((v, i, a) => a.indexOf(v) === i)
+
+    const imageKeywords = keywords.slice(0, 3).join(',') || category || 'cryptocurrency'
+    const featuredImageUrl = `https://source.unsplash.com/800x450/?${encodeURIComponent(imageKeywords)},cryptocurrency,blockchain`
+
+    // Create article
+    const articleData: any = {
+      title: articleTitle,
+      slug: slug + '-' + Date.now(), // Ensure uniqueness
+      content: content,
+      excerpt: excerpt,
+      keywords: keywords,
+      category: category,
+      reading_time: readingTime,
+      meta_title: metaTitle,
+      meta_description: metaDescription,
+      meta_keywords: metaKeywords,
+      og_title: ogTitle,
+      og_description: ogDescription,
+      twitter_card: 'summary_large_image',
+      twitter_title: twitterTitle,
+      twitter_description: twitterDescription,
+      tags: autoTags,
+      featured_image_url: featuredImageUrl,
+      status: autoPublish ? 'published' : 'draft',
+      published_at: autoPublish ? new Date().toISOString() : null
+    }
+
+    if (authorId) {
+      articleData.author_id = authorId
+    }
+
+    const { data: article, error: createError } = await supabaseClient
+      .from('crypto_news_articles')
+      .insert(articleData)
+      .select()
+      .single()
+
+    if (createError) {
+      return { success: false, error: createError.message }
+    }
+
+    return { success: true, article }
+  } catch (error: any) {
+    return { success: false, error: error.message || String(error) }
+  }
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -676,6 +821,227 @@ Return the article content in markdown format.`;
         return new Response(JSON.stringify({
           success: true,
           article
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      case 'getKeywordLists': {
+        const { data: keywordLists, error: keywordError } = await supabaseClient
+          .from('auto_posting_keywords')
+          .select('*')
+          .order('created_at', { ascending: false })
+
+        if (keywordError) throw keywordError
+
+        return new Response(JSON.stringify({
+          success: true,
+          keywordLists: keywordLists || []
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      case 'createKeywordList': {
+        const { name, keywords, category, enabled, frequency_hours, auto_publish, max_articles_per_run } = params
+
+        if (!name || !keywords || !Array.isArray(keywords) || keywords.length === 0) {
+          return new Response(JSON.stringify({
+            error: 'Name and keywords array are required'
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        const { data: keywordList, error: createError } = await supabaseClient
+          .from('auto_posting_keywords')
+          .insert({
+            name,
+            keywords,
+            category: category || 'general',
+            enabled: enabled !== undefined ? enabled : true,
+            frequency_hours: frequency_hours || 24,
+            auto_publish: auto_publish !== undefined ? auto_publish : false,
+            max_articles_per_run: max_articles_per_run || 1,
+            created_by: user.id
+          })
+          .select()
+          .single()
+
+        if (createError) throw createError
+
+        return new Response(JSON.stringify({
+          success: true,
+          keywordList
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      case 'updateKeywordList': {
+        const { id, name, keywords, category, enabled, frequency_hours, auto_publish, max_articles_per_run } = params
+
+        if (!id) {
+          return new Response(JSON.stringify({
+            error: 'Keyword list ID is required'
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        const updateData: any = {}
+        if (name !== undefined) updateData.name = name
+        if (keywords !== undefined) updateData.keywords = keywords
+        if (category !== undefined) updateData.category = category
+        if (enabled !== undefined) updateData.enabled = enabled
+        if (frequency_hours !== undefined) updateData.frequency_hours = frequency_hours
+        if (auto_publish !== undefined) updateData.auto_publish = auto_publish
+        if (max_articles_per_run !== undefined) updateData.max_articles_per_run = max_articles_per_run
+
+        const { data: keywordList, error: updateError } = await supabaseClient
+          .from('auto_posting_keywords')
+          .update(updateData)
+          .eq('id', id)
+          .select()
+          .single()
+
+        if (updateError) throw updateError
+
+        return new Response(JSON.stringify({
+          success: true,
+          keywordList
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      case 'deleteKeywordList': {
+        const { id } = params
+
+        if (!id) {
+          return new Response(JSON.stringify({
+            error: 'Keyword list ID is required'
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        const { error: deleteError } = await supabaseClient
+          .from('auto_posting_keywords')
+          .delete()
+          .eq('id', id)
+
+        if (deleteError) throw deleteError
+
+        return new Response(JSON.stringify({
+          success: true,
+          message: 'Keyword list deleted successfully'
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      case 'runAutoPosting': {
+        // This action can be called by scheduled functions (no auth required if called with service role)
+        // Check if this is a scheduled call (has x-cron-secret header)
+        const cronSecret = req.headers.get('x-cron-secret')
+        const expectedSecret = Deno.env.get('CRON_SECRET')
+        
+        // If called with valid cron secret, use service role (already set)
+        // Otherwise, require user authentication
+        if (!(cronSecret && expectedSecret && cronSecret === expectedSecret) && !user) {
+          return new Response(JSON.stringify({
+            error: 'Unauthorized - requires authentication or valid cron secret'
+          }), {
+            status: 401,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        // Get all enabled keyword lists that are due for generation
+        const now = new Date()
+        const { data: keywordLists, error: keywordError } = await supabaseClient
+          .from('auto_posting_keywords')
+          .select('*')
+          .eq('enabled', true)
+
+        if (keywordError) throw keywordError
+
+        const results = []
+        
+        for (const keywordList of keywordLists || []) {
+          // Check if it's time to generate articles
+          const lastGenerated = keywordList.last_generated_at 
+            ? new Date(keywordList.last_generated_at) 
+            : null
+          const hoursSinceLastGeneration = lastGenerated
+            ? (now.getTime() - lastGenerated.getTime()) / (1000 * 60 * 60)
+            : Infinity
+
+          if (hoursSinceLastGeneration < keywordList.frequency_hours) {
+            console.log(`⏭️ Skipping ${keywordList.name} - not due yet (${hoursSinceLastGeneration.toFixed(1)}h < ${keywordList.frequency_hours}h)`)
+            continue
+          }
+
+          // Generate articles for this keyword list
+          const articlesToGenerate = Math.min(
+            keywordList.max_articles_per_run || 1,
+            keywordList.keywords.length
+          )
+
+          for (let i = 0; i < articlesToGenerate; i++) {
+            const keyword = keywordList.keywords[i % keywordList.keywords.length]
+            
+            try {
+              // Generate article using existing generateArticle logic
+              const generateResult = await generateArticleForKeyword(
+                supabaseClient,
+                [keyword],
+                keywordList.category,
+                keywordList.auto_publish,
+                user?.id || null
+              )
+
+              if (generateResult.success) {
+                results.push({
+                  keywordList: keywordList.name,
+                  keyword,
+                  articleId: generateResult.article?.id,
+                  status: 'success'
+                })
+              } else {
+                results.push({
+                  keywordList: keywordList.name,
+                  keyword,
+                  status: 'error',
+                  error: generateResult.error
+                })
+              }
+            } catch (error: any) {
+              console.error(`❌ Error generating article for keyword ${keyword}:`, error)
+              results.push({
+                keywordList: keywordList.name,
+                keyword,
+                status: 'error',
+                error: error.message
+              })
+            }
+          }
+
+          // Update last_generated_at
+          await supabaseClient
+            .from('auto_posting_keywords')
+            .update({ last_generated_at: now.toISOString() })
+            .eq('id', keywordList.id)
+        }
+
+        return new Response(JSON.stringify({
+          success: true,
+          results,
+          message: `Processed ${results.length} articles`
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })

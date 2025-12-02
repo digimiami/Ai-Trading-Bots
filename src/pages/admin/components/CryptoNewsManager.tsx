@@ -7,6 +7,20 @@ interface CryptoNewsManagerProps {
   onArticlePublished?: () => void;
 }
 
+interface KeywordList {
+  id: string;
+  name: string;
+  keywords: string[];
+  category: string;
+  enabled: boolean;
+  frequency_hours: number;
+  last_generated_at?: string;
+  auto_publish: boolean;
+  max_articles_per_run: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export default function CryptoNewsManager({ onArticlePublished }: CryptoNewsManagerProps) {
   const {
     loading,
@@ -16,7 +30,12 @@ export default function CryptoNewsManager({ onArticlePublished }: CryptoNewsMana
     createArticle,
     updateArticle,
     deleteArticle,
-    publishArticle
+    publishArticle,
+    getKeywordLists,
+    createKeywordList,
+    updateKeywordList,
+    deleteKeywordList,
+    runAutoPosting
   } = useCryptoNews();
 
   const [articles, setArticles] = useState<CryptoNewsArticle[]>([]);
@@ -25,6 +44,22 @@ export default function CryptoNewsManager({ onArticlePublished }: CryptoNewsMana
   const [editingArticle, setEditingArticle] = useState<CryptoNewsArticle | null>(null);
   const [generating, setGenerating] = useState(false);
   const [statusFilter, setStatusFilter] = useState<'all' | 'draft' | 'published' | 'archived'>('all');
+  
+  // Keyword list management state
+  const [activeTab, setActiveTab] = useState<'articles' | 'keywords'>('articles');
+  const [keywordLists, setKeywordLists] = useState<KeywordList[]>([]);
+  const [showKeywordModal, setShowKeywordModal] = useState(false);
+  const [editingKeywordList, setEditingKeywordList] = useState<KeywordList | null>(null);
+  const [keywordForm, setKeywordForm] = useState({
+    name: '',
+    keywords: [] as string[],
+    keywordInput: '',
+    category: 'general',
+    enabled: true,
+    frequency_hours: 24,
+    auto_publish: false,
+    max_articles_per_run: 1
+  });
 
   const [articleForm, setArticleForm] = useState({
     title: '',
@@ -51,8 +86,12 @@ export default function CryptoNewsManager({ onArticlePublished }: CryptoNewsMana
   });
 
   useEffect(() => {
-    loadArticles();
-  }, [statusFilter]);
+    if (activeTab === 'articles') {
+      loadArticles();
+    } else {
+      loadKeywordLists();
+    }
+  }, [statusFilter, activeTab]);
 
   const loadArticles = async () => {
     try {
@@ -262,8 +301,140 @@ export default function CryptoNewsManager({ onArticlePublished }: CryptoNewsMana
     }));
   };
 
+  // Keyword list management functions
+  const loadKeywordLists = async () => {
+    try {
+      const lists = await getKeywordLists();
+      setKeywordLists(lists);
+    } catch (error) {
+      console.error('Error loading keyword lists:', error);
+    }
+  };
+
+  const resetKeywordForm = () => {
+    setKeywordForm({
+      name: '',
+      keywords: [],
+      keywordInput: '',
+      category: 'general',
+      enabled: true,
+      frequency_hours: 24,
+      auto_publish: false,
+      max_articles_per_run: 1
+    });
+    setEditingKeywordList(null);
+  };
+
+  const addKeywordToList = () => {
+    if (keywordForm.keywordInput.trim()) {
+      setKeywordForm(prev => ({
+        ...prev,
+        keywords: [...prev.keywords, prev.keywordInput.trim()],
+        keywordInput: ''
+      }));
+    }
+  };
+
+  const removeKeywordFromList = (index: number) => {
+    setKeywordForm(prev => ({
+      ...prev,
+      keywords: prev.keywords.filter((_, i) => i !== index)
+    }));
+  };
+
+  const handleSaveKeywordList = async () => {
+    if (!keywordForm.name || keywordForm.keywords.length === 0) {
+      alert('Please provide a name and at least one keyword');
+      return;
+    }
+
+    try {
+      if (editingKeywordList) {
+        await updateKeywordList(editingKeywordList.id, keywordForm);
+      } else {
+        await createKeywordList(keywordForm);
+      }
+      resetKeywordForm();
+      setShowKeywordModal(false);
+      loadKeywordLists();
+      alert('Keyword list saved successfully!');
+    } catch (error: any) {
+      alert(`Error saving keyword list: ${error.message}`);
+    }
+  };
+
+  const handleEditKeywordList = (list: KeywordList) => {
+    setEditingKeywordList(list);
+    setKeywordForm({
+      name: list.name,
+      keywords: list.keywords,
+      keywordInput: '',
+      category: list.category,
+      enabled: list.enabled,
+      frequency_hours: list.frequency_hours,
+      auto_publish: list.auto_publish,
+      max_articles_per_run: list.max_articles_per_run
+    });
+    setShowKeywordModal(true);
+  };
+
+  const handleDeleteKeywordList = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this keyword list?')) return;
+
+    try {
+      await deleteKeywordList(id);
+      loadKeywordLists();
+      alert('Keyword list deleted successfully!');
+    } catch (error: any) {
+      alert(`Error deleting keyword list: ${error.message}`);
+    }
+  };
+
+  const handleRunAutoPosting = async () => {
+    if (!confirm('Run auto-posting now? This will generate articles for all enabled keyword lists that are due.')) return;
+
+    try {
+      const result = await runAutoPosting();
+      alert(`Auto-posting completed! Generated ${result.results?.length || 0} articles.`);
+      loadArticles();
+      loadKeywordLists();
+    } catch (error: any) {
+      alert(`Error running auto-posting: ${error.message}`);
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {/* Tab Navigation */}
+      <Card className="p-4">
+        <div className="flex gap-4 border-b border-gray-200 mb-4">
+          <button
+            onClick={() => setActiveTab('articles')}
+            className={`px-4 py-2 font-medium ${
+              activeTab === 'articles'
+                ? 'text-blue-600 border-b-2 border-blue-600'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <i className="ri-newspaper-line mr-2"></i>
+            Articles
+          </button>
+          <button
+            onClick={() => setActiveTab('keywords')}
+            className={`px-4 py-2 font-medium ${
+              activeTab === 'keywords'
+                ? 'text-blue-600 border-b-2 border-blue-600'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <i className="ri-keyword-line mr-2"></i>
+            Auto-Posting Keywords
+          </button>
+        </div>
+      </Card>
+
+      {/* Articles Tab */}
+      {activeTab === 'articles' && (
       <Card className="p-4">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold">Crypto News Articles</h3>
@@ -715,6 +886,248 @@ export default function CryptoNewsManager({ onArticlePublished }: CryptoNewsMana
                 >
                   {editingArticle ? 'Update Article' : 'Create Article'}
                 </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Keywords Tab */}
+      {activeTab === 'keywords' && (
+        <Card className="p-4">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold">Auto-Posting Keyword Lists</h3>
+            <div className="flex gap-2">
+              <Button onClick={handleRunAutoPosting} variant="secondary">
+                <i className="ri-play-line mr-2"></i>
+                Run Auto-Posting Now
+              </Button>
+              <Button onClick={() => { resetKeywordForm(); setShowKeywordModal(true); }}>
+                <i className="ri-add-line mr-2"></i>
+                Create Keyword List
+              </Button>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="text-center py-8">
+              <i className="ri-loader-4-line animate-spin text-2xl text-gray-400"></i>
+            </div>
+          ) : keywordLists.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <i className="ri-keyword-line text-4xl mb-2"></i>
+              <p>No keyword lists found</p>
+              <p className="text-sm mt-2">Create a keyword list to enable auto-posting</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {keywordLists.map((list) => (
+                <div key={list.id} className="border border-gray-200 rounded-lg p-4">
+                  <div className="flex justify-between items-start">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-2">
+                        <h4 className="font-semibold">{list.name}</h4>
+                        {list.enabled ? (
+                          <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs">Enabled</span>
+                        ) : (
+                          <span className="px-2 py-1 bg-gray-100 text-gray-800 rounded text-xs">Disabled</span>
+                        )}
+                        {list.auto_publish && (
+                          <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs">Auto-Publish</span>
+                        )}
+                      </div>
+                      <div className="text-sm text-gray-600 space-y-1">
+                        <p><strong>Category:</strong> {list.category}</p>
+                        <p><strong>Frequency:</strong> Every {list.frequency_hours} hours</p>
+                        <p><strong>Max Articles:</strong> {list.max_articles_per_run} per run</p>
+                        {list.last_generated_at && (
+                          <p><strong>Last Generated:</strong> {new Date(list.last_generated_at).toLocaleString()}</p>
+                        )}
+                        <div className="mt-2">
+                          <strong>Keywords:</strong>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {list.keywords.map((keyword, idx) => (
+                              <span key={idx} className="px-2 py-1 bg-purple-100 text-purple-800 rounded text-xs">
+                                {keyword}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => handleEditKeywordList(list)}
+                      >
+                        <i className="ri-edit-line"></i>
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        onClick={() => handleDeleteKeywordList(list.id)}
+                      >
+                        <i className="ri-delete-bin-line"></i>
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Keyword List Modal */}
+      {showKeywordModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
+            <div className="p-6">
+              <h3 className="text-xl font-semibold mb-4">
+                {editingKeywordList ? 'Edit Keyword List' : 'Create Keyword List'}
+              </h3>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                  <input
+                    type="text"
+                    value={keywordForm.name}
+                    onChange={(e) => setKeywordForm({...keywordForm, name: e.target.value})}
+                    placeholder="e.g., Bitcoin News Keywords"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Keywords</label>
+                  <div className="flex gap-2 mb-2">
+                    <input
+                      type="text"
+                      value={keywordForm.keywordInput}
+                      onChange={(e) => setKeywordForm({...keywordForm, keywordInput: e.target.value})}
+                      onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addKeywordToList())}
+                      placeholder="Add keyword and press Enter"
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                    <Button type="button" onClick={addKeywordToList} variant="secondary">
+                      Add
+                    </Button>
+                  </div>
+                  {keywordForm.keywords.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {keywordForm.keywords.map((keyword, index) => (
+                        <span
+                          key={index}
+                          className="px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-sm flex items-center gap-1"
+                        >
+                          {keyword}
+                          <button
+                            onClick={() => removeKeywordFromList(index)}
+                            className="hover:text-purple-600"
+                          >
+                            <i className="ri-close-line text-xs"></i>
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                    <select
+                      value={keywordForm.category}
+                      onChange={(e) => setKeywordForm({...keywordForm, category: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    >
+                      <option value="general">General</option>
+                      <option value="BTC">BTC</option>
+                      <option value="ETH">ETH</option>
+                      <option value="SOL">SOL</option>
+                      <option value="XRP">XRP</option>
+                      <option value="ONDO">ONDO</option>
+                      <option value="DOGE">DOGE</option>
+                      <option value="SHIB">SHIB</option>
+                      <option value="ADA">ADA</option>
+                      <option value="DOT">DOT</option>
+                      <option value="BNB">BNB</option>
+                      <option value="MATIC">MATIC</option>
+                      <option value="AVAX">AVAX</option>
+                      <option value="LINK">LINK</option>
+                      <option value="LTC">LTC</option>
+                      <option value="UNI">UNI</option>
+                      <option value="Market Update">Market Update</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Frequency (hours)</label>
+                    <input
+                      type="number"
+                      value={keywordForm.frequency_hours}
+                      onChange={(e) => setKeywordForm({...keywordForm, frequency_hours: parseInt(e.target.value) || 24})}
+                      min="1"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Max Articles per Run</label>
+                    <input
+                      type="number"
+                      value={keywordForm.max_articles_per_run}
+                      onChange={(e) => setKeywordForm({...keywordForm, max_articles_per_run: parseInt(e.target.value) || 1})}
+                      min="1"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={keywordForm.enabled}
+                      onChange={(e) => setKeywordForm({...keywordForm, enabled: e.target.checked})}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm">Enabled</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={keywordForm.auto_publish}
+                      onChange={(e) => setKeywordForm({...keywordForm, auto_publish: e.target.checked})}
+                      className="w-4 h-4"
+                    />
+                    <span className="text-sm">Auto-Publish Generated Articles</span>
+                  </label>
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      setShowKeywordModal(false);
+                      resetKeywordForm();
+                    }}
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="primary"
+                    onClick={handleSaveKeywordList}
+                    className="flex-1"
+                  >
+                    {editingKeywordList ? 'Update' : 'Create'}
+                  </Button>
+                </div>
               </div>
             </div>
           </Card>

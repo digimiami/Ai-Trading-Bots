@@ -151,6 +151,47 @@ export function useCryptoNews() {
     return data.article;
   };
 
+  // Keyword list management functions
+  const getKeywordLists = async () => {
+    const data = await callCryptoNewsFunction('getKeywordLists');
+    return data.keywordLists || [];
+  };
+
+  const createKeywordList = async (keywordList: {
+    name: string;
+    keywords: string[];
+    category?: string;
+    enabled?: boolean;
+    frequency_hours?: number;
+    auto_publish?: boolean;
+    max_articles_per_run?: number;
+  }) => {
+    const data = await callCryptoNewsFunction('createKeywordList', keywordList);
+    return data.keywordList;
+  };
+
+  const updateKeywordList = async (id: string, keywordList: Partial<{
+    name: string;
+    keywords: string[];
+    category: string;
+    enabled: boolean;
+    frequency_hours: number;
+    auto_publish: boolean;
+    max_articles_per_run: number;
+  }>) => {
+    const data = await callCryptoNewsFunction('updateKeywordList', { id, ...keywordList });
+    return data.keywordList;
+  };
+
+  const deleteKeywordList = async (id: string) => {
+    return await callCryptoNewsFunction('deleteKeywordList', { id });
+  };
+
+  const runAutoPosting = async () => {
+    const data = await callCryptoNewsFunction('runAutoPosting');
+    return data;
+  };
+
   return {
     loading,
     error,
@@ -160,7 +201,12 @@ export function useCryptoNews() {
     createArticle,
     updateArticle,
     deleteArticle,
-    publishArticle
+    publishArticle,
+    getKeywordLists,
+    createKeywordList,
+    updateKeywordList,
+    deleteKeywordList,
+    runAutoPosting
   };
 }
 

@@ -26,6 +26,7 @@ const FuturesPairsFinder = lazy(() => import('../pages/futures-pairs-finder/page
 const Admin = lazy(() => import('../pages/admin/page'));
 const Onboarding = lazy(() => import('../pages/onboarding/page'));
 const Help = lazy(() => import('../pages/help/page'));
+const Contact = lazy(() => import('../pages/contact/page'));
 const PabloReady = lazy(() => import('../pages/pablo-ready/page'));
 const MarketDashboard = lazy(() => import('../pages/market-dashboard/page'));
 const CryptoBubbles = lazy(() => import('../pages/crypto-bubbles/page'));
@@ -118,6 +119,10 @@ const routes: RouteObject[] = [
   {
     path: '/help',
     element: <Help />
+  },
+  {
+    path: '/contact',
+    element: <Contact />
   },
   {
     path: '/admin',

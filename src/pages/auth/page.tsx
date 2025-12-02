@@ -309,7 +309,18 @@ export default function AuthPage() {
                 </div>
               )}
               <p className="mt-1 text-xs text-gray-500">
-                An invitation code from an admin is required to create an account.
+                An invitation code from an admin is required to create an account.{' '}
+                <a
+                  href="/contact"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    navigate('/contact');
+                  }}
+                  className="text-blue-600 hover:text-blue-700 underline font-medium"
+                >
+                  Contact us
+                </a>{' '}
+                to request an invitation code.
               </p>
             </div>
           )}
