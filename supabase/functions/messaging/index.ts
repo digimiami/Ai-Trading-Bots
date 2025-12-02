@@ -267,11 +267,12 @@ serve(async (req) => {
 
       // Get messages (inbox)
       case 'getMessages': {
-        const { type = 'inbox', limit = 50, offset = 0 } = params // type: 'inbox', 'sent', 'all'
-        
-        console.log(`📨 Fetching messages - Type: ${type}, User: ${user.id}, Admin: ${isAdmin}`)
+        try {
+          const { type = 'inbox', limit = 50, offset = 0 } = params // type: 'inbox', 'sent', 'all'
+          
+          console.log(`📨 Fetching messages - Type: ${type}, User: ${user.id}, Admin: ${isAdmin}`)
 
-        if (isAdmin && type === 'admin') {
+          if (isAdmin && type === 'admin') {
           // Admins can see all messages - use explicit foreign key references
           const { data: messages, error: messagesError } = await supabaseClient
             .from('messages')
@@ -434,15 +435,26 @@ serve(async (req) => {
           })
         }
 
-        // If type doesn't match any known type, return error
-        console.error(`❌ Unknown message type: ${type}`)
-        return new Response(JSON.stringify({ 
-          error: 'Invalid message type',
-          details: `Type "${type}" is not supported. Use 'inbox', 'sent', 'all', or 'admin' (admin only).`
-        }), {
-          status: 400,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
+          // If type doesn't match any known type, return error
+          console.error(`❌ Unknown message type: ${type}`)
+          return new Response(JSON.stringify({ 
+            error: 'Invalid message type',
+            details: `Type "${type}" is not supported. Use 'inbox', 'sent', 'all', or 'admin' (admin only).`
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        } catch (getMessagesError: any) {
+          console.error('❌ Unexpected error in getMessages:', getMessagesError)
+          return new Response(JSON.stringify({ 
+            error: 'Failed to fetch messages',
+            details: getMessagesError?.message || String(getMessagesError),
+            stack: getMessagesError?.stack
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
       }
 
       // Get a single message
