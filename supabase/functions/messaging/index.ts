@@ -14,10 +14,21 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    )
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    
+    if (!supabaseUrl || !supabaseServiceKey) {
+      console.error('❌ Missing Supabase environment variables')
+      return new Response(JSON.stringify({ 
+        error: 'Server configuration error',
+        details: 'Missing Supabase credentials'
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey)
 
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
@@ -31,7 +42,11 @@ serve(async (req) => {
     
     const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token)
     if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      console.error('❌ Auth error:', authError)
+      return new Response(JSON.stringify({ 
+        error: 'Unauthorized',
+        details: authError?.message 
+      }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
@@ -45,7 +60,11 @@ serve(async (req) => {
       .single()
 
     if (userError) {
-      return new Response(JSON.stringify({ error: 'Failed to get user data' }), {
+      console.error('❌ Error fetching user data:', userError)
+      return new Response(JSON.stringify({ 
+        error: 'Failed to get user data',
+        details: userError.message 
+      }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
