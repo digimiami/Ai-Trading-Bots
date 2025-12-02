@@ -334,14 +334,18 @@ serve(async (req) => {
 
     // If action not found and not public, try to parse again (shouldn't happen but safety check)
     if (!action && !isPublicAction) {
+      console.error('❌ No action provided in request')
       return new Response(JSON.stringify({ 
-        error: 'Action parameter required'
+        error: 'Action parameter required',
+        receivedBody: body,
+        method: req.method
       }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
 
+    console.log('📋 Processing action:', action, 'Params:', Object.keys(params || {}))
 
     switch (action) {
       case 'generateArticle': {
@@ -1096,7 +1100,22 @@ Return the article content in markdown format.`;
       }
 
       default:
-        return new Response(JSON.stringify({ error: 'Invalid action' }), {
+        console.error('❌ Invalid action received:', action, 'Available actions:', [
+          'generateArticle', 'getArticles', 'getArticle', 'createArticle', 
+          'updateArticle', 'deleteArticle', 'publishArticle',
+          'getKeywordLists', 'createKeywordList', 'updateKeywordList', 
+          'deleteKeywordList', 'runAutoPosting'
+        ])
+        return new Response(JSON.stringify({ 
+          error: 'Invalid action',
+          receivedAction: action,
+          availableActions: [
+            'generateArticle', 'getArticles', 'getArticle', 'createArticle', 
+            'updateArticle', 'deleteArticle', 'publishArticle',
+            'getKeywordLists', 'createKeywordList', 'updateKeywordList', 
+            'deleteKeywordList', 'runAutoPosting'
+          ]
+        }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
