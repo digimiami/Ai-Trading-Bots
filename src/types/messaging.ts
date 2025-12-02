@@ -1,3 +1,10 @@
+export interface Attachment {
+  name: string
+  url: string
+  type: string
+  size: number
+}
+
 export interface Message {
   id: string
   sender_id: string
@@ -8,6 +15,7 @@ export interface Message {
   read_at: string | null
   is_broadcast: boolean
   parent_message_id: string | null
+  attachments?: Attachment[] | string | null
   created_at: string
   updated_at: string
   sender?: {
@@ -34,6 +42,7 @@ export interface SendMessageParams {
   body: string
   parentMessageId?: string
   isBroadcast?: boolean
+  attachments?: Attachment[]
 }
 
 export interface GetMessagesParams {

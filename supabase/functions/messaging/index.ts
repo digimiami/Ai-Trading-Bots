@@ -115,7 +115,7 @@ serve(async (req) => {
       // Send a message
       case 'sendMessage': {
         try {
-          const { recipientId, recipientUsername, subject, body: messageBody, parentMessageId, isBroadcast } = params
+          const { recipientId, recipientUsername, subject, body: messageBody, parentMessageId, isBroadcast, attachments } = params
 
           if (!messageBody) {
             return new Response(JSON.stringify({ error: 'Message body is required' }), {
@@ -209,7 +209,8 @@ serve(async (req) => {
             subject: subject || null,
             body: messageBody,
             is_broadcast: isBroadcast === true,
-            parent_message_id: parentMessageId || null
+            parent_message_id: parentMessageId || null,
+            attachments: attachments || []
           }
           
           // Only set recipient_id if it's not a broadcast
@@ -698,6 +699,68 @@ serve(async (req) => {
         })
       }
 
+      // Delete a message
+      case 'deleteMessage': {
+        const { messageId } = params
+
+        if (!messageId) {
+          return new Response(JSON.stringify({ error: 'Message ID is required' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        // Check if message exists and user has permission
+        const { data: message, error: checkError } = await supabaseClient
+          .from('messages')
+          .select('sender_id, recipient_id, is_broadcast')
+          .eq('id', messageId)
+          .single()
+
+        if (checkError || !message) {
+          return new Response(JSON.stringify({ error: 'Message not found' }), {
+            status: 404,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        // Check permissions: user can delete if they sent it or received it, or if they're admin
+        const canDelete = isAdmin || 
+          message.sender_id === user.id || 
+          message.recipient_id === user.id ||
+          (message.is_broadcast && message.recipient_id === user.id)
+
+        if (!canDelete) {
+          return new Response(JSON.stringify({ error: 'Unauthorized to delete this message' }), {
+            status: 403,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        // Delete the message
+        const { error: deleteError } = await supabaseClient
+          .from('messages')
+          .delete()
+          .eq('id', messageId)
+
+        if (deleteError) {
+          console.error('Error deleting message:', deleteError)
+          return new Response(JSON.stringify({ 
+            error: 'Failed to delete message',
+            details: deleteError.message 
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        console.log(`✅ Message ${messageId} deleted by user ${user.id}`)
+        return new Response(JSON.stringify({ success: true, message: 'Message deleted successfully' }), {
+          status: 200,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
       default:
         return new Response(JSON.stringify({ 
           error: 'Invalid action',
@@ -709,7 +772,8 @@ serve(async (req) => {
             'getUnreadCount',
             'getConversation',
             'searchUsers',
-            'getAllUsers'
+            'getAllUsers',
+            'deleteMessage'
           ]
         }), {
           status: 400,

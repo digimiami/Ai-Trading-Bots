@@ -91,6 +91,10 @@ export function useMessaging() {
     return data.users || []
   }
 
+  const deleteMessage = async (messageId: string): Promise<void> => {
+    await callMessagingFunction('deleteMessage', { messageId })
+  }
+
   return {
     loading,
     error,
@@ -101,7 +105,8 @@ export function useMessaging() {
     getUnreadCount,
     getConversation,
     searchUsers,
-    getAllUsers
+    getAllUsers,
+    deleteMessage
   }
 }
 

@@ -6,12 +6,13 @@ import Card from '../../components/base/Card'
 import Button from '../../components/base/Button'
 import { useMessaging } from '../../hooks/useMessaging'
 import { useAuth } from '../../hooks/useAuth'
-import type { Message, User } from '../../types/messaging'
+import { supabase } from '../../lib/supabase'
+import type { Message, User, Attachment } from '../../types/messaging'
 
 export default function MessagesPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
-  const { getMessages, markAsRead, sendMessage, searchUsers, getAllUsers } = useMessaging()
+  const { getMessages, markAsRead, sendMessage, searchUsers, getAllUsers, deleteMessage } = useMessaging()
   
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
@@ -24,6 +25,8 @@ export default function MessagesPage() {
   const [userSearchResults, setUserSearchResults] = useState<User[]>([])
   const [searchingUsers, setSearchingUsers] = useState(false)
   const [selectedRecipient, setSelectedRecipient] = useState<User | null>(null)
+  const [attachments, setAttachments] = useState<File[]>([])
+  const [uploading, setUploading] = useState(false)
   const isAdmin = user?.role === 'admin'
 
   useEffect(() => {
@@ -78,6 +81,50 @@ export default function MessagesPage() {
     }
   }
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      setAttachments(Array.from(e.target.files))
+    }
+  }
+
+  const handleRemoveAttachment = (index: number) => {
+    setAttachments(prev => prev.filter((_, i) => i !== index))
+  }
+
+  const uploadFiles = async (files: File[]): Promise<Attachment[]> => {
+    if (files.length === 0) return []
+
+    const uploadedAttachments: Attachment[] = []
+
+    for (const file of files) {
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
+      const filePath = `messages/${user?.id}/${fileName}`
+
+      const { data, error } = await supabase.storage
+        .from('message-attachments')
+        .upload(filePath, file)
+
+      if (error) {
+        console.error('Error uploading file:', error)
+        throw new Error(`Failed to upload ${file.name}: ${error.message}`)
+      }
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('message-attachments')
+        .getPublicUrl(filePath)
+
+      uploadedAttachments.push({
+        name: file.name,
+        url: publicUrl,
+        type: file.type,
+        size: file.size
+      })
+    }
+
+    return uploadedAttachments
+  }
+
   const handleSendMessage = async () => {
     if (!composeBody.trim()) {
       alert('Message body is required')
@@ -90,12 +137,21 @@ export default function MessagesPage() {
     }
 
     try {
+      setUploading(true)
+      
+      // Upload attachments if any
+      let uploadedAttachments: Attachment[] = []
+      if (attachments.length > 0) {
+        uploadedAttachments = await uploadFiles(attachments)
+      }
+
       await sendMessage({
         recipientId: selectedRecipient?.id,
         recipientUsername: !selectedRecipient ? composeRecipient : undefined,
         subject: composeSubject || undefined,
         body: composeBody,
-        isBroadcast: isAdmin && isBroadcast
+        isBroadcast: isAdmin && isBroadcast,
+        attachments: uploadedAttachments.length > 0 ? uploadedAttachments : undefined
       })
       
       // Reset form
@@ -105,12 +161,35 @@ export default function MessagesPage() {
       setSelectedRecipient(null)
       setIsBroadcast(false)
       setUserSearchResults([])
+      setAttachments([])
       
       alert('Message sent successfully!')
       // Reload messages for current tab
       await loadMessages()
     } catch (error: any) {
       alert(`Error sending message: ${error.message}`)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const handleDeleteMessage = async (messageId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    
+    if (!confirm('Are you sure you want to delete this message?')) {
+      return
+    }
+
+    try {
+      await deleteMessage(messageId)
+      // Remove from local state
+      setMessages(prev => prev.filter(m => m.id !== messageId))
+      if (selectedMessage?.id === messageId) {
+        setSelectedMessage(null)
+      }
+      alert('Message deleted successfully')
+    } catch (error: any) {
+      alert(`Error deleting message: ${error.message}`)
     }
   }
 
@@ -258,9 +337,34 @@ export default function MessagesPage() {
                   />
                 </div>
 
-                <Button onClick={handleSendMessage} className="w-full">
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium">Attachments (optional)</label>
+                  <input
+                    type="file"
+                    multiple
+                    onChange={handleFileSelect}
+                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-800 dark:border-gray-700"
+                  />
+                  {attachments.length > 0 && (
+                    <div className="space-y-1">
+                      {attachments.map((file, index) => (
+                        <div key={index} className="flex items-center justify-between p-2 bg-gray-100 dark:bg-gray-800 rounded">
+                          <span className="text-sm">{file.name}</span>
+                          <button
+                            onClick={() => handleRemoveAttachment(index)}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            <i className="ri-close-line"></i>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <Button onClick={handleSendMessage} className="w-full" disabled={uploading}>
                   <i className="ri-send-plane-fill mr-2"></i>
-                  Send Message
+                  {uploading ? 'Sending...' : 'Send Message'}
                 </Button>
               </div>
             ) : selectedMessage ? (
@@ -298,6 +402,30 @@ export default function MessagesPage() {
                   {selectedMessage.body}
                 </div>
 
+                {selectedMessage.attachments && (() => {
+                  const atts = typeof selectedMessage.attachments === 'string' 
+                    ? JSON.parse(selectedMessage.attachments) 
+                    : selectedMessage.attachments
+                  return atts && atts.length > 0 && (
+                    <div className="mt-4 space-y-2">
+                      <div className="text-sm font-medium">Attachments:</div>
+                      {atts.map((att: Attachment, idx: number) => (
+                        <a
+                          key={idx}
+                          href={att.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 p-2 bg-gray-100 dark:bg-gray-800 rounded hover:bg-gray-200 dark:hover:bg-gray-700"
+                        >
+                          <i className="ri-file-line"></i>
+                          <span className="text-sm">{att.name}</span>
+                          <span className="text-xs text-gray-500">({(att.size / 1024).toFixed(1)} KB)</span>
+                        </a>
+                      ))}
+                    </div>
+                  )
+                })()}
+
                 {selectedMessage.parent && (
                   <div className="mt-6 p-4 bg-gray-100 dark:bg-gray-800 rounded-lg">
                     <div className="text-sm font-medium mb-2">In reply to:</div>
@@ -305,7 +433,7 @@ export default function MessagesPage() {
                   </div>
                 )}
 
-                <div className="mt-6 pt-4 border-t">
+                <div className="mt-6 pt-4 border-t flex gap-2">
                   <Button
                     onClick={() => {
                       setActiveTab('compose')
@@ -317,6 +445,15 @@ export default function MessagesPage() {
                     <i className="ri-reply-line mr-2"></i>
                     Reply
                   </Button>
+                  {(selectedMessage.sender_id === user?.id || selectedMessage.recipient_id === user?.id || isAdmin) && (
+                    <Button
+                      variant="danger"
+                      onClick={(e) => handleDeleteMessage(selectedMessage.id, e)}
+                    >
+                      <i className="ri-delete-bin-line mr-2"></i>
+                      Delete
+                    </Button>
+                  )}
                 </div>
               </div>
             ) : (
@@ -346,13 +483,15 @@ export default function MessagesPage() {
                     {messages.map((message) => (
                       <div
                         key={message.id}
-                        onClick={() => handleMessageClick(message)}
-                        className={`p-4 border rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors ${
+                        className={`p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors ${
                           !message.is_read && message.recipient_id === user?.id ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800' : ''
                         }`}
                       >
                         <div className="flex items-start justify-between">
-                          <div className="flex-1">
+                          <div 
+                            className="flex-1 cursor-pointer"
+                            onClick={() => handleMessageClick(message)}
+                          >
                             <div className="flex items-center gap-2 mb-1">
                               <span className="font-medium">
                                 {activeTab === 'inbox' 
@@ -375,9 +514,31 @@ export default function MessagesPage() {
                             <div className="text-sm text-gray-500 dark:text-gray-400 line-clamp-2">
                               {message.body}
                             </div>
+                            {message.attachments && (() => {
+                              const atts = typeof message.attachments === 'string' 
+                                ? JSON.parse(message.attachments) 
+                                : message.attachments
+                              return atts && atts.length > 0 && (
+                                <div className="mt-1 text-xs text-gray-400">
+                                  <i className="ri-attachment-line mr-1"></i>
+                                  {atts.length} attachment{atts.length > 1 ? 's' : ''}
+                                </div>
+                              )
+                            })()}
                           </div>
-                          <div className="text-xs text-gray-400 ml-4">
-                            {formatDate(message.created_at)}
+                          <div className="flex items-center gap-2 ml-4">
+                            <div className="text-xs text-gray-400">
+                              {formatDate(message.created_at)}
+                            </div>
+                            {(message.sender_id === user?.id || message.recipient_id === user?.id || isAdmin) && (
+                              <button
+                                onClick={(e) => handleDeleteMessage(message.id, e)}
+                                className="text-red-500 hover:text-red-700 p-1"
+                                title="Delete message"
+                              >
+                                <i className="ri-delete-bin-line"></i>
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
