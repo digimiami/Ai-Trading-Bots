@@ -22,19 +22,37 @@ export default function CryptoNewsPage() {
     } else {
       loadArticles();
     }
-  }, [slug, categoryFilter]);
+  }, [slug]);
+  
+  // Reload articles when category filter changes
+  useEffect(() => {
+    if (!slug) {
+      loadArticles();
+    }
+  }, [categoryFilter]);
 
   const loadArticles = async () => {
     try {
       setLoading(true);
+      setArticles([]); // Clear previous articles
       
       // Use Edge Function as primary method (more reliable with RLS)
       const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '';
+      
+      if (!supabaseUrl) {
+        console.error('Supabase URL not configured');
+        setArticles([]);
+        setLoading(false);
+        return;
+      }
+      
       const cleanUrl = supabaseUrl.replace('/rest/v1', '').replace(/\/$/, '');
       const functionUrl = `${cleanUrl}/functions/v1/crypto-news-management`;
 
       const url = new URL(functionUrl);
       url.searchParams.set('action', 'getPublishedArticles');
+      
+      console.log('📡 Fetching articles from:', url.toString());
       
       const response = await fetch(url.toString(), {
         method: 'GET',
@@ -44,6 +62,8 @@ export default function CryptoNewsPage() {
         }
       });
 
+      console.log('📡 Response status:', response.status);
+
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Edge Function error:', response.status, errorText);
@@ -51,16 +71,19 @@ export default function CryptoNewsPage() {
       }
 
       const data = await response.json();
+      console.log('📡 Response data:', data);
+      
       if (data.error) {
         console.error('Edge Function returned error:', data);
         throw new Error(data.error);
       }
       
-      setArticles(data.articles || []);
+      setArticles(Array.isArray(data.articles) ? data.articles : []);
     } catch (error) {
       console.error('Error loading articles:', error);
       // Fallback: try direct database query if Edge Function fails
       try {
+        console.log('🔄 Trying fallback database query...');
         const { data: articlesData, error: dbError } = await supabase
           .from('crypto_news_articles')
           .select('*')
@@ -72,6 +95,7 @@ export default function CryptoNewsPage() {
           console.error('Database query error:', dbError);
           setArticles([]);
         } else {
+          console.log('✅ Fallback query successful, articles:', articlesData?.length || 0);
           setArticles(articlesData || []);
         }
       } catch (fallbackError) {
