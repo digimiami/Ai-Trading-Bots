@@ -95,9 +95,10 @@ serve(async (req) => {
     switch (action) {
       // Send a message
       case 'sendMessage': {
-        const { recipientId, recipientUsername, subject, body: messageBody, parentMessageId, isBroadcast } = params
+        try {
+          const { recipientId, recipientUsername, subject, body: messageBody, parentMessageId, isBroadcast } = params
 
-        if (!messageBody) {
+          if (!messageBody) {
           return new Response(JSON.stringify({ error: 'Message body is required' }), {
             status: 400,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -116,23 +117,38 @@ serve(async (req) => {
           }
           finalRecipientId = null // null recipient_id means broadcast
         } else {
-          // Find recipient by ID or username
+          // Find recipient by ID or username/email
           if (recipientId) {
             finalRecipientId = recipientId
           } else if (recipientUsername) {
-            // Use the function to find user by username
+            // Search for user by email or name (case-insensitive)
+            const searchTerm = recipientUsername.trim()
             const { data: recipientData, error: findError } = await supabaseClient
-              .rpc('get_user_by_username', { username: recipientUsername })
+              .from('users')
+              .select('id, name, email')
+              .or(`email.ilike.%${searchTerm}%,name.ilike.%${searchTerm}%`)
+              .limit(1)
             
-            if (findError || !recipientData || recipientData.length === 0) {
-              return new Response(JSON.stringify({ error: 'User not found' }), {
+            if (findError) {
+              console.error('Error finding user:', findError)
+              return new Response(JSON.stringify({ 
+                error: 'Failed to find user',
+                details: findError.message 
+              }), {
+                status: 500,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              })
+            }
+            
+            if (!recipientData || recipientData.length === 0) {
+              return new Response(JSON.stringify({ error: 'User not found. Please check the email or username.' }), {
                 status: 404,
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
               })
             }
             finalRecipientId = recipientData[0].id
           } else {
-            return new Response(JSON.stringify({ error: 'Recipient ID or username is required' }), {
+            return new Response(JSON.stringify({ error: 'Recipient ID or username/email is required' }), {
               status: 400,
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             })
@@ -148,34 +164,66 @@ serve(async (req) => {
         }
 
         // Insert message
-        const { data: message, error: insertError } = await supabaseClient
-          .from('messages')
-          .insert({
+        try {
+          const insertData: any = {
             sender_id: user.id,
-            recipient_id: finalRecipientId,
             subject: subject || null,
             body: messageBody,
             is_broadcast: isBroadcast === true,
             parent_message_id: parentMessageId || null
-          })
-          .select()
-          .single()
+          }
+          
+          // Only set recipient_id if it's not a broadcast
+          if (!isBroadcast) {
+            insertData.recipient_id = finalRecipientId
+          } else {
+            insertData.recipient_id = null
+          }
 
-        if (insertError) {
-          console.error('Error inserting message:', insertError)
+          console.log('📨 Inserting message:', {
+            sender_id: user.id,
+            recipient_id: finalRecipientId,
+            is_broadcast: isBroadcast,
+            has_subject: !!subject,
+            body_length: messageBody.length
+          })
+
+          const { data: message, error: insertError } = await supabaseClient
+            .from('messages')
+            .insert(insertData)
+            .select()
+            .single()
+
+          if (insertError) {
+            console.error('❌ Error inserting message:', insertError)
+            console.error('Insert data was:', insertData)
+            return new Response(JSON.stringify({ 
+              error: 'Failed to send message',
+              details: insertError.message,
+              code: insertError.code,
+              hint: insertError.hint
+            }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          }
+
+          console.log('✅ Message sent successfully:', message.id)
+
+          return new Response(JSON.stringify({ message }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        } catch (sendError: any) {
+          console.error('❌ Unexpected error in sendMessage:', sendError)
           return new Response(JSON.stringify({ 
             error: 'Failed to send message',
-            details: insertError.message 
+            details: sendError?.message || String(sendError)
           }), {
             status: 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         }
-
-        return new Response(JSON.stringify({ message }), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
       }
 
       // Get messages (inbox)
