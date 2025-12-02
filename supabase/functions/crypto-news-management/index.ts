@@ -398,29 +398,42 @@ serve(async (req) => {
       const { status, limit = 50, offset = 0, slug } = params
 
       if (action === 'getPublishedArticles') {
-        const { data: articles, error: articlesError } = await supabaseClient
-          .from('crypto_news_articles')
-          .select('*')
-          .eq('status', 'published')
-          .order('published_at', { ascending: false, nullsFirst: false })
-          .order('created_at', { ascending: false })
-          .range(offset, offset + limit - 1)
+        try {
+          const { data: articles, error: articlesError } = await supabaseClient
+            .from('crypto_news_articles')
+            .select('*')
+            .eq('status', 'published')
+            .order('published_at', { ascending: false, nullsFirst: false })
+            .order('created_at', { ascending: false })
+            .limit(limit || 50)
+            .range(offset || 0, (offset || 0) + (limit || 50) - 1)
 
-        if (articlesError) {
-          console.error('Error fetching published articles:', articlesError)
+          if (articlesError) {
+            console.error('Error fetching published articles:', articlesError)
+            return new Response(JSON.stringify({ 
+              error: 'Failed to fetch articles',
+              details: articlesError.message 
+            }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          }
+
+          console.log(`✅ Fetched ${articles?.length || 0} published articles`)
+          return new Response(JSON.stringify({ articles: articles || [] }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        } catch (error: any) {
+          console.error('Error in getPublishedArticles:', error)
           return new Response(JSON.stringify({ 
             error: 'Failed to fetch articles',
-            details: articlesError.message 
+            details: error?.message || String(error)
           }), {
             status: 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         }
-
-        return new Response(JSON.stringify({ articles: articles || [] }), {
-          status: 200,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
       }
 
       if (action === 'getPublishedArticle') {
