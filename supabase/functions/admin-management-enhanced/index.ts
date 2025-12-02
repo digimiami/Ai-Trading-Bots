@@ -93,7 +93,7 @@ serve(async (req) => {
         try {
         const { data: users, error: usersError } = await supabaseClient
           .from('users')
-            .select('id, email, role, status, status_updated_at, created_at, last_sign_in_at')
+            .select('id, email, role, status, status_updated_at, created_at')
           .order('created_at', { ascending: false })
 
           if (usersError) {
@@ -123,10 +123,18 @@ serve(async (req) => {
                   ? (bots.reduce((sum, bot) => sum + (parseFloat(bot.win_rate || bot.winRate || 0) || 0), 0) / bots.length)
                   : 0
                 
-                const { data: trades } = await supabaseClient
-                  .from('trades')
-                  .select('*')
-                  .eq('user_id', user.id)
+                // Fetch trades (handle if table doesn't exist)
+                let trades: any[] = []
+                try {
+                  const { data: tradesData } = await supabaseClient
+                    .from('trades')
+                    .select('*')
+                    .eq('user_id', user.id)
+                  trades = tradesData || []
+                } catch (tradesError) {
+                  console.warn(`Could not fetch trades for user ${user.id}:`, tradesError)
+                  trades = []
+                }
                 
                 const totalVolume = (trades || []).reduce((sum, trade) => {
                   const size = parseFloat(trade.size || trade.amount || trade.quantity || 0) || 0
@@ -134,18 +142,36 @@ serve(async (req) => {
                   return sum + Math.abs(size * entryPrice)
                 }, 0)
 
-                const { data: paperTrades } = await supabaseClient
-                  .from('paper_trading_trades')
-                  .select('*')
-                  .eq('user_id', user.id)
-                  .eq('status', 'closed')
+                // Fetch paper trades (handle if table doesn't exist)
+                let paperTrades: any[] = []
+                try {
+                  const { data: paperTradesData } = await supabaseClient
+                    .from('paper_trading_trades')
+                    .select('*')
+                    .eq('user_id', user.id)
+                    .eq('status', 'closed')
+                  paperTrades = paperTradesData || []
+                } catch (paperError) {
+                  console.warn(`Could not fetch paper trades for user ${user.id}:`, paperError)
+                  paperTrades = []
+                }
                 
                 const paperPnL = (paperTrades || []).reduce((sum, trade) => sum + (parseFloat(trade.pnl || 0) || 0), 0)
                 const paperTradesCount = paperTrades?.length || 0
                 
-                const isActive = user.last_sign_in_at 
-                  ? (new Date(user.last_sign_in_at).getTime() > Date.now() - (30 * 24 * 60 * 60 * 1000))
-                  : false
+                // Check if user is active (logged in within last 30 days)
+                // Try to get last_sign_in_at from auth.users if available
+                let isActive = false
+                try {
+                  const { data: authUser } = await supabaseClient.auth.admin.getUserById(user.id)
+                  if (authUser?.user?.last_sign_in_at) {
+                    const lastSignIn = new Date(authUser.user.last_sign_in_at).getTime()
+                    isActive = lastSignIn > Date.now() - (30 * 24 * 60 * 60 * 1000)
+                  }
+                } catch (authError) {
+                  // If we can't get auth data, assume inactive
+                  console.warn('Could not fetch auth data for user:', user.id)
+                }
                 
                 return {
                   ...user,
@@ -994,14 +1020,31 @@ serve(async (req) => {
 
       case 'getTestPeriodSettings': {
         try {
+          // Check if table exists first
           const { data: settings, error: settingsError } = await supabaseClient
             .from('test_period_settings')
             .select('*')
             .order('created_at', { ascending: false })
             .limit(1)
-            .single()
+            .maybeSingle() // Use maybeSingle instead of single to handle missing table gracefully
 
-          if (settingsError && settingsError.code !== 'PGRST116') { // PGRST116 = no rows returned
+          // If table doesn't exist or no rows, return default settings
+          if (settingsError) {
+            // Check if it's a "table doesn't exist" error
+            if (settingsError.message?.includes('relation') || settingsError.message?.includes('does not exist') || settingsError.code === 'PGRST116') {
+              console.log('test_period_settings table does not exist, returning default settings')
+              return new Response(JSON.stringify({ 
+                settings: { 
+                  enabled: false, 
+                  start_date: null, 
+                  end_date: null, 
+                  message: 'The website is currently in test mode. Some features may be limited.' 
+                } 
+              }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              })
+            }
+            // For other errors, throw to be caught by outer catch
             throw settingsError
           }
 
@@ -1017,10 +1060,16 @@ serve(async (req) => {
           })
         } catch (error: any) {
           console.error('Error fetching test period settings:', error)
-          return new Response(JSON.stringify({
-            error: error?.message || 'Failed to fetch test period settings'
+          // Return default settings instead of error to prevent admin page from breaking
+          return new Response(JSON.stringify({ 
+            settings: { 
+              enabled: false, 
+              start_date: null, 
+              end_date: null, 
+              message: 'The website is currently in test mode. Some features may be limited.' 
+            },
+            warning: 'Could not load test period settings, using defaults'
           }), {
-            status: 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         }
