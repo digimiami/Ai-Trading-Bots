@@ -4,7 +4,7 @@ import Header from '../../components/feature/Header';
 import Navigation from '../../components/feature/Navigation';
 import Card from '../../components/base/Card';
 import Button from '../../components/base/Button';
-import { useCryptoNews, type CryptoNewsArticle } from '../../hooks/useCryptoNews';
+import type { CryptoNewsArticle } from '../../hooks/useCryptoNews';
 import { supabase } from '../../lib/supabase';
 
 export default function CryptoNewsPage() {
@@ -119,13 +119,14 @@ export default function CryptoNewsPage() {
       if (data.article) {
         setSelectedArticle(data.article);
         // Try to increment view count (this might fail if RLS doesn't allow update, but that's OK)
-        await supabase
-          .from('crypto_news_articles')
-          .update({ view_count: (data.article.view_count || 0) + 1 })
-          .eq('id', data.article.id)
-          .catch((err) => {
-            console.warn('Could not increment view count (may require auth):', err);
-          });
+        try {
+          await supabase
+            .from('crypto_news_articles')
+            .update({ view_count: (data.article.view_count || 0) + 1 })
+            .eq('id', data.article.id);
+        } catch (err) {
+          console.warn('Could not increment view count (may require auth):', err);
+        }
       }
     } catch (error) {
       console.error('Error loading article:', error);
@@ -295,10 +296,13 @@ export default function CryptoNewsPage() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredArticles.map((article) => (
-                <Card
+                <div
                   key={article.id}
-                  className="p-6 cursor-pointer hover:shadow-lg transition-shadow"
+                  className="cursor-pointer"
                   onClick={() => navigate(`/crypto-news/${article.slug || article.id}`)}
+                >
+                <Card
+                  className="p-6 hover:shadow-lg transition-shadow"
                 >
                   {article.featured_image_url ? (
                     <img
@@ -342,6 +346,7 @@ export default function CryptoNewsPage() {
                     </button>
                   </div>
                 </Card>
+                </div>
               ))}
             </div>
           )}
@@ -366,7 +371,7 @@ function formatMarkdown(markdown: string): string {
     // Italic
     .replace(/\*(.*?)\*/gim, '<em>$1</em>')
     // Links
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/gim, '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">$1</a>')
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/gim, '<a href="$2" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">$1</a>')
     // Line breaks
     .replace(/\n\n/gim, '</p><p>')
     .replace(/\n/gim, '<br>');
