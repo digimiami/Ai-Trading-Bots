@@ -9,31 +9,23 @@ const corsHeaders = {
 }
 
 // Function to get featured image URL from multiple sources with fallbacks
+// Generates unique images based on keywords to avoid all articles having the same image
 function getFeaturedImageUrl(keywords: string, category: string = 'general'): string {
-  // Clean and prepare search terms
+  // Clean and prepare search terms - use full keywords string for uniqueness
   const searchTerm = keywords.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim() || category || 'cryptocurrency'
   
-  // Map categories to specific crypto-themed Unsplash images (direct image IDs)
-  const categoryImageMap: Record<string, string> = {
-    'bitcoin': 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=1200&h=630&fit=crop&q=80',
-    'ethereum': 'https://images.unsplash.com/photo-1639322537504-6427a16b0a28?w=1200&h=630&fit=crop&q=80',
-    'xrp': 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=1200&h=630&fit=crop&q=80',
-    'solana': 'https://images.unsplash.com/photo-1639322537504-6427a16b0a28?w=1200&h=630&fit=crop&q=80',
-    'cardano': 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=1200&h=630&fit=crop&q=80',
-    'polkadot': 'https://images.unsplash.com/photo-1639322537504-6427a16b0a28?w=1200&h=630&fit=crop&q=80',
-    'dogecoin': 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=1200&h=630&fit=crop&q=80',
-    'shiba': 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=1200&h=630&fit=crop&q=80',
-    'general': 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?w=1200&h=630&fit=crop&q=80'
-  }
+  // Create a unique seed based on the entire keywords string
+  // This ensures different keyword combinations produce different images
+  const seed = searchTerm.split('').reduce((acc, char, index) => {
+    return acc + (char.charCodeAt(0) * (index + 1))
+  }, 0)
   
-  // Try category-specific image first
-  if (categoryImageMap[category.toLowerCase()]) {
-    return categoryImageMap[category.toLowerCase()]
-  }
+  // Use Picsum Photos with a unique seed that combines keywords and category
+  // Same keywords will always get the same image, but different keywords get different images
+  // Adding timestamp component would make it random, but we want consistency for same keywords
+  const uniqueSeed = `crypto-${seed}-${category.toLowerCase()}-${searchTerm.substring(0, 10).replace(/\s+/g, '-')}`
   
-  // Fallback: Use Picsum with seeded random based on keywords (always returns same image for same seed)
-  const seed = searchTerm.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
-  return `https://picsum.photos/seed/crypto-${seed}/1200/630`
+  return `https://picsum.photos/seed/${uniqueSeed}/1200/630`
 }
 
 // Function to find and link related articles based on keywords and tags
