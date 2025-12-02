@@ -139,33 +139,71 @@ serve(async (req) => {
             // Find recipient by ID or username/email
             if (recipientId) {
               finalRecipientId = recipientId
-            } else if (recipientUsername) {
-              // Search for user by email or name (case-insensitive)
-              const searchTerm = recipientUsername.trim()
-              const { data: recipientData, error: findError } = await supabaseClient
-                .from('users')
-                .select('id, name, email')
-                .or(`email.ilike.%${searchTerm}%,name.ilike.%${searchTerm}%`)
-                .limit(1)
+          } else if (recipientUsername) {
+            // Search for user by email or name (case-insensitive)
+            const searchTerm = recipientUsername.trim()
+            
+            // First try to find in users table
+            const { data: recipientData, error: findError } = await supabaseClient
+              .from('users')
+              .select('id, name, email')
+              .or(`email.ilike.%${searchTerm}%,name.ilike.%${searchTerm}%`)
+              .limit(1)
+            
+            if (findError) {
+              console.error('Error finding user:', findError)
+              return new Response(JSON.stringify({ 
+                error: 'Failed to find user',
+                details: findError.message 
+              }), {
+                status: 500,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              })
+            }
+            
+            if (!recipientData || recipientData.length === 0) {
+              // If not found in users table, try auth.users by email
+              const { data: authUsers, error: authError } = await supabaseClient.auth.admin.listUsers()
               
-              if (findError) {
-                console.error('Error finding user:', findError)
-                return new Response(JSON.stringify({ 
-                  error: 'Failed to find user',
-                  details: findError.message 
-                }), {
-                  status: 500,
-                  headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-                })
-              }
-              
-              if (!recipientData || recipientData.length === 0) {
+              if (!authError && authUsers?.users) {
+                const foundUser = authUsers.users.find(u => 
+                  u.email?.toLowerCase() === searchTerm.toLowerCase() ||
+                  u.user_metadata?.name?.toLowerCase() === searchTerm.toLowerCase()
+                )
+                
+                if (foundUser) {
+                  // Verify user exists in users table, if not, we can't send (foreign key constraint)
+                  const { data: userCheck } = await supabaseClient
+                    .from('users')
+                    .select('id')
+                    .eq('id', foundUser.id)
+                    .single()
+                  
+                  if (userCheck) {
+                    finalRecipientId = foundUser.id
+                  } else {
+                    return new Response(JSON.stringify({ 
+                      error: 'User found but not activated. Please ensure the user has completed registration.' 
+                    }), {
+                      status: 404,
+                      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                    })
+                  }
+                } else {
+                  return new Response(JSON.stringify({ error: 'User not found. Please check the email or username.' }), {
+                    status: 404,
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                  })
+                }
+              } else {
                 return new Response(JSON.stringify({ error: 'User not found. Please check the email or username.' }), {
                   status: 404,
                   headers: { ...corsHeaders, 'Content-Type': 'application/json' }
                 })
               }
+            } else {
               finalRecipientId = recipientData[0].id
+            }
             } else {
               return new Response(JSON.stringify({ error: 'Recipient ID or username/email is required' }), {
                 status: 400,

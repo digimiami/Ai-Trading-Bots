@@ -7,10 +7,13 @@
 -- =====================================================
 -- 1. MESSAGES TABLE
 -- =====================================================
+-- Drop table if exists (use with caution - this will delete all messages!)
+-- DROP TABLE IF EXISTS messages CASCADE;
+
 CREATE TABLE IF NOT EXISTS messages (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     sender_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    recipient_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+    recipient_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     -- If recipient_id is NULL, it's a broadcast message to all users
     subject TEXT,
     body TEXT NOT NULL,
@@ -36,6 +39,16 @@ ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 -- =====================================================
 -- 2. RLS POLICIES FOR MESSAGES
 -- =====================================================
+
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Users can view messages they sent" ON messages;
+DROP POLICY IF EXISTS "Users can view messages they received" ON messages;
+DROP POLICY IF EXISTS "Users can view broadcast messages" ON messages;
+DROP POLICY IF EXISTS "Users can view conversation messages" ON messages;
+DROP POLICY IF EXISTS "Users can send messages" ON messages;
+DROP POLICY IF EXISTS "Users can mark messages as read" ON messages;
+DROP POLICY IF EXISTS "Admins can view all messages" ON messages;
+DROP POLICY IF EXISTS "Admins can send broadcast messages" ON messages;
 
 -- Users can view messages they sent
 CREATE POLICY "Users can view messages they sent" ON messages
