@@ -15,6 +15,7 @@ import {
   HTF_TIMEFRAME_OPTIONS,
   HTF_TREND_INDICATOR_OPTIONS
 } from '../../constants/strategyOptions';
+import HelpTooltip from '../../components/ui/HelpTooltip';
 
 export default function CreateBotPage() {
   const navigate = useNavigate();
@@ -775,8 +776,9 @@ All settings have been applied to your bot configuration.`;
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                     Bot Name
+                    <HelpTooltip text="A unique name to identify your trading bot. This helps you distinguish between multiple bots." />
                   </label>
                   <input
                     type="text"
@@ -789,8 +791,9 @@ All settings have been applied to your bot configuration.`;
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                     Exchange
+                    <HelpTooltip text="Select the cryptocurrency exchange where your bot will trade. Currently supports Bybit, OKX, and Bitunix." />
                   </label>
                   <select
                     value={formData.exchange}
@@ -804,8 +807,9 @@ All settings have been applied to your bot configuration.`;
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                     Trading Type
+                    <HelpTooltip text="Spot Trading: Buy/sell actual cryptocurrencies. Futures Trading: Trade with leverage using contracts." />
                   </label>
                   <select
                     value={formData.tradingType}
@@ -818,8 +822,9 @@ All settings have been applied to your bot configuration.`;
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                     Trading Pair
+                    <HelpTooltip text="The cryptocurrency pair to trade (e.g., BTCUSDT = Bitcoin/USDT). You can select a single pair or multiple pairs for the bot to trade." />
                   </label>
                   <select
                     value={formData.symbol}
@@ -929,8 +934,9 @@ All settings have been applied to your bot configuration.`;
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                     Time Frame
+                    <HelpTooltip text="The chart interval used for technical analysis. Shorter timeframes (1m-15m) are more volatile, longer timeframes (1h-1d) are more stable. The bot analyzes price action on this timeframe." />
                   </label>
                   <select
                     value={formData.timeframe}
@@ -964,8 +970,9 @@ All settings have been applied to your bot configuration.`;
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                     Leverage
+                    <HelpTooltip text="Multiplier for your trading position. Higher leverage = higher potential profit but also higher risk. Only applies to futures trading. Use lower leverage (1x-5x) for safer trading." />
                   </label>
                   <select
                     value={formData.leverage}
@@ -982,8 +989,9 @@ All settings have been applied to your bot configuration.`;
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                     Risk Level
+                    <HelpTooltip text="Controls how aggressive the bot's trading strategy is. Low = conservative (fewer trades, safer), Medium = balanced, High = aggressive (more trades, higher risk/reward)." />
                   </label>
                   <select
                     value={formData.riskLevel}
@@ -997,8 +1005,9 @@ All settings have been applied to your bot configuration.`;
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                     Trade Amount (USD)
+                    <HelpTooltip text="Base amount in USD for each trade. This will be multiplied by leverage (for futures) and adjusted by risk level. Minimum: $10, Maximum: $10,000." />
                   </label>
                   <input
                     type="number"
@@ -1016,8 +1025,9 @@ All settings have been applied to your bot configuration.`;
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                     Stop Loss (%)
+                    <HelpTooltip text="Maximum loss percentage before the bot automatically closes the position. Protects against large losses. Recommended: 1-3% for conservative, 2-5% for moderate risk." />
                   </label>
                   <input
                     type="number"
@@ -1035,8 +1045,9 @@ All settings have been applied to your bot configuration.`;
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                     Take Profit (%)
+                    <HelpTooltip text="Target profit percentage before the bot automatically closes the position to secure gains. Recommended: 2-4% for conservative, 4-8% for moderate risk." />
                   </label>
                   <input
                     type="number"
@@ -1055,8 +1066,9 @@ All settings have been applied to your bot configuration.`;
 
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className="block text-sm font-medium text-gray-700">
+                    <label className="block text-sm font-medium text-gray-700 flex items-center">
                       Cooldown (Bars)
+                      <HelpTooltip text="Number of bars (candles) to wait between trades. Prevents overtrading and reduces risk. Higher values = fewer trades but more selective entries." />
                     </label>
                     <div className="flex items-center">
                       <span className={`text-xs mr-2 ${advancedConfig.cooldown_bars > 0 ? 'text-green-600' : 'text-gray-400'}`}>
@@ -1101,8 +1113,9 @@ All settings have been applied to your bot configuration.`;
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                     Allowed Trading Hours (EST)
+                    <HelpTooltip text="Select specific hours when the bot is allowed to trade. Useful for avoiding low-liquidity periods or specific market sessions. Times are displayed in EST but stored in UTC." />
                   </label>
                   <div className="border border-gray-300 rounded-lg p-3 bg-gray-50 max-h-48 overflow-y-auto">
                     <div className="flex items-center mb-2">
@@ -1240,8 +1253,9 @@ All settings have been applied to your bot configuration.`;
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                     RSI Threshold
+                    <HelpTooltip text="Relative Strength Index threshold for overbought/oversold conditions. Higher values (70-90) = more conservative entries, lower values (30-50) = more aggressive." />
                   </label>
                   <input
                     type="number"
@@ -1255,8 +1269,9 @@ All settings have been applied to your bot configuration.`;
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                     ADX Threshold
+                    <HelpTooltip text="Average Directional Index threshold for trend strength. Higher values (25-50) = only trade in strong trends, lower values (10-20) = trade in weaker trends too." />
                   </label>
                   <input
                     type="number"
@@ -1270,8 +1285,9 @@ All settings have been applied to your bot configuration.`;
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                     BB Width Threshold
+                    <HelpTooltip text="Bollinger Bands width threshold for volatility. Lower values (0.01-0.02) = trade in low volatility, higher values (0.03-0.1) = trade in high volatility." />
                   </label>
                   <input
                     type="number"
@@ -1285,8 +1301,9 @@ All settings have been applied to your bot configuration.`;
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                     EMA Slope
+                    <HelpTooltip text="Exponential Moving Average slope threshold. Higher values = require steeper trend slope for entry. Controls trend strength requirement." />
                   </label>
                   <input
                     type="number"
@@ -1300,8 +1317,9 @@ All settings have been applied to your bot configuration.`;
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                     ATR Percentage
+                    <HelpTooltip text="Average True Range percentage for stop loss and position sizing. Higher values = wider stops (safer but less precise), lower values = tighter stops (riskier but more precise)." />
                   </label>
                   <input
                     type="number"
@@ -1315,8 +1333,9 @@ All settings have been applied to your bot configuration.`;
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                     VWAP Distance
+                    <HelpTooltip text="Volume Weighted Average Price distance threshold. How far price must be from VWAP to trigger a trade. Higher values = require larger price deviation." />
                   </label>
                   <input
                     type="number"
@@ -1330,8 +1349,9 @@ All settings have been applied to your bot configuration.`;
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                     Momentum Threshold
+                    <HelpTooltip text="Momentum indicator threshold for entry signals. Higher values = require stronger momentum, lower values = trade on weaker momentum. Controls entry aggressiveness." />
                   </label>
                   <input
                     type="number"
@@ -1345,8 +1365,9 @@ All settings have been applied to your bot configuration.`;
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                     Min Samples for ML
+                    <HelpTooltip text="Minimum number of data samples required before Machine Learning predictions are used. Until this threshold is met, the bot uses rule-based strategy. Higher values = more conservative ML usage." />
                   </label>
                   <input
                     type="number"
@@ -1368,8 +1389,9 @@ All settings have been applied to your bot configuration.`;
                     onChange={(e) => handleStrategyChange('useMLPrediction', e.target.checked)}
                     className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                   />
-                  <span className="text-sm font-medium text-gray-700">
+                  <span className="text-sm font-medium text-gray-700 flex items-center">
                     Enable ML Prediction (fallback to rules until min samples)
+                    <HelpTooltip text="Enable Machine Learning predictions for trade signals. The bot will use rule-based strategy until it collects enough data samples, then switch to ML predictions for better accuracy." />
                   </span>
                 </label>
               </div>

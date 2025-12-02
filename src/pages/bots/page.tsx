@@ -14,6 +14,7 @@ import { useBotTradeLimits } from '../../hooks/useBotTradeLimits';
 import { useSoundNotifications } from '../../hooks/useSoundNotifications';
 import { supabase } from '../../lib/supabase';
 import DropdownMenu, { DropdownMenuItem } from '../../components/ui/DropdownMenu';
+import HelpTooltip from '../../components/ui/HelpTooltip';
 
 export default function BotsPage() {
   const navigate = useNavigate();
@@ -1143,7 +1144,10 @@ export default function BotsPage() {
                       <div className="pt-3 border-t border-gray-100">
                         <div className="flex items-center justify-between mb-2">
                           <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-gray-700">Daily Trades:</span>
+                            <span className="text-sm font-medium text-gray-700 flex items-center">
+                              Daily Trades:
+                              <HelpTooltip text="Maximum number of trades allowed per day for this bot. Once reached, the bot will pause until the next day. This prevents overtrading and helps manage risk." />
+                            </span>
                             <span className={`text-sm font-semibold ${
                               limit.isLimitReached ? 'text-red-600' : 
                               limit.tradesToday / limit.maxTradesPerDay > 0.8 ? 'text-yellow-600' : 
@@ -1191,8 +1195,9 @@ export default function BotsPage() {
                         {editingLimitBotId === bot.id && (
                           <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
                             <div className="flex items-center gap-2 mb-2">
-                              <label className="text-xs font-medium text-gray-700">
+                              <label className="text-xs font-medium text-gray-700 flex items-center">
                                 Max Trades Per Day:
+                                <HelpTooltip text="Set the maximum number of trades this bot can execute per day. Once this limit is reached, the bot will automatically pause until the next day. Helps prevent overtrading and manage risk." />
                               </label>
                               <input
                                 type="number"
@@ -1290,7 +1295,10 @@ export default function BotsPage() {
                 <div className="pt-3 border-t border-gray-100">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-gray-700">Trade Amount:</span>
+                      <span className="text-sm font-medium text-gray-700 flex items-center">
+                        Trade Amount:
+                        <HelpTooltip text="Base amount in USD for each trade executed by this bot. This will be multiplied by leverage (for futures) and adjusted by risk level. You can edit this value to change the bot's position sizing." />
+                      </span>
                       <span className="text-sm font-semibold text-gray-900">
                         ${(bot.tradeAmount || 100).toFixed(2)} USD
                       </span>
