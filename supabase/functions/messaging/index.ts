@@ -273,9 +273,9 @@ serve(async (req) => {
           .from('messages')
           .select(`
             *,
-            sender:users!sender_id(id, name, email),
-            recipient:users!recipient_id(id, name, email),
-            parent:messages!parent_message_id(id, subject, body)
+            sender:users(id, name, email),
+            recipient:users(id, name, email),
+            parent:messages(id, subject, body)
           `)
 
         if (isAdmin && type === 'admin') {
@@ -444,9 +444,9 @@ serve(async (req) => {
           .from('messages')
           .select(`
             *,
-            sender:users!sender_id(id, name, email),
-            recipient:users!recipient_id(id, name, email),
-            parent:messages!parent_message_id(id, subject, body)
+            sender:users(id, name, email),
+            recipient:users(id, name, email),
+            parent:messages(id, subject, body)
           `)
           .eq('id', messageId)
           .single()
@@ -576,8 +576,8 @@ serve(async (req) => {
           .from('messages')
           .select(`
             *,
-            sender:users!messages_sender_id_fkey(id, name, email),
-            recipient:users!messages_recipient_id_fkey(id, name, email)
+            sender:users(id, name, email),
+            recipient:users(id, name, email)
           `)
           .or(`and(sender_id.eq.${user.id},recipient_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},recipient_id.eq.${user.id})`)
           .order('created_at', { ascending: false })
