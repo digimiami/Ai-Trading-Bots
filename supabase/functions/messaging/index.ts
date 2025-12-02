@@ -273,177 +273,177 @@ serve(async (req) => {
           console.log(`📨 Fetching messages - Type: ${type}, User: ${user.id}, Admin: ${isAdmin}`)
 
           if (isAdmin && type === 'admin') {
-          // Admins can see all messages - use explicit foreign key references
-          const { data: messages, error: messagesError } = await supabaseClient
-            .from('messages')
-            .select(`
-              *,
-              sender:users!sender_id(id, name, email),
-              recipient:users!recipient_id(id, name, email),
-              parent:messages!parent_message_id(id, subject, body)
-            `)
-            .order('created_at', { ascending: false })
-            .range(offset, offset + limit - 1)
+            // Admins can see all messages - use explicit foreign key references
+            const { data: messages, error: messagesError } = await supabaseClient
+              .from('messages')
+              .select(`
+                *,
+                sender:users!sender_id(id, name, email),
+                recipient:users!recipient_id(id, name, email),
+                parent:messages!parent_message_id(id, subject, body)
+              `)
+              .order('created_at', { ascending: false })
+              .range(offset, offset + limit - 1)
 
-          if (messagesError) {
-            console.error('Error fetching admin messages:', messagesError)
+            if (messagesError) {
+              console.error('Error fetching admin messages:', messagesError)
+              return new Response(JSON.stringify({ 
+                error: 'Failed to fetch messages',
+                details: messagesError.message 
+              }), {
+                status: 500,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              })
+            }
+
+            return new Response(JSON.stringify({ messages: messages || [] }), {
+              status: 200,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          } else if (type === 'inbox') {
+            // Messages received by user (including broadcasts)
+            // Use separate queries and combine, or use a union approach
+            const { data: directMessages, error: directError } = await supabaseClient
+              .from('messages')
+              .select(`
+                *,
+                sender:users!sender_id(id, name, email),
+                recipient:users!recipient_id(id, name, email),
+                parent:messages!parent_message_id(id, subject, body)
+              `)
+              .eq('recipient_id', user.id)
+              .eq('is_broadcast', false)
+
+            const { data: broadcastMessages, error: broadcastError } = await supabaseClient
+              .from('messages')
+              .select(`
+                *,
+                sender:users!sender_id(id, name, email),
+                recipient:users!recipient_id(id, name, email),
+                parent:messages!parent_message_id(id, subject, body)
+              `)
+              .eq('is_broadcast', true)
+
+            if (directError || broadcastError) {
+              console.error('Error fetching messages:', directError || broadcastError)
+              return new Response(JSON.stringify({ 
+                error: 'Failed to fetch messages',
+                details: (directError || broadcastError)?.message 
+              }), {
+                status: 500,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              })
+            }
+
+            const allMessages = [...(directMessages || []), ...(broadcastMessages || [])]
+            const sortedMessages = allMessages.sort((a, b) => 
+              new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            )
+            const paginatedMessages = sortedMessages.slice(offset, offset + limit)
+
+            return new Response(JSON.stringify({ messages: paginatedMessages }), {
+              status: 200,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          } else if (type === 'sent') {
+            // Messages sent by user - use explicit foreign key references
+            const { data: messages, error: messagesError } = await supabaseClient
+              .from('messages')
+              .select(`
+                *,
+                sender:users!sender_id(id, name, email),
+                recipient:users!recipient_id(id, name, email),
+                parent:messages!parent_message_id(id, subject, body)
+              `)
+              .eq('sender_id', user.id)
+              .order('created_at', { ascending: false })
+              .range(offset, offset + limit - 1)
+
+            if (messagesError) {
+              console.error('Error fetching sent messages:', messagesError)
+              return new Response(JSON.stringify({ 
+                error: 'Failed to fetch messages',
+                details: messagesError.message 
+              }), {
+                status: 500,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              })
+            }
+
+            console.log(`✅ Fetched ${messages?.length || 0} sent messages for user ${user.id}`)
+            return new Response(JSON.stringify({ messages: messages || [] }), {
+              status: 200,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          } else if (type === 'all') {
+            // All messages user is involved in - use separate queries
+            const { data: sentMessages, error: sentError } = await supabaseClient
+              .from('messages')
+              .select(`
+                *,
+                sender:users!sender_id(id, name, email),
+                recipient:users!recipient_id(id, name, email),
+                parent:messages!parent_message_id(id, subject, body)
+              `)
+              .eq('sender_id', user.id)
+
+            const { data: receivedMessages, error: receivedError } = await supabaseClient
+              .from('messages')
+              .select(`
+                *,
+                sender:users!sender_id(id, name, email),
+                recipient:users!recipient_id(id, name, email),
+                parent:messages!parent_message_id(id, subject, body)
+              `)
+              .eq('recipient_id', user.id)
+
+            const { data: broadcastMessages, error: broadcastError } = await supabaseClient
+              .from('messages')
+              .select(`
+                *,
+                sender:users!sender_id(id, name, email),
+                recipient:users!recipient_id(id, name, email),
+                parent:messages!parent_message_id(id, subject, body)
+              `)
+              .eq('is_broadcast', true)
+
+            if (sentError || receivedError || broadcastError) {
+              console.error('Error fetching messages:', sentError || receivedError || broadcastError)
+              return new Response(JSON.stringify({ 
+                error: 'Failed to fetch messages',
+                details: (sentError || receivedError || broadcastError)?.message 
+              }), {
+                status: 500,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              })
+            }
+
+            // Combine and deduplicate messages
+            const messageMap = new Map()
+            ;[...(sentMessages || []), ...(receivedMessages || []), ...(broadcastMessages || [])].forEach(msg => {
+              messageMap.set(msg.id, msg)
+            })
+            const allMessages = Array.from(messageMap.values())
+            const sortedMessages = allMessages.sort((a, b) => 
+              new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            )
+            const paginatedMessages = sortedMessages.slice(offset, offset + limit)
+
+            return new Response(JSON.stringify({ messages: paginatedMessages }), {
+              status: 200,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          } else {
+            // If type doesn't match any known type, return error
+            console.error(`❌ Unknown message type: ${type}`)
             return new Response(JSON.stringify({ 
-              error: 'Failed to fetch messages',
-              details: messagesError.message 
+              error: 'Invalid message type',
+              details: `Type "${type}" is not supported. Use 'inbox', 'sent', 'all', or 'admin' (admin only).`
             }), {
-              status: 500,
+              status: 400,
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             })
           }
-
-          return new Response(JSON.stringify({ messages: messages || [] }), {
-            status: 200,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          })
-        } else if (type === 'inbox') {
-          // Messages received by user (including broadcasts)
-          // Use separate queries and combine, or use a union approach
-          const { data: directMessages, error: directError } = await supabaseClient
-            .from('messages')
-            .select(`
-              *,
-              sender:users!sender_id(id, name, email),
-              recipient:users!recipient_id(id, name, email),
-              parent:messages!parent_message_id(id, subject, body)
-            `)
-            .eq('recipient_id', user.id)
-            .eq('is_broadcast', false)
-
-          const { data: broadcastMessages, error: broadcastError } = await supabaseClient
-            .from('messages')
-            .select(`
-              *,
-              sender:users!sender_id(id, name, email),
-              recipient:users!recipient_id(id, name, email),
-              parent:messages!parent_message_id(id, subject, body)
-            `)
-            .eq('is_broadcast', true)
-
-          if (directError || broadcastError) {
-            console.error('Error fetching messages:', directError || broadcastError)
-            return new Response(JSON.stringify({ 
-              error: 'Failed to fetch messages',
-              details: (directError || broadcastError)?.message 
-            }), {
-              status: 500,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            })
-          }
-
-          const allMessages = [...(directMessages || []), ...(broadcastMessages || [])]
-          const sortedMessages = allMessages.sort((a, b) => 
-            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-          )
-          const paginatedMessages = sortedMessages.slice(offset, offset + limit)
-
-          return new Response(JSON.stringify({ messages: paginatedMessages }), {
-            status: 200,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          })
-        } else if (type === 'sent') {
-          // Messages sent by user - use explicit foreign key references
-          const { data: messages, error: messagesError } = await supabaseClient
-            .from('messages')
-            .select(`
-              *,
-              sender:users!sender_id(id, name, email),
-              recipient:users!recipient_id(id, name, email),
-              parent:messages!parent_message_id(id, subject, body)
-            `)
-            .eq('sender_id', user.id)
-            .order('created_at', { ascending: false })
-            .range(offset, offset + limit - 1)
-
-          if (messagesError) {
-            console.error('Error fetching sent messages:', messagesError)
-            return new Response(JSON.stringify({ 
-              error: 'Failed to fetch messages',
-              details: messagesError.message 
-            }), {
-              status: 500,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            })
-          }
-
-          console.log(`✅ Fetched ${messages?.length || 0} sent messages for user ${user.id}`)
-          return new Response(JSON.stringify({ messages: messages || [] }), {
-            status: 200,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          })
-        } else if (type === 'all') {
-          // All messages user is involved in - use separate queries
-          const { data: sentMessages, error: sentError } = await supabaseClient
-            .from('messages')
-            .select(`
-              *,
-              sender:users!sender_id(id, name, email),
-              recipient:users!recipient_id(id, name, email),
-              parent:messages!parent_message_id(id, subject, body)
-            `)
-            .eq('sender_id', user.id)
-
-          const { data: receivedMessages, error: receivedError } = await supabaseClient
-            .from('messages')
-            .select(`
-              *,
-              sender:users!sender_id(id, name, email),
-              recipient:users!recipient_id(id, name, email),
-              parent:messages!parent_message_id(id, subject, body)
-            `)
-            .eq('recipient_id', user.id)
-
-          const { data: broadcastMessages, error: broadcastError } = await supabaseClient
-            .from('messages')
-            .select(`
-              *,
-              sender:users!sender_id(id, name, email),
-              recipient:users!recipient_id(id, name, email),
-              parent:messages!parent_message_id(id, subject, body)
-            `)
-            .eq('is_broadcast', true)
-
-          if (sentError || receivedError || broadcastError) {
-            console.error('Error fetching messages:', sentError || receivedError || broadcastError)
-            return new Response(JSON.stringify({ 
-              error: 'Failed to fetch messages',
-              details: (sentError || receivedError || broadcastError)?.message 
-            }), {
-              status: 500,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            })
-          }
-
-          // Combine and deduplicate messages
-          const messageMap = new Map()
-          ;[...(sentMessages || []), ...(receivedMessages || []), ...(broadcastMessages || [])].forEach(msg => {
-            messageMap.set(msg.id, msg)
-          })
-          const allMessages = Array.from(messageMap.values())
-          const sortedMessages = allMessages.sort((a, b) => 
-            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-          )
-          const paginatedMessages = sortedMessages.slice(offset, offset + limit)
-
-          return new Response(JSON.stringify({ messages: paginatedMessages }), {
-            status: 200,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          })
-        }
-
-          // If type doesn't match any known type, return error
-          console.error(`❌ Unknown message type: ${type}`)
-          return new Response(JSON.stringify({ 
-            error: 'Invalid message type',
-            details: `Type "${type}" is not supported. Use 'inbox', 'sent', 'all', or 'admin' (admin only).`
-          }), {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          })
         } catch (getMessagesError: any) {
           console.error('❌ Unexpected error in getMessages:', getMessagesError)
           return new Response(JSON.stringify({ 
