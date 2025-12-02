@@ -273,15 +273,10 @@ serve(async (req) => {
           console.log(`📨 Fetching messages - Type: ${type}, User: ${user.id}, Admin: ${isAdmin}`)
 
           if (isAdmin && type === 'admin') {
-            // Admins can see all messages - use explicit foreign key references
+            // Admins can see all messages
             const { data: messages, error: messagesError } = await supabaseClient
               .from('messages')
-              .select(`
-                *,
-                sender:users!sender_id(id, name, email),
-                recipient:users!recipient_id(id, name, email),
-                parent:messages!parent_message_id(id, subject, body)
-              `)
+              .select('*')
               .order('created_at', { ascending: false })
               .range(offset, offset + limit - 1)
 
@@ -296,32 +291,31 @@ serve(async (req) => {
               })
             }
 
-            return new Response(JSON.stringify({ messages: messages || [] }), {
+            // Enrich messages with user data
+            const enrichedMessages = await Promise.all((messages || []).map(async (msg: any) => {
+              const [sender, recipient, parent] = await Promise.all([
+                msg.sender_id ? supabaseClient.from('users').select('id, name, email').eq('id', msg.sender_id).single().then(r => r.data || null) : null,
+                msg.recipient_id ? supabaseClient.from('users').select('id, name, email').eq('id', msg.recipient_id).single().then(r => r.data || null) : null,
+                msg.parent_message_id ? supabaseClient.from('messages').select('id, subject, body').eq('id', msg.parent_message_id).single().then(r => r.data || null) : null
+              ])
+              return { ...msg, sender, recipient, parent }
+            }))
+
+            return new Response(JSON.stringify({ messages: enrichedMessages }), {
               status: 200,
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             })
           } else if (type === 'inbox') {
             // Messages received by user (including broadcasts)
-            // Use separate queries and combine, or use a union approach
             const { data: directMessages, error: directError } = await supabaseClient
               .from('messages')
-              .select(`
-                *,
-                sender:users!sender_id(id, name, email),
-                recipient:users!recipient_id(id, name, email),
-                parent:messages!parent_message_id(id, subject, body)
-              `)
+              .select('*')
               .eq('recipient_id', user.id)
               .eq('is_broadcast', false)
 
             const { data: broadcastMessages, error: broadcastError } = await supabaseClient
               .from('messages')
-              .select(`
-                *,
-                sender:users!sender_id(id, name, email),
-                recipient:users!recipient_id(id, name, email),
-                parent:messages!parent_message_id(id, subject, body)
-              `)
+              .select('*')
               .eq('is_broadcast', true)
 
             if (directError || broadcastError) {
@@ -341,20 +335,25 @@ serve(async (req) => {
             )
             const paginatedMessages = sortedMessages.slice(offset, offset + limit)
 
-            return new Response(JSON.stringify({ messages: paginatedMessages }), {
+            // Enrich messages with user data
+            const enrichedMessages = await Promise.all(paginatedMessages.map(async (msg: any) => {
+              const [sender, recipient, parent] = await Promise.all([
+                msg.sender_id ? supabaseClient.from('users').select('id, name, email').eq('id', msg.sender_id).single().then(r => r.data || null) : null,
+                msg.recipient_id ? supabaseClient.from('users').select('id, name, email').eq('id', msg.recipient_id).single().then(r => r.data || null) : null,
+                msg.parent_message_id ? supabaseClient.from('messages').select('id, subject, body').eq('id', msg.parent_message_id).single().then(r => r.data || null) : null
+              ])
+              return { ...msg, sender, recipient, parent }
+            }))
+
+            return new Response(JSON.stringify({ messages: enrichedMessages }), {
               status: 200,
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             })
           } else if (type === 'sent') {
-            // Messages sent by user - use explicit foreign key references
+            // Messages sent by user
             const { data: messages, error: messagesError } = await supabaseClient
               .from('messages')
-              .select(`
-                *,
-                sender:users!sender_id(id, name, email),
-                recipient:users!recipient_id(id, name, email),
-                parent:messages!parent_message_id(id, subject, body)
-              `)
+              .select('*')
               .eq('sender_id', user.id)
               .order('created_at', { ascending: false })
               .range(offset, offset + limit - 1)
@@ -370,41 +369,36 @@ serve(async (req) => {
               })
             }
 
-            console.log(`✅ Fetched ${messages?.length || 0} sent messages for user ${user.id}`)
-            return new Response(JSON.stringify({ messages: messages || [] }), {
+            // Enrich messages with user data
+            const enrichedMessages = await Promise.all((messages || []).map(async (msg: any) => {
+              const [sender, recipient, parent] = await Promise.all([
+                msg.sender_id ? supabaseClient.from('users').select('id, name, email').eq('id', msg.sender_id).single().then(r => r.data || null) : null,
+                msg.recipient_id ? supabaseClient.from('users').select('id, name, email').eq('id', msg.recipient_id).single().then(r => r.data || null) : null,
+                msg.parent_message_id ? supabaseClient.from('messages').select('id, subject, body').eq('id', msg.parent_message_id).single().then(r => r.data || null) : null
+              ])
+              return { ...msg, sender, recipient, parent }
+            }))
+
+            console.log(`✅ Fetched ${enrichedMessages?.length || 0} sent messages for user ${user.id}`)
+            return new Response(JSON.stringify({ messages: enrichedMessages }), {
               status: 200,
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             })
           } else if (type === 'all') {
-            // All messages user is involved in - use separate queries
+            // All messages user is involved in
             const { data: sentMessages, error: sentError } = await supabaseClient
               .from('messages')
-              .select(`
-                *,
-                sender:users!sender_id(id, name, email),
-                recipient:users!recipient_id(id, name, email),
-                parent:messages!parent_message_id(id, subject, body)
-              `)
+              .select('*')
               .eq('sender_id', user.id)
 
             const { data: receivedMessages, error: receivedError } = await supabaseClient
               .from('messages')
-              .select(`
-                *,
-                sender:users!sender_id(id, name, email),
-                recipient:users!recipient_id(id, name, email),
-                parent:messages!parent_message_id(id, subject, body)
-              `)
+              .select('*')
               .eq('recipient_id', user.id)
 
             const { data: broadcastMessages, error: broadcastError } = await supabaseClient
               .from('messages')
-              .select(`
-                *,
-                sender:users!sender_id(id, name, email),
-                recipient:users!recipient_id(id, name, email),
-                parent:messages!parent_message_id(id, subject, body)
-              `)
+              .select('*')
               .eq('is_broadcast', true)
 
             if (sentError || receivedError || broadcastError) {
@@ -429,7 +423,17 @@ serve(async (req) => {
             )
             const paginatedMessages = sortedMessages.slice(offset, offset + limit)
 
-            return new Response(JSON.stringify({ messages: paginatedMessages }), {
+            // Enrich messages with user data
+            const enrichedMessages = await Promise.all(paginatedMessages.map(async (msg: any) => {
+              const [sender, recipient, parent] = await Promise.all([
+                msg.sender_id ? supabaseClient.from('users').select('id, name, email').eq('id', msg.sender_id).single().then(r => r.data || null) : null,
+                msg.recipient_id ? supabaseClient.from('users').select('id, name, email').eq('id', msg.recipient_id).single().then(r => r.data || null) : null,
+                msg.parent_message_id ? supabaseClient.from('messages').select('id, subject, body').eq('id', msg.parent_message_id).single().then(r => r.data || null) : null
+              ])
+              return { ...msg, sender, recipient, parent }
+            }))
+
+            return new Response(JSON.stringify({ messages: enrichedMessages }), {
               status: 200,
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             })
