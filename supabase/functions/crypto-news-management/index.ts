@@ -89,26 +89,41 @@ Return the article content in markdown format.`
       .replace(/^-+|-+$/g, '')
       .substring(0, 100)
 
-    // Auto-generate SEO meta tags
-    const metaTitle = articleTitle
+    // Auto-generate comprehensive SEO meta tags
+    const metaTitle = articleTitle.length > 60 ? articleTitle.substring(0, 57) + '...' : articleTitle
     const metaDescription = excerpt.length > 160 ? excerpt.substring(0, 157) + '...' : excerpt
-    const metaKeywords = keywords
-    const ogTitle = metaTitle
-    const ogDescription = excerpt
-    const twitterTitle = metaTitle
-    const twitterDescription = excerpt
+    const metaKeywords = [...keywords, category, 'crypto', 'cryptocurrency', 'blockchain', 'trading', 'news']
+      .map(k => k.toLowerCase())
+      .filter((v, i, a) => a.indexOf(v) === i)
     
+    // Open Graph tags
+    const ogTitle = metaTitle
+    const ogDescription = metaDescription
+    // Generate featured image URL based on keywords and category
+    const imageKeywords = keywords.slice(0, 3).join(',') || category || 'cryptocurrency'
+    const featuredImageUrl = `https://source.unsplash.com/1200x630/?${encodeURIComponent(imageKeywords)},cryptocurrency,blockchain,digital,finance`
+    const ogImageUrl = featuredImageUrl // Use same image for OG
+    
+    // Twitter Card tags
+    const twitterCard = 'summary_large_image'
+    const twitterTitle = metaTitle
+    const twitterDescription = metaDescription
+    
+    // Canonical URL (will be set when article is published)
+    const baseUrl = Deno.env.get('SITE_URL') || 'https://your-site.com'
+    const canonicalUrl = `${baseUrl}/crypto-news/${slug}`
+    
+    // Auto-generate tags
     const autoTags = [
       ...keywords.map(k => k.toLowerCase()),
       category.toLowerCase(),
       'crypto',
       'cryptocurrency',
       'blockchain',
-      'trading'
+      'trading',
+      'news',
+      'analysis'
     ].filter((v, i, a) => a.indexOf(v) === i)
-
-    const imageKeywords = keywords.slice(0, 3).join(',') || category || 'cryptocurrency'
-    const featuredImageUrl = `https://source.unsplash.com/800x450/?${encodeURIComponent(imageKeywords)},cryptocurrency,blockchain`
 
     // Create article
     const articleData: any = {

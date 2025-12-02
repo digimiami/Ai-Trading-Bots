@@ -65,8 +65,8 @@ export default function ContactPage() {
     {
       icon: 'ri-whatsapp-line',
       label: 'WhatsApp',
-      value: '+1 786-784-6192',
-      link: 'https://wa.me/17867846192',
+      value: 'Chat with us on WhatsApp',
+      link: 'https://wa.me/message/PFPW6YB7DTDCD1',
       color: 'text-green-600 dark:text-green-400'
     }
   ];
