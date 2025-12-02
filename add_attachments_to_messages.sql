@@ -32,3 +32,40 @@ CREATE POLICY "Admins can delete any message" ON messages
         )
     );
 
+-- =====================================================
+-- CREATE STORAGE BUCKET FOR MESSAGE ATTACHMENTS
+-- =====================================================
+
+-- Create message-attachments storage bucket (if not exists)
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('message-attachments', 'message-attachments', true)
+ON CONFLICT (id) DO NOTHING;
+
+-- Drop existing policies if they exist
+DROP POLICY IF EXISTS "Users can upload message attachments" ON storage.objects;
+DROP POLICY IF EXISTS "Users can read message attachments" ON storage.objects;
+DROP POLICY IF EXISTS "Users can delete their own attachments" ON storage.objects;
+DROP POLICY IF EXISTS "Message attachments are publicly viewable" ON storage.objects;
+
+-- Create storage policy for message attachments upload
+CREATE POLICY "Users can upload message attachments" ON storage.objects
+FOR INSERT WITH CHECK (
+  bucket_id = 'message-attachments' 
+  AND auth.uid()::text = (storage.foldername(name))[1]
+);
+
+-- Create storage policy for message attachments read
+CREATE POLICY "Users can read message attachments" ON storage.objects
+FOR SELECT USING (bucket_id = 'message-attachments');
+
+-- Create storage policy for message attachments delete
+CREATE POLICY "Users can delete their own attachments" ON storage.objects
+FOR DELETE USING (
+  bucket_id = 'message-attachments' 
+  AND auth.uid()::text = (storage.foldername(name))[1]
+);
+
+-- Make attachments publicly viewable (since messages can be shared)
+CREATE POLICY "Message attachments are publicly viewable" ON storage.objects
+FOR SELECT USING (bucket_id = 'message-attachments');
+

@@ -1,6 +1,25 @@
 # Messaging Attachments Setup
 
-## Database Migration
+## Quick Setup (Recommended)
+
+**Just run the SQL script** - it will create everything automatically:
+
+1. Go to **Supabase Dashboard → SQL Editor**
+2. Copy and paste the entire contents of `add_attachments_to_messages.sql`
+3. Click **Run**
+
+This single script will:
+- ✅ Add `attachments` JSONB column to `messages` table
+- ✅ Add RLS policies for deleting messages
+- ✅ Create index for attachments
+- ✅ **Create the `message-attachments` storage bucket**
+- ✅ **Set up all storage RLS policies**
+
+## Manual Setup (Alternative)
+
+If you prefer to set up manually:
+
+### Database Migration
 
 Run the SQL script to add attachments support:
 
@@ -9,36 +28,38 @@ Run the SQL script to add attachments support:
 -- File: add_attachments_to_messages.sql
 ```
 
-This will:
-- Add `attachments` JSONB column to `messages` table
-- Add RLS policies for deleting messages
-- Create index for attachments
-
-## Supabase Storage Setup
+### Supabase Storage Setup
 
 1. Go to Supabase Dashboard → Storage
-2. Create a new bucket named `message-attachments`
-3. Set bucket to **Public** (or configure RLS policies if you want private)
-4. Configure RLS policies for the bucket:
+2. Click **"New bucket"**
+3. Name: `message-attachments`
+4. Set to **Public**
+5. Click **Create**
+
+The SQL script will automatically create the RLS policies, but if you need to create them manually:
 
 ```sql
 -- Allow authenticated users to upload files
 CREATE POLICY "Users can upload message attachments"
 ON storage.objects FOR INSERT
 TO authenticated
-WITH CHECK (bucket_id = 'message-attachments');
+WITH CHECK (
+  bucket_id = 'message-attachments' 
+  AND auth.uid()::text = (storage.foldername(name))[1]
+);
 
--- Allow authenticated users to read files
+-- Allow users to read files (public)
 CREATE POLICY "Users can read message attachments"
 ON storage.objects FOR SELECT
-TO authenticated
 USING (bucket_id = 'message-attachments');
 
 -- Allow users to delete their own files
 CREATE POLICY "Users can delete their own attachments"
 ON storage.objects FOR DELETE
-TO authenticated
-USING (bucket_id = 'message-attachments' AND (storage.foldername(name))[1] = auth.uid()::text);
+USING (
+  bucket_id = 'message-attachments' 
+  AND auth.uid()::text = (storage.foldername(name))[1]
+);
 ```
 
 ## Features Added

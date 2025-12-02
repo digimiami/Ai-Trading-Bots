@@ -107,6 +107,15 @@ export default function MessagesPage() {
 
       if (error) {
         console.error('Error uploading file:', error)
+        
+        // Provide helpful error message if bucket doesn't exist
+        if (error.message?.includes('not found') || error.message?.includes('Bucket not found')) {
+          throw new Error(
+            `Storage bucket 'message-attachments' not found. Please create it in Supabase Dashboard → Storage. ` +
+            `See MESSAGING_ATTACHMENTS_SETUP.md for instructions.`
+          )
+        }
+        
         throw new Error(`Failed to upload ${file.name}: ${error.message}`)
       }
 
