@@ -99,72 +99,71 @@ serve(async (req) => {
           const { recipientId, recipientUsername, subject, body: messageBody, parentMessageId, isBroadcast } = params
 
           if (!messageBody) {
-          return new Response(JSON.stringify({ error: 'Message body is required' }), {
-            status: 400,
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-          })
-        }
-
-        let finalRecipientId: string | null = null
-
-        // Handle broadcast messages (admin only)
-        if (isBroadcast === true) {
-          if (!isAdmin) {
-            return new Response(JSON.stringify({ error: 'Only admins can send broadcast messages' }), {
-              status: 403,
+            return new Response(JSON.stringify({ error: 'Message body is required' }), {
+              status: 400,
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             })
           }
-          finalRecipientId = null // null recipient_id means broadcast
-        } else {
-          // Find recipient by ID or username/email
-          if (recipientId) {
-            finalRecipientId = recipientId
-          } else if (recipientUsername) {
-            // Search for user by email or name (case-insensitive)
-            const searchTerm = recipientUsername.trim()
-            const { data: recipientData, error: findError } = await supabaseClient
-              .from('users')
-              .select('id, name, email')
-              .or(`email.ilike.%${searchTerm}%,name.ilike.%${searchTerm}%`)
-              .limit(1)
-            
-            if (findError) {
-              console.error('Error finding user:', findError)
-              return new Response(JSON.stringify({ 
-                error: 'Failed to find user',
-                details: findError.message 
-              }), {
-                status: 500,
+
+          let finalRecipientId: string | null = null
+
+          // Handle broadcast messages (admin only)
+          if (isBroadcast === true) {
+            if (!isAdmin) {
+              return new Response(JSON.stringify({ error: 'Only admins can send broadcast messages' }), {
+                status: 403,
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
               })
             }
-            
-            if (!recipientData || recipientData.length === 0) {
-              return new Response(JSON.stringify({ error: 'User not found. Please check the email or username.' }), {
-                status: 404,
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-              })
-            }
-            finalRecipientId = recipientData[0].id
+            finalRecipientId = null // null recipient_id means broadcast
           } else {
-            return new Response(JSON.stringify({ error: 'Recipient ID or username/email is required' }), {
-              status: 400,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            })
+            // Find recipient by ID or username/email
+            if (recipientId) {
+              finalRecipientId = recipientId
+            } else if (recipientUsername) {
+              // Search for user by email or name (case-insensitive)
+              const searchTerm = recipientUsername.trim()
+              const { data: recipientData, error: findError } = await supabaseClient
+                .from('users')
+                .select('id, name, email')
+                .or(`email.ilike.%${searchTerm}%,name.ilike.%${searchTerm}%`)
+                .limit(1)
+              
+              if (findError) {
+                console.error('Error finding user:', findError)
+                return new Response(JSON.stringify({ 
+                  error: 'Failed to find user',
+                  details: findError.message 
+                }), {
+                  status: 500,
+                  headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                })
+              }
+              
+              if (!recipientData || recipientData.length === 0) {
+                return new Response(JSON.stringify({ error: 'User not found. Please check the email or username.' }), {
+                  status: 404,
+                  headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                })
+              }
+              finalRecipientId = recipientData[0].id
+            } else {
+              return new Response(JSON.stringify({ error: 'Recipient ID or username/email is required' }), {
+                status: 400,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              })
+            }
+
+            // Users can't send messages to themselves
+            if (finalRecipientId === user.id) {
+              return new Response(JSON.stringify({ error: 'Cannot send message to yourself' }), {
+                status: 400,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              })
+            }
           }
 
-          // Users can't send messages to themselves
-          if (finalRecipientId === user.id) {
-            return new Response(JSON.stringify({ error: 'Cannot send message to yourself' }), {
-              status: 400,
-              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-            })
-          }
-        }
-
-        // Insert message
-        try {
+          // Insert message
           const insertData: any = {
             sender_id: user.id,
             subject: subject || null,
