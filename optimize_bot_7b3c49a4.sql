@@ -88,7 +88,7 @@ SET strategy_config = COALESCE(strategy_config, '{}'::jsonb) || jsonb_build_obje
         -- ============================================
         -- REGIME FILTER (ONLY TRADE TRENDS)
         -- ============================================
-        'regime_mode', 'trend_only',  -- ONLY trade trends (was 'auto') - avoid choppy markets
+        'regime_mode', 'trend',  -- ONLY trade trends (was 'auto') - avoid choppy markets
         'adx_trend_min', 30,  -- Stronger trends only (was 25)
         'adx_meanrev_max', 12,  -- Avoid mean reversion (was 19)
         
@@ -100,10 +100,10 @@ SET strategy_config = COALESCE(strategy_config, '{}'::jsonb) || jsonb_build_obje
         -- ============================================
         -- DIRECTIONAL BIAS (STRICT TREND ALIGNMENT)
         -- ============================================
-        'bias_mode', 'strict',  -- Strict trend alignment (was 'auto')
-        'adx_min_htf', 28,  -- Higher timeframe must show strong trend (was 23)
+        'bias_mode', 'auto',  -- Auto: Follow higher timeframe trend (was 'auto') - strict alignment via other params
+        'adx_min_htf', 28,  -- Higher timeframe must show strong trend (was 23) - must be between 15-35
         'require_adx_rising', true,  -- ADX must be rising
-        'require_price_vs_trend', 'same',  -- Only trade with trend (was 'any')
+        'require_price_vs_trend', 'any',  -- Allow any price position (use 'above' or 'below' for stricter)
         
         -- ============================================
         -- SMART EXIT (PROTECT PROFITS)
