@@ -21,21 +21,23 @@ WHERE id = '7b3c49a4-099d-4817-8335-c139d24b4643';
 -- =====================================================
 -- ANALYSIS SUMMARY FROM TRANSACTION LOG:
 -- =====================================================
--- Based on the transaction log analysis:
+-- Based on transaction log analysis (2025-12-01 to 2025-12-02):
 -- 
--- 1. DOGEUSDT: High frequency trading, mixed results
--- 2. SOLUSDT: Active trading, some large losses
--- 3. TNSRUSDT: Frequent settlements (funding fees)
--- 4. PIPPINUSDT: Some profitable closes
+-- CRITICAL ISSUES IDENTIFIED:
+-- 1. OVERTRADING: Very high trade frequency (100+ trades in 24 hours)
+-- 2. LARGE LOSSES: SOLUSDT showing losses of -$18.81, -$4.10, -$2.39
+-- 3. FUNDING FEES: TNSRUSDT positions held overnight incurring funding costs
+-- 4. FEE ACCUMULATION: High trading frequency = high fee costs
+-- 5. POOR RISK:REWARD: Many small losses vs fewer large wins
 --
--- KEY ISSUES IDENTIFIED:
--- - High trading frequency leading to fee accumulation
--- - Some large losses on SOLUSDT
--- - Funding fees on TNSRUSDT positions
--- - Need better risk management
+-- PERFORMANCE METRICS:
+-- - Total closed trades: ~50+ across all pairs
+-- - Win rate appears low (many small losses)
+-- - Average loss size larger than average win size
+-- - Funding fees eating into profits
 --
 -- =====================================================
--- RECOMMENDED OPTIMIZATIONS
+-- RECOMMENDED OPTIMIZATIONS (CONSERVATIVE APPROACH)
 -- =====================================================
 
 -- Update bot with optimized settings
