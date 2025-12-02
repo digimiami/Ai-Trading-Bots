@@ -273,9 +273,9 @@ serve(async (req) => {
           .from('messages')
           .select(`
             *,
-            sender:users!messages_sender_id_fkey(id, name, email),
-            recipient:users!messages_recipient_id_fkey(id, name, email),
-            parent:messages!messages_parent_message_id_fkey(id, subject, body)
+            sender:users!sender_id(id, name, email),
+            recipient:users!recipient_id(id, name, email),
+            parent:messages!parent_message_id(id, subject, body)
           `)
 
         if (isAdmin && type === 'admin') {
@@ -287,9 +287,9 @@ serve(async (req) => {
             .from('messages')
             .select(`
               *,
-              sender:users!messages_sender_id_fkey(id, name, email),
-              recipient:users!messages_recipient_id_fkey(id, name, email),
-              parent:messages!messages_parent_message_id_fkey(id, subject, body)
+              sender:users!sender_id(id, name, email),
+              recipient:users!recipient_id(id, name, email),
+              parent:messages!parent_message_id(id, subject, body)
             `)
             .eq('recipient_id', user.id)
             .eq('is_broadcast', false)
@@ -298,9 +298,9 @@ serve(async (req) => {
             .from('messages')
             .select(`
               *,
-              sender:users!messages_sender_id_fkey(id, name, email),
-              recipient:users!messages_recipient_id_fkey(id, name, email),
-              parent:messages!messages_parent_message_id_fkey(id, subject, body)
+              sender:users!sender_id(id, name, email),
+              recipient:users!recipient_id(id, name, email),
+              parent:messages!parent_message_id(id, subject, body)
             `)
             .eq('is_broadcast', true)
 
@@ -328,15 +328,35 @@ serve(async (req) => {
         } else if (type === 'sent') {
           // Messages sent by user
           query = query.eq('sender_id', user.id)
+          
+          const { data: messages, error: messagesError } = await query
+            .order('created_at', { ascending: false })
+            .range(offset, offset + limit - 1)
+
+          if (messagesError) {
+            console.error('Error fetching sent messages:', messagesError)
+            return new Response(JSON.stringify({ 
+              error: 'Failed to fetch messages',
+              details: messagesError.message 
+            }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          }
+
+          return new Response(JSON.stringify({ messages: messages || [] }), {
+            status: 200,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
         } else if (type === 'all') {
           // All messages user is involved in - use separate queries
           const { data: sentMessages, error: sentError } = await supabaseClient
             .from('messages')
             .select(`
               *,
-              sender:users!messages_sender_id_fkey(id, name, email),
-              recipient:users!messages_recipient_id_fkey(id, name, email),
-              parent:messages!messages_parent_message_id_fkey(id, subject, body)
+              sender:users!sender_id(id, name, email),
+              recipient:users!recipient_id(id, name, email),
+              parent:messages!parent_message_id(id, subject, body)
             `)
             .eq('sender_id', user.id)
 
@@ -344,9 +364,9 @@ serve(async (req) => {
             .from('messages')
             .select(`
               *,
-              sender:users!messages_sender_id_fkey(id, name, email),
-              recipient:users!messages_recipient_id_fkey(id, name, email),
-              parent:messages!messages_parent_message_id_fkey(id, subject, body)
+              sender:users!sender_id(id, name, email),
+              recipient:users!recipient_id(id, name, email),
+              parent:messages!parent_message_id(id, subject, body)
             `)
             .eq('recipient_id', user.id)
 
@@ -354,9 +374,9 @@ serve(async (req) => {
             .from('messages')
             .select(`
               *,
-              sender:users!messages_sender_id_fkey(id, name, email),
-              recipient:users!messages_recipient_id_fkey(id, name, email),
-              parent:messages!messages_parent_message_id_fkey(id, subject, body)
+              sender:users!sender_id(id, name, email),
+              recipient:users!recipient_id(id, name, email),
+              parent:messages!parent_message_id(id, subject, body)
             `)
             .eq('is_broadcast', true)
 
@@ -424,9 +444,9 @@ serve(async (req) => {
           .from('messages')
           .select(`
             *,
-            sender:users!messages_sender_id_fkey(id, name, email),
-            recipient:users!messages_recipient_id_fkey(id, name, email),
-            parent:messages!messages_parent_message_id_fkey(id, subject, body)
+            sender:users!sender_id(id, name, email),
+            recipient:users!recipient_id(id, name, email),
+            parent:messages!parent_message_id(id, subject, body)
           `)
           .eq('id', messageId)
           .single()

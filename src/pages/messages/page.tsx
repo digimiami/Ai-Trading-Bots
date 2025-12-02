@@ -103,8 +103,8 @@ export default function MessagesPage() {
       setUserSearchResults([])
       
       alert('Message sent successfully!')
-      setActiveTab('sent')
-      loadMessages()
+      // Reload messages for current tab
+      await loadMessages()
     } catch (error: any) {
       alert(`Error sending message: ${error.message}`)
     }
