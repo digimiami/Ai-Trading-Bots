@@ -98,6 +98,13 @@ export default function Home() {
             >
               <i className="ri-notification-line text-xl text-gray-600 dark:text-gray-300"></i>
             </button>
+            <button
+              onClick={() => navigate('/contact')}
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              title="Contact Us"
+            >
+              <i className="ri-customer-service-line text-xl text-gray-600 dark:text-gray-300"></i>
+            </button>
           </div>
         }
       />
@@ -244,10 +251,18 @@ export default function Home() {
             <Button
               variant="secondary"
               onClick={() => navigate('/academy')}
-              className="col-span-2 h-12 flex items-center justify-center"
+              className="h-12 flex items-center justify-center"
             >
               <i className="ri-graduation-cap-line mr-2"></i>
               Visit Academy
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => navigate('/contact')}
+              className="h-12 flex items-center justify-center"
+            >
+              <i className="ri-customer-service-line mr-2"></i>
+              Contact Us
             </Button>
           </div>
         </Card>
