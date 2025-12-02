@@ -10,7 +10,6 @@ import { supabase } from '../../lib/supabase';
 export default function CryptoNewsPage() {
   const navigate = useNavigate();
   const { slug } = useParams();
-  const { getArticles, getArticle } = useCryptoNews();
   const [articles, setArticles] = useState<CryptoNewsArticle[]>([]);
   const [selectedArticle, setSelectedArticle] = useState<CryptoNewsArticle | null>(null);
   const [loading, setLoading] = useState(true);
