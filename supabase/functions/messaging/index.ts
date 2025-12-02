@@ -139,71 +139,54 @@ serve(async (req) => {
             // Find recipient by ID or username/email
             if (recipientId) {
               finalRecipientId = recipientId
-          } else if (recipientUsername) {
-            // Search for user by email or name (case-insensitive)
-            const searchTerm = recipientUsername.trim()
-            
-            // First try to find in users table
-            const { data: recipientData, error: findError } = await supabaseClient
-              .from('users')
-              .select('id, name, email')
-              .or(`email.ilike.%${searchTerm}%,name.ilike.%${searchTerm}%`)
-              .limit(1)
-            
-            if (findError) {
-              console.error('Error finding user:', findError)
-              return new Response(JSON.stringify({ 
-                error: 'Failed to find user',
-                details: findError.message 
-              }), {
-                status: 500,
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-              })
-            }
-            
-            if (!recipientData || recipientData.length === 0) {
-              // If not found in users table, try auth.users by email
-              const { data: authUsers, error: authError } = await supabaseClient.auth.admin.listUsers()
+            } else if (recipientUsername) {
+              // Search for user by email or name (case-insensitive)
+              const searchTerm = recipientUsername.trim()
               
-              if (!authError && authUsers?.users) {
-                const foundUser = authUsers.users.find(u => 
-                  u.email?.toLowerCase() === searchTerm.toLowerCase() ||
-                  u.user_metadata?.name?.toLowerCase() === searchTerm.toLowerCase()
-                )
-                
-                if (foundUser) {
-                  // Verify user exists in users table, if not, we can't send (foreign key constraint)
-                  const { data: userCheck } = await supabaseClient
-                    .from('users')
-                    .select('id')
-                    .eq('id', foundUser.id)
-                    .single()
-                  
-                  if (userCheck) {
-                    finalRecipientId = foundUser.id
-                  } else {
-                    return new Response(JSON.stringify({ 
-                      error: 'User found but not activated. Please ensure the user has completed registration.' 
-                    }), {
-                      status: 404,
-                      headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-                    })
-                  }
-                } else {
-                  return new Response(JSON.stringify({ error: 'User not found. Please check the email or username.' }), {
-                    status: 404,
-                    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-                  })
-                }
-              } else {
-                return new Response(JSON.stringify({ error: 'User not found. Please check the email or username.' }), {
+              // Find user in users table (which has foreign key to auth.users)
+              const { data: recipientData, error: findError } = await supabaseClient
+                .from('users')
+                .select('id, name, email')
+                .or(`email.ilike.%${searchTerm}%,name.ilike.%${searchTerm}%`)
+                .limit(1)
+              
+              if (findError) {
+                console.error('Error finding user:', findError)
+                return new Response(JSON.stringify({ 
+                  error: 'Failed to find user',
+                  details: findError.message 
+                }), {
+                  status: 500,
+                  headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                })
+              }
+              
+              if (!recipientData || recipientData.length === 0) {
+                return new Response(JSON.stringify({ 
+                  error: 'User not found. Please check the email or username.' 
+                }), {
                   status: 404,
                   headers: { ...corsHeaders, 'Content-Type': 'application/json' }
                 })
               }
-            } else {
-              finalRecipientId = recipientData[0].id
-            }
+              
+              // Verify the user ID exists in auth.users (required by foreign key)
+              // Since users table has foreign key to auth.users, this should always be true
+              // But we verify to provide better error messages
+              const userId = recipientData[0].id
+              const { data: authUser, error: authCheckError } = await supabaseClient.auth.admin.getUserById(userId)
+              
+              if (authCheckError || !authUser) {
+                console.error('User ID found but not in auth.users:', userId, authCheckError)
+                return new Response(JSON.stringify({ 
+                  error: 'User account is not properly set up. Please contact support.' 
+                }), {
+                  status: 400,
+                  headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                })
+              }
+              
+              finalRecipientId = userId
             } else {
               return new Response(JSON.stringify({ error: 'Recipient ID or username/email is required' }), {
                 status: 400,
