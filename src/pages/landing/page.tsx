@@ -480,9 +480,11 @@ export default function LandingPage() {
         <div className="mx-auto flex max-w-6xl flex-col gap-8 px-6 py-10 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="flex items-center space-x-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-500 text-lg text-white shadow-lg shadow-blue-500/40">
-                <i className="ri-robot-2-fill" />
-              </div>
+              <img 
+                src="https://dkawxgwdqiirgmmjbvhc.supabase.co/storage/v1/object/public/profile-images/logo.png" 
+                alt="Pablo Logo" 
+                className="h-9 w-9 sm:h-10 sm:w-10 object-contain"
+              />
               <span className="text-sm uppercase tracking-[0.3em] text-slate-400/80">Pablo</span>
             </div>
             <p className="mt-3 text-xs text-slate-500/80">
