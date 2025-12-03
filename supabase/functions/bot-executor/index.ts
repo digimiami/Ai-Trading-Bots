@@ -1652,30 +1652,68 @@ class MarketDataFetcher {
         
         for (const symbolVariant of symbolVariants) {
           try {
-            // Bitunix API endpoint for ticker
+            // Bitunix API endpoint for ticker - try multiple endpoints
             const marketType = tradingType === 'futures' || tradingType === 'linear' ? 'futures' : 'spot';
-            const response = await fetch(`https://api.bitunix.com/api/v1/market/ticker?symbol=${symbolVariant}&marketType=${marketType}`, {
-              signal: AbortSignal.timeout(10000)
-            });
             
-            if (!response.ok) {
-              continue; // Try next variant
-            }
+            // Try different Bitunix ticker endpoints
+            const endpoints = [
+              `https://api.bitunix.com/api/v1/market/ticker?symbol=${symbolVariant}&marketType=${marketType}`,
+              `https://fapi.bitunix.com/api/v1/market/ticker?symbol=${symbolVariant}&marketType=${marketType}`,
+              `https://api.bitunix.com/api/v1/market/ticker?symbol=${symbolVariant}`,
+              `https://fapi.bitunix.com/api/v1/market/ticker?symbol=${symbolVariant}`
+            ];
             
-            const data = await response.json();
-            
-            // Bitunix response format: { code: 0, data: { lastPrice: "..." } }
-            if (data.code === 0 && data.data && data.data.lastPrice) {
-              const price = parseFloat(data.data.lastPrice);
-              if (price > 0 && isFinite(price)) {
-                if (symbolVariant !== symbol) {
-                  console.log(`✅ Found price using symbol variant: ${symbolVariant} (original: ${symbol})`);
+            for (const endpoint of endpoints) {
+              try {
+                const response = await fetch(endpoint, {
+                  signal: AbortSignal.timeout(10000)
+                });
+                
+                if (!response.ok) {
+                  continue; // Try next endpoint
                 }
-                return price;
+                
+                const data = await response.json();
+                console.log(`📊 Bitunix ticker response for ${symbolVariant}:`, JSON.stringify(data).substring(0, 200));
+                
+                // Bitunix response format: { code: 0, data: { lastPrice: "..." } }
+                // Or: { code: 0, data: [{ symbol: "...", lastPrice: "..." }] }
+                if (data.code === 0 && data.data) {
+                  let price = 0;
+                  
+                  // Handle array response (tickers list)
+                  if (Array.isArray(data.data)) {
+                    const ticker = data.data.find((t: any) => 
+                      (t.symbol || t.pair || '').toUpperCase() === symbolVariant.toUpperCase()
+                    );
+                    if (ticker) {
+                      price = parseFloat(ticker.lastPrice || ticker.last || ticker.price || '0');
+                    }
+                  } 
+                  // Handle object response (single ticker)
+                  else if (data.data.lastPrice || data.data.last || data.data.price) {
+                    price = parseFloat(data.data.lastPrice || data.data.last || data.data.price || '0');
+                  }
+                  
+                  if (price > 0 && isFinite(price)) {
+                    console.log(`✅ Bitunix price found for ${symbolVariant}: ${price} (from ${endpoint})`);
+                    if (symbolVariant !== symbol) {
+                      console.log(`✅ Found price using symbol variant: ${symbolVariant} (original: ${symbol})`);
+                    }
+                    return price;
+                  } else {
+                    console.warn(`⚠️ Bitunix returned price 0 or invalid for ${symbolVariant} from ${endpoint}`);
+                  }
+                } else {
+                  console.warn(`⚠️ Bitunix ticker API returned code ${data.code} for ${symbolVariant}: ${data.msg || data.message || 'Unknown error'}`);
+                }
+              } catch (endpointErr: any) {
+                console.warn(`⚠️ Error trying Bitunix endpoint ${endpoint}:`, endpointErr.message);
+                continue; // Try next endpoint
               }
             }
-          } catch (err) {
-            console.warn(`⚠️ Error trying symbol variant ${symbolVariant}:`, err);
+          } catch (err: any) {
+            console.warn(`⚠️ Error trying symbol variant ${symbolVariant}:`, err.message);
             continue; // Try next variant
           }
         }
