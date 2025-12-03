@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../../src/lib/supabase';
 
 interface MLPrediction {
@@ -38,6 +39,7 @@ interface AIPerformance {
 }
 
 const AiMlDashboard: React.FC = () => {
+  const navigate = useNavigate();
   const [mlPredictions, setMLPredictions] = useState<MLPrediction[]>([]);
   const [aiPerformance, setAIPerformance] = useState<AIPerformance[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -177,6 +179,63 @@ const AiMlDashboard: React.FC = () => {
     } catch (error) {
       console.error('Error generating prediction:', error);
     }
+  };
+
+  // Convert AI prediction to trading bot
+  const convertPredictionToBot = (prediction: MLPrediction) => {
+    // Determine trading type based on signal
+    // For BUY/SELL signals, use futures trading. For HOLD, use spot
+    const tradingType = prediction.signal === 'HOLD' ? 'spot' : 'futures';
+    
+    // Determine bias mode based on signal
+    let biasMode = 'auto';
+    if (prediction.signal === 'BUY') {
+      biasMode = 'long-only';
+    } else if (prediction.signal === 'SELL') {
+      biasMode = 'short-only';
+    }
+    
+    // Calculate recommended settings based on confidence
+    const confidence = prediction.confidence;
+    const riskLevel = confidence > 0.8 ? 'high' : confidence > 0.6 ? 'medium' : 'low';
+    const leverage = confidence > 0.8 ? 5 : confidence > 0.6 ? 3 : 2;
+    const tradeAmount = confidence > 0.8 ? 100 : confidence > 0.6 ? 75 : 50;
+    
+    // Calculate stop loss and take profit based on confidence
+    // Higher confidence = tighter stops, wider targets
+    const stopLoss = confidence > 0.8 ? 1.5 : confidence > 0.6 ? 2.0 : 2.5;
+    const takeProfit = confidence > 0.8 ? 4.0 : confidence > 0.6 ? 3.5 : 3.0;
+    
+    // Use features to set strategy parameters
+    const rsiThreshold = prediction.features.rsi ? Math.round(prediction.features.rsi) : 70;
+    const adxThreshold = prediction.features.adx ? Math.round(prediction.features.adx) : 25;
+    
+    // Build URL parameters for create-bot page
+    const params = new URLSearchParams({
+      symbol: prediction.symbol,
+      exchange: 'bybit', // Default to bybit
+      tradingType: tradingType,
+      timeframe: '1h', // Default timeframe
+      leverage: leverage.toString(),
+      riskLevel: riskLevel,
+      tradeAmount: tradeAmount.toString(),
+      stopLoss: stopLoss.toString(),
+      takeProfit: takeProfit.toString(),
+      name: `AI Bot - ${prediction.symbol} (${prediction.signal})`,
+      // Strategy parameters
+      rsiThreshold: rsiThreshold.toString(),
+      adxThreshold: adxThreshold.toString(),
+      // Advanced config
+      biasMode: biasMode,
+      regimeMode: 'trend',
+      // Indicate this came from AI prediction
+      fromAiPrediction: 'true',
+      predictionId: prediction.id,
+      confidence: (confidence * 100).toFixed(1)
+    });
+    
+    // Navigate to create-bot page with pre-filled parameters
+    navigate(`/create-bot?${params.toString()}`);
   };
 
   // Calculate metrics from performance data
@@ -481,12 +540,13 @@ const AiMlDashboard: React.FC = () => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MACD</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ADX</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {mlPredictions.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
                     No predictions yet. Click "Generate Prediction" to create AI predictions.
                   </td>
                 </tr>
@@ -519,6 +579,18 @@ const AiMlDashboard: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {new Date(prediction.timestamp).toLocaleTimeString()}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <button
+                        onClick={() => convertPredictionToBot(prediction)}
+                        className="inline-flex items-center px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-colors"
+                        title="Convert this AI prediction to a trading bot"
+                      >
+                        <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        Convert to Bot
+                      </button>
                     </td>
                   </tr>
                 ))

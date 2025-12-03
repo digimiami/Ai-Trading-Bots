@@ -531,6 +531,20 @@ function calculateTradeSizing(bot: any, price: number): TradeSizingResult {
     clampedQuantity = Math.floor(clampedQuantity / steps.stepSize) * steps.stepSize;
   }
 
+  // Ensure we never exceed max (critical for symbols like SHIBUSDT where max = 1000000)
+  // If clamped quantity equals or exceeds max, reduce by one step to stay within bounds
+  if (clampedQuantity >= quantityConstraints.max) {
+    clampedQuantity = quantityConstraints.max;
+    // If max is not on a step boundary, reduce by one step
+    if (steps.stepSize > 0 && (clampedQuantity % steps.stepSize) !== 0) {
+      clampedQuantity = Math.floor(quantityConstraints.max / steps.stepSize) * steps.stepSize;
+    }
+    // Final safety check: ensure we're still within bounds
+    if (clampedQuantity > quantityConstraints.max) {
+      clampedQuantity = quantityConstraints.max - steps.stepSize;
+    }
+  }
+
   if (clampedQuantity < quantityConstraints.min) {
     throw new Error(`Calculated quantity ${clampedQuantity} is below minimum ${quantityConstraints.min} after step rounding for ${bot.symbol}`);
   }
@@ -5755,6 +5769,24 @@ class BotExecutor {
       // Re-clamp after rounding to ensure we don't exceed max due to rounding errors
       qty = Math.max(constraints.min, Math.min(constraints.max, qty));
       
+      // CRITICAL: If quantity is at or above max, ensure it's exactly max or below
+      // This prevents "Invalid quantity" errors for symbols like SHIBUSDT (max = 1000000)
+      if (qty >= constraints.max) {
+        if (stepSize > 0) {
+          // Calculate the largest valid quantity that's on a step boundary and <= max
+          const maxSteps = Math.floor(constraints.max / stepSize);
+          qty = maxSteps * stepSize;
+          // Final safety: if this still exceeds max, reduce by one step
+          if (qty > constraints.max) {
+            qty = (maxSteps - 1) * stepSize;
+          }
+        } else {
+          qty = constraints.max;
+        }
+        // Ensure we're still >= min
+        qty = Math.max(constraints.min, qty);
+      }
+      
       // Calculate decimals for formatting - ensure we have enough precision
       // For stepSize 0.1, we need 1 decimal place; for 0.01, we need 2, etc.
       const stepDecimals = stepSize < 1 ? stepSize.toString().split('.')[1]?.length || 0 : 0;
@@ -5764,6 +5796,14 @@ class BotExecutor {
       if (stepSize > 0) {
         const factor = 1 / stepSize;
         qty = Math.round(qty * factor) / factor;
+        // Re-clamp one more time after final rounding
+        if (qty >= constraints.max) {
+          const maxSteps = Math.floor(constraints.max / stepSize);
+          qty = maxSteps * stepSize;
+          if (qty > constraints.max) {
+            qty = (maxSteps - 1) * stepSize;
+          }
+        }
       }
       
       // Format the quantity string with exact decimal places

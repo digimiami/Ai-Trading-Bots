@@ -31,6 +31,11 @@ export default function CreateBotPage() {
   const isFromPabloReady = searchParams.get('template') === 'pablo-ready';
   const pabloReadyBotId = searchParams.get('botId');
   
+  // Check if coming from AI prediction
+  const isFromAiPrediction = searchParams.get('fromAiPrediction') === 'true';
+  const aiPredictionId = searchParams.get('predictionId');
+  const aiConfidence = searchParams.get('confidence');
+  
   // Check if cloning from bot ID
   const cloneBotId = searchParams.get('cloneBotId');
   const [showCloneModal, setShowCloneModal] = useState(false);
@@ -50,9 +55,13 @@ export default function CreateBotPage() {
   const urlTimeframe = (searchParams.get('timeframe') || '1h') as '1m' | '3m' | '5m' | '15m' | '30m' | '45m' | '1h' | '2h' | '3h' | '4h' | '5h' | '6h' | '7h' | '8h' | '9h' | '10h' | '12h' | '1d' | '1w' | '1M';
   const urlStrategy = searchParams.get('strategy');
   const urlStrategyConfig = searchParams.get('strategyConfig');
+  const urlRsiThreshold = searchParams.get('rsiThreshold');
+  const urlAdxThreshold = searchParams.get('adxThreshold');
+  const urlBiasMode = searchParams.get('biasMode');
+  const urlRegimeMode = searchParams.get('regimeMode');
   
   const [formData, setFormData] = useState({
-    name: isFromBacktest && backtestData?.botName ? backtestData.botName : (isFromPabloReady && searchParams.get('name') ? searchParams.get('name')! : ''),
+    name: isFromBacktest && backtestData?.botName ? backtestData.botName : (isFromPabloReady && searchParams.get('name') ? searchParams.get('name')! : (isFromAiPrediction && searchParams.get('name') ? searchParams.get('name')! : '')),
     exchange: isFromBacktest && backtestData?.backtestConfig?.exchange ? backtestData.backtestConfig.exchange : urlExchange,
     tradingType: isFromBacktest && backtestData?.backtestConfig?.tradingType ? backtestData.backtestConfig.tradingType : urlTradingType,
     symbol: isFromBacktest && backtestData?.backtestConfig?.symbols?.[0] ? backtestData.backtestConfig.symbols[0] : urlSymbol,
@@ -278,8 +287,8 @@ export default function CreateBotPage() {
     isFromBacktest && backtestData?.backtestStrategy
       ? backtestData.backtestStrategy
       : {
-          rsiThreshold: 70,
-          adxThreshold: 25,
+          rsiThreshold: urlRsiThreshold ? parseFloat(urlRsiThreshold) : 70,
+          adxThreshold: urlAdxThreshold ? parseFloat(urlAdxThreshold) : 25,
           bbWidthThreshold: 0.02,
           emaSlope: 0.5,
           atrPercentage: 2.5,
@@ -295,7 +304,7 @@ export default function CreateBotPage() {
       ? backtestData.backtestAdvancedConfig
       : {
           // Directional Bias
-          bias_mode: 'auto',
+          bias_mode: (urlBiasMode as any) || 'auto',
           htf_timeframe: '4h',
           htf_trend_indicator: 'EMA200',
           ema_fast_period: 50,
@@ -304,7 +313,7 @@ export default function CreateBotPage() {
           require_adx_rising: true,
           
           // Regime Filter
-          regime_mode: 'auto',
+          regime_mode: (urlRegimeMode as any) || 'auto',
           adx_trend_min: 25,
           adx_meanrev_max: 19,
           
@@ -762,6 +771,31 @@ All settings have been applied to your bot configuration.`;
                     <div className="text-xs text-green-600 mt-2">
                       <span className="font-semibold">Backtest Performance:</span> {backtestData.backtestResults.win_rate?.toFixed(1) || 0}% win rate, 
                       ${(backtestData.backtestResults.net_profit || backtestData.backtestResults.total_pnl || 0).toFixed(2)} net profit
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* Notification when coming from AI prediction */}
+          {isFromAiPrediction && (
+            <Card className="p-4 mb-6 bg-purple-50 border-2 border-purple-300">
+              <div className="flex items-start">
+                <div className="flex-shrink-0">
+                  <i className="ri-brain-line text-2xl text-purple-600"></i>
+                </div>
+                <div className="ml-3 flex-1">
+                  <h3 className="text-sm font-semibold text-purple-900 mb-1">
+                    🤖 Form Pre-filled from AI Prediction
+                  </h3>
+                  <p className="text-sm text-purple-700 mb-2">
+                    Your bot settings have been automatically configured based on the AI/ML prediction. The bot is optimized for the predicted signal ({formData.symbol}). Review and adjust as needed, then click "Create Bot" to create your trading bot.
+                  </p>
+                  {aiConfidence && (
+                    <div className="text-xs text-purple-600 mt-2">
+                      <span className="font-semibold">AI Confidence:</span> {aiConfidence}% | 
+                      <span className="font-semibold ml-2">Prediction ID:</span> {aiPredictionId || 'N/A'}
                     </div>
                   )}
                 </div>
@@ -1417,8 +1451,9 @@ All settings have been applied to your bot configuration.`;
                     <h3 className="text-md font-semibold text-gray-800 mb-3">🎯 Directional Bias</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                           Bias Mode
+                          <HelpTooltip text="Directional bias for trading. Auto: Follow higher timeframe trend. Long Only: Only buy/long positions. Short Only: Only sell/short positions. Both: Trade in both directions." />
                         </label>
                         <select
                           value={advancedConfig.bias_mode}
@@ -1433,8 +1468,9 @@ All settings have been applied to your bot configuration.`;
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                           HTF Timeframe
+                          <HelpTooltip text="Higher Timeframe for trend analysis. The bot uses this timeframe to determine the overall market trend direction. Higher timeframes (4h, 1d) show stronger trends, lower timeframes (1h, 2h) are more sensitive." />
                         </label>
                         <select
                           value={advancedConfig.htf_timeframe}
@@ -1455,8 +1491,9 @@ All settings have been applied to your bot configuration.`;
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                           HTF Trend Indicator
+                          <HelpTooltip text="Technical indicator used to determine trend direction on the higher timeframe. EMA: Exponential Moving Average (smooth trend). SMA: Simple Moving Average (classic trend). ADX: Average Directional Index (trend strength)." />
                         </label>
                         <select
                           value={advancedConfig.htf_trend_indicator}
@@ -1478,8 +1515,9 @@ All settings have been applied to your bot configuration.`;
 
                       <div>
                         <div className="flex items-center justify-between mb-2">
-                          <label className="block text-sm font-medium text-gray-700">
+                          <label className="block text-sm font-medium text-gray-700 flex items-center">
                             ADX Min (HTF): {advancedConfig.adx_min_htf}
+                            <HelpTooltip text="Minimum ADX (Average Directional Index) value required on the higher timeframe to confirm a strong trend. Higher values (28-35) = only very strong trends, lower values (15-20) = weaker trends allowed. ADX measures trend strength, not direction." />
                           </label>
                           <div className="flex items-center">
                             <span className={`text-xs mr-2 ${(advancedConfig as any).disable_htf_adx_check ? 'text-green-600' : 'text-gray-400'}`}>
@@ -1529,8 +1567,9 @@ All settings have been applied to your bot configuration.`;
                     <h3 className="text-md font-semibold text-gray-800 mb-3">📐 Indicator Settings</h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                           EMA Length
+                          <HelpTooltip text="Exponential Moving Average period length. Lower values (20-50) = more sensitive to price changes, higher values (100-200) = smoother, less reactive. Used to identify trend direction and momentum." />
                         </label>
                         <input
                           type="number"
@@ -1548,8 +1587,9 @@ All settings have been applied to your bot configuration.`;
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                           ATR Length
+                          <HelpTooltip text="Average True Range period for volatility calculation. Lower values (7-14) = more sensitive to recent volatility, higher values (20-30) = smoother volatility measure. ATR is used for dynamic stop loss and position sizing." />
                         </label>
                         <input
                           type="number"
@@ -1567,8 +1607,9 @@ All settings have been applied to your bot configuration.`;
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                           ATR TP Multiplier
+                          <HelpTooltip text="ATR multiplier for take profit distance. Higher values (3-5) = wider take profit targets (more room for price movement), lower values (1-2) = tighter targets (quicker exits). Multiplied by ATR to set dynamic take profit levels." />
                         </label>
                         <input
                           type="number"
@@ -1587,8 +1628,9 @@ All settings have been applied to your bot configuration.`;
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                           ATR SL Multiplier
+                          <HelpTooltip text="ATR multiplier for stop loss distance. Higher values (1.5-2.5) = wider stops (less likely to be hit by noise), lower values (0.8-1.2) = tighter stops (more precise but riskier). Multiplied by ATR to set dynamic stop loss levels." />
                         </label>
                         <input
                           type="number"
@@ -1607,8 +1649,9 @@ All settings have been applied to your bot configuration.`;
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                           RSI Length
+                          <HelpTooltip text="RSI (Relative Strength Index) calculation period. Lower values (7-10) = more sensitive, reacts faster to price changes. Higher values (20-30) = smoother, less reactive. Standard is 14. Used to identify overbought/oversold conditions." />
                         </label>
                         <input
                           type="number"
@@ -1626,8 +1669,9 @@ All settings have been applied to your bot configuration.`;
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                           RSI Overbought
+                          <HelpTooltip text="RSI threshold for overbought condition. When RSI exceeds this value, the asset is considered overbought (potentially overvalued). Higher values (75-90) = more conservative, lower values (60-70) = more aggressive. Standard is 70." />
                         </label>
                         <input
                           type="number"
@@ -1645,8 +1689,9 @@ All settings have been applied to your bot configuration.`;
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                           RSI Oversold
+                          <HelpTooltip text="RSI threshold for oversold condition. When RSI falls below this value, the asset is considered oversold (potentially undervalued). Lower values (20-25) = more conservative, higher values (30-40) = more aggressive. Standard is 30." />
                         </label>
                         <input
                           type="number"
@@ -1670,8 +1715,9 @@ All settings have been applied to your bot configuration.`;
                     <h3 className="text-md font-semibold text-gray-800 mb-3">📊 Regime Filter</h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                           Regime Mode
+                          <HelpTooltip text="Market regime filter. Auto Detect: Trade in both trending and ranging markets. Trend Only: Only trade when market is trending (strong directional movement). Mean Reversion Only: Only trade when market is ranging (price bouncing between levels)." />
                         </label>
                         <select
                           value={advancedConfig.regime_mode}
@@ -1685,8 +1731,9 @@ All settings have been applied to your bot configuration.`;
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                           ADX Trend Min: {advancedConfig.adx_trend_min}
+                          <HelpTooltip text="Minimum ADX value to consider market as trending. When ADX is above this value, the market is in a trending regime. Higher values (28-35) = only very strong trends, lower values (20-25) = weaker trends allowed. Used with Regime Mode." />
                         </label>
                         <input
                           type="range"
@@ -1701,8 +1748,9 @@ All settings have been applied to your bot configuration.`;
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                           ADX Mean Rev Max: {advancedConfig.adx_meanrev_max}
+                          <HelpTooltip text="Maximum ADX value to consider market as ranging (mean reversion). When ADX is below this value, the market is in a ranging regime. Lower values (12-15) = stricter ranging filter, higher values (18-25) = more lenient. Used with Regime Mode." />
                         </label>
                         <input
                           type="range"
@@ -1723,8 +1771,9 @@ All settings have been applied to your bot configuration.`;
                     <h3 className="text-md font-semibold text-gray-800 mb-3">🛡️ Risk Management</h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                           Risk Per Trade: {advancedConfig.risk_per_trade_pct}%
+                          <HelpTooltip text="Percentage of account balance to risk on each trade. Lower values (0.25-0.5%) = conservative, safer. Higher values (1-2%) = aggressive, higher risk/reward. This controls position sizing based on stop loss distance." />
                         </label>
                         <input
                           type="range"
@@ -1738,8 +1787,9 @@ All settings have been applied to your bot configuration.`;
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                           Daily Loss Limit: {advancedConfig.daily_loss_limit_pct}%
+                          <HelpTooltip text="Maximum percentage loss allowed per day before bot automatically pauses. Lower values (1-2%) = strict protection, higher values (5-10%) = more lenient. Bot will stop trading for the day if this limit is reached. Resets at midnight UTC." />
                         </label>
                         <input
                           type="range"
@@ -1753,8 +1803,9 @@ All settings have been applied to your bot configuration.`;
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                           Max Trades/Day: {advancedConfig.max_trades_per_day}
+                          <HelpTooltip text="Maximum number of trades the bot can execute per day. Lower values (3-6) = conservative, prevents overtrading. Higher values (10-50) = more active trading. Helps control trading frequency and reduce risk from excessive trading. Resets at midnight UTC." />
                         </label>
                         <input
                           type="range"
@@ -1768,8 +1819,9 @@ All settings have been applied to your bot configuration.`;
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                           Weekly Loss Limit: {advancedConfig.weekly_loss_limit_pct}%
+                          <HelpTooltip text="Maximum percentage loss allowed per week before bot automatically pauses. Lower values (2-4%) = strict protection, higher values (8-15%) = more lenient. Bot will stop trading for the week if this limit is reached. Resets weekly on Monday UTC." />
                         </label>
                         <input
                           type="range"
@@ -1784,8 +1836,9 @@ All settings have been applied to your bot configuration.`;
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                           Max Concurrent Positions: {advancedConfig.max_concurrent}
+                          <HelpTooltip text="Maximum number of open positions the bot can have at the same time. Lower values (1-2) = conservative, less capital at risk. Higher values (3-5) = more positions, higher exposure. Prevents over-leveraging and helps manage risk across multiple trades." />
                         </label>
                         <input
                           type="range"
@@ -1809,8 +1862,9 @@ All settings have been applied to your bot configuration.`;
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                           Max Consecutive Losses: {advancedConfig.max_consecutive_losses || 5}
+                          <HelpTooltip text="Maximum number of consecutive losing trades before bot automatically pauses. Lower values (2-3) = strict protection, stops quickly after losses. Higher values (5-10) = more lenient, allows more losses before stopping. Helps prevent extended losing streaks." />
                         </label>
                         <input
                           type="range"
@@ -1833,8 +1887,9 @@ All settings have been applied to your bot configuration.`;
                     <h3 className="text-md font-semibold text-gray-800 mb-3">🎯 Exit Strategy</h3>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                           TP1 (R): {advancedConfig.tp1_r}
+                          <HelpTooltip text="First take profit target in Risk:Reward ratio (R). If R = 1.5, profit target is 1.5x the stop loss distance. Higher values (2-3R) = better risk:reward but harder to reach, lower values (0.5-1R) = easier to hit but lower reward. Example: If stop loss is $10, TP1 at 1.5R = $15 profit target." />
                         </label>
                         <input
                           type="range"
@@ -1849,8 +1904,9 @@ All settings have been applied to your bot configuration.`;
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                           TP2 (R): {advancedConfig.tp2_r}
+                          <HelpTooltip text="Second take profit target in Risk:Reward ratio (R). This is the extended profit target for the remaining position after TP1 is hit. Higher values (3-5R) = maximize profits on strong trends, lower values (1.5-2R) = more conservative. Only applies to the portion of position not closed at TP1." />
                         </label>
                         <input
                           type="range"
@@ -1865,8 +1921,9 @@ All settings have been applied to your bot configuration.`;
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                           TP1 Size: {(advancedConfig.tp1_size * 100).toFixed(0)}%
+                          <HelpTooltip text="Percentage of position to close when first take profit (TP1) is reached. Higher values (60-75%) = lock in more profits early, lower values (25-40%) = let more position ride to TP2. Example: 70% means close 70% of position at TP1, let remaining 30% go to TP2." />
                         </label>
                         <input
                           type="range"
@@ -1947,8 +2004,9 @@ All settings have been applied to your bot configuration.`;
                         {advancedConfig.enable_trailing_take_profit && (
                           <div className="mt-3 space-y-3">
                             <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                              <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                                 Trailing TP Distance (ATR Multiplier): {advancedConfig.trailing_take_profit_atr || 1.0}
+                                <HelpTooltip text="Distance from the highest equity point to the trailing stop, measured in ATR multiples. Higher values (2-3) = wider trailing stop (less likely to be hit), lower values (0.5-1) = tighter trailing stop (protects profits faster). As equity reaches new highs, the trailing stop moves up automatically." />
                               </label>
                               <input
                                 type="range"
@@ -1998,8 +2056,9 @@ All settings have been applied to your bot configuration.`;
                         {advancedConfig.smart_exit_enabled && (
                           <div className="mt-3 space-y-3">
                             <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                              <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                                 Retracement Trigger (%): {advancedConfig.smart_exit_retracement_pct || 2.0}%
+                                <HelpTooltip text="Percentage retracement from the highest equity point that triggers an immediate exit. Lower values (0.5-1%) = exit quickly on small reversals, higher values (3-5%) = allow more retracement before exiting. Protects profits by exiting when market reverses beyond your threshold." />
                               </label>
                               <input
                                 type="range"
@@ -2164,8 +2223,9 @@ All settings have been applied to your bot configuration.`;
                       {advancedConfig.enable_pair_win_rate && (
                         <div className="mt-3 space-y-3">
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                               Minimum Trades Before Display: {advancedConfig.pair_win_rate_min_trades || 3}
+                              <HelpTooltip text="Minimum number of trades required per trading pair before displaying win rate statistics. Prevents misleading statistics when there are too few trades. Higher values (5-10) = more reliable stats, lower values (1-3) = show stats earlier but may be less accurate." />
                             </label>
                             <input
                               type="range"
@@ -2182,8 +2242,9 @@ All settings have been applied to your bot configuration.`;
                           </div>
                           
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                            <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                               Update Frequency
+                              <HelpTooltip text="How often to recalculate and update win rate statistics for each trading pair. Real-Time: Updates immediately when each trade closes (most accurate). On Close: Updates when position closes. Periodic: Updates every 5 minutes (less frequent, saves resources)." />
                             </label>
                             <select
                               value={advancedConfig.pair_win_rate_update_frequency || 'realtime'}
