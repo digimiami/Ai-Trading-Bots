@@ -532,16 +532,26 @@ function calculateTradeSizing(bot: any, price: number): TradeSizingResult {
   }
 
   // Ensure we never exceed max (critical for symbols like SHIBUSDT where max = 1000000)
-  // If clamped quantity equals or exceeds max, reduce by one step to stay within bounds
+  // CRITICAL FIX: When quantity equals max, reduce by one step to ensure it's strictly less than max
+  // Bybit rejects quantities that equal the max value, so we must stay below it
   if (clampedQuantity >= quantityConstraints.max) {
-    clampedQuantity = quantityConstraints.max;
-    // If max is not on a step boundary, reduce by one step
-    if (steps.stepSize > 0 && (clampedQuantity % steps.stepSize) !== 0) {
-      clampedQuantity = Math.floor(quantityConstraints.max / steps.stepSize) * steps.stepSize;
+    if (steps.stepSize > 0) {
+      // Calculate the largest valid quantity that's strictly less than max
+      const maxSteps = Math.floor(quantityConstraints.max / steps.stepSize);
+      // If max is exactly on a step boundary, use one step less
+      if ((quantityConstraints.max % steps.stepSize) === 0) {
+        clampedQuantity = (maxSteps - 1) * steps.stepSize;
+      } else {
+        // If max is not on a step boundary, use the largest step that's below max
+        clampedQuantity = maxSteps * steps.stepSize;
+      }
+    } else {
+      // If no step size, reduce by a small amount (1% of max, but at least 1)
+      clampedQuantity = quantityConstraints.max - Math.max(1, quantityConstraints.max * 0.01);
     }
-    // Final safety check: ensure we're still within bounds
+    // Final safety check: ensure we're still within bounds and >= min
     if (clampedQuantity > quantityConstraints.max) {
-      clampedQuantity = quantityConstraints.max - steps.stepSize;
+      clampedQuantity = quantityConstraints.max - (steps.stepSize || 1);
     }
   }
 
@@ -5769,19 +5779,27 @@ class BotExecutor {
       // Re-clamp after rounding to ensure we don't exceed max due to rounding errors
       qty = Math.max(constraints.min, Math.min(constraints.max, qty));
       
-      // CRITICAL: If quantity is at or above max, ensure it's exactly max or below
+      // CRITICAL: If quantity is at or above max, reduce by one step to stay strictly below max
+      // Bybit rejects quantities that equal the max value, so we must stay below it
       // This prevents "Invalid quantity" errors for symbols like SHIBUSDT (max = 1000000)
       if (qty >= constraints.max) {
         if (stepSize > 0) {
-          // Calculate the largest valid quantity that's on a step boundary and <= max
+          // Calculate the largest valid quantity that's strictly less than max
           const maxSteps = Math.floor(constraints.max / stepSize);
-          qty = maxSteps * stepSize;
-          // Final safety: if this still exceeds max, reduce by one step
-          if (qty > constraints.max) {
+          // If max is exactly on a step boundary, use one step less
+          if ((constraints.max % stepSize) === 0) {
+            qty = (maxSteps - 1) * stepSize;
+          } else {
+            // If max is not on a step boundary, use the largest step that's below max
+            qty = maxSteps * stepSize;
+          }
+          // Final safety: if this still exceeds max, reduce by one more step
+          if (qty >= constraints.max) {
             qty = (maxSteps - 1) * stepSize;
           }
         } else {
-          qty = constraints.max;
+          // If no step size, reduce by a small amount (1% of max, but at least 1)
+          qty = constraints.max - Math.max(1, constraints.max * 0.01);
         }
         // Ensure we're still >= min
         qty = Math.max(constraints.min, qty);
@@ -5797,10 +5815,17 @@ class BotExecutor {
         const factor = 1 / stepSize;
         qty = Math.round(qty * factor) / factor;
         // Re-clamp one more time after final rounding
+        // CRITICAL: Always stay strictly below max (Bybit rejects quantities equal to max)
         if (qty >= constraints.max) {
           const maxSteps = Math.floor(constraints.max / stepSize);
-          qty = maxSteps * stepSize;
-          if (qty > constraints.max) {
+          // If max is exactly on a step boundary, use one step less
+          if ((constraints.max % stepSize) === 0) {
+            qty = (maxSteps - 1) * stepSize;
+          } else {
+            qty = maxSteps * stepSize;
+          }
+          // Final safety check
+          if (qty >= constraints.max) {
             qty = (maxSteps - 1) * stepSize;
           }
         }
