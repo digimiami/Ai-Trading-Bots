@@ -362,6 +362,167 @@ async function fetchOKXBalance(apiKey: string, apiSecret: string, passphrase: st
   }
 }
 
+async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet: boolean) {
+  const baseUrl = isTestnet ? 'https://api-testnet.bitunix.com' : 'https://api.bitunix.com'
+  
+  try {
+    const timestamp = Date.now().toString()
+    const nonce = timestamp
+    
+    // Bitunix balance endpoint - try both spot and futures
+    // First try futures account balance
+    const params: any = {
+      timestamp: timestamp,
+      nonce: nonce
+    }
+    
+    // Create query string for signature (sorted keys)
+    const queryString = Object.keys(params)
+      .sort()
+      .map(key => `${key}=${params[key]}`)
+      .join('&')
+    
+    console.log('=== BITUNIX BALANCE DEBUG ===')
+    console.log('0. Environment:', isTestnet ? 'TESTNET' : 'MAINNET')
+    console.log('0. Base URL:', baseUrl)
+    console.log('1. Timestamp:', timestamp)
+    console.log('2. Nonce:', nonce)
+    console.log('3. Query string:', queryString)
+    console.log('4. API Key (first 10 chars):', apiKey.substring(0, 10) + '...')
+    console.log('5. Secret (first 10 chars):', apiSecret.substring(0, 10) + '...')
+    
+    // Create signature: HMAC-SHA256(queryString, apiSecret)
+    const signature = await createBitunixSignature(queryString, apiSecret)
+    
+    console.log('6. Generated signature:', signature)
+    console.log('=== END BITUNIX DEBUG ===')
+    
+    // Try futures account balance first
+    let requestPath = '/api/v1/account/balance'
+    let response = await fetch(`${baseUrl}${requestPath}?${queryString}`, {
+      method: 'GET',
+      headers: {
+        'api-key': apiKey,
+        'timestamp': timestamp,
+        'nonce': nonce,
+        'sign': signature,
+        'Content-Type': 'application/json'
+      }
+    })
+    
+    // If futures balance fails, try spot balance
+    if (!response.ok || response.status === 404) {
+      console.log('Futures balance endpoint failed, trying spot balance...')
+      requestPath = '/api/v1/account/spot-balance'
+      response = await fetch(`${baseUrl}${requestPath}?${queryString}`, {
+        method: 'GET',
+        headers: {
+          'api-key': apiKey,
+          'timestamp': timestamp,
+          'nonce': nonce,
+          'sign': signature,
+          'Content-Type': 'application/json'
+        }
+      })
+    }
+    
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('Bitunix API HTTP Error:', response.status, errorText)
+      throw new Error(`Bitunix API error: ${response.status} - ${errorText}`)
+    }
+    
+    const data = await response.json()
+    console.log('Bitunix API Response:', JSON.stringify(data, null, 2))
+    
+    if (data.code !== 0) {
+      throw new Error(`Bitunix API error: ${data.msg || data.message} (Code: ${data.code})`)
+    }
+    
+    // Parse Bitunix balance response
+    // Bitunix response format may vary, but typically has data.balance or data.assets
+    const balanceData = data.data || {}
+    const assets = balanceData.assets || balanceData.balances || []
+    
+    let totalBalance = 0
+    let availableBalance = 0
+    let lockedBalance = 0
+    const parsedAssets: any[] = []
+    
+    // Process assets/balances
+    for (const asset of assets) {
+      // Bitunix may use different field names: available, frozen, balance, etc.
+      const free = parseFloat(asset.available || asset.free || asset.balance || '0')
+      const locked = parseFloat(asset.frozen || asset.locked || asset.inUse || '0')
+      const total = parseFloat(asset.total || asset.equity || (free + locked).toString())
+      
+      // Get asset symbol
+      const assetSymbol = asset.asset || asset.coin || asset.currency || asset.symbol || ''
+      
+      // Only include assets with non-zero balance
+      if (total > 0 || free > 0 || locked > 0) {
+        totalBalance += total
+        availableBalance += free
+        lockedBalance += locked
+        
+        parsedAssets.push({
+          asset: assetSymbol,
+          free,
+          locked,
+          total
+        })
+      }
+    }
+    
+    // If no assets found but response is successful, account might be empty
+    if (parsedAssets.length === 0 && data.code === 0) {
+      console.log('Bitunix account exists but has no balances')
+    }
+    
+    return {
+      exchange: 'bitunix',
+      totalBalance,
+      availableBalance,
+      lockedBalance,
+      assets: parsedAssets,
+      lastUpdated: new Date().toISOString(),
+      status: 'connected'
+    }
+  } catch (error: any) {
+    console.error('Bitunix balance fetch error:', error)
+    return {
+      exchange: 'bitunix',
+      totalBalance: 0,
+      availableBalance: 0,
+      lockedBalance: 0,
+      assets: [],
+      lastUpdated: new Date().toISOString(),
+      status: 'error',
+      error: error.message || 'Failed to fetch Bitunix balance'
+    }
+  }
+}
+
+// Helper function to create Bitunix signature
+async function createBitunixSignature(message: string, secret: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const keyData = encoder.encode(secret)
+  const messageData = encoder.encode(message)
+  
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    keyData,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  )
+  
+  const signature = await crypto.subtle.sign('HMAC', cryptoKey, messageData)
+  const hashArray = Array.from(new Uint8Array(signature))
+  // Bitunix expects lowercase hex string
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toLowerCase()
+}
+
 // Helper function to create Bybit signature
 async function createBybitSignature(params: string, secret: string): Promise<string> {
   console.log('Creating signature for params:', params)
@@ -488,23 +649,15 @@ serve(async (req) => {
               const decryptedApiSecret = decrypt(apiKey.api_secret)
               const decryptedPassphrase = apiKey.passphrase ? decrypt(apiKey.passphrase) : null
 
-              let exchangeBalance = null
+              let exchangeBalance: any = null
 
               // Fetch balance from exchange API
               if (apiKey.exchange === 'bybit') {
                 exchangeBalance = await fetchBybitBalance(decryptedApiKey, decryptedApiSecret, apiKey.is_testnet)
               } else if (apiKey.exchange === 'okx') {
-                exchangeBalance = await fetchOKXBalance(decryptedApiKey, decryptedApiSecret, decryptedPassphrase, apiKey.is_testnet)
+                exchangeBalance = await fetchOKXBalance(decryptedApiKey, decryptedApiSecret, decryptedPassphrase || '', apiKey.is_testnet)
               } else if (apiKey.exchange === 'bitunix') {
-                // TODO: Implement Bitunix balance fetching
-                exchangeBalance = {
-                  exchange: 'bitunix',
-                  totalBalance: 0,
-                  availableBalance: 0,
-                  lockedBalance: 0,
-                  assets: [],
-                  lastUpdated: new Date().toISOString(),
-                }
+                exchangeBalance = await fetchBitunixBalance(decryptedApiKey, decryptedApiSecret, apiKey.is_testnet)
               }
 
               if (exchangeBalance) {
