@@ -554,6 +554,78 @@ export default function Settings() {
     }
   };
 
+  const handleSaveExchange = async (exchange: 'bybit' | 'okx' | 'bitunix') => {
+    try {
+      // Ensure user exists before saving API keys
+      const userExists = await ensureUserExists();
+      if (!userExists) {
+        alert('Failed to create user account. Please try again.');
+        return;
+      }
+
+      if (exchange === 'bybit') {
+        if (!apiSettings.bybitApiKey || !apiSettings.bybitApiSecret) {
+          alert('Please enter both API Key and API Secret for Bybit');
+          return;
+        }
+        await saveApiKey({
+          exchange: 'bybit',
+          apiKey: apiSettings.bybitApiKey,
+          apiSecret: apiSettings.bybitApiSecret,
+          isTestnet: apiSettings.bybitTestnet,
+        });
+        // Clear only Bybit fields after saving
+        setApiSettings(prev => ({
+          ...prev,
+          bybitApiKey: '',
+          bybitApiSecret: '',
+        }));
+        alert('✅ Bybit API keys saved successfully!');
+      } else if (exchange === 'okx') {
+        if (!apiSettings.okxApiKey || !apiSettings.okxApiSecret) {
+          alert('Please enter both API Key and API Secret for OKX');
+          return;
+        }
+        await saveApiKey({
+          exchange: 'okx',
+          apiKey: apiSettings.okxApiKey,
+          apiSecret: apiSettings.okxApiSecret,
+          passphrase: apiSettings.okxPassphrase,
+          isTestnet: apiSettings.okxTestnet,
+        });
+        // Clear only OKX fields after saving
+        setApiSettings(prev => ({
+          ...prev,
+          okxApiKey: '',
+          okxApiSecret: '',
+          okxPassphrase: '',
+        }));
+        alert('✅ OKX API keys saved successfully!');
+      } else if (exchange === 'bitunix') {
+        if (!apiSettings.bitunixApiKey || !apiSettings.bitunixApiSecret) {
+          alert('Please enter both API Key and API Secret for Bitunix');
+          return;
+        }
+        await saveApiKey({
+          exchange: 'bitunix',
+          apiKey: apiSettings.bitunixApiKey,
+          apiSecret: apiSettings.bitunixApiSecret,
+          passphrase: '', // Bitunix doesn't use passphrase
+          isTestnet: apiSettings.bitunixTestnet
+        });
+        // Clear only Bitunix fields after saving
+        setApiSettings(prev => ({
+          ...prev,
+          bitunixApiKey: '',
+          bitunixApiSecret: '',
+        }));
+        alert('✅ Bitunix API keys saved successfully!');
+      }
+    } catch (error: any) {
+      alert(`Failed to save ${exchange.toUpperCase()} API keys: ${error.message}`);
+    }
+  };
+
   const handleAlertsSave = async () => {
     try {
       if (alertSettings) {
@@ -1641,12 +1713,21 @@ export default function Settings() {
                         />
                       </button>
                     </div>
-                    <button
-                      onClick={() => handleTestConnection('bybit')}
-                      className="w-full bg-orange-100 hover:bg-orange-200 text-orange-700 py-2 px-4 rounded-lg transition-colors text-sm"
-                    >
-                      Test Connection
-                    </button>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => handleTestConnection('bybit')}
+                        className="flex-1 bg-orange-100 hover:bg-orange-200 text-orange-700 py-2 px-4 rounded-lg transition-colors text-sm"
+                      >
+                        Test Connection
+                      </button>
+                      <button
+                        onClick={() => handleSaveExchange('bybit')}
+                        className="flex-1 bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded-lg transition-colors text-sm font-medium"
+                      >
+                        <i className="ri-save-line mr-1"></i>
+                        Save
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -1708,12 +1789,21 @@ export default function Settings() {
                         />
                       </button>
                     </div>
-                    <button
-                      onClick={() => handleTestConnection('okx')}
-                      className="w-full bg-blue-100 hover:bg-blue-200 text-blue-700 py-2 px-4 rounded-lg transition-colors text-sm"
-                    >
-                      Test Connection
-                    </button>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => handleTestConnection('okx')}
+                        className="flex-1 bg-blue-100 hover:bg-blue-200 text-blue-700 py-2 px-4 rounded-lg transition-colors text-sm"
+                      >
+                        Test Connection
+                      </button>
+                      <button
+                        onClick={() => handleSaveExchange('okx')}
+                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg transition-colors text-sm font-medium"
+                      >
+                        <i className="ri-save-line mr-1"></i>
+                        Save
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -1763,12 +1853,21 @@ export default function Settings() {
                         />
                       </button>
                     </div>
-                    <button
-                      onClick={() => handleTestConnection('bitunix')}
-                      className="w-full bg-green-100 hover:bg-green-200 text-green-700 py-2 px-4 rounded-lg transition-colors text-sm"
-                    >
-                      Test Connection
-                    </button>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => handleTestConnection('bitunix')}
+                        className="flex-1 bg-green-100 hover:bg-green-200 text-green-700 py-2 px-4 rounded-lg transition-colors text-sm"
+                      >
+                        Test Connection
+                      </button>
+                      <button
+                        onClick={() => handleSaveExchange('bitunix')}
+                        className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-lg transition-colors text-sm font-medium"
+                      >
+                        <i className="ri-save-line mr-1"></i>
+                        Save
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -1813,15 +1912,14 @@ export default function Settings() {
                   onClick={() => setShowApiConfig(false)}
                   className="flex-1"
                 >
-                  Cancel
+                  Close
                 </Button>
-                <Button
-                  variant="primary"
-                  onClick={handleApiSave}
-                  className="flex-1"
-                >
-                  Save Settings
-                </Button>
+              </div>
+              <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <p className="text-xs text-blue-800">
+                  <i className="ri-information-line mr-1"></i>
+                  <strong>Note:</strong> Each exchange can be saved individually using the "Save" button next to each exchange section. This allows you to configure and save one exchange at a time.
+                </p>
               </div>
             </div>
           </div>
