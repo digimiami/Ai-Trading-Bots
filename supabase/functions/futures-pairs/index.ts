@@ -51,6 +51,76 @@ serve(async (req) => {
         return new Response(JSON.stringify(data), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
+      } else if (exchange === 'bitunix') {
+        // Bitunix futures tickers endpoint
+        // Try multiple possible endpoints
+        let response;
+        let data;
+        let error;
+        
+        // Try the tickers endpoint first
+        try {
+          response = await fetch('https://api.bitunix.com/api/v1/market/tickers?marketType=futures', {
+            signal: AbortSignal.timeout(10000)
+          });
+          
+          if (!response.ok) {
+            error = await response.text();
+            console.error('Bitunix tickers fetch failed:', response.status, error);
+            // Try alternative endpoint
+            response = await fetch('https://api.bitunix.com/api/v1/market/ticker/all?marketType=futures', {
+              signal: AbortSignal.timeout(10000)
+            });
+            
+            if (!response.ok) {
+              const errorText = await response.text();
+              console.error('Bitunix alternative endpoint also failed:', response.status, errorText);
+              return new Response(JSON.stringify({
+                error: 'Failed to fetch Bitunix tickers',
+                status: response.status,
+                body: errorText
+              }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+            }
+          }
+          
+          data = await response.json();
+          
+          // Ensure data is in expected format
+          // Bitunix might return { code: 0, data: [...] } or { code: 0, data: {...} }
+          if (data.code === 0 && data.data) {
+            // If data.data is not an array, try to convert it
+            if (!Array.isArray(data.data)) {
+              // If it's an object, try to extract an array from it
+              const dataObj = data.data;
+              if (typeof dataObj === 'object') {
+                // Try to find array values
+                const possibleArrays = Object.values(dataObj).filter(v => Array.isArray(v));
+                if (possibleArrays.length > 0) {
+                  data.data = possibleArrays[0];
+                } else {
+                  // Convert object to array
+                  data.data = Object.keys(dataObj).map(key => ({
+                    symbol: key,
+                    ...dataObj[key]
+                  }));
+                }
+              }
+            }
+          }
+          
+          return new Response(JSON.stringify(data), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        } catch (fetchError: any) {
+          console.error('Bitunix tickers fetch error:', fetchError);
+          return new Response(JSON.stringify({
+            error: 'Failed to fetch Bitunix tickers',
+            details: fetchError.message
+          }), { 
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          })
+        }
       }
     }
 

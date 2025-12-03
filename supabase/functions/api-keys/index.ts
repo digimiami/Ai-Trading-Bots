@@ -8,12 +8,23 @@ const corsHeaders = {
 }
 
 // Simple encryption/decryption (in production, use proper encryption)
+// Fixed to handle UTF-8 characters properly
 function encrypt(text: string): string {
-  return btoa(text) // Base64 encoding - use proper encryption in production
+  // Convert string to UTF-8 bytes, then to base64
+  // This handles all Unicode characters, not just Latin1
+  const utf8Bytes = new TextEncoder().encode(text);
+  const binaryString = String.fromCharCode(...utf8Bytes);
+  return btoa(binaryString);
 }
 
 function decrypt(encryptedText: string): string {
-  return atob(encryptedText) // Base64 decoding - use proper decryption in production
+  // Decode base64, then convert UTF-8 bytes back to string
+  const binaryString = atob(encryptedText);
+  const utf8Bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    utf8Bytes[i] = binaryString.charCodeAt(i);
+  }
+  return new TextDecoder().decode(utf8Bytes);
 }
 
 // Exchange API functions

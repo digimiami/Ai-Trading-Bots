@@ -37,7 +37,7 @@ export default function FuturesPairsFinderPage() {
   const [pairs, setPairs] = useState<FuturesPair[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedExchange, setSelectedExchange] = useState<'all' | 'bybit' | 'okx'>('all');
+  const [selectedExchange, setSelectedExchange] = useState<'all' | 'bybit' | 'okx' | 'bitunix'>('all');
   const [sortBy, setSortBy] = useState<'performance' | 'volume' | 'change24h' | 'change30d'>('performance');
   const [minVolume, setMinVolume] = useState<number>(1000000); // Minimum 24h volume filter
   const [expandedPair, setExpandedPair] = useState<string | null>(null);
@@ -49,9 +49,10 @@ export default function FuturesPairsFinderPage() {
     try {
       const allPairs: FuturesPair[] = [];
 
-      const exchangesToFetch: Array<'bybit' | 'okx'> = [];
+      const exchangesToFetch: Array<'bybit' | 'okx' | 'bitunix'> = [];
       if (selectedExchange === 'all' || selectedExchange === 'bybit') exchangesToFetch.push('bybit');
       if (selectedExchange === 'all' || selectedExchange === 'okx') exchangesToFetch.push('okx');
+      if (selectedExchange === 'all' || selectedExchange === 'bitunix') exchangesToFetch.push('bitunix');
 
       for (const exchange of exchangesToFetch) {
 
@@ -62,6 +63,8 @@ export default function FuturesPairsFinderPage() {
             exchangePairs = await fetchBybitFuturesPairs(minVolume);
           } else if (exchange === 'okx') {
             exchangePairs = await fetchOKXFuturesPairs(minVolume);
+          } else if (exchange === 'bitunix') {
+            exchangePairs = await fetchBitunixFuturesPairs(minVolume);
           }
 
           allPairs.push(...exchangePairs);
@@ -285,6 +288,120 @@ export default function FuturesPairsFinderPage() {
       }
     } catch (err) {
       console.error('Error fetching OKX futures pairs:', err);
+    }
+
+    return pairs;
+  };
+
+  const fetchBitunixFuturesPairs = async (minVol: number): Promise<FuturesPair[]> => {
+    const pairs: FuturesPair[] = [];
+    
+    try {
+      // Fetch all futures tickers from Bitunix via Supabase Edge Function (avoids CORS)
+      const response = await apiCall(`${API_ENDPOINTS.FUTURES_PAIRS}?action=tickers&exchange=bitunix`);
+      const data = response;
+
+      // Bitunix response format: { code: 0, data: [{ symbol, lastPrice, volume24h, ... }] }
+      if (data.code === 0 && data.data && Array.isArray(data.data)) {
+        const tickers = (data.data as any[])
+          .map(ticker => {
+            // Bitunix response format: { symbol, lastPrice, volume24h, high24h, low24h, open24h, etc. }
+            // Volume might be in different fields, try multiple
+            const volumeUsd = parseFloat(
+              ticker.volume24h || 
+              ticker.volume || 
+              ticker.vol || 
+              ticker.quoteVolume || 
+              ticker.quoteVolume24h || 
+              ticker.turnover24h || 
+              '0'
+            );
+            return { ticker, volumeUsd };
+          })
+          .filter(item => item.volumeUsd >= minVol)
+          .sort((a, b) => b.volumeUsd - a.volumeUsd)
+          .slice(0, 50);
+
+        for (const { ticker, volumeUsd } of tickers) {
+          try {
+            const symbol = ticker.symbol || ticker.pair || ticker.instrumentId || '';
+            if (!symbol) {
+              console.warn('Skipping ticker with no symbol:', ticker);
+              continue;
+            }
+            const currentPrice = parseFloat(ticker.lastPrice || ticker.last || ticker.price || ticker.close || 0);
+            const open24h = parseFloat(ticker.open24h || ticker.open || ticker.openPrice || currentPrice);
+            const priceChange24h = open24h > 0 ? ((currentPrice - open24h) / open24h) * 100 : 0;
+            const volume24h = volumeUsd;
+            const high24h = parseFloat(ticker.high24h || ticker.high || ticker.highPrice || currentPrice);
+            const low24h = parseFloat(ticker.low24h || ticker.low || ticker.lowPrice || currentPrice);
+
+            // Fetch 30-day price change (using klines) via Edge Function
+            const thirtyDaysAgoMs = Date.now() - (30 * 24 * 60 * 60 * 1000);
+            const klinesData = await apiCall(
+              `${API_ENDPOINTS.FUTURES_PAIRS}?action=klines&exchange=bitunix&symbol=${symbol}&interval=1D&start=${thirtyDaysAgoMs}&limit=30`
+            );
+
+            let priceChange30d = 0;
+            let high30d = currentPrice;
+            let low30d = currentPrice;
+            let volume30d = volume24h * 30; // Estimate fallback
+
+            if (klinesData.code === 0 && klinesData.data?.length > 0) {
+              const klines = Array.isArray(klinesData.data) ? klinesData.data : [];
+              if (klines.length > 0) {
+                const firstKline = klines[0];
+                const firstPrice = parseFloat(firstKline[4] || firstKline.close || currentPrice); // Close price
+                priceChange30d = ((currentPrice - firstPrice) / firstPrice) * 100;
+
+                // Calculate 30-day high/low
+                for (const kline of klines) {
+                  const high = parseFloat(kline[2] || kline.high || 0);
+                  const low = parseFloat(kline[3] || kline.low || 0);
+                  if (high > high30d) high30d = high;
+                  if (low > 0 && low < low30d) low30d = low;
+                }
+
+                // Calculate 30-day volume
+                volume30d = klines.reduce((sum: number, k: any[]) => {
+                  const quoteVolume = parseFloat(k[6] || k.volume || k.quoteVolume || 0);
+                  return sum + quoteVolume;
+                }, 0);
+              }
+            }
+
+            // Calculate volatility
+            const volatility = Math.abs(priceChange30d) / 30;
+
+            // Calculate performance score
+            const performanceScore = 
+              (priceChange30d * 0.4) +
+              (priceChange24h * 0.2) +
+              (volume24h > 0 ? Math.log10(volume24h / 1000000) * 10 : 0) +
+              (100 - volatility * 10);
+
+            pairs.push({
+              symbol,
+              exchange: 'bitunix',
+              currentPrice,
+              priceChange24h,
+              priceChange30d,
+              volume24h,
+              volume30d,
+              high24h,
+              low24h,
+              high30d,
+              low30d,
+              volatility,
+              performanceScore
+            });
+          } catch (err) {
+            console.error(`Error processing ${ticker.symbol || ticker.pair}:`, err);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching Bitunix futures pairs:', err);
     }
 
     return pairs;
