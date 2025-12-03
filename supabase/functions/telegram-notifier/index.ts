@@ -259,6 +259,23 @@ serve(async (req) => {
           throw new Error('bot_token and chat_id are required')
         }
 
+        // Default notification settings - all enabled by default
+        const defaultNotifications = {
+          trade_executed: true,
+          bot_started: true,
+          bot_stopped: true,
+          error_occurred: true,
+          daily_summary: true,
+          profit_alert: true,
+          loss_alert: true
+        };
+
+        // Merge user's notification preferences with defaults
+        // If user provides notifications, use them; otherwise use defaults
+        const finalNotifications = notifications 
+          ? { ...defaultNotifications, ...notifications }
+          : defaultNotifications;
+
         const { data: config, error } = await supabaseClient
           .from('telegram_config')
           .upsert({
@@ -266,15 +283,7 @@ serve(async (req) => {
             bot_token: bot_token,
             chat_id: chat_id,
             enabled: enabled !== undefined ? enabled : true,
-            notifications: notifications || {
-              trade_executed: true,
-              bot_started: true,
-              bot_stopped: true,
-              error_occurred: true,
-              daily_summary: true,
-              profit_alert: true,
-              loss_alert: true
-            },
+            notifications: finalNotifications,
             updated_at: new Date().toISOString()
           }, { onConflict: 'user_id' })
           .select()
@@ -378,17 +387,41 @@ serve(async (req) => {
         }
         
         console.log(`✅ Telegram config found for user_id: ${user.id}, enabled: ${config.enabled}`);
+        console.log(`📋 Notification preferences:`, JSON.stringify(config.notifications, null, 2));
+        console.log(`🔔 Checking notification type: ${notification_type}`);
 
-        // Check if this notification type is enabled
-        if (!config.enabled || !(config.notifications as any)[notification_type]) {
+        // Check if Telegram is enabled
+        if (!config.enabled) {
+          console.log(`⚠️ Telegram notifications are disabled for user ${user.id}`);
           return new Response(
             JSON.stringify({ 
               success: false, 
+              skipped: true,
+              message: 'Telegram notifications are disabled'
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        // Check if this specific notification type is enabled
+        // Default to true if not explicitly set to false (backward compatibility)
+        const notifications = config.notifications || {};
+        const isNotificationTypeEnabled = notifications[notification_type as keyof typeof notifications];
+        
+        // If explicitly set to false, skip. Otherwise, allow (true or undefined = enabled by default)
+        if (isNotificationTypeEnabled === false) {
+          console.log(`⚠️ Notification type ${notification_type} is explicitly disabled for user ${user.id}`);
+          return new Response(
+            JSON.stringify({ 
+              success: false, 
+              skipped: true,
               message: `Notification type ${notification_type} is disabled`
             }),
             { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           )
         }
+
+        console.log(`✅ Notification type ${notification_type} is enabled, proceeding to send...`);
 
         // ALWAYS fetch account balance for ALL notification types
         let accountBalance: number | null = null;

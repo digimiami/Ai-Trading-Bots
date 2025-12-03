@@ -15,12 +15,20 @@ import { useProfile } from '../../hooks/useProfile';
 import type { ProfileData } from '../../hooks/useProfile';
 import { supabase } from '../../lib/supabase';
 import { openAIService } from '../../services/openai';
+import { useEmailNotifications } from '../../hooks/useEmailNotifications';
 
 export default function Settings() {
   const navigate = useNavigate();
   const { signOut, user } = useAuth();
   const { apiKeys, loading: apiKeysLoading, saveApiKey, testApiConnection: testConnection, toggleApiKey, deleteApiKey } = useApiKeys();
   const { getProfile, updateProfile } = useProfile();
+  const { 
+    emailPreferences, 
+    alertSettings, 
+    loading: emailSettingsLoading, 
+    updateEmailPreferences, 
+    updateAlertSettings 
+  } = useEmailNotifications();
 
   const [notifications] = useState({
     push: true,
@@ -124,6 +132,13 @@ export default function Settings() {
     monthlyPnlAlert: true
   });
 
+  // Load alert settings from hook when available
+  useEffect(() => {
+    if (alertSettings) {
+      setAlerts(prev => ({ ...prev, ...alertSettings }));
+    }
+  }, [alertSettings]);
+
   const [riskManagement, setRiskManagement] = useState({
     maxDailyLoss: 500,
     maxPositionSize: 1000,
@@ -152,6 +167,13 @@ export default function Settings() {
   const [profilePicture, setProfilePicture] = useState<File | null>(null);
   const [profilePicturePreview, setProfilePicturePreview] = useState<string>('');
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [passwordData, setPasswordData] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  });
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   // Load profile data on component mount
   // Apply theme whenever it changes
@@ -532,13 +554,89 @@ export default function Settings() {
     }
   };
 
-  const handleAlertsSave = () => {
-    // Save alerts settings
-    setShowAlertsConfig(false);
+  const handleAlertsSave = async () => {
+    try {
+      if (alertSettings) {
+        await updateAlertSettings(alerts);
+        alert('Alert settings saved successfully!');
+      } else {
+        // Fallback: save to localStorage if hook not ready
+        localStorage.setItem('alert_settings', JSON.stringify(alerts));
+        alert('Alert settings saved to local storage!');
+      }
+      setShowAlertsConfig(false);
+    } catch (error: any) {
+      console.error('Error saving alert settings:', error);
+      alert(`Failed to save alert settings: ${error.message}`);
+    }
   };
 
   const handleProfileChange = (field: keyof ProfileData, value: string) => {
     setProfileData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handlePasswordChange = async () => {
+    // Validation
+    if (!passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword) {
+      alert('Please fill in all password fields');
+      return;
+    }
+
+    if (passwordData.newPassword.length < 6) {
+      alert('New password must be at least 6 characters long');
+      return;
+    }
+
+    if (passwordData.newPassword !== passwordData.confirmPassword) {
+      alert('New passwords do not match');
+      return;
+    }
+
+    if (passwordData.currentPassword === passwordData.newPassword) {
+      alert('New password must be different from current password');
+      return;
+    }
+
+    try {
+      setIsChangingPassword(true);
+
+      // First, verify current password by attempting to sign in
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: user?.email || '',
+        password: passwordData.currentPassword
+      });
+
+      if (signInError) {
+        alert(`Current password is incorrect: ${signInError.message}`);
+        setIsChangingPassword(false);
+        return;
+      }
+
+      // Update password
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: passwordData.newPassword
+      });
+
+      if (updateError) {
+        alert(`Failed to change password: ${updateError.message}`);
+        setIsChangingPassword(false);
+        return;
+      }
+
+      // Success
+      alert('✅ Password changed successfully!');
+      setPasswordData({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      });
+      setShowChangePassword(false);
+    } catch (error: any) {
+      console.error('Error changing password:', error);
+      alert(`Failed to change password: ${error.message}`);
+    } finally {
+      setIsChangingPassword(false);
+    }
   };
 
   const handleOpenEditProfile = async () => {
@@ -1320,6 +1418,132 @@ export default function Settings() {
               Sign Out
             </button>
           </div>
+        </Card>
+
+        {/* Email Notifications */}
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">Email Notifications</h3>
+            {emailSettingsLoading && (
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+            )}
+          </div>
+          <p className="text-gray-500 text-sm mb-4">Configure email notifications for trading events</p>
+          
+          {emailPreferences ? (
+            <div className="space-y-4">
+              {/* Email Notifications Status (Read-only) */}
+              <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div>
+                  <span className="text-sm font-medium text-gray-700">Email Notifications</span>
+                  <p className="text-xs text-gray-500">Configure which email notifications you receive</p>
+                </div>
+                <div className={`px-3 py-1 rounded-full text-xs font-medium ${emailPreferences.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-600'}`}>
+                  {emailPreferences.enabled ? 'Enabled' : 'Disabled'}
+                </div>
+              </div>
+
+              {emailPreferences.enabled && (
+                <div className="space-y-3 pt-4 border-t">
+                  <h4 className="text-sm font-medium text-gray-700 mb-3">Notification Types</h4>
+                  {[
+                    { key: 'trade_executed', label: 'Trade Executed', desc: 'When a trade is executed' },
+                    { key: 'bot_started', label: 'Bot Started', desc: 'When a bot starts trading' },
+                    { key: 'bot_stopped', label: 'Bot Stopped', desc: 'When a bot stops trading' },
+                    { key: 'position_opened', label: 'Position Opened', desc: 'When a new position is opened' },
+                    { key: 'position_closed', label: 'Position Closed', desc: 'When a position is closed' },
+                    { key: 'stop_loss_triggered', label: 'Stop Loss Triggered', desc: 'When stop loss is hit' },
+                    { key: 'take_profit_triggered', label: 'Take Profit Triggered', desc: 'When take profit is hit' },
+                    { key: 'error_occurred', label: 'Error Occurred', desc: 'When a bot encounters an error' },
+                    { key: 'profit_alert', label: 'Profit Alert', desc: 'When profit threshold is reached' },
+                    { key: 'loss_alert', label: 'Loss Alert', desc: 'When loss threshold is reached' },
+                    { key: 'daily_summary', label: 'Daily Summary', desc: 'Daily trading summary email' },
+                  ].map(({ key, label, desc }) => (
+                    <div key={key} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
+                      <div>
+                        <span className="text-sm font-medium text-gray-700">{label}</span>
+                        <p className="text-xs text-gray-500">{desc}</p>
+                      </div>
+                      <button
+                        onClick={async () => {
+                          try {
+                            await updateEmailPreferences({
+                              [key]: !emailPreferences[key as keyof typeof emailPreferences]
+                            } as any);
+                          } catch (error: any) {
+                            alert(`Failed to update: ${error.message}`);
+                          }
+                        }}
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${emailPreferences[key as keyof typeof emailPreferences] ? 'bg-blue-600' : 'bg-gray-200'}`}
+                      >
+                        <span
+                          className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${emailPreferences[key as keyof typeof emailPreferences] ? 'translate-x-5' : 'translate-x-1'}`}
+                        />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {!emailPreferences.enabled && (
+                <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-200">
+                  <p className="text-xs text-yellow-800">
+                    <i className="ri-information-line mr-1"></i>
+                    Email notifications are currently disabled. Please contact an administrator to enable email notifications.
+                  </p>
+                </div>
+              )}
+
+              {/* Test Email Button */}
+              {emailPreferences.enabled && (
+                <div className="pt-4 border-t">
+                  <button
+                    onClick={async () => {
+                      try {
+                        const { data: { session } } = await supabase.auth.getSession();
+                        if (!session) {
+                          alert('Please log in to test email notifications');
+                          return;
+                        }
+
+                        const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || '';
+                        const cleanUrl = supabaseUrl.replace('/rest/v1', '');
+                        const functionUrl = `${cleanUrl}/functions/v1/email-notifications?action=test`;
+
+                        const response = await fetch(functionUrl, {
+                          method: 'POST',
+                          headers: {
+                            'Authorization': `Bearer ${session.access_token}`,
+                            'Content-Type': 'application/json',
+                            'apikey': import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || '',
+                          },
+                        });
+
+                        const result = await response.json();
+                        if (result.success) {
+                          alert('✅ Test email sent successfully! Check your inbox.');
+                        } else {
+                          alert(`❌ Failed to send test email: ${result.error || result.message}`);
+                        }
+                      } catch (error: any) {
+                        console.error('Error sending test email:', error);
+                        alert(`Failed to send test email: ${error.message}`);
+                      }
+                    }}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg transition-colors text-sm font-medium flex items-center justify-center"
+                  >
+                    <i className="ri-mail-send-line mr-2"></i>
+                    Send Test Email
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-4">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+              <p className="text-sm text-gray-500">Loading email preferences...</p>
+            </div>
+          )}
         </Card>
 
         {/* Telegram Notifications */}
@@ -2334,6 +2558,92 @@ export default function Settings() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="https://yourwebsite.com"
                   />
+                </div>
+
+                {/* Change Password Section */}
+                <div className="border-t pt-4 mt-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-700">Change Password</h3>
+                      <p className="text-xs text-gray-500">Update your account password</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowChangePassword(!showChangePassword);
+                        if (showChangePassword) {
+                          setPasswordData({
+                            currentPassword: '',
+                            newPassword: '',
+                            confirmPassword: ''
+                          });
+                        }
+                      }}
+                      className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+                    >
+                      {showChangePassword ? 'Cancel' : 'Change Password'}
+                    </button>
+                  </div>
+
+                  {showChangePassword && (
+                    <div className="space-y-3 mt-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Current Password
+                        </label>
+                        <input
+                          type="password"
+                          value={passwordData.currentPassword}
+                          onChange={(e) => setPasswordData(prev => ({ ...prev, currentPassword: e.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="Enter current password"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          New Password
+                        </label>
+                        <input
+                          type="password"
+                          value={passwordData.newPassword}
+                          onChange={(e) => setPasswordData(prev => ({ ...prev, newPassword: e.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="Enter new password (min. 6 characters)"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Confirm New Password
+                        </label>
+                        <input
+                          type="password"
+                          value={passwordData.confirmPassword}
+                          onChange={(e) => setPasswordData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="Confirm new password"
+                        />
+                      </div>
+
+                      <button
+                        onClick={handlePasswordChange}
+                        disabled={isChangingPassword}
+                        className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+                      >
+                        {isChangingPassword ? (
+                          <>
+                            <i className="ri-loader-4-line animate-spin mr-2"></i>
+                            Changing Password...
+                          </>
+                        ) : (
+                          <>
+                            <i className="ri-lock-password-line mr-2"></i>
+                            Update Password
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
