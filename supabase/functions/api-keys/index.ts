@@ -422,22 +422,25 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
           console.log(`Trying Bitunix: ${baseUrl}${endpointPath}`)
           requestPath = endpointPath
           
-          // According to Bitunix docs:
-          // 1. Query params: sorted keys concatenated without separators (e.g., "id1uid200")
-          // 2. For GET with no query params, queryParams = ""
-          // 3. Body: JSON string with no spaces (for POST)
-          // 4. Signature: double SHA256
+          // Try the same signature method that works for orders (HMAC-SHA256)
+          // Bot-executor uses HMAC-SHA256 and it works, so let's try that first
+          // For account endpoint, try with timestamp and nonce in query string format
+          const params: Record<string, string> = {
+            timestamp: timestamp,
+            nonce: nonce
+          }
           
-          // For GET request, no query params needed for account endpoint
-          const queryParams = '' // Empty for account endpoint
-          const body = '' // Empty for GET request
+          // Create query string for signature (same format as bot-executor)
+          const queryString = Object.keys(params)
+            .sort()
+            .map(key => `${key}=${params[key]}`)
+            .join('&')
           
-          // Create signature using double SHA256
-          const signature = await createBitunixSignature(nonce, timestamp, apiKey, queryParams, body, apiSecret)
+          // Use HMAC-SHA256 (same as bot-executor that works)
+          const signature = await createBitunixSignatureHMAC(queryString, apiSecret)
           
-          console.log('5. Query params for signature:', queryParams || '(empty)')
-          console.log('6. Body for signature:', body || '(empty)')
-          console.log('7. Generated signature:', signature)
+          console.log('5. Query string for signature:', queryString)
+          console.log('6. Generated signature (HMAC-SHA256):', signature)
           
           // Headers according to official documentation
           const headers: Record<string, string> = {
@@ -458,12 +461,21 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
           if (!response.ok) {
             const errorData = await response.json().catch(() => null)
             if (errorData && errorData.code === 2) {
-              console.log(`System error (Code: 2) from ${baseUrl}${endpointPath}, trying with query params...`)
-              // Try with query params (timestamp and nonce)
+              console.log(`System error (Code: 2) from ${baseUrl}${endpointPath}, trying with query params in URL...`)
+              // Try with query params in URL (timestamp and nonce)
               const queryString = `timestamp=${timestamp}&nonce=${nonce}`
+              // Recalculate signature with query params
+              const retrySignature = await createBitunixSignatureHMAC(queryString, apiSecret)
+              const retryHeaders: Record<string, string> = {
+                'api-key': String(apiKey),
+                'nonce': String(nonce),
+                'timestamp': String(timestamp),
+                'sign': String(retrySignature),
+                'Content-Type': 'application/json'
+              }
               response = await fetch(`${baseUrl}${endpointPath}?${queryString}`, {
                 method: 'GET',
-                headers: headers
+                headers: retryHeaders
               })
             }
           }
@@ -473,11 +485,15 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
             const errorData = await response.json().catch(() => null)
             if (errorData && (errorData.code === 2 || response.status === 404 || response.status === 400)) {
               console.log(`GET failed, trying POST for ${baseUrl}${endpointPath}...`)
-              // For POST, body must be JSON string with NO SPACES (per docs)
+              // For POST, try same approach as bot-executor (body with params)
               const bodyParams = { timestamp, nonce }
-              const bodyString = JSON.stringify(bodyParams).replace(/\s+/g, '') // Remove all spaces
-              const postQueryParams = '' // No query params for POST
-              const postSignature = await createBitunixSignature(nonce, timestamp, apiKey, postQueryParams, bodyString, apiSecret)
+              const bodyString = JSON.stringify(bodyParams)
+              // Use query string format for signature (same as bot-executor)
+              const postQueryString = Object.keys(bodyParams)
+                .sort()
+                .map(key => `${key}=${bodyParams[key as keyof typeof bodyParams]}`)
+                .join('&')
+              const postSignature = await createBitunixSignatureHMAC(postQueryString, apiSecret)
               
               const postHeaders: Record<string, string> = {
                 'api-key': String(apiKey),
@@ -664,10 +680,31 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
   }
 }
 
-// Helper function to create Bitunix signature using double SHA256
+// Helper function to create Bitunix signature using HMAC-SHA256 (same as bot-executor)
+// This method works for orders, so let's try it for account endpoint too
+async function createBitunixSignatureHMAC(message: string, secret: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const keyData = encoder.encode(secret)
+  const messageData = encoder.encode(message)
+  
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    keyData,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  )
+  
+  const signature = await crypto.subtle.sign('HMAC', cryptoKey, messageData)
+  const hashArray = Array.from(new Uint8Array(signature))
+  // Bitunix expects lowercase hex string
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toLowerCase()
+}
+
+// Helper function to create Bitunix signature using double SHA256 (official docs method)
 // According to official docs: digest = SHA256(nonce + timestamp + api-key + queryParams + body)
 // Then: sign = SHA256(digest + secretKey)
-async function createBitunixSignature(nonce: string, timestamp: string, apiKey: string, queryParams: string, body: string, secretKey: string): Promise<string> {
+async function createBitunixSignatureDoubleSHA256(nonce: string, timestamp: string, apiKey: string, queryParams: string, body: string, secretKey: string): Promise<string> {
   // Step 1: Create digest
   const digestInput = nonce + timestamp + apiKey + queryParams + body
   const digestHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(digestInput))
