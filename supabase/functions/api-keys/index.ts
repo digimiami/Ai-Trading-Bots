@@ -363,52 +363,45 @@ async function fetchOKXBalance(apiKey: string, apiSecret: string, passphrase: st
 }
 
 async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet: boolean) {
-  const baseUrl = isTestnet ? 'https://api-testnet.bitunix.com' : 'https://api.bitunix.com'
+  // Bitunix uses openapi.bitunix.com for REST API
+  const baseUrl = isTestnet ? 'https://openapi-testnet.bitunix.com' : 'https://openapi.bitunix.com'
   
   try {
     const timestamp = Date.now().toString()
-    const nonce = timestamp
-    
-    // Bitunix balance endpoint - try both spot and futures
-    // First try futures account balance
-    const params: any = {
-      timestamp: timestamp,
-      nonce: nonce
-    }
-    
-    // Create query string for signature (sorted keys)
-    const queryString = Object.keys(params)
-      .sort()
-      .map(key => `${key}=${params[key]}`)
-      .join('&')
     
     console.log('=== BITUNIX BALANCE DEBUG ===')
     console.log('0. Environment:', isTestnet ? 'TESTNET' : 'MAINNET')
     console.log('0. Base URL:', baseUrl)
     console.log('1. Timestamp:', timestamp)
-    console.log('2. Nonce:', nonce)
-    console.log('3. Query string:', queryString)
-    console.log('4. API Key (first 10 chars):', apiKey.substring(0, 10) + '...')
-    console.log('5. Secret (first 10 chars):', apiSecret.substring(0, 10) + '...')
+    console.log('2. API Key (first 10 chars):', apiKey.substring(0, 10) + '...')
+    console.log('3. Secret (first 10 chars):', apiSecret.substring(0, 10) + '...')
     
-    // Create signature: HMAC-SHA256(queryString, apiSecret)
-    const signature = await createBitunixSignature(queryString, apiSecret)
+    // Bitunix API uses different authentication method
+    // According to documentation: /api/spot/v1/user/account
+    // Headers: ACCESS-KEY, ACCESS-SIGN, ACCESS-TIMESTAMP
+    // Signature: HMAC-SHA256(timestamp + method + requestPath + body, secret)
     
-    console.log('6. Generated signature:', signature)
+    const method = 'GET'
+    const requestPath = '/api/spot/v1/user/account'
+    const body = ''
+    
+    // Create signature: timestamp + method + requestPath + body
+    const signatureString = timestamp + method + requestPath + body
+    const signature = await createBitunixSignature(signatureString, apiSecret)
+    
+    console.log('4. Method:', method)
+    console.log('5. Request Path:', requestPath)
+    console.log('6. Signature String:', signatureString)
+    console.log('7. Generated signature:', signature)
     console.log('=== END BITUNIX DEBUG ===')
     
-    // Try multiple Bitunix balance endpoints
-    // Bitunix API endpoints may vary, so we'll try common patterns
-    // Also try with marketType parameter for futures
+    // Try the correct Bitunix endpoint first
     const endpointsToTry = [
-      { path: '/api/v1/account/wallet', params: { timestamp, nonce } },
-      { path: '/api/v1/wallet/balance', params: { timestamp, nonce } },
-      { path: '/api/v1/account/assets', params: { timestamp, nonce } },
-      { path: '/api/v1/user/balance', params: { timestamp, nonce } },
-      { path: '/api/v1/account/balance', params: { timestamp, nonce, marketType: 'futures' } },
-      { path: '/api/v1/account/balance', params: { timestamp, nonce, marketType: 'spot' } },
-      { path: '/api/v1/account/balance', params: { timestamp, nonce } },
-      { path: '/api/v1/account/spot-balance', params: { timestamp, nonce } }
+      { path: '/api/spot/v1/user/account', method: 'GET', useAccessHeaders: true },
+      { path: '/api/futures/v1/user/account', method: 'GET', useAccessHeaders: true },
+      // Fallback: try old format with api-key headers
+      { path: '/api/v1/account/wallet', method: 'GET', useAccessHeaders: false },
+      { path: '/api/v1/wallet/balance', method: 'GET', useAccessHeaders: false }
     ]
     
     let response: Response | null = null
@@ -418,53 +411,48 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
     for (const endpointConfig of endpointsToTry) {
       try {
         const endpointPath = endpointConfig.path
-        const endpointParams = endpointConfig.params
-        console.log(`Trying Bitunix endpoint: ${endpointPath} with params:`, endpointParams)
+        const endpointMethod = endpointConfig.method
+        console.log(`Trying Bitunix endpoint: ${endpointMethod} ${endpointPath}`)
         requestPath = endpointPath
         
-        // Create query string for this endpoint's specific params
-        const endpointQueryString = Object.keys(endpointParams)
-          .sort()
-          .map(key => `${key}=${endpointParams[key]}`)
-          .join('&')
+        let headers: Record<string, string>
+        let signature: string
         
-        // Create signature for these specific params
-        const endpointSignature = await createBitunixSignature(endpointQueryString, apiSecret)
-        
-        // Ensure all header values are strings
-        const headers: Record<string, string> = {
-          'api-key': String(apiKey),
-          'timestamp': String(timestamp),
-          'nonce': String(nonce),
-          'sign': String(endpointSignature),
-          'Content-Type': 'application/json'
-        }
-        
-        // Try GET with query params first
-        response = await fetch(`${baseUrl}${endpointPath}?${endpointQueryString}`, {
-          method: 'GET',
-          headers: headers
-        })
-        
-        // If GET with query fails, try POST with body
-        if (!response.ok && response.status === 404) {
-          console.log(`GET ${endpointPath} failed, trying POST...`)
-          const bodySignature = await createBitunixSignature(endpointQueryString, apiSecret)
+        if (endpointConfig.useAccessHeaders) {
+          // Bitunix standard API format: ACCESS-KEY, ACCESS-SIGN, ACCESS-TIMESTAMP
+          const signatureString = timestamp + endpointMethod + endpointPath + ''
+          signature = await createBitunixSignature(signatureString, apiSecret)
           
-          const postHeaders: Record<string, string> = {
+          headers = {
+            'ACCESS-KEY': String(apiKey),
+            'ACCESS-SIGN': String(signature),
+            'ACCESS-TIMESTAMP': String(timestamp),
+            'Content-Type': 'application/json'
+          }
+        } else {
+          // Fallback: old format with api-key, timestamp, nonce, sign
+          const nonce = timestamp
+          const params: any = { timestamp, nonce }
+          const queryString = Object.keys(params)
+            .sort()
+            .map(key => `${key}=${String(params[key])}`)
+            .join('&')
+          signature = await createBitunixSignature(queryString, apiSecret)
+          
+          headers = {
             'api-key': String(apiKey),
             'timestamp': String(timestamp),
             'nonce': String(nonce),
-            'sign': String(bodySignature),
+            'sign': String(signature),
             'Content-Type': 'application/json'
           }
-          
-          response = await fetch(`${baseUrl}${endpointPath}`, {
-            method: 'POST',
-            headers: postHeaders,
-            body: JSON.stringify(endpointParams)
-          })
         }
+        
+        // Make the request
+        response = await fetch(`${baseUrl}${endpointPath}`, {
+          method: endpointMethod,
+          headers: headers
+        })
         
         if (response.ok) {
           console.log(`✅ Success with endpoint: ${endpointPath}`)
@@ -490,12 +478,6 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
       const triedEndpoints = endpointsToTry.map(e => e.path).join(', ')
       console.error('Bitunix API HTTP Error:', response?.status || 'N/A', errorText)
       throw new Error(`Bitunix API error: ${response?.status || 'N/A'} - ${errorText}. Tried endpoints: ${triedEndpoints}`)
-    }
-    
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error('Bitunix API HTTP Error:', response.status, errorText)
-      throw new Error(`Bitunix API error: ${response.status} - ${errorText}`)
     }
     
     const data = await response.json()
