@@ -422,25 +422,24 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
           console.log(`Trying Bitunix: ${baseUrl}${endpointPath}`)
           requestPath = endpointPath
           
-          // Try the same signature method that works for orders (HMAC-SHA256)
-          // Bot-executor uses HMAC-SHA256 and it works, so let's try that first
-          // For account endpoint, try with timestamp and nonce in query string format
-          const params: Record<string, string> = {
-            timestamp: timestamp,
-            nonce: nonce
-          }
+          // According to official Bitunix docs, signature uses double SHA256:
+          // digest = SHA256(nonce + timestamp + api-key + queryParams + body)
+          // sign = SHA256(digest + secretKey)
+          // For GET with no query params: queryParams = "", body = ""
           
-          // Create query string for signature (same format as bot-executor)
-          const queryString = Object.keys(params)
-            .sort()
-            .map(key => `${key}=${params[key]}`)
-            .join('&')
+          const queryParams = '' // Empty for GET with no query params
+          const body = '' // Empty for GET request
           
-          // Use HMAC-SHA256 (same as bot-executor that works)
-          const signature = await createBitunixSignatureHMAC(queryString, apiSecret)
+          // Create signature using double SHA256 (official method)
+          const signature = await createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, body, apiSecret)
           
-          console.log('5. Query string for signature:', queryString)
-          console.log('6. Generated signature (HMAC-SHA256):', signature)
+          console.log('5. Signature input: nonce + timestamp + api-key + queryParams + body')
+          console.log('   nonce:', nonce)
+          console.log('   timestamp:', timestamp)
+          console.log('   api-key:', apiKey.substring(0, 10) + '...')
+          console.log('   queryParams:', queryParams || '(empty)')
+          console.log('   body:', body || '(empty)')
+          console.log('6. Generated signature (double SHA256):', signature)
           
           // Headers according to official documentation
           const headers: Record<string, string> = {
@@ -463,9 +462,9 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
             if (errorData && errorData.code === 2) {
               console.log(`System error (Code: 2) from ${baseUrl}${endpointPath}, trying with query params in URL...`)
               // Try with query params in URL (timestamp and nonce)
-              const queryString = `timestamp=${timestamp}&nonce=${nonce}`
-              // Recalculate signature with query params
-              const retrySignature = await createBitunixSignatureHMAC(queryString, apiSecret)
+              // Query params for signature: sorted keys concatenated without separators (per docs)
+              const queryParamsForSig = `nonce${nonce}timestamp${timestamp}` // Sorted: nonce first, then timestamp
+              const retrySignature = await createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParamsForSig, '', apiSecret)
               const retryHeaders: Record<string, string> = {
                 'api-key': String(apiKey),
                 'nonce': String(nonce),
@@ -473,6 +472,7 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
                 'sign': String(retrySignature),
                 'Content-Type': 'application/json'
               }
+              const queryString = `timestamp=${timestamp}&nonce=${nonce}`
               response = await fetch(`${baseUrl}${endpointPath}?${queryString}`, {
                 method: 'GET',
                 headers: retryHeaders
@@ -485,15 +485,12 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
             const errorData = await response.json().catch(() => null)
             if (errorData && (errorData.code === 2 || response.status === 404 || response.status === 400)) {
               console.log(`GET failed, trying POST for ${baseUrl}${endpointPath}...`)
-              // For POST, try same approach as bot-executor (body with params)
+              // For POST, body must be JSON string with NO SPACES (per docs)
               const bodyParams = { timestamp, nonce }
-              const bodyString = JSON.stringify(bodyParams)
-              // Use query string format for signature (same as bot-executor)
-              const postQueryString = Object.keys(bodyParams)
-                .sort()
-                .map(key => `${key}=${bodyParams[key as keyof typeof bodyParams]}`)
-                .join('&')
-              const postSignature = await createBitunixSignatureHMAC(postQueryString, apiSecret)
+              const bodyString = JSON.stringify(bodyParams).replace(/\s+/g, '') // Remove all spaces
+              // For POST, queryParams = "" (empty), body is in request body
+              const postQueryParams = '' // Empty for POST
+              const postSignature = await createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, postQueryParams, bodyString, apiSecret)
               
               const postHeaders: Record<string, string> = {
                 'api-key': String(apiKey),
