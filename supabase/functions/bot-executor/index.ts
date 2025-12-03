@@ -9459,6 +9459,11 @@ class PaperTradingExecutor {
       }
 
       for (const position of positions) {
+        // Initialize variables for this position iteration
+        let shouldClose = false;
+        let newStatus = '';
+        let exitPrice = 0;
+        
         // Get cached price or fetch if missing
         let currentPrice = positionPrices.get(position.id);
         if (!currentPrice || currentPrice === 0) {
@@ -9620,57 +9625,58 @@ class PaperTradingExecutor {
           if (position.side === 'long') {
             if (currentPrice <= stopLossPrice) {
               newStatus = 'stopped';
-            // Realistic: SL often executes MUCH worse than set price (especially during fast moves/gaps)
-            // Use current price (which is already below SL) or add significant slippage
-            const slSlippage = applySlippage(
-              Math.min(currentPrice, stopLossPrice), 
-              'sell', 
-              position.symbol, 
-              parseFloat(position.quantity) * currentPrice,
-              { isExit: true, severity: 2.5 } // Much higher slippage for stop losses (increased from 1.5 to match real trading)
-            );
-            exitPrice = slSlippage.price;
-            shouldClose = true;
-          } else if (currentPrice >= takeProfitPrice) {
-            newStatus = 'taken_profit';
-            // TP can execute at or near the trigger price, but still with some slippage
-            const tpSlippage = applySlippage(
-              Math.max(currentPrice, takeProfitPrice),
-              'sell',
-              position.symbol,
-              parseFloat(position.quantity) * currentPrice,
-              { isExit: true, severity: 1.3 } // Increased from 1.0 for more realism
-            );
-            exitPrice = tpSlippage.price;
-            shouldClose = true;
+              // Realistic: SL often executes MUCH worse than set price (especially during fast moves/gaps)
+              // Use current price (which is already below SL) or add significant slippage
+              const slSlippage = applySlippage(
+                Math.min(currentPrice, stopLossPrice), 
+                'sell', 
+                position.symbol, 
+                parseFloat(position.quantity) * currentPrice,
+                { isExit: true, severity: 2.5 } // Much higher slippage for stop losses (increased from 1.5 to match real trading)
+              );
+              exitPrice = slSlippage.price;
+              shouldClose = true;
+            } else if (currentPrice >= takeProfitPrice) {
+              newStatus = 'taken_profit';
+              // TP can execute at or near the trigger price, but still with some slippage
+              const tpSlippage = applySlippage(
+                Math.max(currentPrice, takeProfitPrice),
+                'sell',
+                position.symbol,
+                parseFloat(position.quantity) * currentPrice,
+                { isExit: true, severity: 1.3 } // Increased from 1.0 for more realism
+              );
+              exitPrice = tpSlippage.price;
+              shouldClose = true;
+            }
+          } else {
+            // Short positions
+            if (currentPrice >= stopLossPrice) {
+              newStatus = 'stopped';
+              // Short stop loss: price went up, execute with significant slippage
+              const slSlippage = applySlippage(
+                Math.max(currentPrice, stopLossPrice),
+                'buy',
+                position.symbol,
+                parseFloat(position.quantity) * currentPrice,
+                { isExit: true, severity: 2.5 } // Much higher slippage for stop losses (increased from 1.5 to match real trading)
+              );
+              exitPrice = slSlippage.price;
+              shouldClose = true;
+            } else if (currentPrice <= takeProfitPrice) {
+              newStatus = 'taken_profit';
+              // Short TP: price went down, execute with slippage
+              const tpSlippage = applySlippage(
+                Math.min(currentPrice, takeProfitPrice),
+                'buy',
+                position.symbol,
+                parseFloat(position.quantity) * currentPrice,
+                { isExit: true, severity: 1.3 } // Increased from 1.0 for more realism
+              );
+              exitPrice = tpSlippage.price;
+              shouldClose = true;
+            }
           }
-        } else {
-          if (currentPrice >= stopLossPrice) {
-            newStatus = 'stopped';
-            // Short stop loss: price went up, execute with significant slippage
-            const slSlippage = applySlippage(
-              Math.max(currentPrice, stopLossPrice),
-              'buy',
-              position.symbol,
-              parseFloat(position.quantity) * currentPrice,
-              { isExit: true, severity: 2.5 } // Much higher slippage for stop losses (increased from 1.5 to match real trading)
-            );
-            exitPrice = slSlippage.price;
-            shouldClose = true;
-          } else if (currentPrice <= takeProfitPrice) {
-            newStatus = 'taken_profit';
-            // Short TP: price went down, execute with slippage
-            const tpSlippage = applySlippage(
-              Math.min(currentPrice, takeProfitPrice),
-              'buy',
-              position.symbol,
-              parseFloat(position.quantity) * currentPrice,
-              { isExit: true, severity: 1.3 } // Increased from 1.0 for more realism
-            );
-            exitPrice = tpSlippage.price;
-            shouldClose = true;
-          }
-        }
         } // End of if (!shouldClose) block
         
         // Update position with new stop loss if it was adjusted by trailing features
