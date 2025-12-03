@@ -5761,11 +5761,46 @@ class BotExecutor {
       };
       const bybitCategory = categoryMap[tradingType] || 'spot';
       
-      // Round quantity to Bybit lot step and clamp to min/max
-      const { stepSize } = getSymbolSteps(symbol);
+      // Fetch actual step size from Bybit first to ensure we use the correct value
+      let actualStepSize: number | null = null;
+      let actualMin: number | null = null;
+      let actualMax: number | null = null;
+      try {
+        const symbolInfoUrl = `${baseDomains[0]}/v5/market/instruments-info?category=${bybitCategory}&symbol=${symbol}`;
+        const symbolInfoResponse = await fetch(symbolInfoUrl, { signal: AbortSignal.timeout(5000) });
+        if (symbolInfoResponse.ok) {
+          const symbolInfoData = await symbolInfoResponse.json();
+          if (symbolInfoData.retCode === 0 && symbolInfoData.result?.list?.[0]) {
+            const symbolInfo = symbolInfoData.result.list[0];
+            const lotSizeFilter = symbolInfo.lotSizeFilter;
+            if (lotSizeFilter) {
+              actualStepSize = parseFloat(lotSizeFilter.qtyStep || '0');
+              actualMin = parseFloat(lotSizeFilter.minOrderQty || '0');
+              actualMax = parseFloat(lotSizeFilter.maxOrderQty || '0');
+              console.log(`📊 Bybit symbol info for ${symbol}: stepSize=${actualStepSize}, min=${actualMin}, max=${actualMax}`);
+            }
+          }
+        }
+      } catch (symbolInfoError) {
+        console.warn(`⚠️ Could not fetch symbol info from Bybit for ${symbol}, using configured values:`, symbolInfoError);
+      }
+      
+      // Use actual Bybit step size if available, otherwise fall back to configured
+      const { stepSize: configuredStepSize } = getSymbolSteps(symbol);
+      const stepSize = actualStepSize !== null && actualStepSize > 0 ? actualStepSize : configuredStepSize;
       const constraints = getQuantityConstraints(symbol);
+      
+      // Use actual Bybit min/max if available
+      const minQty = actualMin !== null && actualMin > 0 ? actualMin : constraints.min;
+      const maxQty = actualMax !== null && actualMax > 0 ? actualMax : constraints.max;
+      
+      // Log if there's a mismatch
+      if (actualStepSize !== null && Math.abs(actualStepSize - configuredStepSize) > 0.0001) {
+        console.warn(`⚠️ Step size mismatch for ${symbol}: configured=${configuredStepSize}, Bybit=${actualStepSize} - using Bybit value`);
+      }
+      
       // Clamp amount to min/max FIRST, then round
-      let qty = Math.max(constraints.min, Math.min(constraints.max, amount));
+      let qty = Math.max(minQty, Math.min(maxQty, amount));
       
       // Round to nearest step size using precise arithmetic to avoid floating point errors
       if (stepSize > 0) {
@@ -5777,32 +5812,32 @@ class BotExecutor {
       }
       
       // Re-clamp after rounding to ensure we don't exceed max due to rounding errors
-      qty = Math.max(constraints.min, Math.min(constraints.max, qty));
+      qty = Math.max(minQty, Math.min(maxQty, qty));
       
       // CRITICAL: If quantity is at or above max, reduce by one step to stay strictly below max
       // Bybit rejects quantities that equal the max value, so we must stay below it
       // This prevents "Invalid quantity" errors for symbols like SHIBUSDT (max = 1000000)
-      if (qty >= constraints.max) {
+      if (qty >= maxQty) {
         if (stepSize > 0) {
           // Calculate the largest valid quantity that's strictly less than max
-          const maxSteps = Math.floor(constraints.max / stepSize);
+          const maxSteps = Math.floor(maxQty / stepSize);
           // If max is exactly on a step boundary, use one step less
-          if ((constraints.max % stepSize) === 0) {
+          if ((maxQty % stepSize) === 0) {
             qty = (maxSteps - 1) * stepSize;
           } else {
             // If max is not on a step boundary, use the largest step that's below max
             qty = maxSteps * stepSize;
           }
           // Final safety: if this still exceeds max, reduce by one more step
-          if (qty >= constraints.max) {
+          if (qty >= maxQty) {
             qty = (maxSteps - 1) * stepSize;
           }
         } else {
           // If no step size, reduce by a small amount (1% of max, but at least 1)
-          qty = constraints.max - Math.max(1, constraints.max * 0.01);
+          qty = maxQty - Math.max(1, maxQty * 0.01);
         }
         // Ensure we're still >= min
-        qty = Math.max(constraints.min, qty);
+        qty = Math.max(minQty, qty);
       }
       
       // Calculate decimals for formatting - ensure we have enough precision
@@ -5851,8 +5886,8 @@ class BotExecutor {
       
       // Final validation: verify the formatted quantity matches step size exactly
       const parsedFormattedQty = parseFloat(formattedQty);
-      if (isNaN(parsedFormattedQty) || parsedFormattedQty < constraints.min || parsedFormattedQty > constraints.max) {
-        throw new Error(`Invalid quantity ${formattedQty} for ${symbol} after rounding. Min: ${constraints.min}, Max: ${constraints.max}, Step: ${stepSize}`);
+      if (isNaN(parsedFormattedQty) || parsedFormattedQty < minQty || parsedFormattedQty > maxQty) {
+        throw new Error(`Invalid quantity ${formattedQty} for ${symbol} after rounding. Min: ${minQty}, Max: ${maxQty}, Step: ${stepSize}`);
       }
       
       // Verify the quantity is exactly on a step size boundary
@@ -5902,24 +5937,24 @@ class BotExecutor {
         const minQuantity = (minOrderValue / currentMarketPrice) * 1.01; // Add 1% buffer
         
         // Round up to meet step size and constraints
-        let adjustedQty = Math.max(minQuantity, constraints.min);
+        let adjustedQty = Math.max(minQuantity, minQty);
         if (stepSize > 0) {
           adjustedQty = Math.ceil(adjustedQty / stepSize) * stepSize;
         }
-        adjustedQty = Math.min(adjustedQty, constraints.max);
+        adjustedQty = Math.min(adjustedQty, maxQty);
         
         // Recalculate order value with adjusted quantity
         const adjustedOrderValue = adjustedQty * currentMarketPrice;
         const adjustedStepDecimals = stepSize < 1 ? stepSize.toString().split('.')[1]?.length || 0 : 0;
         const adjustedFormattedQty = parseFloat(adjustedQty.toFixed(adjustedStepDecimals)).toString();
         
-        if (adjustedOrderValue >= minOrderValue && adjustedQty <= constraints.max) {
+        if (adjustedOrderValue >= minOrderValue && adjustedQty <= maxQty) {
           console.log(`✅ Adjusted quantity from ${formattedQty} to ${adjustedFormattedQty} to meet minimum order value`);
           console.log(`💰 New order value: $${adjustedOrderValue.toFixed(2)} (minimum: $${minOrderValue.toFixed(2)})`);
           qty = adjustedQty;
           formattedQty = adjustedFormattedQty;
         } else {
-          throw new Error(`Order value $${currentOrderValue.toFixed(2)} is below minimum $${minOrderValue.toFixed(2)} for ${symbol} on Bybit. Calculated minimum quantity ${adjustedQty.toFixed(6)} exceeds maximum ${constraints.max}. Please increase trade amount or adjust bot configuration.`);
+          throw new Error(`Order value $${currentOrderValue.toFixed(2)} is below minimum $${minOrderValue.toFixed(2)} for ${symbol} on Bybit. Calculated minimum quantity ${adjustedQty.toFixed(6)} exceeds maximum ${maxQty}. Please increase trade amount or adjust bot configuration.`);
         }
       }
       
@@ -6181,8 +6216,8 @@ class BotExecutor {
           }
           
           // Provide more helpful error message
-          let errorMsg = `Invalid quantity for ${symbol}: ${formattedQty}. Min: ${constraints.min}, Max: ${constraints.max}, Step: ${stepSize}`;
-          if (Math.abs(actualStepSize - stepSize) > 0.0001) {
+          let errorMsg = `Invalid quantity for ${symbol}: ${formattedQty}. Min: ${minQty}, Max: ${maxQty}, Step: ${stepSize}`;
+          if (actualStepSize !== null && Math.abs(actualStepSize - stepSize) > 0.0001) {
             errorMsg += ` (Bybit actual step: ${actualStepSize})`;
           }
           if (orderValue > 10000) {
