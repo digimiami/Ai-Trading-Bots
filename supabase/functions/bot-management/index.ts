@@ -98,6 +98,9 @@ serve(async (req) => {
           winTrades: number;
           lossTrades: number;
           pnl: number;
+          totalFees: number;
+          maxDrawdown: number;
+          peakEquity: number;
           hasClosed: boolean;
         }>();
 
@@ -109,6 +112,9 @@ serve(async (req) => {
               winTrades: 0,
               lossTrades: 0,
               pnl: 0,
+              totalFees: 0,
+              maxDrawdown: 0,
+              peakEquity: 0,
               hasClosed: false
             });
           }
@@ -121,8 +127,9 @@ serve(async (req) => {
 
           const { data: realTrades, error: realTradesError } = await supabaseClient
             .from('trades')
-            .select('bot_id, status, pnl')
-            .in('bot_id', botIds);
+            .select('bot_id, status, pnl, fee, executed_at')
+            .in('bot_id', botIds)
+            .order('executed_at', { ascending: true });
 
           if (realTradesError) {
             console.warn('Error fetching trades for stats:', realTradesError);
@@ -132,9 +139,11 @@ serve(async (req) => {
               const stats = ensureStats(trade.bot_id);
               const status = (trade.status || '').toString().toLowerCase();
               const pnlValue = trade.pnl !== null && trade.pnl !== undefined ? parseFloat(trade.pnl) : NaN;
+              const feeValue = trade.fee !== null && trade.fee !== undefined ? parseFloat(trade.fee) : 0;
 
               if (executedStatuses.has(status)) {
                 stats.totalTrades += 1;
+                stats.totalFees += feeValue;
               }
 
               if (closedStatuses.has(status) && !Number.isNaN(pnlValue)) {
@@ -147,13 +156,19 @@ serve(async (req) => {
                   stats.lossTrades += 1;
                 }
               }
+
+              // Calculate drawdown: track peak equity and current drawdown
+              stats.peakEquity = Math.max(stats.peakEquity, stats.pnl);
+              const currentDrawdown = stats.peakEquity - stats.pnl;
+              stats.maxDrawdown = Math.max(stats.maxDrawdown, currentDrawdown);
             }
           }
 
           const { data: paperTrades, error: paperTradesError } = await supabaseClient
             .from('paper_trading_trades')
-            .select('bot_id, status, pnl')
-            .in('bot_id', botIds);
+            .select('bot_id, status, pnl, fees, executed_at')
+            .in('bot_id', botIds)
+            .order('executed_at', { ascending: true });
 
           if (paperTradesError) {
             console.warn('Error fetching paper trades for stats:', paperTradesError);
@@ -163,9 +178,11 @@ serve(async (req) => {
               const stats = ensureStats(trade.bot_id);
               const status = (trade.status || '').toString().toLowerCase();
               const pnlValue = trade.pnl !== null && trade.pnl !== undefined ? parseFloat(trade.pnl) : NaN;
+              const feeValue = trade.fees !== null && trade.fees !== undefined ? parseFloat(trade.fees) : 0;
 
               if (executedStatuses.has(status)) {
                 stats.totalTrades += 1;
+                stats.totalFees += feeValue;
               }
 
               if (closedStatuses.has(status) && !Number.isNaN(pnlValue)) {
@@ -178,6 +195,11 @@ serve(async (req) => {
                   stats.lossTrades += 1;
                 }
               }
+
+              // Calculate drawdown: track peak equity and current drawdown
+              stats.peakEquity = Math.max(stats.peakEquity, stats.pnl);
+              const currentDrawdown = stats.peakEquity - stats.pnl;
+              stats.maxDrawdown = Math.max(stats.maxDrawdown, currentDrawdown);
             }
           }
         }
@@ -189,6 +211,9 @@ serve(async (req) => {
             winTrades: 0,
             lossTrades: 0,
             pnl: 0,
+            totalFees: 0,
+            maxDrawdown: 0,
+            peakEquity: 0,
             hasClosed: false
           };
 
@@ -197,9 +222,18 @@ serve(async (req) => {
           const winTrades = stats.winTrades;
           const lossTrades = stats.lossTrades;
           const realizedPnl = stats.hasClosed ? stats.pnl : (bot.pnl ?? 0);
+          const totalFees = stats.totalFees || (bot.total_fees ?? 0);
+          const maxDrawdown = stats.maxDrawdown || (bot.max_drawdown ?? 0);
+          
+          // Calculate win rate from closed trades, or use bot's stored value if no closed trades
           const winRate = closedTrades > 0
             ? (winTrades / closedTrades) * 100
             : (bot.win_rate ?? 0);
+
+          // Calculate drawdown percentage based on peak equity
+          const drawdownPercentage = stats.peakEquity > 0
+            ? (maxDrawdown / stats.peakEquity) * 100
+            : (bot.drawdown_percentage ?? 0);
 
           const tradeAmount = bot.trade_amount || bot.tradeAmount;
           const pnlPercentage = closedTrades > 0 && tradeAmount
@@ -240,6 +274,12 @@ serve(async (req) => {
           lossTrades,
           closedTrades,
           realizedPnl,
+          totalFees,
+          total_fees: totalFees,
+          drawdown: maxDrawdown,
+          maxDrawdown,
+          drawdownPercentage,
+          drawdown_percentage: drawdownPercentage,
           createdAt: bot.created_at,
           lastTradeAt: bot.last_trade_at,
           riskLevel: bot.risk_level || 'medium',
