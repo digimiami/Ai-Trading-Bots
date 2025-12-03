@@ -431,16 +431,19 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
         // Create signature for these specific params
         const endpointSignature = await createBitunixSignature(endpointQueryString, apiSecret)
         
+        // Ensure all header values are strings
+        const headers: Record<string, string> = {
+          'api-key': String(apiKey),
+          'timestamp': String(timestamp),
+          'nonce': String(nonce),
+          'sign': String(endpointSignature),
+          'Content-Type': 'application/json'
+        }
+        
         // Try GET with query params first
         response = await fetch(`${baseUrl}${endpointPath}?${endpointQueryString}`, {
           method: 'GET',
-          headers: {
-            'api-key': apiKey,
-            'timestamp': timestamp,
-            'nonce': nonce,
-            'sign': endpointSignature,
-            'Content-Type': 'application/json'
-          }
+          headers: headers
         })
         
         // If GET with query fails, try POST with body
@@ -448,15 +451,17 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
           console.log(`GET ${endpointPath} failed, trying POST...`)
           const bodySignature = await createBitunixSignature(endpointQueryString, apiSecret)
           
+          const postHeaders: Record<string, string> = {
+            'api-key': String(apiKey),
+            'timestamp': String(timestamp),
+            'nonce': String(nonce),
+            'sign': String(bodySignature),
+            'Content-Type': 'application/json'
+          }
+          
           response = await fetch(`${baseUrl}${endpointPath}`, {
             method: 'POST',
-            headers: {
-              'api-key': apiKey,
-              'timestamp': timestamp,
-              'nonce': nonce,
-              'sign': bodySignature,
-              'Content-Type': 'application/json'
-            },
+            headers: postHeaders,
             body: JSON.stringify(endpointParams)
           })
         }
