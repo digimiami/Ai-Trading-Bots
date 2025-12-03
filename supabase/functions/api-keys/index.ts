@@ -375,8 +375,9 @@ function generateNonce(): string {
 
 async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet: boolean) {
   // According to official documentation: https://openapidoc.bitunix.com
-  // API domain: https://fapi.bitunix.com
-  const baseUrl = 'https://fapi.bitunix.com'
+  // API domain: https://fapi.bitunix.com (for futures API)
+  // But bot-executor uses api.bitunix.com for orders, so try both
+  const baseUrls = ['https://fapi.bitunix.com', 'https://api.bitunix.com']
   
   try {
     const timestamp = Date.now().toString() // milliseconds
@@ -408,91 +409,135 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
     let response: Response | null = null
     let requestPath = ''
     let lastError: any = null
+    let successfulBaseUrl = ''
     
-    for (const endpointPath of endpointsToTry) {
-      try {
-        console.log(`Trying Bitunix endpoint: GET ${endpointPath}`)
-        requestPath = endpointPath
-        
-        // According to official docs, signature is created from sorted parameters
-        // For GET requests, parameters are in query string
-        // For POST requests, parameters are in body
-        // Signature: HMAC-SHA256(sorted_params_string, secret)
-        
-        // For account balance, typically no query params needed, but we'll include timestamp and nonce in signature
-        // Signature string format: sorted key-value pairs joined with &
-        const params: Record<string, string> = {
-          timestamp: timestamp,
-          nonce: nonce
-        }
-        
-        // Sort parameters alphabetically and create query string for signature
-        const sortedParams = Object.keys(params)
-          .sort()
-          .map(key => `${key}=${params[key]}`)
-          .join('&')
-        
-        // Create signature from sorted params
-        const signature = await createBitunixSignature(sortedParams, apiSecret)
-        
-        console.log('5. Sorted params for signature:', sortedParams)
-        console.log('6. Generated signature:', signature)
-        
-        // Headers according to official documentation
-        const headers: Record<string, string> = {
-          'api-key': String(apiKey),
-          'nonce': String(nonce),
-          'timestamp': String(timestamp),
-          'sign': String(signature),
-          'Content-Type': 'application/json'
-        }
-        
-        // Try GET request first (params in query string)
-        const queryString = sortedParams
-        response = await fetch(`${baseUrl}${endpointPath}?${queryString}`, {
-          method: 'GET',
-          headers: headers
-        })
-        
-        // If GET fails with 404, try POST with body
-        if (!response.ok && response.status === 404) {
-          console.log(`GET ${endpointPath} failed, trying POST...`)
-          // For POST, signature is from body JSON string
-          const bodyParams = { timestamp, nonce }
-          const bodyString = JSON.stringify(bodyParams)
-          const postSignature = await createBitunixSignature(bodyString, apiSecret)
+    // Try both API domains (fapi for futures, api for general)
+    for (const baseUrl of baseUrls) {
+      for (const endpointPath of endpointsToTry) {
+        try {
+          console.log(`Trying Bitunix: ${baseUrl}${endpointPath}`)
+          requestPath = endpointPath
           
-          const postHeaders: Record<string, string> = {
+          // Create signature from sorted parameters (same format as order placement)
+          const params: Record<string, string> = {
+            timestamp: timestamp,
+            nonce: nonce
+          }
+          
+          // Sort parameters alphabetically and create query string for signature
+          const sortedParams = Object.keys(params)
+            .sort()
+            .map(key => `${key}=${params[key]}`)
+            .join('&')
+          
+          // Create signature from sorted params (same as bot-executor order placement)
+          const signature = await createBitunixSignature(sortedParams, apiSecret)
+          
+          console.log('5. Sorted params for signature:', sortedParams)
+          console.log('6. Generated signature:', signature)
+          
+          // Headers according to official documentation
+          const headers: Record<string, string> = {
             'api-key': String(apiKey),
             'nonce': String(nonce),
             'timestamp': String(timestamp),
-            'sign': String(postSignature),
+            'sign': String(signature),
             'Content-Type': 'application/json'
           }
           
+          // Try GET request without query params first (some endpoints don't need params in URL)
           response = await fetch(`${baseUrl}${endpointPath}`, {
-            method: 'POST',
-            headers: postHeaders,
-            body: bodyString
+            method: 'GET',
+            headers: headers
           })
-        }
-        
-        if (response.ok) {
-          console.log(`✅ Success with endpoint: ${endpointPath}`)
-          break
-        } else if (response.status !== 404) {
-          // If it's not 404, it might be auth error - stop trying
-          const errorText = await response.text().catch(() => '')
-          console.log(`Endpoint ${endpointPath} returned ${response.status}: ${errorText}`)
-          if (response.status === 401 || response.status === 403) {
-            lastError = new Error(`Bitunix API authentication error: ${response.status} - ${errorText}`)
-            break
+          
+          // Parse response to check error code
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => null)
+            if (errorData && errorData.code === 2) {
+              console.log(`System error (Code: 2) from ${baseUrl}${endpointPath}, trying with query params...`)
+              // Try with query params
+              response = await fetch(`${baseUrl}${endpointPath}?${sortedParams}`, {
+                method: 'GET',
+                headers: headers
+              })
+            }
           }
+          
+          // If GET still fails, try POST
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => null)
+            if (errorData && (errorData.code === 2 || response.status === 404 || response.status === 400)) {
+              console.log(`GET failed, trying POST for ${baseUrl}${endpointPath}...`)
+              // For POST, try signature from sorted params (same as GET)
+              const postSignature = await createBitunixSignature(sortedParams, apiSecret)
+              const bodyParams = { timestamp, nonce }
+              const bodyString = JSON.stringify(bodyParams)
+              
+              const postHeaders: Record<string, string> = {
+                'api-key': String(apiKey),
+                'nonce': String(nonce),
+                'timestamp': String(timestamp),
+                'sign': String(postSignature),
+                'Content-Type': 'application/json'
+              }
+              
+              response = await fetch(`${baseUrl}${endpointPath}`, {
+                method: 'POST',
+                headers: postHeaders,
+                body: bodyString
+              })
+            }
+          }
+          
+          // Check if successful
+          if (response.ok) {
+            const responseData = await response.json().catch(() => null)
+            if (responseData && responseData.code === 0) {
+              console.log(`✅ Success with: ${baseUrl}${endpointPath}`)
+              successfulBaseUrl = baseUrl
+              // Update data variable for parsing
+              const tempData = responseData
+              // Break out of both loops
+              break
+            } else if (responseData && responseData.code !== 0) {
+              // Got response but with error code
+              const errorMsg = responseData.msg || responseData.message || 'Unknown error'
+              console.log(`Endpoint ${baseUrl}${endpointPath} returned code ${responseData.code}: ${errorMsg}`)
+              lastError = new Error(`Bitunix API error: ${errorMsg} (Code: ${responseData.code})`)
+              // Continue to next endpoint
+              continue
+            }
+          } else {
+            // HTTP error
+            const errorText = await response.text().catch(() => '')
+            console.log(`Endpoint ${baseUrl}${endpointPath} returned ${response.status}: ${errorText}`)
+            if (response.status === 401 || response.status === 403) {
+              lastError = new Error(`Bitunix API authentication error: ${response.status} - ${errorText}`)
+              // Don't break, try other endpoints/domains
+            }
+          }
+          
+          // Break out of endpoint loop if we got a successful response
+          if (response.ok) {
+            const responseData = await response.json().catch(() => null)
+            if (responseData && responseData.code === 0) {
+              break
+            }
+          }
+        } catch (err: any) {
+          console.log(`Error trying ${baseUrl}${endpointPath}:`, err.message)
+          lastError = err
+          continue
         }
-      } catch (err: any) {
-        console.log(`Error trying ${endpointPath}:`, err.message)
-        lastError = err
-        continue
+      }
+      
+      // Break out of baseUrl loop if we found a successful response
+      if (response && response.ok) {
+        const responseData = await response.json().catch(() => null)
+        if (responseData && responseData.code === 0) {
+          break
+        }
       }
     }
     
@@ -500,14 +545,16 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
       const errorText = lastError?.message || (response ? await response.text().catch(() => '') : 'All endpoints failed')
       const triedEndpoints = endpointsToTry.join(', ')
       console.error('Bitunix API HTTP Error:', response?.status || 'N/A', errorText)
-      throw new Error(`Bitunix API error: ${response?.status || 'N/A'} - ${errorText}. Tried endpoints: ${triedEndpoints}`)
+      throw new Error(`Bitunix API error: ${response?.status || 'N/A'} - ${errorText}. Tried domains: ${baseUrls.join(', ')}. Tried endpoints: ${triedEndpoints}`)
     }
     
     const data = await response.json()
     console.log('Bitunix API Response:', JSON.stringify(data, null, 2))
     
     if (data.code !== 0) {
-      throw new Error(`Bitunix API error: ${data.msg || data.message} (Code: ${data.code})`)
+      // Provide more detailed error message
+      const errorMsg = data.msg || data.message || 'Unknown error'
+      throw new Error(`Bitunix API error: ${errorMsg} (Code: ${data.code}). Used domain: ${successfulBaseUrl || baseUrls[0]}, endpoint: ${requestPath}`)
     }
     
     // Parse Bitunix balance response
