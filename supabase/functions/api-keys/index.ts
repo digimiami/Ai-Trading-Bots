@@ -410,9 +410,13 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
     let requestPath = ''
     let lastError: any = null
     let successfulBaseUrl = ''
+    let data: any = null
     
     // Try both API domains (fapi for futures, api for general)
-    for (const baseUrl of baseUrls) {
+    // Prioritize api.bitunix.com since bot-executor uses it successfully
+    const sortedBaseUrls = ['https://api.bitunix.com', 'https://fapi.bitunix.com']
+    
+    for (const baseUrl of sortedBaseUrls) {
       for (const endpointPath of endpointsToTry) {
         try {
           console.log(`Trying Bitunix: ${baseUrl}${endpointPath}`)
@@ -490,39 +494,55 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
             }
           }
           
-          // Check if successful
+          // Check if successful - read response once
+          let responseData: any = null
           if (response.ok) {
-            const responseData = await response.json().catch(() => null)
-            if (responseData && responseData.code === 0) {
-              console.log(`✅ Success with: ${baseUrl}${endpointPath}`)
-              successfulBaseUrl = baseUrl
-              // Update data variable for parsing
-              const tempData = responseData
-              // Break out of both loops
-              break
-            } else if (responseData && responseData.code !== 0) {
-              // Got response but with error code
-              const errorMsg = responseData.msg || responseData.message || 'Unknown error'
-              console.log(`Endpoint ${baseUrl}${endpointPath} returned code ${responseData.code}: ${errorMsg}`)
-              lastError = new Error(`Bitunix API error: ${errorMsg} (Code: ${responseData.code})`)
-              // Continue to next endpoint
+            try {
+              responseData = await response.json()
+              if (responseData && responseData.code === 0) {
+                console.log(`✅ Success with: ${baseUrl}${endpointPath}`)
+                successfulBaseUrl = baseUrl
+                // Store response data for later parsing
+                data = responseData
+                // Break out of both loops
+                break
+              } else if (responseData && responseData.code !== 0) {
+                // Got response but with error code
+                const errorMsg = responseData.msg || responseData.message || 'Unknown error'
+                console.log(`Endpoint ${baseUrl}${endpointPath} returned code ${responseData.code}: ${errorMsg}`)
+                lastError = new Error(`Bitunix API error: ${errorMsg} (Code: ${responseData.code})`)
+                // Continue to next endpoint
+                continue
+              }
+            } catch (parseError) {
+              console.log(`Failed to parse response from ${baseUrl}${endpointPath}:`, parseError)
+              lastError = parseError
               continue
             }
           } else {
-            // HTTP error
-            const errorText = await response.text().catch(() => '')
-            console.log(`Endpoint ${baseUrl}${endpointPath} returned ${response.status}: ${errorText}`)
-            if (response.status === 401 || response.status === 403) {
-              lastError = new Error(`Bitunix API authentication error: ${response.status} - ${errorText}`)
-              // Don't break, try other endpoints/domains
+            // HTTP error - try to get error message
+            try {
+              const errorText = await response.text()
+              console.log(`Endpoint ${baseUrl}${endpointPath} returned ${response.status}: ${errorText}`)
+              // Try to parse as JSON for error details
+              try {
+                responseData = JSON.parse(errorText)
+                if (responseData.code !== undefined) {
+                  const errorMsg = responseData.msg || responseData.message || errorText
+                  lastError = new Error(`Bitunix API error: ${errorMsg} (Code: ${responseData.code})`)
+                } else {
+                  lastError = new Error(`Bitunix API HTTP error: ${response.status} - ${errorText}`)
+                }
+              } catch {
+                lastError = new Error(`Bitunix API HTTP error: ${response.status} - ${errorText}`)
+              }
+            } catch {
+              lastError = new Error(`Bitunix API HTTP error: ${response.status}`)
             }
-          }
-          
-          // Break out of endpoint loop if we got a successful response
-          if (response.ok) {
-            const responseData = await response.json().catch(() => null)
-            if (responseData && responseData.code === 0) {
-              break
+            
+            if (response.status === 401 || response.status === 403) {
+              // Auth error - might want to stop trying, but continue for now
+              console.log('Authentication error, but continuing to try other endpoints...')
             }
           }
         } catch (err: any) {
@@ -533,29 +553,20 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
       }
       
       // Break out of baseUrl loop if we found a successful response
-      if (response && response.ok) {
-        const responseData = await response.json().catch(() => null)
-        if (responseData && responseData.code === 0) {
-          break
-        }
+      if (data && data.code === 0) {
+        break
       }
     }
     
-    if (!response || !response.ok) {
-      const errorText = lastError?.message || (response ? await response.text().catch(() => '') : 'All endpoints failed')
+    // Check if we got a successful response
+    if (!data || data.code !== 0) {
+      const errorText = lastError?.message || (data ? `${data.msg || data.message} (Code: ${data.code})` : 'All endpoints failed')
       const triedEndpoints = endpointsToTry.join(', ')
-      console.error('Bitunix API HTTP Error:', response?.status || 'N/A', errorText)
-      throw new Error(`Bitunix API error: ${response?.status || 'N/A'} - ${errorText}. Tried domains: ${baseUrls.join(', ')}. Tried endpoints: ${triedEndpoints}`)
+      console.error('Bitunix API Error:', errorText)
+      throw new Error(`Bitunix API error: ${errorText}. Tried domains: ${baseUrls.join(', ')}. Tried endpoints: ${triedEndpoints}`)
     }
     
-    const data = await response.json()
     console.log('Bitunix API Response:', JSON.stringify(data, null, 2))
-    
-    if (data.code !== 0) {
-      // Provide more detailed error message
-      const errorMsg = data.msg || data.message || 'Unknown error'
-      throw new Error(`Bitunix API error: ${errorMsg} (Code: ${data.code}). Used domain: ${successfulBaseUrl || baseUrls[0]}, endpoint: ${requestPath}`)
-    }
     
     // Parse Bitunix balance response
     // According to docs, response format: { code: 0, msg: "success", data: [...] }
