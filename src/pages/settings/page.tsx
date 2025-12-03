@@ -568,6 +568,19 @@ export default function Settings() {
           alert('Please enter both API Key and API Secret for Bybit');
           return;
         }
+        // Test connection first before saving
+        const testResult = await testConnection({
+          exchange: 'bybit',
+          apiKey: apiSettings.bybitApiKey,
+          apiSecret: apiSettings.bybitApiSecret,
+          isTestnet: apiSettings.bybitTestnet,
+        });
+        
+        if (!testResult.success) {
+          const proceed = confirm(`⚠️ Connection test failed: ${testResult.message}\n\nDo you still want to save these keys?`);
+          if (!proceed) return;
+        }
+        
         await saveApiKey({
           exchange: 'bybit',
           apiKey: apiSettings.bybitApiKey,
@@ -586,6 +599,20 @@ export default function Settings() {
           alert('Please enter both API Key and API Secret for OKX');
           return;
         }
+        // Test connection first before saving
+        const testResult = await testConnection({
+          exchange: 'okx',
+          apiKey: apiSettings.okxApiKey,
+          apiSecret: apiSettings.okxApiSecret,
+          passphrase: apiSettings.okxPassphrase,
+          isTestnet: apiSettings.okxTestnet,
+        });
+        
+        if (!testResult.success) {
+          const proceed = confirm(`⚠️ Connection test failed: ${testResult.message}\n\nDo you still want to save these keys?`);
+          if (!proceed) return;
+        }
+        
         await saveApiKey({
           exchange: 'okx',
           apiKey: apiSettings.okxApiKey,
@@ -606,6 +633,20 @@ export default function Settings() {
           alert('Please enter both API Key and API Secret for Bitunix');
           return;
         }
+        // Test connection first before saving
+        const testResult = await testConnection({
+          exchange: 'bitunix',
+          apiKey: apiSettings.bitunixApiKey,
+          apiSecret: apiSettings.bitunixApiSecret,
+          passphrase: '', // Bitunix doesn't use passphrase
+          isTestnet: apiSettings.bitunixTestnet,
+        });
+        
+        if (!testResult.success) {
+          const proceed = confirm(`⚠️ Connection test failed: ${testResult.message}\n\nDo you still want to save these keys?`);
+          if (!proceed) return;
+        }
+        
         await saveApiKey({
           exchange: 'bitunix',
           apiKey: apiSettings.bitunixApiKey,
@@ -756,13 +797,21 @@ export default function Settings() {
       let formData: ApiKeyFormData;
       
       if (exchange === 'bybit') {
+        if (!apiSettings.bybitApiKey || !apiSettings.bybitApiSecret) {
+          alert('Please enter both API Key and API Secret for Bybit');
+          return;
+        }
         formData = {
           exchange: 'bybit',
           apiKey: apiSettings.bybitApiKey,
           apiSecret: apiSettings.bybitApiSecret,
           isTestnet: apiSettings.bybitTestnet,
         };
-      } else {
+      } else if (exchange === 'okx') {
+        if (!apiSettings.okxApiKey || !apiSettings.okxApiSecret) {
+          alert('Please enter both API Key and API Secret for OKX');
+          return;
+        }
         formData = {
           exchange: 'okx',
           apiKey: apiSettings.okxApiKey,
@@ -770,17 +819,33 @@ export default function Settings() {
           passphrase: apiSettings.okxPassphrase,
           isTestnet: apiSettings.okxTestnet,
         };
+      } else if (exchange === 'bitunix') {
+        if (!apiSettings.bitunixApiKey || !apiSettings.bitunixApiSecret) {
+          alert('Please enter both API Key and API Secret for Bitunix');
+          return;
+        }
+        formData = {
+          exchange: 'bitunix',
+          apiKey: apiSettings.bitunixApiKey,
+          apiSecret: apiSettings.bitunixApiSecret,
+          passphrase: '', // Bitunix doesn't use passphrase
+          isTestnet: apiSettings.bitunixTestnet,
+        };
+      } else {
+        alert('Invalid exchange');
+        return;
       }
 
       const result = await testConnection(formData);
       
       if (result.success) {
-        alert(`${exchange.toUpperCase()} API connection successful!`);
+        alert(`✅ ${exchange.toUpperCase()} API connection successful!`);
       } else {
-        alert(`${exchange.toUpperCase()} API connection failed: ${result.message}`);
+        alert(`❌ ${exchange.toUpperCase()} API connection failed: ${result.message || 'Unknown error'}`);
       }
     } catch (error: any) {
-      alert(`Failed to test ${exchange.toUpperCase()} API: ${error.message}`);
+      console.error('Test connection error:', error);
+      alert(`❌ Failed to test ${exchange.toUpperCase()} API: ${error.message || 'Network error'}`);
     }
   };
 
