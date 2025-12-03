@@ -385,7 +385,7 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
     
     console.log('=== BITUNIX BALANCE DEBUG (Official API) ===')
     console.log('0. Environment:', isTestnet ? 'TESTNET' : 'MAINNET')
-    console.log('0. Base URL:', baseUrl)
+    console.log('0. Base URLs to try:', baseUrls.join(', '))
     console.log('1. Timestamp (ms):', timestamp)
     console.log('2. Nonce (32-bit):', nonce)
     console.log('3. API Key (first 10 chars):', apiKey.substring(0, 10) + '...')
@@ -435,8 +435,9 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
           // Create signature using double SHA256
           const signature = await createBitunixSignature(nonce, timestamp, apiKey, queryParams, body, apiSecret)
           
-          console.log('5. Sorted params for signature:', sortedParams)
-          console.log('6. Generated signature:', signature)
+          console.log('5. Query params for signature:', queryParams || '(empty)')
+          console.log('6. Body for signature:', body || '(empty)')
+          console.log('7. Generated signature:', signature)
           
           // Headers according to official documentation
           const headers: Record<string, string> = {
@@ -458,8 +459,9 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
             const errorData = await response.json().catch(() => null)
             if (errorData && errorData.code === 2) {
               console.log(`System error (Code: 2) from ${baseUrl}${endpointPath}, trying with query params...`)
-              // Try with query params
-              response = await fetch(`${baseUrl}${endpointPath}?${sortedParams}`, {
+              // Try with query params (timestamp and nonce)
+              const queryString = `timestamp=${timestamp}&nonce=${nonce}`
+              response = await fetch(`${baseUrl}${endpointPath}?${queryString}`, {
                 method: 'GET',
                 headers: headers
               })
