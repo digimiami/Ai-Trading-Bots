@@ -44,6 +44,7 @@ const AiMlDashboard: React.FC = () => {
   const [aiPerformance, setAIPerformance] = useState<AIPerformance[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isInitializing, setIsInitializing] = useState(false);
+  const [isGeneratingMultiple, setIsGeneratingMultiple] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Fetch ML predictions
@@ -149,14 +150,47 @@ const AiMlDashboard: React.FC = () => {
     }
   };
 
-  // Generate sample ML prediction
+  // Popular futures pairs list (expanded)
+  const popularFuturesPairs = [
+    // Major cryptocurrencies
+    'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT',
+    // Layer 1 & DeFi
+    'ADAUSDT', 'DOTUSDT', 'AVAXUSDT', 'MATICUSDT', 'LINKUSDT',
+    'UNIUSDT', 'ATOMUSDT', 'ALGOUSDT', 'NEARUSDT', 'FTMUSDT',
+    // Meme coins & trending
+    'DOGEUSDT', 'SHIBUSDT', 'PEPEUSDT', 'FLOKIUSDT', 'WIFUSDT',
+    'BONKUSDT', 'MEMEUSDT', '1000PEPEUSDT', '1000FLOKIUSDT',
+    // Altcoins
+    'LTCUSDT', 'ETCUSDT', 'XLMUSDT', 'VETUSDT', 'FILUSDT',
+    'TRXUSDT', 'EOSUSDT', 'AAVEUSDT', 'MKRUSDT', 'COMPUSDT',
+    // Newer tokens
+    'ARBUSDT', 'OPUSDT', 'SUIUSDT', 'APTUSDT', 'SEIUSDT',
+    'TIAUSDT', 'INJUSDT', 'RENDERUSDT', 'FETUSDT', 'AGIXUSDT',
+    // Gaming & Metaverse
+    'AXSUSDT', 'SANDUSDT', 'MANAUSDT', 'ENJUSDT', 'GALAUSDT',
+    // AI & Big Data
+    'RNDRUSDT', 'FETUSDT', 'AGIXUSDT', 'OCEANUSDT', 'GRTUSDT',
+    // Layer 2 & Scaling
+    'ARBUSDT', 'OPUSDT', 'STRKUSDT', 'MANTAUSDT', 'METISUSDT',
+    // Exchange tokens
+    'FTTUSDT', 'HTUSDT', 'OKBUSDT', 'KCSUSDT',
+    // Stablecoins & Derivatives
+    '1000SATSUSDT', '1000BONKUSDT', '1000FLOKIUSDT',
+    // Additional popular pairs
+    'ORDIUSDT', 'TIAUSDT', 'JTOUSDT', 'PYTHUSDT', 'WLDUSDT',
+    'DYMUSDT', 'PIXELUSDT', 'PORTALUSDT', 'PDAUSDT', 'AEVOUSDT',
+    'METISUSDT', 'ENAUSDT', 'WUSDT', 'TNSRUSDT', 'SAGAUSDT',
+    'REZUSDT', 'BBUSDT', 'NOTUSDT', 'IOUSDT', 'ZROUSDT',
+    'LISTAUSDT', 'ZKSUSDT', 'ZKUSDT', 'ZKFUSDT', 'ZKMUSDT'
+  ];
+
+  // Generate sample ML prediction for a random symbol
   const generateSamplePrediction = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const symbols = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT'];
-      const randomSymbol = symbols[Math.floor(Math.random() * symbols.length)];
+      const randomSymbol = popularFuturesPairs[Math.floor(Math.random() * popularFuturesPairs.length)];
 
       const response = await fetch(
         `${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/ml-predictions?action=predict`,
@@ -178,6 +212,65 @@ const AiMlDashboard: React.FC = () => {
       }
     } catch (error) {
       console.error('Error generating prediction:', error);
+    }
+  };
+
+  // Generate predictions for multiple pairs
+  const generateMultiplePredictions = async (count: number = 10) => {
+    try {
+      setIsGeneratingMultiple(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      // Shuffle and select random pairs
+      const shuffled = [...popularFuturesPairs].sort(() => 0.5 - Math.random());
+      const selectedPairs = shuffled.slice(0, Math.min(count, popularFuturesPairs.length));
+
+      let successCount = 0;
+      let failCount = 0;
+
+      // Generate predictions for each pair with a small delay to avoid rate limiting
+      for (const symbol of selectedPairs) {
+        try {
+          const response = await fetch(
+            `${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/ml-predictions?action=predict`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${session.access_token}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                symbol: symbol,
+                bot_id: null
+              })
+            }
+          );
+          
+          if (response.ok) {
+            successCount++;
+          } else {
+            failCount++;
+          }
+          
+          // Small delay between requests to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 200));
+        } catch (error) {
+          console.error(`Error generating prediction for ${symbol}:`, error);
+          failCount++;
+        }
+      }
+
+      // Refresh predictions after all are generated
+      await fetchMLPredictions();
+      
+      if (successCount > 0) {
+        console.log(`✅ Generated ${successCount} predictions successfully${failCount > 0 ? `, ${failCount} failed` : ''}`);
+      }
+    } catch (error) {
+      console.error('Error generating multiple predictions:', error);
+    } finally {
+      setIsGeneratingMultiple(false);
     }
   };
 
@@ -320,7 +413,7 @@ const AiMlDashboard: React.FC = () => {
           <h2 className="text-2xl font-bold text-gray-900">AI/ML Trading Dashboard</h2>
           <p className="text-gray-600">Machine Learning Insights & Bot Performance</p>
         </div>
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-3 flex-wrap gap-2">
           <select className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
             <option>Last 24 Hours</option>
             <option>Last 7 Days</option>
@@ -329,9 +422,28 @@ const AiMlDashboard: React.FC = () => {
           <button
             onClick={generateSamplePrediction}
             className="bg-purple-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-purple-700 transition-colors flex items-center space-x-2"
+            title="Generate prediction for one random futures pair"
           >
             <span>🎲</span>
-            <span>Generate Prediction</span>
+            <span>Generate 1 Prediction</span>
+          </button>
+          <button
+            onClick={() => generateMultiplePredictions(10)}
+            disabled={isGeneratingMultiple}
+            className="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-indigo-700 transition-colors flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Generate predictions for 10 random futures pairs"
+          >
+            <span>⚡</span>
+            <span>{isGeneratingMultiple ? 'Generating...' : 'Generate 10 Predictions'}</span>
+          </button>
+          <button
+            onClick={() => generateMultiplePredictions(25)}
+            disabled={isGeneratingMultiple}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Generate predictions for 25 random futures pairs"
+          >
+            <span>🚀</span>
+            <span>{isGeneratingMultiple ? 'Generating...' : 'Generate 25 Predictions'}</span>
           </button>
           {aiPerformance.length === 0 && (
             <button
