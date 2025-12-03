@@ -399,51 +399,56 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
     
     // Try multiple Bitunix balance endpoints
     // Bitunix API endpoints may vary, so we'll try common patterns
+    // Also try with marketType parameter for futures
     const endpointsToTry = [
-      '/api/v1/account/wallet',
-      '/api/v1/wallet/balance',
-      '/api/v1/account/assets',
-      '/api/v1/user/balance',
-      '/api/v1/account/balance',
-      '/api/v1/account/spot-balance'
+      { path: '/api/v1/account/wallet', params: { timestamp, nonce } },
+      { path: '/api/v1/wallet/balance', params: { timestamp, nonce } },
+      { path: '/api/v1/account/assets', params: { timestamp, nonce } },
+      { path: '/api/v1/user/balance', params: { timestamp, nonce } },
+      { path: '/api/v1/account/balance', params: { timestamp, nonce, marketType: 'futures' } },
+      { path: '/api/v1/account/balance', params: { timestamp, nonce, marketType: 'spot' } },
+      { path: '/api/v1/account/balance', params: { timestamp, nonce } },
+      { path: '/api/v1/account/spot-balance', params: { timestamp, nonce } }
     ]
     
     let response: Response | null = null
     let requestPath = ''
     let lastError: any = null
     
-    for (const endpoint of endpointsToTry) {
+    for (const endpointConfig of endpointsToTry) {
       try {
-        console.log(`Trying Bitunix endpoint: ${endpoint}`)
-        requestPath = endpoint
+        const endpointPath = endpointConfig.path
+        const endpointParams = endpointConfig.params
+        console.log(`Trying Bitunix endpoint: ${endpointPath} with params:`, endpointParams)
+        requestPath = endpointPath
         
-        // For some endpoints, params might need to be in body instead of query
+        // Create query string for this endpoint's specific params
+        const endpointQueryString = Object.keys(endpointParams)
+          .sort()
+          .map(key => `${key}=${endpointParams[key]}`)
+          .join('&')
+        
+        // Create signature for these specific params
+        const endpointSignature = await createBitunixSignature(endpointQueryString, apiSecret)
+        
         // Try GET with query params first
-        response = await fetch(`${baseUrl}${requestPath}?${queryString}`, {
+        response = await fetch(`${baseUrl}${endpointPath}?${endpointQueryString}`, {
           method: 'GET',
           headers: {
             'api-key': apiKey,
             'timestamp': timestamp,
             'nonce': nonce,
-            'sign': signature,
+            'sign': endpointSignature,
             'Content-Type': 'application/json'
           }
         })
         
         // If GET with query fails, try POST with body
         if (!response.ok && response.status === 404) {
-          console.log(`GET ${endpoint} failed, trying POST...`)
-          const bodyParams = {
-            timestamp: timestamp,
-            nonce: nonce
-          }
-          const bodyQueryString = Object.keys(bodyParams)
-            .sort()
-            .map(key => `${key}=${bodyParams[key]}`)
-            .join('&')
-          const bodySignature = await createBitunixSignature(bodyQueryString, apiSecret)
+          console.log(`GET ${endpointPath} failed, trying POST...`)
+          const bodySignature = await createBitunixSignature(endpointQueryString, apiSecret)
           
-          response = await fetch(`${baseUrl}${requestPath}`, {
+          response = await fetch(`${baseUrl}${endpointPath}`, {
             method: 'POST',
             headers: {
               'api-key': apiKey,
@@ -452,24 +457,24 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
               'sign': bodySignature,
               'Content-Type': 'application/json'
             },
-            body: JSON.stringify(bodyParams)
+            body: JSON.stringify(endpointParams)
           })
         }
         
         if (response.ok) {
-          console.log(`✅ Success with endpoint: ${endpoint}`)
+          console.log(`✅ Success with endpoint: ${endpointPath}`)
           break
         } else if (response.status !== 404) {
           // If it's not 404, it might be auth error - stop trying
           const errorText = await response.text().catch(() => '')
-          console.log(`Endpoint ${endpoint} returned ${response.status}: ${errorText}`)
+          console.log(`Endpoint ${endpointPath} returned ${response.status}: ${errorText}`)
           if (response.status === 401 || response.status === 403) {
             lastError = new Error(`Bitunix API authentication error: ${response.status} - ${errorText}`)
             break
           }
         }
       } catch (err: any) {
-        console.log(`Error trying ${endpoint}:`, err.message)
+        console.log(`Error trying ${endpointConfig.path}:`, err.message)
         lastError = err
         continue
       }
@@ -477,8 +482,9 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
     
     if (!response || !response.ok) {
       const errorText = lastError?.message || (response ? await response.text().catch(() => '') : 'All endpoints failed')
+      const triedEndpoints = endpointsToTry.map(e => e.path).join(', ')
       console.error('Bitunix API HTTP Error:', response?.status || 'N/A', errorText)
-      throw new Error(`Bitunix API error: ${response?.status || 'N/A'} - ${errorText}. Tried endpoints: ${endpointsToTry.join(', ')}`)
+      throw new Error(`Bitunix API error: ${response?.status || 'N/A'} - ${errorText}. Tried endpoints: ${triedEndpoints}`)
     }
     
     if (!response.ok) {
