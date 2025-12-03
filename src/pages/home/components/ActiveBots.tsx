@@ -68,7 +68,7 @@ export default function ActiveBots({ bots = [] }: ActiveBotsProps) {
           safeBots.slice(0, 5).map((bot) => (
             <div
               key={bot.id}
-              className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+              className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border-2 border-blue-200 dark:border-blue-700 shadow-md shadow-blue-500/15 dark:shadow-blue-500/10 hover:shadow-lg hover:shadow-blue-500/25 dark:hover:shadow-blue-500/15 transition-shadow"
             >
               <div className="flex items-center space-x-3">
                 <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">

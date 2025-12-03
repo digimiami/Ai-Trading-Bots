@@ -1090,7 +1090,7 @@ export default function BotsPage() {
               </div>
             ) : (
               filteredBots.map((bot) => (
-              <Card key={bot.id} className="space-y-4">
+              <Card key={bot.id} className="space-y-4 border-2 border-blue-200 dark:border-blue-700 shadow-lg shadow-blue-500/20 dark:shadow-blue-500/10 hover:shadow-xl hover:shadow-blue-500/30 dark:hover:shadow-blue-500/20 transition-shadow">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center space-x-3">
                     <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
