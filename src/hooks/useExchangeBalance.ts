@@ -15,6 +15,7 @@ export interface ExchangeBalance {
   lastUpdated: string
   status: 'connected' | 'disconnected' | 'error'
   error?: string
+  note?: string
 }
 
 export function useExchangeBalance() {

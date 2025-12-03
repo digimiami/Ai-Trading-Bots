@@ -117,6 +117,12 @@ export default function ExchangeBalanceDisplay({ balances }: ExchangeBalanceProp
                       Error: {balance.error}
                     </p>
                   )}
+                  {balance.note && (
+                    <p className="text-sm text-blue-600 mt-1 flex items-center">
+                      <i className="ri-information-line mr-1"></i>
+                      {balance.note}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="text-right">
