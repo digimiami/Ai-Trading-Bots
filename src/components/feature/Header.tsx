@@ -96,6 +96,17 @@ export function Header({ title, subtitle, showBack = false, action, rightAction 
               <i className="ri-arrow-left-line text-lg sm:text-xl text-gray-600 dark:text-gray-300"></i>
             </button>
           )}
+          <button
+            onClick={() => navigate('/')}
+            className="flex items-center space-x-2 flex-shrink-0 hover:opacity-80 transition-opacity"
+            aria-label="Home"
+          >
+            <img 
+              src="https://dkawxgwdqiirgmmjbvhc.supabase.co/storage/v1/object/public/profile-images/logo.png" 
+              alt="Pablo Logo" 
+              className="h-8 w-8 sm:h-10 sm:w-10 object-contain"
+            />
+          </button>
           <div className="min-w-0 flex-1">
             <h1 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white truncate">{title}</h1>
             {subtitle && (

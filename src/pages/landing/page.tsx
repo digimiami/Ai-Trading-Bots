@@ -124,15 +124,20 @@ export default function LandingPage() {
 
       <header className="relative z-10">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
-          <div className="flex items-center space-x-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-500 shadow-lg shadow-blue-500/40">
-              <i className="ri-robot-2-fill text-xl" />
-            </div>
+          <button
+            onClick={() => navigate('/')}
+            className="flex items-center space-x-3 hover:opacity-80 transition-opacity"
+          >
+            <img 
+              src="https://dkawxgwdqiirgmmjbvhc.supabase.co/storage/v1/object/public/profile-images/logo.png" 
+              alt="Pablo Logo" 
+              className="h-10 w-10 sm:h-12 sm:w-12 object-contain"
+            />
             <div>
               <p className="text-sm uppercase tracking-[0.3em] text-blue-200/80">Pablo</p>
               <p className="text-xs font-light text-slate-300/70">Autonomous Trading Network</p>
             </div>
-          </div>
+          </button>
 
           <nav className="hidden items-center space-x-8 text-sm font-medium text-slate-200/80 md:flex">
             <button onClick={() => navigate('/market-dashboard')} className="transition hover:text-white">
