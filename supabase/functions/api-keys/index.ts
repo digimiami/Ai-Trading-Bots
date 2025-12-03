@@ -397,33 +397,88 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
     console.log('6. Generated signature:', signature)
     console.log('=== END BITUNIX DEBUG ===')
     
-    // Try futures account balance first
-    let requestPath = '/api/v1/account/balance'
-    let response = await fetch(`${baseUrl}${requestPath}?${queryString}`, {
-      method: 'GET',
-      headers: {
-        'api-key': apiKey,
-        'timestamp': timestamp,
-        'nonce': nonce,
-        'sign': signature,
-        'Content-Type': 'application/json'
-      }
-    })
+    // Try multiple Bitunix balance endpoints
+    // Bitunix API endpoints may vary, so we'll try common patterns
+    const endpointsToTry = [
+      '/api/v1/account/wallet',
+      '/api/v1/wallet/balance',
+      '/api/v1/account/assets',
+      '/api/v1/user/balance',
+      '/api/v1/account/balance',
+      '/api/v1/account/spot-balance'
+    ]
     
-    // If futures balance fails, try spot balance
-    if (!response.ok || response.status === 404) {
-      console.log('Futures balance endpoint failed, trying spot balance...')
-      requestPath = '/api/v1/account/spot-balance'
-      response = await fetch(`${baseUrl}${requestPath}?${queryString}`, {
-        method: 'GET',
-        headers: {
-          'api-key': apiKey,
-          'timestamp': timestamp,
-          'nonce': nonce,
-          'sign': signature,
-          'Content-Type': 'application/json'
+    let response: Response | null = null
+    let requestPath = ''
+    let lastError: any = null
+    
+    for (const endpoint of endpointsToTry) {
+      try {
+        console.log(`Trying Bitunix endpoint: ${endpoint}`)
+        requestPath = endpoint
+        
+        // For some endpoints, params might need to be in body instead of query
+        // Try GET with query params first
+        response = await fetch(`${baseUrl}${requestPath}?${queryString}`, {
+          method: 'GET',
+          headers: {
+            'api-key': apiKey,
+            'timestamp': timestamp,
+            'nonce': nonce,
+            'sign': signature,
+            'Content-Type': 'application/json'
+          }
+        })
+        
+        // If GET with query fails, try POST with body
+        if (!response.ok && response.status === 404) {
+          console.log(`GET ${endpoint} failed, trying POST...`)
+          const bodyParams = {
+            timestamp: timestamp,
+            nonce: nonce
+          }
+          const bodyQueryString = Object.keys(bodyParams)
+            .sort()
+            .map(key => `${key}=${bodyParams[key]}`)
+            .join('&')
+          const bodySignature = await createBitunixSignature(bodyQueryString, apiSecret)
+          
+          response = await fetch(`${baseUrl}${requestPath}`, {
+            method: 'POST',
+            headers: {
+              'api-key': apiKey,
+              'timestamp': timestamp,
+              'nonce': nonce,
+              'sign': bodySignature,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(bodyParams)
+          })
         }
-      })
+        
+        if (response.ok) {
+          console.log(`✅ Success with endpoint: ${endpoint}`)
+          break
+        } else if (response.status !== 404) {
+          // If it's not 404, it might be auth error - stop trying
+          const errorText = await response.text().catch(() => '')
+          console.log(`Endpoint ${endpoint} returned ${response.status}: ${errorText}`)
+          if (response.status === 401 || response.status === 403) {
+            lastError = new Error(`Bitunix API authentication error: ${response.status} - ${errorText}`)
+            break
+          }
+        }
+      } catch (err: any) {
+        console.log(`Error trying ${endpoint}:`, err.message)
+        lastError = err
+        continue
+      }
+    }
+    
+    if (!response || !response.ok) {
+      const errorText = lastError?.message || (response ? await response.text().catch(() => '') : 'All endpoints failed')
+      console.error('Bitunix API HTTP Error:', response?.status || 'N/A', errorText)
+      throw new Error(`Bitunix API error: ${response?.status || 'N/A'} - ${errorText}. Tried endpoints: ${endpointsToTry.join(', ')}`)
     }
     
     if (!response.ok) {
