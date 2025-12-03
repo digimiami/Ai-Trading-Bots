@@ -422,20 +422,18 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
           console.log(`Trying Bitunix: ${baseUrl}${endpointPath}`)
           requestPath = endpointPath
           
-          // Create signature from sorted parameters (same format as order placement)
-          const params: Record<string, string> = {
-            timestamp: timestamp,
-            nonce: nonce
-          }
+          // According to Bitunix docs:
+          // 1. Query params: sorted keys concatenated without separators (e.g., "id1uid200")
+          // 2. For GET with no query params, queryParams = ""
+          // 3. Body: JSON string with no spaces (for POST)
+          // 4. Signature: double SHA256
           
-          // Sort parameters alphabetically and create query string for signature
-          const sortedParams = Object.keys(params)
-            .sort()
-            .map(key => `${key}=${params[key]}`)
-            .join('&')
+          // For GET request, no query params needed for account endpoint
+          const queryParams = '' // Empty for account endpoint
+          const body = '' // Empty for GET request
           
-          // Create signature from sorted params (same as bot-executor order placement)
-          const signature = await createBitunixSignature(sortedParams, apiSecret)
+          // Create signature using double SHA256
+          const signature = await createBitunixSignature(nonce, timestamp, apiKey, queryParams, body, apiSecret)
           
           console.log('5. Sorted params for signature:', sortedParams)
           console.log('6. Generated signature:', signature)
@@ -473,10 +471,11 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
             const errorData = await response.json().catch(() => null)
             if (errorData && (errorData.code === 2 || response.status === 404 || response.status === 400)) {
               console.log(`GET failed, trying POST for ${baseUrl}${endpointPath}...`)
-              // For POST, try signature from sorted params (same as GET)
-              const postSignature = await createBitunixSignature(sortedParams, apiSecret)
+              // For POST, body must be JSON string with NO SPACES (per docs)
               const bodyParams = { timestamp, nonce }
-              const bodyString = JSON.stringify(bodyParams)
+              const bodyString = JSON.stringify(bodyParams).replace(/\s+/g, '') // Remove all spaces
+              const postQueryParams = '' // No query params for POST
+              const postSignature = await createBitunixSignature(nonce, timestamp, apiKey, postQueryParams, bodyString, apiSecret)
               
               const postHeaders: Record<string, string> = {
                 'api-key': String(apiKey),
@@ -663,24 +662,25 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
   }
 }
 
-// Helper function to create Bitunix signature
-async function createBitunixSignature(message: string, secret: string): Promise<string> {
-  const encoder = new TextEncoder()
-  const keyData = encoder.encode(secret)
-  const messageData = encoder.encode(message)
+// Helper function to create Bitunix signature using double SHA256
+// According to official docs: digest = SHA256(nonce + timestamp + api-key + queryParams + body)
+// Then: sign = SHA256(digest + secretKey)
+async function createBitunixSignature(nonce: string, timestamp: string, apiKey: string, queryParams: string, body: string, secretKey: string): Promise<string> {
+  // Step 1: Create digest
+  const digestInput = nonce + timestamp + apiKey + queryParams + body
+  const digestHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(digestInput))
+  const digestHex = Array.from(new Uint8Array(digestHash))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('')
   
-  const cryptoKey = await crypto.subtle.importKey(
-    'raw',
-    keyData,
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  )
+  // Step 2: Create final signature
+  const signInput = digestHex + secretKey
+  const signHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(signInput))
+  const signHex = Array.from(new Uint8Array(signHash))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('')
   
-  const signature = await crypto.subtle.sign('HMAC', cryptoKey, messageData)
-  const hashArray = Array.from(new Uint8Array(signature))
-  // Bitunix expects lowercase hex string
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toLowerCase()
+  return signHex.toLowerCase()
 }
 
 // Helper function to create Bybit signature
