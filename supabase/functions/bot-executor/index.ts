@@ -1828,10 +1828,10 @@ class MarketDataFetcher {
           }
         }
         
-        // Final fallback: Try CoinGecko for major coins
-        const isMajorCoin = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'ADAUSDT', 'XRPUSDT', 'DOGEUSDT'].includes(symbol.toUpperCase());
+        // Final fallback: Try CoinGecko for major coins (use immediately if Bitunix fails)
+        const isMajorCoin = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'ADAUSDT', 'XRPUSDT', 'DOGEUSDT', 'DOTUSDT', 'MATICUSDT', 'AVAXUSDT', 'LINKUSDT', 'UNIUSDT'].includes(symbol.toUpperCase());
         if (isMajorCoin) {
-          console.log(`🔄 Trying CoinGecko fallback for ${symbol}...`);
+          console.log(`🔄 Trying CoinGecko fallback for ${symbol} (major coin)...`);
           try {
             const coinGeckoMap: { [key: string]: string } = {
               'BTCUSDT': 'bitcoin',
@@ -1847,7 +1847,17 @@ class MarketDataFetcher {
               'DOGEUSDT': 'dogecoin',
               'DOGE': 'dogecoin',
               'XRPUSDT': 'ripple',
-              'XRP': 'ripple'
+              'XRP': 'ripple',
+              'DOTUSDT': 'polkadot',
+              'DOT': 'polkadot',
+              'MATICUSDT': 'matic-network',
+              'MATIC': 'matic-network',
+              'AVAXUSDT': 'avalanche-2',
+              'AVAX': 'avalanche-2',
+              'LINKUSDT': 'chainlink',
+              'LINK': 'chainlink',
+              'UNIUSDT': 'uniswap',
+              'UNI': 'uniswap'
             };
             
             const symbolUpper = symbol.toUpperCase();
@@ -1855,6 +1865,7 @@ class MarketDataFetcher {
             
             if (coinGeckoId) {
               const geckoUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${coinGeckoId}&vs_currencies=usd`;
+              console.log(`  Fetching from CoinGecko: ${geckoUrl}`);
               const geckoResponse = await fetch(geckoUrl, { signal: AbortSignal.timeout(5000) });
               
               if (geckoResponse.ok) {
@@ -1863,8 +1874,14 @@ class MarketDataFetcher {
                 if (price > 0 && isFinite(price)) {
                   console.log(`✅ Bitunix price found via CoinGecko fallback for ${symbol}: ${price}`);
                   return price;
+                } else {
+                  console.warn(`  ⚠️ CoinGecko returned invalid price: ${price}`);
                 }
+              } else {
+                console.warn(`  ⚠️ CoinGecko HTTP error: ${geckoResponse.status}`);
               }
+            } else {
+              console.warn(`  ⚠️ No CoinGecko mapping for ${symbol}`);
             }
           } catch (geckoErr: any) {
             console.warn(`⚠️ CoinGecko fallback failed:`, geckoErr.message);
@@ -1872,6 +1889,7 @@ class MarketDataFetcher {
         }
         
         console.error(`❌ Bitunix API error for ${symbol}: Symbol not found after all attempts. Tried variants: ${symbolVariants.join(', ')}`);
+        console.error(`   Market type: ${marketType}, Tickers fetched: ${tickersArray.length}, Cache used: ${useCache}`);
         return 0;
       }
       return 0;
@@ -7870,12 +7888,12 @@ class BotExecutor {
     console.log(`   Symbol: ${symbol}, Side: ${side}, Amount: ${amount}, Price: ${price}`);
     
     // Try multiple endpoints (Bitunix API might use different paths)
+    // Based on Bitunix API patterns, try most common endpoints first
     const endpointsToTry = [
-      '/api/v1/trade/order',
-      '/api/v1/order',
-      '/api/trade/v1/order',
-      '/api/futures/v1/order',
-      '/api/spot/v1/order'
+      '/api/v1/trade/order',  // Most common pattern
+      '/api/v1/order',         // Simplified version
+      '/api/trade/order',      // Alternative pattern
+      '/api/order'             // Simplest pattern
     ];
     
     try {
