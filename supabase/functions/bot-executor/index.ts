@@ -1662,6 +1662,8 @@ class MarketDataFetcher {
         const symbolVariants = this.normalizeSymbol(symbol, exchange, tradingType);
         const marketType = tradingType === 'futures' || tradingType === 'linear' ? 'futures' : 'spot';
         
+        console.log(`🔍 Fetching Bitunix price for ${symbol} (${marketType}), variants: ${symbolVariants.join(', ')}`);
+        
         // Check cache first
         const now = Date.now();
         let tickersArray: any[] = [];
@@ -1672,11 +1674,11 @@ class MarketDataFetcher {
             (now - this.bitunixTickersCache.timestamp) < this.CACHE_TTL_MS) {
           tickersArray = this.bitunixTickersCache.data;
           useCache = true;
-          console.log(`📦 Using cached Bitunix tickers (age: ${((now - this.bitunixTickersCache.timestamp) / 1000).toFixed(1)}s)`);
+          console.log(`📦 Using cached Bitunix tickers (age: ${((now - this.bitunixTickersCache.timestamp) / 1000).toFixed(1)}s, count: ${tickersArray.length})`);
         }
         
         // If cache miss or expired, fetch fresh data
-        if (!useCache) {
+        if (!useCache || tickersArray.length === 0) {
           console.log(`🔄 Fetching fresh Bitunix tickers for ${marketType}...`);
           const tickerEndpoints = [
             `https://api.bitunix.com/api/v1/market/tickers?marketType=${marketType}`,
@@ -1685,17 +1687,21 @@ class MarketDataFetcher {
             `https://api.bitunix.com/api/v1/market/ticker/all`
           ];
           
+          let fetchSuccess = false;
           for (const tickerEndpoint of tickerEndpoints) {
             try {
+              console.log(`  Trying: ${tickerEndpoint}`);
               const response = await fetch(tickerEndpoint, {
                 signal: AbortSignal.timeout(8000) // Reduced timeout to prevent bot timeout
               });
               
               if (!response.ok) {
+                console.warn(`  ❌ HTTP ${response.status} from ${tickerEndpoint}`);
                 continue; // Try next endpoint
               }
               
               const data = await response.json();
+              console.log(`  Response code: ${data.code}, has data: ${!!data.data}`);
               
               // Bitunix response format: { code: 0, data: [...] } or { code: 0, data: {...} }
               if (data.code === 0 && data.data) {
@@ -1716,82 +1722,156 @@ class MarketDataFetcher {
                   }
                 }
                 
-                // Update cache
-                this.bitunixTickersCache = {
-                  data: tickersArray,
-                  timestamp: now,
-                  marketType: marketType
-                };
-                console.log(`✅ Cached ${tickersArray.length} Bitunix tickers for ${marketType}`);
-                break; // Success, stop trying endpoints
+                if (tickersArray.length > 0) {
+                  // Update cache
+                  this.bitunixTickersCache = {
+                    data: tickersArray,
+                    timestamp: now,
+                    marketType: marketType
+                  };
+                  console.log(`✅ Cached ${tickersArray.length} Bitunix tickers for ${marketType}`);
+                  fetchSuccess = true;
+                  break; // Success, stop trying endpoints
+                } else {
+                  console.warn(`  ⚠️ Empty tickers array from ${tickerEndpoint}`);
+                }
               } else {
-                console.warn(`⚠️ Bitunix tickers API returned code ${data.code}: ${data.msg || data.message || 'Unknown error'}`);
+                console.warn(`  ⚠️ Bitunix tickers API returned code ${data.code}: ${data.msg || data.message || 'Unknown error'}`);
               }
             } catch (endpointErr: any) {
-              console.warn(`⚠️ Error trying Bitunix tickers endpoint ${tickerEndpoint}:`, endpointErr.message);
+              console.warn(`  ⚠️ Error trying Bitunix tickers endpoint ${tickerEndpoint}:`, endpointErr.message);
               continue; // Try next endpoint
             }
+          }
+          
+          if (!fetchSuccess && tickersArray.length === 0) {
+            console.warn(`⚠️ Failed to fetch Bitunix tickers from all endpoints`);
           }
         }
         
         // Search for our symbol in the tickers array (from cache or fresh fetch)
         if (tickersArray.length > 0) {
+          console.log(`🔍 Searching ${tickersArray.length} tickers for symbol variants...`);
           for (const symbolVariant of symbolVariants) {
             const ticker = tickersArray.find((t: any) => {
-              const tickerSymbol = (t.symbol || t.pair || '').toUpperCase();
-              return tickerSymbol === symbolVariant.toUpperCase();
+              const tickerSymbol = (t.symbol || t.pair || t.market || '').toUpperCase();
+              const variantUpper = symbolVariant.toUpperCase();
+              const match = tickerSymbol === variantUpper || 
+                           tickerSymbol.replace('_', '') === variantUpper ||
+                           tickerSymbol.replace('-', '') === variantUpper;
+              if (match) {
+                console.log(`  ✅ Found match: ${tickerSymbol} === ${variantUpper}`);
+              }
+              return match;
             });
             
             if (ticker) {
-              const price = parseFloat(ticker.lastPrice || ticker.last || ticker.price || '0');
+              const price = parseFloat(ticker.lastPrice || ticker.last || ticker.price || ticker.close || '0');
               if (price > 0 && isFinite(price)) {
                 console.log(`✅ Bitunix price found for ${symbolVariant}: ${price}${useCache ? ' (from cache)' : ''}`);
                 if (symbolVariant !== symbol) {
                   console.log(`✅ Found price using symbol variant: ${symbolVariant} (original: ${symbol})`);
                 }
                 return price;
+              } else {
+                console.warn(`  ⚠️ Ticker found but price is invalid: ${price}`);
               }
             }
           }
+          console.warn(`⚠️ Symbol not found in ${tickersArray.length} tickers. Tried variants: ${symbolVariants.join(', ')}`);
         }
         
         // If all tickers endpoints failed, try single ticker endpoint as fallback
+        console.log(`🔄 Trying single ticker endpoints as fallback...`);
         for (const symbolVariant of symbolVariants) {
           try {
             const singleTickerEndpoints = [
               `https://api.bitunix.com/api/v1/market/ticker?symbol=${symbolVariant}&marketType=${marketType}`,
-              `https://api.bitunix.com/api/v1/market/ticker?symbol=${symbolVariant}`
+              `https://api.bitunix.com/api/v1/market/ticker?symbol=${symbolVariant}`,
+              `https://api.bitunix.com/api/v1/market/ticker/${symbolVariant}?marketType=${marketType}`,
+              `https://api.bitunix.com/api/v1/market/ticker/${symbolVariant}`
             ];
             
             for (const endpoint of singleTickerEndpoints) {
               try {
+                console.log(`  Trying single ticker: ${endpoint}`);
                 const response = await fetch(endpoint, {
                   signal: AbortSignal.timeout(10000)
                 });
                 
                 if (!response.ok) {
+                  console.warn(`  ❌ HTTP ${response.status} from ${endpoint}`);
                   continue;
                 }
                 
                 const data = await response.json();
                 
                 if (data.code === 0 && data.data) {
-                  const price = parseFloat(data.data.lastPrice || data.data.last || data.data.price || '0');
+                  const price = parseFloat(data.data.lastPrice || data.data.last || data.data.price || data.data.close || '0');
                   if (price > 0 && isFinite(price)) {
                     console.log(`✅ Bitunix price found (single ticker) for ${symbolVariant}: ${price}`);
                     return price;
+                  } else {
+                    console.warn(`  ⚠️ Single ticker returned invalid price: ${price}`);
                   }
+                } else {
+                  console.warn(`  ⚠️ Single ticker API returned code ${data.code}: ${data.msg || data.message || 'Unknown error'}`);
                 }
               } catch (err: any) {
+                console.warn(`  ⚠️ Error fetching single ticker ${endpoint}:`, err.message);
                 continue;
               }
             }
           } catch (err: any) {
+            console.warn(`⚠️ Error trying symbol variant ${symbolVariant}:`, err.message);
             continue;
           }
         }
         
-        console.warn(`⚠️ Bitunix API error for ${symbol}: Symbol not found. Tried variants: ${symbolVariants.join(', ')}`);
+        // Final fallback: Try CoinGecko for major coins
+        const isMajorCoin = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'ADAUSDT', 'XRPUSDT', 'DOGEUSDT'].includes(symbol.toUpperCase());
+        if (isMajorCoin) {
+          console.log(`🔄 Trying CoinGecko fallback for ${symbol}...`);
+          try {
+            const coinGeckoMap: { [key: string]: string } = {
+              'BTCUSDT': 'bitcoin',
+              'BTC': 'bitcoin',
+              'ETHUSDT': 'ethereum',
+              'ETH': 'ethereum',
+              'BNBUSDT': 'binancecoin',
+              'BNB': 'binancecoin',
+              'SOLUSDT': 'solana',
+              'SOL': 'solana',
+              'ADAUSDT': 'cardano',
+              'ADA': 'cardano',
+              'DOGEUSDT': 'dogecoin',
+              'DOGE': 'dogecoin',
+              'XRPUSDT': 'ripple',
+              'XRP': 'ripple'
+            };
+            
+            const symbolUpper = symbol.toUpperCase();
+            const coinGeckoId = coinGeckoMap[symbolUpper] || coinGeckoMap[symbolUpper.replace('USDT', '')];
+            
+            if (coinGeckoId) {
+              const geckoUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${coinGeckoId}&vs_currencies=usd`;
+              const geckoResponse = await fetch(geckoUrl, { signal: AbortSignal.timeout(5000) });
+              
+              if (geckoResponse.ok) {
+                const geckoData = await geckoResponse.json();
+                const price = geckoData[coinGeckoId]?.usd;
+                if (price > 0 && isFinite(price)) {
+                  console.log(`✅ Bitunix price found via CoinGecko fallback for ${symbol}: ${price}`);
+                  return price;
+                }
+              }
+            }
+          } catch (geckoErr: any) {
+            console.warn(`⚠️ CoinGecko fallback failed:`, geckoErr.message);
+          }
+        }
+        
+        console.error(`❌ Bitunix API error for ${symbol}: Symbol not found after all attempts. Tried variants: ${symbolVariants.join(', ')}`);
         return 0;
       }
       return 0;
