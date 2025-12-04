@@ -32,6 +32,7 @@ const MarketDashboard = lazy(() => import('../pages/market-dashboard/page'));
 const CryptoBubbles = lazy(() => import('../pages/crypto-bubbles/page'));
 const CryptoNews = lazy(() => import('../pages/crypto-news/page'));
 const Messages = lazy(() => import('../pages/messages/page'));
+const AiAssistant = lazy(() => import('../pages/ai-assistant/page'));
 const NotFound = lazy(() => import('../pages/NotFound'));
 const Privacy = lazy(() => import('../pages/legal/privacy'));
 const Terms = lazy(() => import('../pages/legal/terms'));
@@ -156,6 +157,10 @@ const routes: RouteObject[] = [
   {
     path: '/ai-ml/dashboard',
     element: <AiMlDashboard />
+  },
+  {
+    path: '/ai-assistant',
+    element: <AiAssistant />
   },
   {
     path: '/privacy',

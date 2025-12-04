@@ -92,6 +92,7 @@ export default function Navigation() {
     { path: '/pablo-ready', icon: 'ri-star-line', label: 'Pablo Ready' },
     { path: '/market-dashboard', icon: 'ri-line-chart-line', label: t('nav.market') },
     { path: '/bots', icon: 'ri-robot-line', label: t('nav.bots') },
+    { path: '/ai-assistant', icon: 'ri-robot-2-line', label: 'AI Assistant' }, // Moved to prominent position
     { path: '/backtest', icon: 'ri-test-tube-line', label: 'Backtest' },
     { path: '/bot-activity', icon: 'ri-file-list-line', label: 'Activity' },
     { path: '/trades', icon: 'ri-exchange-line', label: t('nav.trades') },
@@ -103,7 +104,7 @@ export default function Navigation() {
     { path: '/messages', icon: 'ri-message-3-line', label: 'Messages' },
     { path: '/settings', icon: 'ri-settings-line', label: t('nav.settings') }
   ];
-
+  
   // Add AI/ML Dashboard if feature is enabled
   if (import.meta.env.VITE_FEATURE_AI_ML === '1') {
     navItems.push({ path: '/ai-ml/dashboard', icon: 'ri-brain-line', label: 'AI/ML' });
