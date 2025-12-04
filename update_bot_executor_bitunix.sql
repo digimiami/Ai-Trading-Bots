@@ -99,9 +99,9 @@ ON bot_execution_errors(bot_id, occurred_at DESC);
 CREATE INDEX IF NOT EXISTS idx_bot_execution_errors_exchange 
 ON bot_execution_errors(exchange, error_type, occurred_at DESC);
 
+-- Index for recent errors (without WHERE clause - filter in queries instead)
 CREATE INDEX IF NOT EXISTS idx_bot_execution_errors_recent 
-ON bot_execution_errors(occurred_at DESC)
-WHERE occurred_at > NOW() - INTERVAL '7 days';
+ON bot_execution_errors(occurred_at DESC);
 
 -- 7. Create view for Bitunix bot status
 CREATE OR REPLACE VIEW bitunix_bots_status AS
