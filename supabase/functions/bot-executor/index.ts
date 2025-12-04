@@ -1677,6 +1677,9 @@ class MarketDataFetcher {
           console.log(`📦 Using cached Bitunix tickers (age: ${((now - this.bitunixTickersCache.timestamp) / 1000).toFixed(1)}s, count: ${tickersArray.length})`);
         }
         
+        // Check if this is a major coin - use CoinGecko immediately if Bitunix fails
+        const isMajorCoin = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'ADAUSDT', 'XRPUSDT', 'DOGEUSDT', 'DOTUSDT', 'MATICUSDT', 'AVAXUSDT', 'LINKUSDT', 'UNIUSDT'].includes(symbol.toUpperCase());
+        
         // If cache miss or expired, fetch fresh data
         if (!useCache || tickersArray.length === 0) {
           console.log(`🔄 Fetching fresh Bitunix tickers for ${marketType}...`);
@@ -1692,7 +1695,7 @@ class MarketDataFetcher {
             try {
               console.log(`  Trying: ${tickerEndpoint}`);
               const response = await fetch(tickerEndpoint, {
-                signal: AbortSignal.timeout(8000) // Reduced timeout to prevent bot timeout
+                signal: AbortSignal.timeout(5000) // Reduced timeout to fail faster for CoinGecko fallback
               });
               
               if (!response.ok) {
@@ -1746,6 +1749,11 @@ class MarketDataFetcher {
           
           if (!fetchSuccess && tickersArray.length === 0) {
             console.warn(`⚠️ Failed to fetch Bitunix tickers from all endpoints`);
+            // For major coins, skip to CoinGecko immediately
+            if (isMajorCoin) {
+              console.log(`🔄 Bitunix tickers failed, using CoinGecko immediately for major coin ${symbol}...`);
+              // Will fall through to CoinGecko section below
+            }
           }
         }
         
@@ -1829,7 +1837,6 @@ class MarketDataFetcher {
         }
         
         // Final fallback: Try CoinGecko for major coins (use immediately if Bitunix fails)
-        const isMajorCoin = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'ADAUSDT', 'XRPUSDT', 'DOGEUSDT', 'DOTUSDT', 'MATICUSDT', 'AVAXUSDT', 'LINKUSDT', 'UNIUSDT'].includes(symbol.toUpperCase());
         if (isMajorCoin) {
           console.log(`🔄 Trying CoinGecko fallback for ${symbol} (major coin)...`);
           try {
@@ -7888,12 +7895,20 @@ class BotExecutor {
     console.log(`   Symbol: ${symbol}, Side: ${side}, Amount: ${amount}, Price: ${price}`);
     
     // Try multiple endpoints (Bitunix API might use different paths)
-    // Based on Bitunix API patterns, try most common endpoints first
+    // Based on Bitunix API patterns and market data endpoints (/api/v1/market/...)
+    // Try order endpoints with various patterns
     const endpointsToTry = [
-      '/api/v1/trade/order',  // Most common pattern
-      '/api/v1/order',         // Simplified version
-      '/api/trade/order',      // Alternative pattern
-      '/api/order'             // Simplest pattern
+      '/api/v1/trade/order',      // Most common pattern (matches market data pattern)
+      '/api/v1/order/place',      // Alternative with action
+      '/api/v1/order/create',     // Alternative with action
+      '/api/v1/trade/place',      // Trade with place action
+      '/api/v1/futures/order',    // Futures-specific
+      '/api/v1/spot/order',       // Spot-specific
+      '/api/futures/v1/order',    // Alternative futures path
+      '/api/spot/v1/order',       // Alternative spot path
+      '/api/v1/order',            // Simplified version
+      '/api/trade/order',         // Alternative pattern
+      '/api/order'                // Simplest pattern
     ];
     
     try {
