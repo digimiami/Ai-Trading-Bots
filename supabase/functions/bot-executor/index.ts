@@ -7854,84 +7854,160 @@ class BotExecutor {
   }
   
   private async placeBitunixOrder(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string, side: string, amount: number, price: number, tradingType: string = 'spot', bot: any = null): Promise<any> {
-    const baseUrl = isTestnet ? 'https://api-testnet.bitunix.com' : 'https://api.bitunix.com';
+    // Use correct base URL based on trading type (per official docs)
+    const marketType = tradingType === 'futures' || tradingType === 'linear' ? 'futures' : 'spot';
+    const baseUrls = isTestnet 
+      ? ['https://api-testnet.bitunix.com']
+      : marketType === 'futures'
+      ? ['https://fapi.bitunix.com', 'https://api.bitunix.com'] // Try fapi first for futures
+      : ['https://api.bitunix.com'];
     
     console.log(`🔑 Bitunix Order Details:`);
-    console.log(`   Base URL: ${baseUrl} (isTestnet: ${isTestnet})`);
+    console.log(`   Market Type: ${marketType}, Trading Type: ${tradingType}`);
+    console.log(`   Base URLs to try: ${baseUrls.join(', ')}`);
     console.log(`   API Key length: ${apiKey.length}, starts with: ${apiKey.substring(0, 8)}...`);
     console.log(`   API Secret length: ${apiSecret.length}, starts with: ${apiSecret.substring(0, 8)}...`);
     console.log(`   Symbol: ${symbol}, Side: ${side}, Amount: ${amount}, Price: ${price}`);
-    console.log(`   Trading Type: ${tradingType}`);
+    
+    // Try multiple endpoints (Bitunix API might use different paths)
+    const endpointsToTry = [
+      '/api/v1/trade/order',
+      '/api/v1/order',
+      '/api/trade/v1/order',
+      '/api/futures/v1/order',
+      '/api/spot/v1/order'
+    ];
     
     try {
-      const timestamp = Date.now().toString();
-      const nonce = timestamp;
-      const marketType = tradingType === 'futures' || tradingType === 'linear' ? 'futures' : 'spot';
+      const timestamp = Date.now().toString(); // milliseconds
+      const nonce = this.generateNonce(); // 32-bit random string
       
-      // Bitunix order parameters
+      // Bitunix order parameters (in body for POST)
       const orderParams: any = {
         symbol: symbol,
         marketType: marketType,
         side: side.toLowerCase(), // 'buy' or 'sell'
         type: 'market', // Market order
-        quantity: amount.toString(),
-        timestamp: timestamp,
-        nonce: nonce
+        quantity: amount.toString()
       };
       
-      // Create query string for signature
-      const queryString = Object.keys(orderParams)
-        .sort()
-        .map(key => `${key}=${orderParams[key]}`)
-        .join('&');
+      // Create body string (JSON with no spaces, per Bitunix docs)
+      const bodyString = JSON.stringify(orderParams).replace(/\s+/g, '');
       
-      // Create signature: HMAC-SHA256(queryString, apiSecret)
-      const signature = await this.createBitunixSignature(queryString, apiSecret);
+      // For POST requests: queryParams = "" (empty), body is in request body
+      const queryParams = ''; // Empty for POST
       
-      // Add signature to params
-      orderParams.sign = signature;
+      // Create signature using double SHA256 (official Bitunix method)
+      // digest = SHA256(nonce + timestamp + api-key + queryParams + body)
+      // sign = SHA256(digest + secretKey)
+      const signature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, bodyString, apiSecret);
       
-      const requestPath = '/api/v1/trade/order';
-      const response = await fetch(`${baseUrl}${requestPath}`, {
-        method: 'POST',
-        headers: {
-          'api-key': apiKey,
-          'timestamp': timestamp,
-          'nonce': nonce,
-          'sign': signature,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(orderParams)
-      });
+      console.log(`   Signature created using double SHA256`);
+      console.log(`   Request body: ${bodyString}`);
       
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
-        console.error(`❌ Bitunix API error (HTTP ${response.status}):`, errorText);
-        if (response.status === 401) {
-          throw new Error('Bitunix 401 Unauthorized - check API key, secret, and testnet flag');
+      // Try each base URL and endpoint combination
+      let lastError: any = null;
+      for (const baseUrl of baseUrls) {
+        for (const requestPath of endpointsToTry) {
+          try {
+            console.log(`   Trying: ${baseUrl}${requestPath}`);
+            
+            const response = await fetch(`${baseUrl}${requestPath}`, {
+              method: 'POST',
+              headers: {
+                'api-key': String(apiKey),
+                'nonce': String(nonce),
+                'timestamp': String(timestamp),
+                'sign': String(signature),
+                'Content-Type': 'application/json'
+              },
+              body: bodyString
+            });
+            
+            const responseText = await response.text();
+            console.log(`   Response status: ${response.status}, body: ${responseText.substring(0, 200)}`);
+            
+            if (!response.ok) {
+              if (response.status === 401) {
+                throw new Error('Bitunix 401 Unauthorized - check API key, secret, and testnet flag');
+              }
+              if (response.status === 404) {
+                console.warn(`   ⚠️ 404 from ${baseUrl}${requestPath}, trying next endpoint...`);
+                lastError = new Error(`Bitunix API error: 404 - Endpoint not found: ${requestPath}`);
+                continue; // Try next endpoint
+              }
+              throw new Error(`Bitunix API error: ${response.status} - ${responseText}`);
+            }
+            
+            const data = JSON.parse(responseText);
+            
+            if (data.code !== 0) {
+              const errorMsg = data.msg || data.message || 'Unknown error';
+              console.warn(`   ⚠️ API returned code ${data.code}: ${errorMsg}, trying next endpoint...`);
+              lastError = new Error(`Bitunix order error: ${errorMsg} (Code: ${data.code})`);
+              continue; // Try next endpoint
+            }
+            
+            // Success!
+            console.log(`✅ Bitunix order placed successfully via ${baseUrl}${requestPath}`);
+            return {
+              orderId: data.data?.orderId || data.data?.id || data.data?.order_id,
+              status: 'filled',
+              exchange: 'bitunix',
+              response: data
+            };
+          } catch (endpointErr: any) {
+            console.warn(`   ⚠️ Error with ${baseUrl}${requestPath}:`, endpointErr.message);
+            lastError = endpointErr;
+            continue; // Try next endpoint
+          }
         }
-        throw new Error(`Bitunix API error: ${response.status} - ${errorText}`);
       }
       
-      const data = await response.json();
-      
-      if (data.code !== 0) {
-        throw new Error(`Bitunix order error: ${data.msg || data.message} (Code: ${data.code})`);
-      }
-      
-      return {
-        orderId: data.data?.orderId || data.data?.id,
-        status: 'filled',
-        exchange: 'bitunix',
-        response: data
-      };
+      // All endpoints failed
+      throw lastError || new Error('Bitunix order placement failed: All endpoints returned errors');
     } catch (error) {
-      console.error('Bitunix order placement error:', error);
+      console.error('❌ Bitunix order placement error:', error);
       throw error;
     }
   }
   
+  private generateNonce(): string {
+    // Generate 32-bit random string (8 hex characters)
+    const randomBytes = new Uint8Array(4);
+    crypto.getRandomValues(randomBytes);
+    return Array.from(randomBytes)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+  
+  private async createBitunixSignatureDoubleSHA256(nonce: string, timestamp: string, apiKey: string, queryParams: string, body: string, secretKey: string): Promise<string> {
+    // According to Bitunix official docs:
+    // digest = SHA256(nonce + timestamp + api-key + queryParams + body)
+    // sign = SHA256(digest + secretKey)
+    
+    const encoder = new TextEncoder();
+    
+    // Step 1: Create digest
+    const digestInput = nonce + timestamp + apiKey + queryParams + body;
+    const digestData = encoder.encode(digestInput);
+    const digestHash = await crypto.subtle.digest('SHA-256', digestData);
+    
+    // Step 2: Create signature from digest + secretKey
+    const secretData = encoder.encode(secretKey);
+    const signInput = new Uint8Array(digestHash.byteLength + secretData.length);
+    signInput.set(new Uint8Array(digestHash), 0);
+    signInput.set(secretData, digestHash.byteLength);
+    
+    const signHash = await crypto.subtle.digest('SHA-256', signInput);
+    const hashArray = Array.from(new Uint8Array(signHash));
+    
+    // Return lowercase hex string
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toLowerCase();
+  }
+  
   private async createBitunixSignature(message: string, secret: string): Promise<string> {
+    // Legacy method - kept for backward compatibility but not used
     const encoder = new TextEncoder();
     const keyData = encoder.encode(secret);
     const messageData = encoder.encode(message);
