@@ -656,6 +656,17 @@ class MarketDataFetcher {
     category: ''
   };
   
+  // Separate cache for Bitunix tickers (to avoid conflicts with Bybit cache)
+  private static bitunixTickersCache: {
+    data: any[] | null;
+    timestamp: number;
+    marketType: string;
+  } = {
+    data: null,
+    timestamp: 0,
+    marketType: ''
+  };
+  
   private static readonly CACHE_TTL_MS = 5000; // Cache for 5 seconds
   
   // Helper function to get cached tickers or fetch new ones
@@ -1647,75 +1658,100 @@ class MarketDataFetcher {
         console.warn(`⚠️ OKX API error for ${symbol}: Symbol not found. Tried variants: ${symbolVariants.join(', ')}`);
         return 0;
       } else if (exchange === 'bitunix') {
-        // Bitunix price fetching - use same approach as futures-pairs (fetch all tickers, then search)
+        // Bitunix price fetching - use cached tickers to avoid slow fetches
         const symbolVariants = this.normalizeSymbol(symbol, exchange, tradingType);
         const marketType = tradingType === 'futures' || tradingType === 'linear' ? 'futures' : 'spot';
         
-        // Try fetching all tickers (same as futures-pairs function)
-        const tickerEndpoints = [
-          `https://api.bitunix.com/api/v1/market/tickers?marketType=${marketType}`,
-          `https://api.bitunix.com/api/v1/market/ticker/all?marketType=${marketType}`,
-          `https://api.bitunix.com/api/v1/market/tickers`,
-          `https://api.bitunix.com/api/v1/market/ticker/all`
-        ];
+        // Check cache first
+        const now = Date.now();
+        let tickersArray: any[] = [];
+        let useCache = false;
         
-        for (const tickerEndpoint of tickerEndpoints) {
-          try {
-            const response = await fetch(tickerEndpoint, {
-              signal: AbortSignal.timeout(10000)
-            });
-            
-            if (!response.ok) {
-              continue; // Try next endpoint
-            }
-            
-            const data = await response.json();
-            
-            // Bitunix response format: { code: 0, data: [...] } or { code: 0, data: {...} }
-            if (data.code === 0 && data.data) {
-              let tickersArray: any[] = [];
+        if (this.bitunixTickersCache.data && 
+            this.bitunixTickersCache.marketType === marketType &&
+            (now - this.bitunixTickersCache.timestamp) < this.CACHE_TTL_MS) {
+          tickersArray = this.bitunixTickersCache.data;
+          useCache = true;
+          console.log(`📦 Using cached Bitunix tickers (age: ${((now - this.bitunixTickersCache.timestamp) / 1000).toFixed(1)}s)`);
+        }
+        
+        // If cache miss or expired, fetch fresh data
+        if (!useCache) {
+          console.log(`🔄 Fetching fresh Bitunix tickers for ${marketType}...`);
+          const tickerEndpoints = [
+            `https://api.bitunix.com/api/v1/market/tickers?marketType=${marketType}`,
+            `https://api.bitunix.com/api/v1/market/ticker/all?marketType=${marketType}`,
+            `https://api.bitunix.com/api/v1/market/tickers`,
+            `https://api.bitunix.com/api/v1/market/ticker/all`
+          ];
+          
+          for (const tickerEndpoint of tickerEndpoints) {
+            try {
+              const response = await fetch(tickerEndpoint, {
+                signal: AbortSignal.timeout(8000) // Reduced timeout to prevent bot timeout
+              });
               
-              // Handle different response formats (same as futures-pairs)
-              if (Array.isArray(data.data)) {
-                tickersArray = data.data;
-              } else if (typeof data.data === 'object') {
-                // Try to find array values
-                const possibleArrays = Object.values(data.data).filter((v: any) => Array.isArray(v));
-                if (possibleArrays.length > 0) {
-                  tickersArray = possibleArrays[0] as any[];
-                } else {
-                  // Convert object to array
-                  tickersArray = Object.keys(data.data).map(key => ({
-                    symbol: key,
-                    ...(data.data as any)[key]
-                  }));
-                }
+              if (!response.ok) {
+                continue; // Try next endpoint
               }
               
-              // Search for our symbol in the tickers array
-              for (const symbolVariant of symbolVariants) {
-                const ticker = tickersArray.find((t: any) => {
-                  const tickerSymbol = (t.symbol || t.pair || '').toUpperCase();
-                  return tickerSymbol === symbolVariant.toUpperCase();
-                });
-                
-                if (ticker) {
-                  const price = parseFloat(ticker.lastPrice || ticker.last || ticker.price || '0');
-                  if (price > 0 && isFinite(price)) {
-                    console.log(`✅ Bitunix price found for ${symbolVariant}: ${price} (from ${tickerEndpoint})`);
-                    if (symbolVariant !== symbol) {
-                      console.log(`✅ Found price using symbol variant: ${symbolVariant} (original: ${symbol})`);
-                    }
-                    return price;
+              const data = await response.json();
+              
+              // Bitunix response format: { code: 0, data: [...] } or { code: 0, data: {...} }
+              if (data.code === 0 && data.data) {
+                // Handle different response formats (same as futures-pairs)
+                if (Array.isArray(data.data)) {
+                  tickersArray = data.data;
+                } else if (typeof data.data === 'object') {
+                  // Try to find array values
+                  const possibleArrays = Object.values(data.data).filter((v: any) => Array.isArray(v));
+                  if (possibleArrays.length > 0) {
+                    tickersArray = possibleArrays[0] as any[];
+                  } else {
+                    // Convert object to array
+                    tickersArray = Object.keys(data.data).map(key => ({
+                      symbol: key,
+                      ...(data.data as any)[key]
+                    }));
                   }
                 }
+                
+                // Update cache
+                this.bitunixTickersCache = {
+                  data: tickersArray,
+                  timestamp: now,
+                  marketType: marketType
+                };
+                console.log(`✅ Cached ${tickersArray.length} Bitunix tickers for ${marketType}`);
+                break; // Success, stop trying endpoints
+              } else {
+                console.warn(`⚠️ Bitunix tickers API returned code ${data.code}: ${data.msg || data.message || 'Unknown error'}`);
               }
-            } else {
-              console.warn(`⚠️ Bitunix tickers API returned code ${data.code}: ${data.msg || data.message || 'Unknown error'}`);
+            } catch (endpointErr: any) {
+              console.warn(`⚠️ Error trying Bitunix tickers endpoint ${tickerEndpoint}:`, endpointErr.message);
+              continue; // Try next endpoint
             }
-          } catch (endpointErr: any) {
-            console.warn(`⚠️ Error trying Bitunix tickers endpoint ${tickerEndpoint}:`, endpointErr.message);
-            continue; // Try next endpoint
+          }
+        }
+        
+        // Search for our symbol in the tickers array (from cache or fresh fetch)
+        if (tickersArray.length > 0) {
+          for (const symbolVariant of symbolVariants) {
+            const ticker = tickersArray.find((t: any) => {
+              const tickerSymbol = (t.symbol || t.pair || '').toUpperCase();
+              return tickerSymbol === symbolVariant.toUpperCase();
+            });
+            
+            if (ticker) {
+              const price = parseFloat(ticker.lastPrice || ticker.last || ticker.price || '0');
+              if (price > 0 && isFinite(price)) {
+                console.log(`✅ Bitunix price found for ${symbolVariant}: ${price}${useCache ? ' (from cache)' : ''}`);
+                if (symbolVariant !== symbol) {
+                  console.log(`✅ Found price using symbol variant: ${symbolVariant} (original: ${symbol})`);
+                }
+                return price;
+              }
+            }
           }
         }
         
