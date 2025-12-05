@@ -453,6 +453,13 @@ export default function CreateBotPage() {
       }
       
       // Debug: Log the form data being sent
+      // Ensure slippage consideration is always enabled (automatic)
+      const finalAdvancedConfig = {
+        ...advancedConfig,
+        enable_slippage_consideration: true,
+        strategy_integration: [] // Remove strategy integration feature
+      };
+      
       const botData = {
         name: formData.name,
         exchange: formData.exchange,
@@ -469,7 +476,7 @@ export default function CreateBotPage() {
         paperTrading: formData.paperTrading,
         soundNotificationsEnabled: formData.soundNotificationsEnabled,
         strategy: strategy,
-        strategyConfig: advancedConfig,  // Include advanced configuration
+        strategyConfig: finalAdvancedConfig,  // Include advanced configuration with enforced settings
         // Initialize with default values
         status: 'stopped' as const,
         pnl: 0,
@@ -2115,80 +2122,6 @@ All settings have been applied to your bot configuration.`;
                         )}
                       </div>
 
-                      {/* Slippage Consideration */}
-                      <div className="bg-gradient-to-r from-gray-50 to-slate-50 border border-gray-200 rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <div>
-                            <h4 className="font-semibold text-gray-900 flex items-center gap-2">
-                              <i className="ri-alert-line text-gray-600"></i>
-                              Slippage Consideration
-                            </h4>
-                            <p className="text-xs text-gray-600 mt-1">
-                              Final account equity may vary from the exit equity due to slippage
-                            </p>
-                          </div>
-                          <label className="relative inline-flex items-center cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={advancedConfig.enable_slippage_consideration || false}
-                              onChange={(e) => setAdvancedConfig(prev => ({ ...prev, enable_slippage_consideration: e.target.checked } as any))}
-                              className="sr-only peer"
-                            />
-                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-gray-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-gray-600"></div>
-                          </label>
-                        </div>
-                        {advancedConfig.enable_slippage_consideration && (
-                          <div className="mt-3 p-3 bg-white rounded border border-gray-200">
-                            <p className="text-xs text-gray-700">
-                              <i className="ri-information-line mr-1"></i>
-                              The bot will account for slippage when calculating exit prices. Actual execution price may differ from expected price, especially during high volatility.
-                            </p>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Flexible Strategy Integration */}
-                      <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-4">
-                        <div className="mb-3">
-                          <h4 className="font-semibold text-gray-900 flex items-center gap-2 mb-1">
-                            <i className="ri-links-line text-indigo-600"></i>
-                            Flexible Strategy Integration
-                          </h4>
-                          <p className="text-xs text-gray-600">
-                            Integrate Spot Grid, Futures Grid, and Futures Combo Bots — trade your way!
-                          </p>
-                        </div>
-                        <div className="mt-3 space-y-2">
-                          {['spot_grid', 'futures_grid', 'futures_combo'].map((strategy) => (
-                            <label key={strategy} className="flex items-center gap-2 p-2 bg-white rounded border border-indigo-200 hover:bg-indigo-50 cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={(advancedConfig.strategy_integration || []).includes(strategy)}
-                                onChange={(e) => {
-                                  const current = advancedConfig.strategy_integration || [];
-                                  if (e.target.checked) {
-                                    setAdvancedConfig(prev => ({ ...prev, strategy_integration: [...current, strategy] } as any));
-                                  } else {
-                                    setAdvancedConfig(prev => ({ ...prev, strategy_integration: current.filter((s: string) => s !== strategy) } as any));
-                                  }
-                                }}
-                                className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-                              />
-                              <span className="text-sm text-gray-700 capitalize">
-                                {strategy.replace('_', ' ')}
-                              </span>
-                            </label>
-                          ))}
-                        </div>
-                        {(advancedConfig.strategy_integration || []).length > 0 && (
-                          <div className="mt-3 p-3 bg-white rounded border border-indigo-200">
-                            <p className="text-xs text-indigo-700">
-                              <i className="ri-information-line mr-1"></i>
-                              Selected strategies will be integrated with this bot's trading logic for enhanced flexibility.
-                            </p>
-                          </div>
-                        )}
-                      </div>
                     </div>
                   </div>
 
