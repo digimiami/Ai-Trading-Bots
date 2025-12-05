@@ -1683,22 +1683,37 @@ class MarketDataFetcher {
         // If cache miss or expired, fetch fresh data
         if (!useCache || tickersArray.length === 0) {
           console.log(`🔄 Fetching fresh Bitunix tickers for ${marketType}...`);
-          const tickerEndpoints = [
-            `https://api.bitunix.com/api/v1/market/tickers?marketType=${marketType}`,
-            `https://api.bitunix.com/api/v1/market/ticker/all?marketType=${marketType}`,
-            `https://api.bitunix.com/api/v1/market/tickers`,
-            `https://api.bitunix.com/api/v1/market/ticker/all`
-          ];
+          // For major coins, try fewer endpoints before falling back to CoinGecko
+          const tickerEndpoints = isMajorCoin 
+            ? [
+                `https://api.bitunix.com/api/v1/market/tickers?marketType=${marketType}`,
+                `https://api.bitunix.com/api/v1/market/ticker/all?marketType=${marketType}`
+              ]
+            : [
+                `https://api.bitunix.com/api/v1/market/tickers?marketType=${marketType}`,
+                `https://api.bitunix.com/api/v1/market/ticker/all?marketType=${marketType}`,
+                `https://api.bitunix.com/api/v1/market/tickers`,
+                `https://api.bitunix.com/api/v1/market/ticker/all`
+              ];
           
           let fetchSuccess = false;
+          let had404Errors = false;
           for (const tickerEndpoint of tickerEndpoints) {
             try {
               console.log(`  Trying: ${tickerEndpoint}`);
               const response = await fetch(tickerEndpoint, {
-                signal: AbortSignal.timeout(5000) // Reduced timeout to fail faster for CoinGecko fallback
+                signal: AbortSignal.timeout(3000) // Reduced timeout to 3s for faster fallback
               });
               
               if (!response.ok) {
+                if (response.status === 404) {
+                  had404Errors = true;
+                  // For major coins with 404, skip to CoinGecko immediately
+                  if (isMajorCoin) {
+                    console.log(`  ❌ HTTP 404 from ${tickerEndpoint} - skipping to CoinGecko for major coin ${symbol}`);
+                    break; // Exit loop, will fall through to CoinGecko
+                  }
+                }
                 console.warn(`  ❌ HTTP ${response.status} from ${tickerEndpoint}`);
                 continue; // Try next endpoint
               }
@@ -1749,15 +1764,17 @@ class MarketDataFetcher {
           
           if (!fetchSuccess && tickersArray.length === 0) {
             console.warn(`⚠️ Failed to fetch Bitunix tickers from all endpoints`);
-            // For major coins, skip to CoinGecko immediately
-            if (isMajorCoin) {
-              console.log(`🔄 Bitunix tickers failed, using CoinGecko immediately for major coin ${symbol}...`);
-              // Will fall through to CoinGecko section below
+            // For major coins with 404 errors, skip directly to CoinGecko (skip single ticker endpoints)
+            if (isMajorCoin && had404Errors) {
+              console.log(`🔄 Bitunix tickers failed with 404 errors, using CoinGecko immediately for major coin ${symbol}...`);
+              // Skip single ticker endpoints and go directly to CoinGecko
+              tickersArray = []; // Ensure we skip the single ticker section
             }
           }
         }
         
         // Search for our symbol in the tickers array (from cache or fresh fetch)
+        // Skip single ticker endpoints for major coins if we had 404 errors
         if (tickersArray.length > 0) {
           console.log(`🔍 Searching ${tickersArray.length} tickers for symbol variants...`);
           for (const symbolVariant of symbolVariants) {
@@ -1790,29 +1807,41 @@ class MarketDataFetcher {
         }
         
         // If all tickers endpoints failed, try single ticker endpoint as fallback
-        console.log(`🔄 Trying single ticker endpoints as fallback...`);
-        for (const symbolVariant of symbolVariants) {
-          try {
-            const singleTickerEndpoints = [
-              `https://api.bitunix.com/api/v1/market/ticker?symbol=${symbolVariant}&marketType=${marketType}`,
-              `https://api.bitunix.com/api/v1/market/ticker?symbol=${symbolVariant}`,
-              `https://api.bitunix.com/api/v1/market/ticker/${symbolVariant}?marketType=${marketType}`,
-              `https://api.bitunix.com/api/v1/market/ticker/${symbolVariant}`
-            ];
-            
-            for (const endpoint of singleTickerEndpoints) {
-              try {
-                console.log(`  Trying single ticker: ${endpoint}`);
-                const response = await fetch(endpoint, {
-                  signal: AbortSignal.timeout(10000)
-                });
+        // Skip this for major coins if we had 404 errors (go directly to CoinGecko)
+        if (!(isMajorCoin && tickersArray.length === 0)) {
+          console.log(`🔄 Trying single ticker endpoints as fallback...`);
+          for (const symbolVariant of symbolVariants) {
+            try {
+              // For major coins, try fewer endpoints
+              const singleTickerEndpoints = isMajorCoin
+                ? [
+                    `https://api.bitunix.com/api/v1/market/ticker?symbol=${symbolVariant}&marketType=${marketType}`,
+                    `https://api.bitunix.com/api/v1/market/ticker/${symbolVariant}?marketType=${marketType}`
+                  ]
+                : [
+                    `https://api.bitunix.com/api/v1/market/ticker?symbol=${symbolVariant}&marketType=${marketType}`,
+                    `https://api.bitunix.com/api/v1/market/ticker?symbol=${symbolVariant}`,
+                    `https://api.bitunix.com/api/v1/market/ticker/${symbolVariant}?marketType=${marketType}`,
+                    `https://api.bitunix.com/api/v1/market/ticker/${symbolVariant}`
+                  ];
+              
+              for (const endpoint of singleTickerEndpoints) {
+                try {
+                  console.log(`  Trying single ticker: ${endpoint}`);
+                  const response = await fetch(endpoint, {
+                    signal: AbortSignal.timeout(3000) // Reduced from 10s to 3s
+                  });
+                  
+                  if (!response.ok) {
+                    if (response.status === 404 && isMajorCoin) {
+                      console.log(`  ❌ HTTP 404 from ${endpoint} - skipping remaining endpoints for major coin`);
+                      break; // Exit inner loop for major coins
+                    }
+                    console.warn(`  ❌ HTTP ${response.status} from ${endpoint}`);
+                    continue;
+                  }
                 
-                if (!response.ok) {
-                  console.warn(`  ❌ HTTP ${response.status} from ${endpoint}`);
-                  continue;
-                }
-                
-                const data = await response.json();
+                  const data = await response.json();
                 
                 if (data.code === 0 && data.data) {
                   const price = parseFloat(data.data.lastPrice || data.data.last || data.data.price || data.data.close || '0');
@@ -1827,13 +1856,22 @@ class MarketDataFetcher {
                 }
               } catch (err: any) {
                 console.warn(`  ⚠️ Error fetching single ticker ${endpoint}:`, err.message);
+                // For major coins, break on any error (likely 404)
+                if (isMajorCoin) {
+                  break; // Exit for major coins on any error
+                }
                 continue;
               }
             }
+            // For major coins, break after first symbol variant if we got 404s
+            if (isMajorCoin) break;
           } catch (err: any) {
             console.warn(`⚠️ Error trying symbol variant ${symbolVariant}:`, err.message);
             continue;
           }
+        }
+        } else {
+          console.log(`⏭️ Skipping single ticker endpoints for major coin ${symbol} (had 404 errors, using CoinGecko)`);
         }
         
         // Final fallback: Try CoinGecko for major coins (use immediately if Bitunix fails)
@@ -1895,8 +1933,34 @@ class MarketDataFetcher {
           }
         }
         
-        console.error(`❌ Bitunix API error for ${symbol}: Symbol not found after all attempts. Tried variants: ${symbolVariants.join(', ')}`);
-        console.error(`   Market type: ${marketType}, Tickers fetched: ${tickersArray.length}, Cache used: ${useCache}`);
+        console.error(`❌ Bitunix API error for ${symbol}: Symbol not found after all attempts.`);
+        console.error(`   Market type: ${marketType}`);
+        console.error(`   Tried symbol variants: ${symbolVariants.join(', ')}`);
+        console.error(`   Tickers fetched: ${tickersArray.length}, Cache used: ${useCache}`);
+        console.error(`   Available tickers (first 5): ${tickersArray.slice(0, 5).map((t: any) => t.symbol || t.pair || 'N/A').join(', ')}`);
+        
+        // Try one more fallback - fetch current price using market ticker API directly
+        console.log(`🔄 Attempting final fallback: Direct ticker API call...`);
+        for (const symbolVariant of symbolVariants.slice(0, 2)) { // Only try first 2 variants
+          try {
+            const fallbackUrl = `https://api.bitunix.com/api/v1/market/ticker?symbol=${symbolVariant}&marketType=${marketType}`;
+            const fallbackResponse = await fetch(fallbackUrl, { signal: AbortSignal.timeout(5000) });
+            if (fallbackResponse.ok) {
+              const fallbackData = await fallbackResponse.json();
+              if (fallbackData.code === 0 && fallbackData.data) {
+                const fallbackPrice = parseFloat(fallbackData.data.lastPrice || fallbackData.data.last || fallbackData.data.price || '0');
+                if (fallbackPrice > 0 && isFinite(fallbackPrice)) {
+                  console.log(`✅ Final fallback succeeded: Found price ${fallbackPrice} for ${symbolVariant}`);
+                  return fallbackPrice;
+                }
+              }
+            }
+          } catch (err) {
+            // Continue to next variant
+          }
+        }
+        
+        console.error(`❌ All price fetch attempts failed for ${symbol}. Price will be 0.`);
         return 0;
       }
       return 0;
@@ -3018,7 +3082,7 @@ class BotExecutor {
         await this.addBotLog(bot.id, {
           level: 'error',
           category: 'market',
-          message: `Invalid price data: ${currentPrice}. Cannot evaluate strategy.${suggestedSymbol ? ` Symbol "${bot.symbol}" appears incomplete. Try "${suggestedSymbol}" instead.` : ''}`,
+          message: `Invalid price data: ${currentPrice}. Cannot evaluate strategy.${suggestedSymbol ? ` Symbol "${bot.symbol}" appears incomplete. Try "${suggestedSymbol}" instead.` : ''}${bot.exchange === 'bitunix' ? ' Bitunix API may be unavailable or symbol format may be incorrect.' : ''}`,
           details: { 
             price: currentPrice, 
             symbol: bot.symbol,
@@ -5943,6 +6007,25 @@ class BotExecutor {
         // TODO: Add balance check for OKX
         return await this.placeOKXOrder(apiKey, apiSecret, passphrase, apiKeys.is_testnet, bot.symbol, tradeSignal.side, amount, price);
       } else if (bot.exchange === 'bitunix') {
+        // Check balance for Bitunix before placing order
+        const balanceCheck = await this.checkBitunixBalance(apiKey, apiSecret, apiKeys.is_testnet, bot.symbol, tradeSignal.side, orderValue, tradingType, amount);
+        if (!balanceCheck.hasBalance) {
+          const shortfall = balanceCheck.totalRequired - balanceCheck.availableBalance;
+          
+          // Provide more specific error messages based on order type
+          if (tradingType === 'spot' && tradeSignal.side.toLowerCase() === 'sell') {
+            // Extract asset name for better error message
+            let baseAsset = bot.symbol;
+            if (bot.symbol.endsWith('USDT')) {
+              baseAsset = bot.symbol.replace(/USDT$/, '');
+              // Handle prefixes like 1000PEPE, 10000SATS
+              baseAsset = baseAsset.replace(/^(1000|10000)/, '');
+            }
+            throw new Error(`Insufficient ${baseAsset} balance to sell ${bot.symbol}. Available: ${balanceCheck.availableBalance.toFixed(8)} ${baseAsset}, Required: ${balanceCheck.totalRequired.toFixed(8)} ${baseAsset}. Shortfall: ${shortfall.toFixed(8)} ${baseAsset}. You can only sell assets you own.`);
+          } else {
+            throw new Error(`Insufficient balance for ${bot.symbol} ${tradeSignal.side} order. Available: $${balanceCheck.availableBalance.toFixed(2)}, Required: $${balanceCheck.totalRequired.toFixed(2)} (order: $${orderValue.toFixed(2)} + 5% buffer). Shortfall: $${shortfall.toFixed(2)}. Please add funds to your Bitunix ${tradingType === 'futures' ? 'Futures' : 'Spot'} wallet.`);
+          }
+        }
         return await this.placeBitunixOrder(apiKey, apiSecret, apiKeys.is_testnet, bot.symbol, tradeSignal.side, amount, price, tradingType, bot);
       }
       
@@ -6013,10 +6096,19 @@ class BotExecutor {
       // Log if there's a mismatch
       if (actualStepSize !== null && Math.abs(actualStepSize - configuredStepSize) > 0.0001) {
         console.warn(`⚠️ Step size mismatch for ${symbol}: configured=${configuredStepSize}, Bybit=${actualStepSize} - using Bybit value`);
+        console.warn(`🔧 Re-rounding quantity ${amount} using actual Bybit step size ${actualStepSize}`);
       }
       
       // Clamp amount to min/max FIRST, then round
       let qty = Math.max(minQty, Math.min(maxQty, amount));
+      
+      // CRITICAL: If we detected a step size mismatch, immediately re-round using the actual step size
+      // This prevents issues where quantity was calculated with wrong step size (e.g., 99.999 with stepSize 0.001 when actual is 1)
+      if (actualStepSize !== null && actualStepSize > 0 && Math.abs(actualStepSize - configuredStepSize) > 0.0001) {
+        const factor = 1 / actualStepSize;
+        qty = Math.round(qty * factor) / factor; // Same as: Math.round(qty / actualStepSize) * actualStepSize
+        console.log(`✅ Re-rounded quantity from ${amount} to ${qty} using actual step size ${actualStepSize}`);
+      }
       
       // Round to nearest step size using precise arithmetic to avoid floating point errors
       if (stepSize > 0) {
@@ -6921,6 +7013,197 @@ class BotExecutor {
         hasBalance: true, // Assume sufficient if check fails
         availableBalance: 0,
         totalRequired: orderValue * 1.05,
+        orderValue: orderValue
+      };
+    }
+  }
+
+  /**
+   * Check if Bitunix account has sufficient balance for order
+   * Returns balance check result with details
+   */
+  private async checkBitunixBalance(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string, side: string, orderValue: number, tradingType: string, amount?: number): Promise<{
+    hasBalance: boolean;
+    availableBalance: number;
+    totalRequired: number;
+    orderValue: number;
+  }> {
+    const marketType = tradingType === 'futures' || tradingType === 'linear' ? 'futures' : 'spot';
+    const baseUrls = isTestnet 
+      ? ['https://api-testnet.bitunix.com']
+      : marketType === 'futures'
+      ? ['https://fapi.bitunix.com']
+      : ['https://api.bitunix.com'];
+    
+    const isSellOrder = side.toLowerCase() === 'sell';
+    
+    try {
+      const timestamp = Date.now().toString();
+      const nonce = this.generateNonce();
+      
+      // Try account balance endpoints
+      const endpointsToTry = [
+        '/api/v1/account',
+        '/api/v1/account/balance',
+        '/api/v1/futures/account',
+        '/api/v1/spot/account'
+      ];
+      
+      let response: Response | null = null;
+      let data: any = null;
+      
+      for (const baseUrl of baseUrls) {
+        for (const endpointPath of endpointsToTry) {
+          try {
+            const queryParams = '';
+            const body = '';
+            const signature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, body, apiSecret);
+            
+            response = await fetch(`${baseUrl}${endpointPath}`, {
+              method: 'GET',
+              headers: {
+                'api-key': String(apiKey),
+                'nonce': String(nonce),
+                'timestamp': String(timestamp),
+                'sign': String(signature),
+                'Content-Type': 'application/json'
+              }
+            });
+            
+            if (!response.ok) {
+              continue; // Try next endpoint
+            }
+            
+            const responseText = await response.text();
+            data = JSON.parse(responseText);
+            
+            if (data && data.code === 0) {
+              break; // Success
+            }
+          } catch (err) {
+            continue; // Try next endpoint
+          }
+        }
+        
+        if (data && data.code === 0) {
+          break; // Success
+        }
+      }
+      
+      // If balance check failed, allow order to proceed (will fail at exchange if insufficient)
+      if (!data || data.code !== 0) {
+        console.warn('⚠️ Could not check Bitunix balance, allowing order to proceed (will fail at exchange if insufficient)');
+        return {
+          hasBalance: true, // Allow order attempt
+          availableBalance: 0,
+          totalRequired: isSellOrder && amount ? amount * 1.01 : orderValue * 1.05,
+          orderValue: orderValue
+        };
+      }
+      
+      // Parse balance data
+      const responseData = data.data || {};
+      let assets: any[] = [];
+      
+      if (Array.isArray(responseData)) {
+        assets = responseData;
+      } else if (responseData.assets) {
+        assets = responseData.assets;
+      } else if (responseData.balances) {
+        assets = responseData.balances;
+      } else if (responseData.coin || responseData.balance !== undefined) {
+        assets = [responseData];
+      }
+      
+      // For futures, check total equity (all assets as collateral)
+      if (marketType === 'futures') {
+        let totalEquity = 0;
+        for (const asset of assets) {
+          const equity = parseFloat(
+            asset.totalEquity ||
+            asset.equity ||
+            asset.balance ||
+            asset.total ||
+            '0'
+          );
+          totalEquity += equity;
+        }
+        
+        const totalRequired = orderValue * 1.05; // 5% buffer
+        const hasBalance = totalEquity >= totalRequired;
+        
+        console.log(`💰 Bitunix Futures Balance: $${totalEquity.toFixed(2)} (Required: $${totalRequired.toFixed(2)})`);
+        
+        return {
+          hasBalance: hasBalance,
+          availableBalance: totalEquity,
+          totalRequired: totalRequired,
+          orderValue: orderValue
+        };
+      } else {
+        // For spot trading
+        if (isSellOrder) {
+          // For SELL orders, check asset quantity
+          let baseAsset = symbol;
+          if (symbol.endsWith('USDT')) {
+            baseAsset = symbol.replace(/USDT$/, '').replace(/^(1000|10000)/, '');
+          }
+          
+          const asset = assets.find((a: any) => {
+            const assetSymbol = (a.asset || a.coin || a.currency || '').toUpperCase();
+            return assetSymbol === baseAsset.toUpperCase();
+          });
+          
+          const availableBalance = asset ? parseFloat(
+            asset.available ||
+            asset.free ||
+            asset.balance ||
+            '0'
+          ) : 0;
+          
+          const totalRequired = amount ? amount * 1.01 : 0; // 1% buffer for sell
+          
+          console.log(`💰 Bitunix Spot Balance (${baseAsset}): ${availableBalance} (Required: ${totalRequired})`);
+          
+          return {
+            hasBalance: availableBalance >= totalRequired,
+            availableBalance: availableBalance,
+            totalRequired: totalRequired,
+            orderValue: orderValue
+          };
+        } else {
+          // For BUY orders, check USDT balance
+          const usdtAsset = assets.find((a: any) => {
+            const assetSymbol = (a.asset || a.coin || a.currency || '').toUpperCase();
+            return assetSymbol === 'USDT';
+          });
+          
+          const availableBalance = usdtAsset ? parseFloat(
+            usdtAsset.available ||
+            usdtAsset.free ||
+            usdtAsset.balance ||
+            '0'
+          ) : 0;
+          
+          const totalRequired = orderValue * 1.05; // 5% buffer
+          
+          console.log(`💰 Bitunix Spot Balance (USDT): $${availableBalance.toFixed(2)} (Required: $${totalRequired.toFixed(2)})`);
+          
+          return {
+            hasBalance: availableBalance >= totalRequired,
+            availableBalance: availableBalance,
+            totalRequired: totalRequired,
+            orderValue: orderValue
+          };
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ Error checking Bitunix balance, allowing order to proceed:', error);
+      // Return unknown balance status - let order attempt happen
+      return {
+        hasBalance: true, // Assume sufficient if check fails
+        availableBalance: 0,
+        totalRequired: isSellOrder && amount ? amount * 1.01 : orderValue * 1.05,
         orderValue: orderValue
       };
     }
@@ -7884,7 +8167,7 @@ class BotExecutor {
     const baseUrls = isTestnet 
       ? ['https://api-testnet.bitunix.com']
       : marketType === 'futures'
-      ? ['https://fapi.bitunix.com', 'https://api.bitunix.com'] // Try fapi first for futures
+      ? ['https://fapi.bitunix.com'] // Official futures API domain
       : ['https://api.bitunix.com'];
     
     console.log(`🔑 Bitunix Order Details:`);
@@ -7894,35 +8177,45 @@ class BotExecutor {
     console.log(`   API Secret length: ${apiSecret.length}, starts with: ${apiSecret.substring(0, 8)}...`);
     console.log(`   Symbol: ${symbol}, Side: ${side}, Amount: ${amount}, Price: ${price}`);
     
-    // Try multiple endpoints (Bitunix API might use different paths)
-    // Based on Bitunix API patterns and market data endpoints (/api/v1/market/...)
-    // Try order endpoints with various patterns
-    const endpointsToTry = [
-      '/api/v1/trade/order',      // Most common pattern (matches market data pattern)
-      '/api/v1/order/place',      // Alternative with action
-      '/api/v1/order/create',     // Alternative with action
-      '/api/v1/trade/place',      // Trade with place action
-      '/api/v1/futures/order',    // Futures-specific
-      '/api/v1/spot/order',       // Spot-specific
-      '/api/futures/v1/order',    // Alternative futures path
-      '/api/spot/v1/order',       // Alternative spot path
-      '/api/v1/order',            // Simplified version
-      '/api/trade/order',         // Alternative pattern
-      '/api/order'                // Simplest pattern
-    ];
+    // Use correct endpoints based on official Bitunix API documentation
+    // Futures: /api/v1/futures/trade/place_order
+    // Spot: /api/v1/spot/trade/place_order (if exists) or try futures endpoint
+    const endpointsToTry = marketType === 'futures' 
+      ? [
+          '/api/v1/futures/trade/place_order',  // Official futures endpoint
+          '/api/v1/trade/place_order',          // Alternative
+        ]
+      : [
+          '/api/v1/spot/trade/place_order',     // Spot endpoint (if exists)
+          '/api/v1/trade/place_order',          // Alternative
+          '/api/v1/futures/trade/place_order',  // Try futures endpoint as fallback
+        ];
     
     try {
       const timestamp = Date.now().toString(); // milliseconds
       const nonce = this.generateNonce(); // 32-bit random string
       
-      // Bitunix order parameters (in body for POST)
+      // Bitunix order parameters per official API documentation
+      // IMPORTANT: Bitunix uses NUMERIC codes, not strings!
+      // side: 1 = Sell, 2 = Buy
+      // type: 1 = Limit, 2 = Market
+      const sideCode = side.toUpperCase() === 'SELL' ? 1 : 2; // 1 = Sell, 2 = Buy
+      const orderTypeCode = (price && price > 0) ? 1 : 2; // 1 = Limit, 2 = Market
+      
       const orderParams: any = {
-        symbol: symbol,
-        marketType: marketType,
-        side: side.toLowerCase(), // 'buy' or 'sell'
-        type: 'market', // Market order
-        quantity: amount.toString()
+        symbol: symbol.toUpperCase(),
+        side: sideCode, // Numeric: 1 = Sell, 2 = Buy
+        type: orderTypeCode, // Numeric: 1 = Limit, 2 = Market
+        volume: amount.toString(), // Use 'volume' instead of 'qty' per some API docs
       };
+      
+      // Add price for limit orders (required for type=1, optional for type=2)
+      if (orderTypeCode === 1 && price && price > 0) {
+        orderParams.price = price.toString();
+      }
+      
+      // Also try with 'qty' parameter (some API versions use this)
+      // We'll try both formats if Code 2 error occurs
       
       // Create body string (JSON with no spaces, per Bitunix docs)
       const bodyString = JSON.stringify(orderParams).replace(/\s+/g, '');
@@ -7952,13 +8245,14 @@ class BotExecutor {
                 'nonce': String(nonce),
                 'timestamp': String(timestamp),
                 'sign': String(signature),
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'language': 'en-US' // Optional but recommended
               },
               body: bodyString
             });
             
             const responseText = await response.text();
-            console.log(`   Response status: ${response.status}, body: ${responseText.substring(0, 200)}`);
+            console.log(`   Response status: ${response.status}, body: ${responseText.substring(0, 500)}`);
             
             if (!response.ok) {
               if (response.status === 401) {
@@ -7969,13 +8263,125 @@ class BotExecutor {
                 lastError = new Error(`Bitunix API error: 404 - Endpoint not found: ${requestPath}`);
                 continue; // Try next endpoint
               }
-              throw new Error(`Bitunix API error: ${response.status} - ${responseText}`);
+              
+              // Try to parse error response
+              try {
+                const errorData = JSON.parse(responseText);
+                const errorMsg = errorData.msg || errorData.message || `HTTP ${response.status}`;
+                console.warn(`   ⚠️ HTTP ${response.status}: ${errorMsg}`);
+                lastError = new Error(`Bitunix API error: ${response.status} - ${errorMsg}`);
+                continue;
+              } catch {
+                throw new Error(`Bitunix API error: ${response.status} - ${responseText.substring(0, 200)}`);
+              }
             }
             
             const data = JSON.parse(responseText);
             
             if (data.code !== 0) {
               const errorMsg = data.msg || data.message || 'Unknown error';
+              
+              // Handle Code 2 (System error) - try different parameter formats
+              if (data.code === 2) {
+                console.log(`   ⚠️ System error (Code: 2) from ${baseUrl}${requestPath}, trying alternative parameter format...`);
+                
+                // Try alternative parameter names: 'qty' instead of 'volume', or vice versa
+                const altOrderParams: any = {
+                  symbol: symbol.toUpperCase(),
+                  side: sideCode,
+                  type: orderTypeCode,
+                  qty: amount.toString(), // Try 'qty' instead of 'volume'
+                };
+                
+                if (orderTypeCode === 1 && price && price > 0) {
+                  altOrderParams.price = price.toString();
+                }
+                
+                const altBodyString = JSON.stringify(altOrderParams).replace(/\s+/g, '');
+                const altSignature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, altBodyString, apiSecret);
+                
+                try {
+                  const altResponse = await fetch(`${baseUrl}${requestPath}`, {
+                    method: 'POST',
+                    headers: {
+                      'api-key': String(apiKey),
+                      'nonce': String(nonce),
+                      'timestamp': String(timestamp),
+                      'sign': String(altSignature),
+                      'Content-Type': 'application/json',
+                      'language': 'en-US'
+                    },
+                    body: altBodyString
+                  });
+                  
+                  const altResponseText = await altResponse.text();
+                  console.log(`   Alt format response: ${altResponse.status}, body: ${altResponseText.substring(0, 300)}`);
+                  
+                  if (altResponse.ok) {
+                    const altData = JSON.parse(altResponseText);
+                    if (altData.code === 0) {
+                      console.log(`✅ Bitunix order placed successfully with alternative format via ${baseUrl}${requestPath}`);
+                      return {
+                        orderId: altData.data?.orderId || altData.data?.id || altData.data?.order_id || altData.data?.clientId,
+                        status: altData.data?.status || 'filled',
+                        exchange: 'bitunix',
+                        response: altData
+                      };
+                    }
+                  }
+                } catch (altErr) {
+                  console.warn(`   ⚠️ Alternative format also failed:`, altErr);
+                }
+                
+                // If alternative format failed, try with 'quantity' parameter
+                const altOrderParams2: any = {
+                  symbol: symbol.toUpperCase(),
+                  side: sideCode,
+                  type: orderTypeCode,
+                  quantity: amount.toString(), // Try 'quantity'
+                };
+                
+                if (orderTypeCode === 1 && price && price > 0) {
+                  altOrderParams2.price = price.toString();
+                }
+                
+                const altBodyString2 = JSON.stringify(altOrderParams2).replace(/\s+/g, '');
+                const altSignature2 = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, altBodyString2, apiSecret);
+                
+                try {
+                  const altResponse2 = await fetch(`${baseUrl}${requestPath}`, {
+                    method: 'POST',
+                    headers: {
+                      'api-key': String(apiKey),
+                      'nonce': String(nonce),
+                      'timestamp': String(timestamp),
+                      'sign': String(altSignature2),
+                      'Content-Type': 'application/json',
+                      'language': 'en-US'
+                    },
+                    body: altBodyString2
+                  });
+                  
+                  const altResponseText2 = await altResponse2.text();
+                  console.log(`   Alt format 2 response: ${altResponse2.status}, body: ${altResponseText2.substring(0, 300)}`);
+                  
+                  if (altResponse2.ok) {
+                    const altData2 = JSON.parse(altResponseText2);
+                    if (altData2.code === 0) {
+                      console.log(`✅ Bitunix order placed successfully with alternative format 2 via ${baseUrl}${requestPath}`);
+                      return {
+                        orderId: altData2.data?.orderId || altData2.data?.id || altData2.data?.order_id || altData2.data?.clientId,
+                        status: altData2.data?.status || 'filled',
+                        exchange: 'bitunix',
+                        response: altData2
+                      };
+                    }
+                  }
+                } catch (altErr2) {
+                  console.warn(`   ⚠️ Alternative format 2 also failed:`, altErr2);
+                }
+              }
+              
               console.warn(`   ⚠️ API returned code ${data.code}: ${errorMsg}, trying next endpoint...`);
               lastError = new Error(`Bitunix order error: ${errorMsg} (Code: ${data.code})`);
               continue; // Try next endpoint
@@ -7984,8 +8390,8 @@ class BotExecutor {
             // Success!
             console.log(`✅ Bitunix order placed successfully via ${baseUrl}${requestPath}`);
             return {
-              orderId: data.data?.orderId || data.data?.id || data.data?.order_id,
-              status: 'filled',
+              orderId: data.data?.orderId || data.data?.id || data.data?.order_id || data.data?.clientId,
+              status: data.data?.status || 'filled',
               exchange: 'bitunix',
               response: data
             };
@@ -10739,6 +11145,26 @@ serve(async (req) => {
         try {
           await executor.executeBot(bot)
           console.log(`✅ Bot execution completed successfully for bot ${bot.id}`);
+          
+          // Update last_execution_at and next_execution_at after successful execution
+          try {
+            const timeframe = bot.timeframe || '15m';
+            const timeframeMinutes = timeframe === '1m' ? 1 : timeframe === '3m' ? 3 : timeframe === '5m' ? 5 : timeframe === '15m' ? 15 : timeframe === '30m' ? 30 : timeframe === '1h' ? 60 : timeframe === '4h' ? 240 : timeframe === '1d' ? 1440 : 15;
+            const nextExecutionMs = timeframeMinutes * 60 * 1000;
+            const nextExecutionAt = new Date(Date.now() + nextExecutionMs);
+            
+            await supabaseClient
+              .from('trading_bots')
+              .update({
+                last_execution_at: new Date().toISOString(),
+                next_execution_at: nextExecutionAt.toISOString()
+              })
+              .eq('id', bot.id);
+            
+            console.log(`✅ Updated last_execution_at and next_execution_at for bot ${bot.id} (next: ${nextExecutionAt.toISOString()})`);
+          } catch (updateError: any) {
+            console.warn(`⚠️ Failed to update execution timestamps for bot ${bot.id}:`, updateError.message);
+          }
         } catch (execError) {
           console.error(`❌ Bot execution failed for bot ${bot.id}:`, execError);
           const errorMessage = execError instanceof Error ? execError.message : String(execError);
@@ -10763,6 +11189,84 @@ serve(async (req) => {
         console.log('🚀 === BOT EXECUTION STARTED ===');
         console.log(`📅 Timestamp: ${new Date().toISOString()}`);
         console.log(`🔐 Auth mode: ${isCron ? 'CRON (service role)' : 'User (' + user?.id + ')'}`);
+        
+        // Support single bot execution via botId parameter (for queue system)
+        const { botId } = body || {};
+        if (botId) {
+          console.log(`🎯 Single bot execution mode: ${botId}`);
+          const { data: singleBot, error: singleBotError } = await supabaseClient
+            .from('trading_bots')
+            .select('*')
+            .eq('id', botId)
+            .eq('status', 'running')
+            .single();
+          
+          if (singleBotError || !singleBot) {
+            return new Response(JSON.stringify({
+              success: false,
+              error: `Bot ${botId} not found or not running`,
+              details: singleBotError?.message
+            }), {
+              status: 404,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+          
+          // Execute single bot
+          const executorUserId = isCron ? singleBot.user_id : user.id;
+          const executor = new BotExecutor(supabaseClient, { id: executorUserId });
+          
+          try {
+            const startTime = Date.now();
+            await Promise.race([
+              executor.executeBot(singleBot),
+              new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Bot execution timeout after 15000ms')), 15000)
+              )
+            ]);
+            const duration = Date.now() - startTime;
+            console.log(`✅ Bot ${singleBot.id} executed successfully in ${duration}ms`);
+            
+            // Update last_execution_at and next_execution_at after successful execution
+            try {
+              const timeframe = singleBot.timeframe || '15m';
+              const timeframeMinutes = timeframe === '1m' ? 1 : timeframe === '3m' ? 3 : timeframe === '5m' ? 5 : timeframe === '15m' ? 15 : timeframe === '30m' ? 30 : timeframe === '1h' ? 60 : timeframe === '4h' ? 240 : timeframe === '1d' ? 1440 : 15;
+              const nextExecutionMs = timeframeMinutes * 60 * 1000;
+              const nextExecutionAt = new Date(Date.now() + nextExecutionMs);
+              
+              await supabaseClient
+                .from('trading_bots')
+                .update({
+                  last_execution_at: new Date().toISOString(),
+                  next_execution_at: nextExecutionAt.toISOString()
+                })
+                .eq('id', singleBot.id);
+              
+              console.log(`✅ Updated last_execution_at and next_execution_at for bot ${singleBot.id} (next: ${nextExecutionAt.toISOString()})`);
+            } catch (updateError: any) {
+              console.warn(`⚠️ Failed to update execution timestamps for bot ${singleBot.id}:`, updateError.message);
+            }
+            
+            return new Response(JSON.stringify({
+              success: true,
+              message: `Bot ${singleBot.id} executed successfully`,
+              botId: singleBot.id,
+              executionTimeMs: duration
+            }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          } catch (error: any) {
+            console.error(`❌ Bot ${singleBot.id} execution failed:`, error);
+            return new Response(JSON.stringify({
+              success: false,
+              error: error.message || 'Bot execution failed',
+              botId: singleBot.id
+            }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+        }
         
         if (isCron) {
           console.log('🔍 Cron: Looking for all running bots (service role)')
@@ -10800,23 +11304,23 @@ serve(async (req) => {
         console.log(`📊 Database query result: Found ${botList.length} running bots${isCron ? ' (all users)' : ` for user ${user?.id}`}`);
         
         if (botList.length > 0) {
-          console.log('📋 Bot details:', botList.map(b => ({ 
+          console.log('📋 Bot details:', botList.map(b => ({
             id: b.id, 
-            user_id: b.user_id, 
+            user_id: b.user_id,
             name: b.name, 
-            exchange: b.exchange, 
+            exchange: b.exchange,
             symbol: b.symbol,
             status: b.status,
             strategy: b.strategy ? 'configured' : 'missing'
           })));
         }
-        
+
         if (!botList || botList.length === 0) {
           console.log('⚠️ No running bots found');
           console.log('💡 Tip: Check if bots are set to "running" status in the database');
-          console.log('💡 Tip: Verify bot-scheduler cron job is configured correctly');
-          return new Response(JSON.stringify({ 
-            success: true, 
+          console.log('💡 Tip: Verify bot-scheduler cron job is configured correctly');    
+          return new Response(JSON.stringify({
+            success: true,
             message: 'No running bots found',
             botsExecuted: 0,
             suggestion: 'Check if bots are set to "running" status and verify cron job is configured'
@@ -10825,22 +11329,108 @@ serve(async (req) => {
           });
         }
         
-        console.log(`🚀 Executing ${botList.length} running bots${isCron ? ' (all users)' : ` for user ${user?.id}`}`);
+        // Smart filtering: Skip bots that don't need execution right now
+        const botsToExecute: any[] = [];
+        const skippedBots: any[] = [];
         
-        // Process bots in smaller batches to avoid Supabase worker limit errors
-        // Reduced to 2 bots per batch with longer delays to prevent WORKER_LIMIT errors
-        const BATCH_SIZE = 2; // Reduced from 3 to 2 to prevent worker exhaustion
-        const BATCH_DELAY_MS = 500; // Increased from 200ms to 500ms for better resource management
-        const MAX_EXECUTION_TIME_MS = 100000; // Reduced from 120s to 100s (83% of 120s limit)
-        const PER_BOT_TIMEOUT_MS = 6000; // Reduced from 8s to 6s per bot
-        const MAX_BOTS_PER_CYCLE = 30; // Limit bots processed per cycle to prevent worker exhaustion
+        for (const bot of botList) {
+          // Skip if bot was just updated (cooldown period)
+          const lastUpdate = new Date(bot.updated_at || bot.created_at);
+          const cooldownMs = 60000; // 1 minute cooldown
+          if (Date.now() - lastUpdate.getTime() < cooldownMs) {
+            skippedBots.push({ bot, reason: 'cooldown' });
+            continue;
+          }
+          
+          // Check if bot has open positions (if yes, needs execution)
+          const hasOpenPositions = await (async () => {
+            try {
+              // For paper trading bots, check paper_trading_positions
+              if (bot.paper_trading) {
+                const { data: positions } = await supabaseClient
+                  .from('paper_trading_positions')
+                  .select('id')
+                  .eq('bot_id', bot.id)
+                  .eq('status', 'open')
+                  .limit(1);
+                return (positions?.length || 0) > 0;
+              } else {
+                // For real trading bots, positions table may not exist
+                // Check if positions table exists, if not, assume needs execution
+                try {
+                  const { data: positions } = await supabaseClient
+                    .from('positions')
+                    .select('id')
+                    .eq('bot_id', bot.id)
+                    .eq('status', 'open')
+                    .limit(1);
+                  return (positions?.length || 0) > 0;
+                } catch {
+                  // positions table doesn't exist, assume needs execution (safe default)
+                  return true;
+                }
+              }
+            } catch (error: any) {
+              // If check fails, assume needs execution (safe default)
+              console.warn(`⚠️ Could not check open positions for bot ${bot.id}:`, error.message);
+              return true;
+            }
+          })();
+          
+          // Check if timeframe requires frequent execution
+          const timeframe = bot.timeframe || '15m';
+          const requiresFrequentExecution = ['1m', '3m', '5m'].includes(timeframe);
+          
+          // Calculate expected execution interval based on timeframe
+          const timeframeMinutes = timeframe === '1m' ? 1 : timeframe === '3m' ? 3 : timeframe === '5m' ? 5 : timeframe === '15m' ? 15 : timeframe === '30m' ? 30 : timeframe === '1h' ? 60 : timeframe === '4h' ? 240 : timeframe === '1d' ? 1440 : 15;
+          const expectedIntervalMs = timeframeMinutes * 60 * 1000;
+          // Allow execution if it's been at least 80% of the expected interval (to account for slight delays)
+          const minIntervalMs = Math.max(expectedIntervalMs * 0.8, 60000); // At least 1 minute
+          
+          // Execute if: has open positions OR requires frequent execution OR last execution was >expected interval ago OR never executed
+          const lastExecution = bot.last_execution_at ? new Date(bot.last_execution_at).getTime() : 0;
+          const timeSinceLastExecution = Date.now() - lastExecution;
+          // If last_execution_at is null/0, always execute (first time or never executed)
+          const needsExecution = hasOpenPositions || requiresFrequentExecution || lastExecution === 0 || timeSinceLastExecution > minIntervalMs;
+          
+          if (needsExecution) {
+            botsToExecute.push(bot);
+          } else {
+            skippedBots.push({ bot, reason: 'no_open_positions_and_low_frequency' });
+          }
+        }
+        
+        console.log(`🚀 Executing ${botsToExecute.length} bots (${skippedBots.length} skipped: ${skippedBots.map(s => s.reason).join(', ')})`);
+        
+        if (botsToExecute.length === 0) {
+          return new Response(JSON.stringify({
+            success: true,
+            message: 'No bots need execution at this time',
+            botsExecuted: 0,
+            botsSkipped: skippedBots.length,
+            skippedReasons: skippedBots.map(s => ({ botId: s.bot.id, reason: s.reason }))
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
+        
+        // Use filtered list instead of full list
+        const filteredBotList = botsToExecute;
+        
+        // Process bots in optimized batches to prevent CPU time exceeded errors
+        // Optimized for scalability: smaller batches, faster timeouts, better distribution
+        const BATCH_SIZE = 3; // Increased from 2 to 3 (better throughput while staying safe)
+        const BATCH_DELAY_MS = 300; // Reduced from 500ms to 300ms (faster processing)
+        const MAX_EXECUTION_TIME_MS = 50000; // Reduced from 100s to 50s (prevent CPU timeout)
+        const PER_BOT_TIMEOUT_MS = 15000; // Increased to 15s per bot to handle API retries and fallbacks
+        const MAX_BOTS_PER_CYCLE = 5; // Reduced from 30 to 5 (better distribution across cycles)
         const executionStartTime = Date.now();
         const results: Array<PromiseSettledResult<any>> = [];
         let processedCount = 0;
         
         // Limit the number of bots processed in this cycle
-        const botsToProcess = botList.slice(0, MAX_BOTS_PER_CYCLE);
-        const remainingBots = botList.length - botsToProcess.length;
+        const botsToProcess = filteredBotList.slice(0, MAX_BOTS_PER_CYCLE);
+        const remainingBots = filteredBotList.length - botsToProcess.length;
         
         if (remainingBots > 0) {
           console.log(`⚠️ Limiting execution to ${MAX_BOTS_PER_CYCLE} bots this cycle (${remainingBots} will be processed in next cycle)`);
@@ -10880,6 +11470,29 @@ serve(async (req) => {
                 ]);
                 const duration = Date.now() - botStartTime;
                 console.log(`✅ [${bot.name}] Execution completed in ${duration}ms`);
+                
+                // Update last_execution_at and next_execution_at after successful execution
+                try {
+                  const timeframe = bot.timeframe || '15m';
+                  // Calculate next execution time based on timeframe
+                  const timeframeMinutes = timeframe === '1m' ? 1 : timeframe === '3m' ? 3 : timeframe === '5m' ? 5 : timeframe === '15m' ? 15 : timeframe === '30m' ? 30 : timeframe === '1h' ? 60 : timeframe === '4h' ? 240 : timeframe === '1d' ? 1440 : 15;
+                  const nextExecutionMs = timeframeMinutes * 60 * 1000; // Convert to milliseconds
+                  const nextExecutionAt = new Date(Date.now() + nextExecutionMs);
+                  
+                  await supabaseClient
+                    .from('trading_bots')
+                    .update({
+                      last_execution_at: new Date().toISOString(),
+                      next_execution_at: nextExecutionAt.toISOString()
+                    })
+                    .eq('id', bot.id);
+                  
+                  console.log(`✅ [${bot.name}] Updated last_execution_at and next_execution_at (next: ${nextExecutionAt.toISOString()})`);
+                } catch (updateError: any) {
+                  console.warn(`⚠️ [${bot.name}] Failed to update execution timestamps:`, updateError.message);
+                  // Don't fail the entire execution if timestamp update fails
+                }
+                
                 processedCount++;
                 return result;
               } catch (error) {
@@ -10945,7 +11558,7 @@ serve(async (req) => {
           success: true, 
           message: `Executed ${successful} bots successfully, ${failed} failed${skipped > 0 ? `, ${skipped} skipped due to timeout` : ''}${remainingBots > 0 ? `, ${remainingBots} bots will be processed in next cycle` : ''}`,
           botsExecuted: processedCount,
-          botsTotal: botList.length,
+          botsTotal: filteredBotList.length,
           botsProcessedThisCycle: botsToProcess.length,
           botsRemaining: remainingBots,
           successful,
