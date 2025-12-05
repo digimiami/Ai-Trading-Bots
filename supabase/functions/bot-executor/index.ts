@@ -8382,6 +8382,71 @@ class BotExecutor {
                 }
               }
               
+              // Handle Code 10003 (Token invalid) - don't retry, fail immediately
+              if (data.code === 10003) {
+                console.error(`❌ Bitunix API key is invalid (Code: 10003) for ${symbol}`);
+                console.error(`📋 Error message: ${errorMsg}`);
+                console.error(`🔑 API Key (first 8 chars): ${apiKey.substring(0, 8)}...`);
+                console.error(`🌐 Base URL: ${baseUrl}`);
+                console.error(`🧪 Testnet: ${isTestnet}`);
+                
+                // Log to bot activity logs with actionable message
+                if (bot?.id) {
+                  await this.addBotLog(bot.id, {
+                    level: 'error',
+                    category: 'trade',
+                    message: `Bitunix API key is invalid (Code: 10003). Please verify and update your Bitunix API keys in account settings.`,
+                    details: {
+                      symbol: symbol,
+                      code: 10003,
+                      msg: errorMsg,
+                      exchange: 'bitunix',
+                      is_testnet: isTestnet,
+                      api_key_preview: apiKey.substring(0, 8) + '...',
+                      action_required: 'Update Bitunix API keys in account settings. Ensure keys are valid and have trading permissions.',
+                      troubleshooting: [
+                        '1. Go to Bitunix → API Management',
+                        '2. Verify your API key is active and has trading permissions',
+                        '3. Check if API key has expired or been revoked',
+                        '4. Re-enter API key and secret in your account settings',
+                        '5. Ensure API key has futures trading permissions if using futures'
+                      ]
+                    }
+                  });
+                }
+                
+                throw new Error(`Bitunix API key is invalid (Code: 10003). Please verify and update your Bitunix API keys in your account settings. The API key may have expired, been revoked, or may not have trading permissions.`);
+              }
+              
+              // Handle Code 2 (System error) - if all alternative formats failed, provide better error
+              if (data.code === 2) {
+                console.error(`❌ Bitunix system error (Code: 2) persisted after trying all parameter formats for ${symbol}`);
+                console.error(`📋 Error message: ${errorMsg}`);
+                console.error(`🌐 Base URL: ${baseUrl}, Endpoint: ${requestPath}`);
+                
+                // Log to bot activity logs
+                if (bot?.id) {
+                  await this.addBotLog(bot.id, {
+                    level: 'error',
+                    category: 'trade',
+                    message: `Bitunix system error (Code: 2) - API may be experiencing issues. Please try again later or contact Bitunix support.`,
+                    details: {
+                      symbol: symbol,
+                      code: 2,
+                      msg: errorMsg,
+                      exchange: 'bitunix',
+                      base_url: baseUrl,
+                      endpoint: requestPath,
+                      action_required: 'This may be a temporary Bitunix API issue. Try again in a few minutes or contact Bitunix support if the issue persists.'
+                    }
+                  });
+                }
+                
+                // Don't throw immediately, try next endpoint first
+                lastError = new Error(`Bitunix system error (Code: 2): ${errorMsg}. This may be a temporary API issue.`);
+                continue; // Try next endpoint
+              }
+              
               console.warn(`   ⚠️ API returned code ${data.code}: ${errorMsg}, trying next endpoint...`);
               lastError = new Error(`Bitunix order error: ${errorMsg} (Code: ${data.code})`);
               continue; // Try next endpoint
