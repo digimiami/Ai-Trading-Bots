@@ -1,0 +1,6 @@
+# Copy and paste these commands to deploy:
+
+supabase functions deploy bot-executor
+
+supabase functions deploy api-keys
+
