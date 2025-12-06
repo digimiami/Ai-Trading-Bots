@@ -12,6 +12,7 @@ import { useCryptoNews, type CryptoNewsArticle } from '../../hooks/useCryptoNews
 import { supabase } from '../../lib/supabase';
 import WebhookTestPage from '../webhook-test/page';
 import CryptoNewsManager from './components/CryptoNewsManager';
+import ContactMessages from './components/ContactMessages';
 
 interface User {
   id: string;
@@ -917,6 +918,7 @@ export default function AdminPage() {
   }
 
   const tabs = [
+    { id: 'contact-messages', label: 'Contact Messages', icon: 'ri-mail-line' },
     { id: 'overview', label: 'Overview', icon: 'ri-dashboard-line' },
     { id: 'users', label: 'Users', icon: 'ri-user-line' },
     { id: 'bots', label: 'Trading Bots', icon: 'ri-robot-line' },
@@ -2511,6 +2513,11 @@ export default function AdminPage() {
         {/* Crypto News Tab */}
         {activeTab === 'crypto-news' && (
           <CryptoNewsManager />
+        )}
+
+        {/* Contact Messages Tab */}
+        {activeTab === 'contact-messages' && (
+          <ContactMessages />
         )}
 
         {/* Webhook Test Tab */}
