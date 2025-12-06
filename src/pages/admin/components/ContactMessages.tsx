@@ -39,13 +39,7 @@ export default function ContactMessages() {
       setLoading(true);
       let query = supabase
         .from('contact_messages')
-        .select(`
-          *,
-          users:user_id (
-            email,
-            full_name
-          )
-        `)
+        .select('*')
         .order('created_at', { ascending: false });
 
       if (filter !== 'all') {
@@ -55,7 +49,32 @@ export default function ContactMessages() {
       const { data, error } = await query;
 
       if (error) throw error;
-      setMessages(data || []);
+      
+      // Fetch user info separately if user_id exists
+      const messagesWithUsers = await Promise.all(
+        (data || []).map(async (message) => {
+          if (message.user_id) {
+            try {
+              // Try to get user info from auth.users (admin can access this)
+              const { data: userData, error: userError } = await supabase
+                .from('users')
+                .select('email, full_name')
+                .eq('id', message.user_id)
+                .single();
+              
+              if (!userError && userData) {
+                return { ...message, users: userData };
+              }
+            } catch (e) {
+              // If we can't fetch user info, just continue without it
+              console.log('Could not fetch user info for message:', message.id);
+            }
+          }
+          return { ...message, users: null };
+        })
+      );
+      
+      setMessages(messagesWithUsers);
     } catch (error: any) {
       console.error('Error loading contact messages:', error);
       alert(`Failed to load messages: ${error?.message || error}`);
@@ -257,9 +276,12 @@ export default function ContactMessages() {
                       <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                         {message.name} &lt;{message.email}&gt;
                       </p>
-                      {message.users && (
+                      {message.user_id && (
                         <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                          User: {message.users.full_name || message.users.email}
+                          User ID: {message.user_id}
+                          {message.users && (
+                            <span> ({message.users.full_name || message.users.email})</span>
+                          )}
                         </p>
                       )}
                     </div>
@@ -291,9 +313,12 @@ export default function ContactMessages() {
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
                     {selectedMessage.name} &lt;{selectedMessage.email}&gt;
                   </p>
-                  {selectedMessage.users && (
+                  {selectedMessage.user_id && (
                     <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                      User Account: {selectedMessage.users.full_name || selectedMessage.users.email}
+                      User ID: {selectedMessage.user_id}
+                      {selectedMessage.users && (
+                        <span> ({selectedMessage.users.full_name || selectedMessage.users.email})</span>
+                      )}
                     </p>
                   )}
                 </div>

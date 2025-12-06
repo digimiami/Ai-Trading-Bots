@@ -143,6 +143,13 @@ async function sendAdminEmailNotification(messageData: any, formData: ContactFor
       const emailHtml = formatContactEmailHTML(formData, messageData)
       const emailText = formatContactEmailText(formData, messageData)
 
+      // Get from email - validate format
+      const fromEmail = Deno.env.get('RESEND_FROM_EMAIL') || 'notifications@pablobots.net'
+      // Ensure valid format: either "email@domain.com" or "Name <email@domain.com>"
+      const fromEmailFormatted = fromEmail.includes('<') 
+        ? fromEmail 
+        : `Pablo Trading <${fromEmail}>`
+
       const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
@@ -150,7 +157,7 @@ async function sendAdminEmailNotification(messageData: any, formData: ContactFor
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: Deno.env.get('RESEND_FROM_EMAIL') || 'Pablo Trading <notifications@pablobots.net>',
+          from: fromEmailFormatted,
           to: adminEmail,
           subject: emailSubject,
           html: emailHtml,
