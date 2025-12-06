@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Card } from '../../components/base/Card';
 import { Button } from '../../components/base/Button';
 import { useAuth } from '../../hooks/useAuth';
+import { supabase } from '../../lib/supabase';
 import Header from '../../components/feature/Header';
 
 export default function ContactPage() {
@@ -23,16 +24,29 @@ export default function ContactPage() {
     setSubmitSuccess(false);
 
     try {
-      // Here you can add logic to send the form data to your backend
-      // For now, we'll just simulate a submission
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Get Supabase session for authenticated users
+      const { data: { session } } = await supabase.auth.getSession();
       
-      // In a real implementation, you would send this to your API:
-      // const response = await fetch('/api/contact', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(formData)
-      // });
+      // Send contact form to edge function
+      const response = await fetch(
+        `${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/contact-form`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(session?.access_token && {
+              'Authorization': `Bearer ${session.access_token}`
+            })
+          },
+          body: JSON.stringify(formData)
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || 'Failed to send message');
+      }
 
       setSubmitSuccess(true);
       setFormData({ name: '', email: '', subject: '', message: '' });
@@ -41,7 +55,12 @@ export default function ContactPage() {
         setSubmitSuccess(false);
       }, 5000);
     } catch (error) {
-      setSubmitError('Failed to send message. Please try again or use one of the contact methods below.');
+      console.error('Contact form error:', error);
+      setSubmitError(
+        error instanceof Error 
+          ? error.message 
+          : 'Failed to send message. Please try again or use one of the contact methods below.'
+      );
     } finally {
       setIsSubmitting(false);
     }
