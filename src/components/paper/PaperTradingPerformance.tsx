@@ -94,6 +94,51 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
     return result?.account ?? null;
   };
 
+  const fetchActivityLogs = async () => {
+    try {
+      setLoadingLogs(true);
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setActivityLogs([]);
+        return;
+      }
+
+      // Get all paper trading bot IDs for this user
+      const { data: paperBots } = await supabase
+        .from('trading_bots')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('paper_trading', true);
+
+      if (!paperBots || paperBots.length === 0) {
+        setActivityLogs([]);
+        return;
+      }
+
+      const botIds = paperBots.map(b => b.id);
+
+      // Fetch activity logs for paper trading bots
+      const { data: logs, error } = await supabase
+        .from('bot_activity_logs')
+        .select('*')
+        .in('bot_id', botIds)
+        .order('timestamp', { ascending: false })
+        .limit(100); // Limit to last 100 logs
+
+      if (error) {
+        console.error('Error fetching activity logs:', error);
+        setActivityLogs([]);
+      } else {
+        setActivityLogs(logs || []);
+      }
+    } catch (error) {
+      console.error('Error fetching activity logs:', error);
+      setActivityLogs([]);
+    } finally {
+      setLoadingLogs(false);
+    }
+  };
+
   const fetchPerformance = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -701,10 +746,12 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
     }, 20000); // 20 second timeout (increased from 10s)
 
     fetchPerformance();
+    fetchActivityLogs();
     
     // Refresh every 30 seconds
     const interval = setInterval(() => {
       fetchPerformance();
+      fetchActivityLogs();
     }, 30000);
 
     return () => {
@@ -718,6 +765,7 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
   const handleRefresh = async () => {
     setRefreshing(true);
     await fetchPerformance();
+    await fetchActivityLogs();
   };
 
   const handleResetPerformance = async () => {

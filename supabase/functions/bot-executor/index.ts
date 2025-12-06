@@ -1678,7 +1678,7 @@ class MarketDataFetcher {
         }
         
         // Check if this is a major coin - use CoinGecko immediately if Bitunix fails
-        const isMajorCoin = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'ADAUSDT', 'XRPUSDT', 'DOGEUSDT', 'DOTUSDT', 'MATICUSDT', 'AVAXUSDT', 'LINKUSDT', 'UNIUSDT'].includes(symbol.toUpperCase());
+        const isMajorCoin = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'ADAUSDT', 'XRPUSDT', 'DOGEUSDT', 'DOTUSDT', 'MATICUSDT', 'AVAXUSDT', 'LINKUSDT', 'UNIUSDT', 'ATOMUSDT'].includes(symbol.toUpperCase());
         
         // If cache miss or expired, fetch fresh data
         if (!useCache || tickersArray.length === 0) {
@@ -1902,7 +1902,9 @@ class MarketDataFetcher {
               'LINKUSDT': 'chainlink',
               'LINK': 'chainlink',
               'UNIUSDT': 'uniswap',
-              'UNI': 'uniswap'
+              'UNI': 'uniswap',
+              'ATOMUSDT': 'cosmos',
+              'ATOM': 'cosmos'
             };
             
             const symbolUpper = symbol.toUpperCase();
