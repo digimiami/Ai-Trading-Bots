@@ -8283,6 +8283,43 @@ class BotExecutor {
             if (data.code !== 0) {
               const errorMsg = data.msg || data.message || 'Unknown error';
               
+              // Handle Code 10003 (Token invalid) FIRST - don't retry, fail immediately
+              // This must be checked before Code 2 because invalid API keys will fail on all endpoints
+              if (data.code === 10003) {
+                console.error(`❌ Bitunix API key is invalid (Code: 10003) for ${symbol}`);
+                console.error(`📋 Error message: ${errorMsg}`);
+                console.error(`🔑 API Key (first 8 chars): ${apiKey.substring(0, 8)}...`);
+                console.error(`🌐 Base URL: ${baseUrl}`);
+                console.error(`🧪 Testnet: ${isTestnet}`);
+                
+                // Log to bot activity logs with actionable message
+                if (bot?.id) {
+                  await this.addBotLog(bot.id, {
+                    level: 'error',
+                    category: 'trade',
+                    message: `Bitunix API key is invalid (Code: 10003). Please verify and update your Bitunix API keys in account settings.`,
+                    details: {
+                      symbol: symbol,
+                      code: 10003,
+                      msg: errorMsg,
+                      exchange: 'bitunix',
+                      is_testnet: isTestnet,
+                      api_key_preview: apiKey.substring(0, 8) + '...',
+                      action_required: 'Update Bitunix API keys in account settings. Ensure keys are valid and have trading permissions.',
+                      troubleshooting: [
+                        '1. Go to Bitunix → API Management',
+                        '2. Verify your API key is active and has trading permissions',
+                        '3. Check if API key has expired or been revoked',
+                        '4. Re-enter API key and secret in your account settings',
+                        '5. Ensure API key has futures trading permissions if using futures'
+                      ]
+                    }
+                  });
+                }
+                
+                throw new Error(`Bitunix API key is invalid (Code: 10003). Please verify and update your Bitunix API keys in your account settings. The API key may have expired, been revoked, or may not have trading permissions.`);
+              }
+              
               // Handle Code 2 (System error) - try different parameter formats
               if (data.code === 2) {
                 console.log(`   ⚠️ System error (Code: 2) from ${baseUrl}${requestPath}, trying alternative parameter format...`);
@@ -8321,6 +8358,27 @@ class BotExecutor {
                   
                   if (altResponse.ok) {
                     const altData = JSON.parse(altResponseText);
+                    
+                    // Check for Code 10003 in alternative format response - fail immediately
+                    if (altData.code === 10003) {
+                      console.error(`❌ Bitunix API key is invalid (Code: 10003) in alternative format for ${symbol}`);
+                      if (bot?.id) {
+                        await this.addBotLog(bot.id, {
+                          level: 'error',
+                          category: 'trade',
+                          message: `Bitunix API key is invalid (Code: 10003). Please verify and update your Bitunix API keys in account settings.`,
+                          details: {
+                            symbol: symbol,
+                            code: 10003,
+                            msg: altData.msg || 'Token invalid',
+                            exchange: 'bitunix',
+                            action_required: 'Update Bitunix API keys in account settings.'
+                          }
+                        });
+                      }
+                      throw new Error(`Bitunix API key is invalid (Code: 10003). Please verify and update your Bitunix API keys in your account settings.`);
+                    }
+                    
                     if (altData.code === 0) {
                       console.log(`✅ Bitunix order placed successfully with alternative format via ${baseUrl}${requestPath}`);
                       return {
@@ -8369,6 +8427,27 @@ class BotExecutor {
                   
                   if (altResponse2.ok) {
                     const altData2 = JSON.parse(altResponseText2);
+                    
+                    // Check for Code 10003 in alternative format 2 response - fail immediately
+                    if (altData2.code === 10003) {
+                      console.error(`❌ Bitunix API key is invalid (Code: 10003) in alternative format 2 for ${symbol}`);
+                      if (bot?.id) {
+                        await this.addBotLog(bot.id, {
+                          level: 'error',
+                          category: 'trade',
+                          message: `Bitunix API key is invalid (Code: 10003). Please verify and update your Bitunix API keys in account settings.`,
+                          details: {
+                            symbol: symbol,
+                            code: 10003,
+                            msg: altData2.msg || 'Token invalid',
+                            exchange: 'bitunix',
+                            action_required: 'Update Bitunix API keys in account settings.'
+                          }
+                        });
+                      }
+                      throw new Error(`Bitunix API key is invalid (Code: 10003). Please verify and update your Bitunix API keys in your account settings.`);
+                    }
+                    
                     if (altData2.code === 0) {
                       console.log(`✅ Bitunix order placed successfully with alternative format 2 via ${baseUrl}${requestPath}`);
                       return {
@@ -8382,42 +8461,6 @@ class BotExecutor {
                 } catch (altErr2) {
                   console.warn(`   ⚠️ Alternative format 2 also failed:`, altErr2);
                 }
-              }
-              
-              // Handle Code 10003 (Token invalid) - don't retry, fail immediately
-              if (data.code === 10003) {
-                console.error(`❌ Bitunix API key is invalid (Code: 10003) for ${symbol}`);
-                console.error(`📋 Error message: ${errorMsg}`);
-                console.error(`🔑 API Key (first 8 chars): ${apiKey.substring(0, 8)}...`);
-                console.error(`🌐 Base URL: ${baseUrl}`);
-                console.error(`🧪 Testnet: ${isTestnet}`);
-                
-                // Log to bot activity logs with actionable message
-                if (bot?.id) {
-                  await this.addBotLog(bot.id, {
-                    level: 'error',
-                    category: 'trade',
-                    message: `Bitunix API key is invalid (Code: 10003). Please verify and update your Bitunix API keys in account settings.`,
-                    details: {
-                      symbol: symbol,
-                      code: 10003,
-                      msg: errorMsg,
-                      exchange: 'bitunix',
-                      is_testnet: isTestnet,
-                      api_key_preview: apiKey.substring(0, 8) + '...',
-                      action_required: 'Update Bitunix API keys in account settings. Ensure keys are valid and have trading permissions.',
-                      troubleshooting: [
-                        '1. Go to Bitunix → API Management',
-                        '2. Verify your API key is active and has trading permissions',
-                        '3. Check if API key has expired or been revoked',
-                        '4. Re-enter API key and secret in your account settings',
-                        '5. Ensure API key has futures trading permissions if using futures'
-                      ]
-                    }
-                  });
-                }
-                
-                throw new Error(`Bitunix API key is invalid (Code: 10003). Please verify and update your Bitunix API keys in your account settings. The API key may have expired, been revoked, or may not have trading permissions.`);
               }
               
               // Handle Code 2 (System error) - if all alternative formats failed, provide better error
@@ -8463,6 +8506,12 @@ class BotExecutor {
               response: data
             };
           } catch (endpointErr: any) {
+            // If this is a Code 10003 (invalid API key) error, fail immediately - don't try other endpoints
+            if (endpointErr.message && endpointErr.message.includes('Code: 10003')) {
+              console.error(`❌ Bitunix API key is invalid (Code: 10003) - stopping all retry attempts`);
+              throw endpointErr; // Re-throw immediately, don't try other endpoints
+            }
+            
             console.warn(`   ⚠️ Error with ${baseUrl}${requestPath}:`, endpointErr.message);
             lastError = endpointErr;
             continue; // Try next endpoint
