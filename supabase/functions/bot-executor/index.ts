@@ -10304,8 +10304,18 @@ class PaperTradingExecutor {
       
       const botConfigs = new Map(bots?.map((b: any) => [b.id, b.strategy_config || {}]) || []);
       
-      // Get account for equity tracking
-      const account = await this.getPaperAccount();
+      // Get account for equity tracking (with error handling for invalid users)
+      let account;
+      try {
+        account = await this.getPaperAccount();
+      } catch (error: any) {
+        // If user doesn't exist, skip position updates (bot will be disabled by validation)
+        if (error.message && error.message.includes('does not exist in users table')) {
+          console.warn(`⚠️ [PAPER] Skipping position update: User ${this.user.id} does not exist`);
+          return;
+        }
+        throw error; // Re-throw other errors
+      }
       const currentBalance = parseFloat(account.balance || 0);
       
       // Calculate total unrealized PnL from all open positions (first pass to get prices)
