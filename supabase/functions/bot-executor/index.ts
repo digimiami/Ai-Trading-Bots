@@ -1874,65 +1874,76 @@ class MarketDataFetcher {
           console.log(`⏭️ Skipping single ticker endpoints for major coin ${symbol} (had 404 errors, using CoinGecko)`);
         }
         
-        // Final fallback: Try CoinGecko for major coins (use immediately if Bitunix fails)
-        if (isMajorCoin) {
-          console.log(`🔄 Trying CoinGecko fallback for ${symbol} (major coin)...`);
-          try {
-            const coinGeckoMap: { [key: string]: string } = {
-              'BTCUSDT': 'bitcoin',
-              'BTC': 'bitcoin',
-              'ETHUSDT': 'ethereum',
-              'ETH': 'ethereum',
-              'BNBUSDT': 'binancecoin',
-              'BNB': 'binancecoin',
-              'SOLUSDT': 'solana',
-              'SOL': 'solana',
-              'ADAUSDT': 'cardano',
-              'ADA': 'cardano',
-              'DOGEUSDT': 'dogecoin',
-              'DOGE': 'dogecoin',
-              'XRPUSDT': 'ripple',
-              'XRP': 'ripple',
-              'DOTUSDT': 'polkadot',
-              'DOT': 'polkadot',
-              'MATICUSDT': 'matic-network',
-              'MATIC': 'matic-network',
-              'AVAXUSDT': 'avalanche-2',
-              'AVAX': 'avalanche-2',
-              'LINKUSDT': 'chainlink',
-              'LINK': 'chainlink',
-              'UNIUSDT': 'uniswap',
-              'UNI': 'uniswap',
-              'ATOMUSDT': 'cosmos',
-              'ATOM': 'cosmos'
-            };
+        // Final fallback: Try CoinGecko for ALL symbols (major coins get priority, but all get fallback)
+        console.log(`🔄 Trying CoinGecko fallback for ${symbol}...`);
+        try {
+          // Comprehensive CoinGecko mapping
+          const coinGeckoMap: { [key: string]: string } = {
+            'BTCUSDT': 'bitcoin', 'BTC': 'bitcoin',
+            'ETHUSDT': 'ethereum', 'ETH': 'ethereum',
+            'BNBUSDT': 'binancecoin', 'BNB': 'binancecoin',
+            'SOLUSDT': 'solana', 'SOL': 'solana',
+            'ADAUSDT': 'cardano', 'ADA': 'cardano',
+            'DOGEUSDT': 'dogecoin', 'DOGE': 'dogecoin',
+            'XRPUSDT': 'ripple', 'XRP': 'ripple',
+            'DOTUSDT': 'polkadot', 'DOT': 'polkadot',
+            'MATICUSDT': 'matic-network', 'MATIC': 'matic-network',
+            'AVAXUSDT': 'avalanche-2', 'AVAX': 'avalanche-2',
+            'LINKUSDT': 'chainlink', 'LINK': 'chainlink',
+            'UNIUSDT': 'uniswap', 'UNI': 'uniswap',
+            'ATOMUSDT': 'cosmos', 'ATOM': 'cosmos',
+            'TRXUSDT': 'tron', 'TRX': 'tron',
+            'LTCUSDT': 'litecoin', 'LTC': 'litecoin',
+            'BCHUSDT': 'bitcoin-cash', 'BCH': 'bitcoin-cash',
+            'XLMUSDT': 'stellar', 'XLM': 'stellar',
+            'VETUSDT': 'vechain', 'VET': 'vechain',
+            'FILUSDT': 'filecoin', 'FIL': 'filecoin',
+            'AAVEUSDT': 'aave', 'AAVE': 'aave',
+            'SHIBUSDT': 'shiba-inu', 'SHIB': 'shiba-inu',
+            'PEPEUSDT': 'pepe', 'PEPE': 'pepe',
+            'FLOKIUSDT': 'floki', 'FLOKI': 'floki',
+            'BONKUSDT': 'bonk', 'BONK': 'bonk',
+            'WIFUSDT': 'dogwifcoin', 'WIF': 'dogwifcoin',
+            'ARBUSDT': 'arbitrum', 'ARB': 'arbitrum',
+            'OPUSDT': 'optimism', 'OP': 'optimism',
+            'SUIUSDT': 'sui', 'SUI': 'sui',
+            'APTUSDT': 'aptos', 'APT': 'aptos',
+            'INJUSDT': 'injective-protocol', 'INJ': 'injective-protocol',
+            'TIAUSDT': 'celestia', 'TIA': 'celestia',
+            'SEIUSDT': 'sei-network', 'SEI': 'sei-network',
+            'RENDERUSDT': 'render-token', 'RENDER': 'render-token',
+            'FETUSDT': 'fetch-ai', 'FET': 'fetch-ai'
+          };
+          
+          const symbolUpper = symbol.toUpperCase();
+          // Try exact match first, then try without USDT/USD/BUSD suffix
+          let coinGeckoId = coinGeckoMap[symbolUpper] || 
+                           coinGeckoMap[symbolUpper.replace(/USDT$/, '')] ||
+                           coinGeckoMap[symbolUpper.replace(/USD$/, '')] ||
+                           coinGeckoMap[symbolUpper.replace(/BUSD$/, '')];
+          
+          if (coinGeckoId) {
+            const geckoUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${coinGeckoId}&vs_currencies=usd`;
+            console.log(`  Fetching from CoinGecko: ${geckoUrl}`);
+            const geckoResponse = await fetch(geckoUrl, { signal: AbortSignal.timeout(5000) });
             
-            const symbolUpper = symbol.toUpperCase();
-            const coinGeckoId = coinGeckoMap[symbolUpper] || coinGeckoMap[symbolUpper.replace('USDT', '')];
-            
-            if (coinGeckoId) {
-              const geckoUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${coinGeckoId}&vs_currencies=usd`;
-              console.log(`  Fetching from CoinGecko: ${geckoUrl}`);
-              const geckoResponse = await fetch(geckoUrl, { signal: AbortSignal.timeout(5000) });
-              
-              if (geckoResponse.ok) {
-                const geckoData = await geckoResponse.json();
-                const price = geckoData[coinGeckoId]?.usd;
-                if (price > 0 && isFinite(price)) {
-                  console.log(`✅ Bitunix price found via CoinGecko fallback for ${symbol}: ${price}`);
-                  return price;
-                } else {
-                  console.warn(`  ⚠️ CoinGecko returned invalid price: ${price}`);
-                }
+            if (geckoResponse.ok) {
+              const geckoData = await geckoResponse.json();
+              const price = geckoData[coinGeckoId]?.usd;
+              if (price > 0 && isFinite(price)) {
+                console.log(`✅ Bitunix price found via CoinGecko fallback for ${symbol}: ${price}`);
+                return price;
               } else {
-                console.warn(`  ⚠️ CoinGecko HTTP error: ${geckoResponse.status}`);
+                console.warn(`  ⚠️ CoinGecko returned invalid price: ${price}`);
               }
             } else {
-              console.warn(`  ⚠️ No CoinGecko mapping for ${symbol}`);
+              console.warn(`  ⚠️ CoinGecko HTTP error: ${geckoResponse.status}`);
             }
-          } catch (geckoErr: any) {
-            console.warn(`⚠️ CoinGecko fallback failed:`, geckoErr.message);
+          } else {
+            console.warn(`  ⚠️ No CoinGecko mapping for ${symbol}`);
           }
+        } catch (geckoErr: any) {
+          console.warn(`⚠️ CoinGecko fallback failed:`, geckoErr.message);
         }
         
         console.error(`❌ Bitunix API error for ${symbol}: Symbol not found after all attempts.`);
@@ -1962,73 +1973,11 @@ class MarketDataFetcher {
           }
         }
         
-        // Try CoinGecko for non-major coins as a last resort (extract base symbol)
-        if (!isMajorCoin) {
-          console.log(`🔄 Trying CoinGecko fallback for non-major coin ${symbol}...`);
-          try {
-            const symbolUpper = symbol.toUpperCase();
-            const baseSymbol = symbolUpper.replace(/USDT|USD|BUSD|BTC|ETH$/, ''); // Remove common suffixes
-            
-            // Extended CoinGecko mapping for more symbols
-            const extendedCoinGeckoMap: { [key: string]: string } = {
-              'BTCUSDT': 'bitcoin', 'BTC': 'bitcoin',
-              'ETHUSDT': 'ethereum', 'ETH': 'ethereum',
-              'BNBUSDT': 'binancecoin', 'BNB': 'binancecoin',
-              'SOLUSDT': 'solana', 'SOL': 'solana',
-              'ADAUSDT': 'cardano', 'ADA': 'cardano',
-              'DOGEUSDT': 'dogecoin', 'DOGE': 'dogecoin',
-              'XRPUSDT': 'ripple', 'XRP': 'ripple',
-              'DOTUSDT': 'polkadot', 'DOT': 'polkadot',
-              'MATICUSDT': 'matic-network', 'MATIC': 'matic-network',
-              'AVAXUSDT': 'avalanche-2', 'AVAX': 'avalanche-2',
-              'LINKUSDT': 'chainlink', 'LINK': 'chainlink',
-              'UNIUSDT': 'uniswap', 'UNI': 'uniswap',
-              'ATOMUSDT': 'cosmos', 'ATOM': 'cosmos',
-              'TRXUSDT': 'tron', 'TRX': 'tron',
-              'LTCUSDT': 'litecoin', 'LTC': 'litecoin',
-              'BCHUSDT': 'bitcoin-cash', 'BCH': 'bitcoin-cash',
-              'XLMUSDT': 'stellar', 'XLM': 'stellar',
-              'VETUSDT': 'vechain', 'VET': 'vechain',
-              'FILUSDT': 'filecoin', 'FIL': 'filecoin',
-              'AAVEUSDT': 'aave', 'AAVE': 'aave',
-              'SHIBUSDT': 'shiba-inu', 'SHIB': 'shiba-inu',
-              'PEPEUSDT': 'pepe', 'PEPE': 'pepe',
-              'FLOKIUSDT': 'floki', 'FLOKI': 'floki',
-              'BONKUSDT': 'bonk', 'BONK': 'bonk',
-              'WIFUSDT': 'dogwifcoin', 'WIF': 'dogwifcoin'
-            };
-            
-            const coinGeckoId = extendedCoinGeckoMap[symbolUpper] || extendedCoinGeckoMap[baseSymbol];
-            
-            if (coinGeckoId) {
-              const geckoUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${coinGeckoId}&vs_currencies=usd`;
-              console.log(`  Fetching from CoinGecko: ${geckoUrl}`);
-              const geckoResponse = await fetch(geckoUrl, { signal: AbortSignal.timeout(5000) });
-              
-              if (geckoResponse.ok) {
-                const geckoData = await geckoResponse.json();
-                const price = geckoData[coinGeckoId]?.usd;
-                if (price > 0 && isFinite(price)) {
-                  console.log(`✅ Bitunix price found via CoinGecko fallback for ${symbol}: ${price}`);
-                  return price;
-                } else {
-                  console.warn(`  ⚠️ CoinGecko returned invalid price: ${price}`);
-                }
-              } else {
-                console.warn(`  ⚠️ CoinGecko HTTP error: ${geckoResponse.status}`);
-              }
-            } else {
-              console.warn(`  ⚠️ No CoinGecko mapping for ${symbol} (base: ${baseSymbol})`);
-            }
-          } catch (geckoErr: any) {
-            console.warn(`⚠️ CoinGecko fallback failed:`, geckoErr.message);
-          }
-        }
-        
         console.error(`❌ All price fetch attempts failed for ${symbol}. Price will be 0.`);
         console.error(`   Bitunix API appears to be unavailable or symbol format is incorrect.`);
-        console.error(`   For major coins, CoinGecko fallback was attempted.`);
+        console.error(`   CoinGecko fallback was attempted for all symbols.`);
         console.error(`   Please verify: 1) Symbol format (e.g., ETHUSDT not ETH), 2) Bitunix API status, 3) Exchange connection.`);
+        console.error(`   If this symbol is not in CoinGecko mapping, please add it to the mapping or use a supported symbol.`);
         return 0;
       }
       return 0;
