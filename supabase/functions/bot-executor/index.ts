@@ -5596,6 +5596,19 @@ class BotExecutor {
 
     try {
       if (effectiveMode === 'paper') {
+        // Validate user exists before executing paper trade (prevents foreign key violations)
+        const { data: userExists, error: userCheckError } = await this.supabaseClient
+          .from('users')
+          .select('id')
+          .eq('id', bot.user_id)
+          .maybeSingle();
+        
+        if (userCheckError || !userExists) {
+          const errorMsg = `User ${bot.user_id} does not exist in users table. Bot may belong to deleted user. Cannot execute paper trade.`;
+          console.error(`❌ [PAPER] ${errorMsg}`);
+          throw new Error(errorMsg);
+        }
+        
         console.log(`📝 Executing PAPER trade for ${bot.symbol}...`);
         const paperExecutor = new PaperTradingExecutor(this.supabaseClient, this.user);
         await paperExecutor.executePaperTrade(botSnapshot, tradeSignal);
