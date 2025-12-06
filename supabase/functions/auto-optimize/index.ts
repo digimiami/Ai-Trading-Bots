@@ -87,7 +87,7 @@ serve(async (req) => {
     // Fetch active bots with AI/ML enabled
     let query = supabaseClient
       .from('trading_bots')
-      .select('id, user_id, name, strategy, strategy_config, ai_ml_enabled')
+      .select('id, user_id, name, strategy, strategy_config, ai_ml_enabled, paper_trading, optimization_interval_hours')
       .eq('status', 'running')
       .eq('ai_ml_enabled', true)
 
@@ -120,12 +120,18 @@ serve(async (req) => {
     // Optimize each bot
     for (const bot of bots) {
       try {
+        // Determine if bot is paper trading
+        const isPaperTrading = bot.paper_trading === true;
+        const tradesTable = isPaperTrading ? 'paper_trading_trades' : 'trades';
+        
+        console.log(`📊 Optimizing ${isPaperTrading ? 'paper trading' : 'real trading'} bot: ${bot.name}`);
+
         // Fetch recent trades (last 30 days)
         const thirtyDaysAgo = new Date()
         thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
 
         const { data: trades, error: tradesError } = await supabaseClient
-          .from('trades')
+          .from(tradesTable)
           .select('*')
           .eq('bot_id', bot.id)
           .gte('created_at', thirtyDaysAgo.toISOString())
@@ -142,8 +148,20 @@ serve(async (req) => {
           continue
         }
 
+        // Normalize paper trading trades to match real trades structure
+        const normalizedTrades = isPaperTrading 
+          ? trades.map(t => ({
+              ...t,
+              status: t.status || (t.closed_at ? 'closed' : 'filled'),
+              pnl: t.pnl || 0,
+              pnl_percentage: t.pnl_percentage || 0
+            }))
+          : trades;
+
         // Calculate performance metrics
-        const closedTrades = trades.filter(t => t.status === 'closed' && t.pnl !== null)
+        const closedTrades = normalizedTrades.filter(t => 
+          (t.status === 'closed' || t.closed_at) && (t.pnl !== null && t.pnl !== undefined)
+        );
         const winningTrades = closedTrades.filter(t => (t.pnl || 0) > 0)
         const winRate = closedTrades.length > 0 
           ? (winningTrades.length / closedTrades.length) * 100 

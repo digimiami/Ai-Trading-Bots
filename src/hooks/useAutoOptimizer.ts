@@ -4,11 +4,13 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { autoOptimizer, type OptimizationResult } from '../services/autoOptimizer';
+import { supabase } from '../lib/supabase';
 
 export function useAutoOptimizer(botId: string | null) {
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [optimizationResult, setOptimizationResult] = useState<OptimizationResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [optimizationInterval, setOptimizationInterval] = useState<number>(6); // Default 6 hours
   
   // Persist auto-pilot mode in localStorage
   const storageKey = botId ? `auto-pilot-enabled-${botId}` : null;
@@ -19,6 +21,29 @@ export function useAutoOptimizer(botId: string | null) {
     }
     return false;
   });
+
+  // Fetch bot's optimization interval
+  useEffect(() => {
+    if (!botId) return;
+    
+    const fetchBotInterval = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('trading_bots')
+          .select('optimization_interval_hours')
+          .eq('id', botId)
+          .single();
+        
+        if (!error && data?.optimization_interval_hours) {
+          setOptimizationInterval(data.optimization_interval_hours);
+        }
+      } catch (err) {
+        console.error('Error fetching optimization interval:', err);
+      }
+    };
+    
+    fetchBotInterval();
+  }, [botId]);
 
   const setAutoOptimizeEnabled = (value: boolean) => {
     setAutoOptimizeEnabledState(value);
@@ -74,10 +99,13 @@ export function useAutoOptimizer(botId: string | null) {
   }, [botId, optimizeBot]);
 
   /**
-   * Setup automatic optimization (runs periodically)
+   * Setup automatic optimization (runs periodically based on bot's configured interval)
    */
   useEffect(() => {
     if (!autoOptimizeEnabled || !botId) return;
+
+    // Convert hours to milliseconds
+    const intervalMs = optimizationInterval * 60 * 60 * 1000;
 
     const interval = setInterval(async () => {
       try {
@@ -85,10 +113,10 @@ export function useAutoOptimizer(botId: string | null) {
       } catch (err) {
         console.error('Automatic optimization error:', err);
       }
-    }, 3600000); // Run every hour
+    }, intervalMs);
 
     return () => clearInterval(interval);
-  }, [autoOptimizeEnabled, botId]);
+  }, [autoOptimizeEnabled, botId, optimizationInterval]);
 
   return {
     isOptimizing,
@@ -97,7 +125,9 @@ export function useAutoOptimizer(botId: string | null) {
     optimizeBot,
     autoApplyOptimization,
     autoOptimizeEnabled,
-    setAutoOptimizeEnabled
+    setAutoOptimizeEnabled,
+    optimizationInterval,
+    setOptimizationInterval
   };
 }
 

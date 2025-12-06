@@ -84,12 +84,19 @@ class AutoOptimizer {
         return null;
       }
 
+      // Determine if bot is paper trading
+      const isPaperTrading = bot.paper_trading === true;
+      const tradesTable = isPaperTrading ? 'paper_trading_trades' : 'trades';
+      
+      console.log(`📊 Analyzing ${isPaperTrading ? 'paper trading' : 'real trading'} bot: ${bot.name}`);
+
       // Fetch recent trades (last 30 days)
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
+      // Map paper trading trades to match real trades structure
       const { data: trades, error: tradesError } = await supabase
-        .from('trades')
+        .from(tradesTable)
         .select('*')
         .eq('bot_id', botId)
         .gte('created_at', thirtyDaysAgo.toISOString())
@@ -105,10 +112,27 @@ class AutoOptimizer {
         return null;
       }
 
+      // Normalize paper trading trades to match real trades structure
+      const normalizedTrades = isPaperTrading 
+        ? trades.map(t => ({
+            ...t,
+            status: t.status || (t.closed_at ? 'closed' : 'filled'),
+            pnl: t.pnl || 0,
+            pnl_percentage: t.pnl_percentage || 0,
+            entry_price: t.entry_price,
+            exit_price: t.exit_price,
+            side: t.side,
+            symbol: t.symbol,
+            created_at: t.created_at || t.executed_at
+          }))
+        : trades;
+
       // Calculate performance metrics
-      const closedTrades = trades.filter(t => t.status === 'closed' && t.pnl !== null);
-      const winningTrades = closedTrades.filter(t => t.pnl! > 0);
-      const losingTrades = closedTrades.filter(t => t.pnl! <= 0);
+      const closedTrades = normalizedTrades.filter(t => 
+        (t.status === 'closed' || t.closed_at) && (t.pnl !== null && t.pnl !== undefined)
+      );
+      const winningTrades = closedTrades.filter(t => (t.pnl || 0) > 0);
+      const losingTrades = closedTrades.filter(t => (t.pnl || 0) <= 0);
 
       const totalPnL = closedTrades.reduce((sum, t) => sum + (t.pnl || 0), 0);
       const winRate = closedTrades.length > 0 
@@ -239,7 +263,7 @@ class AutoOptimizer {
 
       return {
         botId,
-        totalTrades: trades.length,
+        totalTrades: normalizedTrades.length,
         closedTrades: closedTrades.length,
         winRate,
         totalPnL,
@@ -250,15 +274,15 @@ class AutoOptimizer {
         profitFactor,
         bestPerformingPair: bestPair,
         worstPerformingPair: worstPair,
-        recentTrades: trades.slice(0, 50).map(t => ({
+        recentTrades: normalizedTrades.slice(0, 50).map(t => ({
           id: t.id,
           symbol: t.symbol,
           side: t.side,
           entryPrice: t.entry_price,
           exitPrice: t.exit_price,
           pnl: t.pnl,
-          status: t.status,
-          timestamp: t.created_at || t.timestamp
+          status: t.status || (t.closed_at ? 'closed' : 'filled'),
+          timestamp: t.created_at || t.executed_at || t.timestamp
         })),
         timeRange: '30 days',
         currentStrategy: strategy,
