@@ -80,14 +80,11 @@ export default function Settings() {
   const [apiSettings, setApiSettings] = useState({
     bybitApiKey: '',
     bybitApiSecret: '',
-    bybitTestnet: true,
     okxApiKey: '',
     okxApiSecret: '',
     okxPassphrase: '',
-    okxTestnet: true,
     bitunixApiKey: '',
     bitunixApiSecret: '',
-    bitunixTestnet: true,
     webhookUrl: '',
     webhookSecret: '',
     alertsEnabled: true
@@ -281,9 +278,6 @@ export default function Settings() {
       
       setApiSettings(prev => ({
         ...prev,
-        bybitTestnet: bybitKey?.isTestnet ?? prev.bybitTestnet,
-        okxTestnet: okxKey?.isTestnet ?? prev.okxTestnet,
-        bitunixTestnet: bitunixKey?.isTestnet ?? prev.bitunixTestnet,
         // Don't populate actual keys (they're encrypted, show placeholders instead)
         bybitApiKey: bybitKey ? '••••••••••••••••' : '',
         bybitApiSecret: bybitKey ? '••••••••••••••••' : '',
@@ -504,7 +498,6 @@ export default function Settings() {
           exchange: 'bybit',
           apiKey: apiSettings.bybitApiKey,
           apiSecret: apiSettings.bybitApiSecret,
-          isTestnet: apiSettings.bybitTestnet,
         });
       }
 
@@ -515,7 +508,6 @@ export default function Settings() {
           apiKey: apiSettings.okxApiKey,
           apiSecret: apiSettings.okxApiSecret,
           passphrase: apiSettings.okxPassphrase,
-          isTestnet: apiSettings.okxTestnet,
         });
       }
 
@@ -526,7 +518,6 @@ export default function Settings() {
           apiKey: apiSettings.bitunixApiKey,
           apiSecret: apiSettings.bitunixApiSecret,
           passphrase: '', // Bitunix doesn't use passphrase
-          isTestnet: apiSettings.bitunixTestnet
         });
       }
 
@@ -534,14 +525,11 @@ export default function Settings() {
       setApiSettings(prev => ({
         bybitApiKey: '',
         bybitApiSecret: '',
-        bybitTestnet: prev.bybitTestnet,
         okxApiKey: '',
         okxApiSecret: '',
         okxPassphrase: '',
-        okxTestnet: prev.okxTestnet,
         bitunixApiKey: '',
         bitunixApiSecret: '',
-        bitunixTestnet: prev.bitunixTestnet,
         webhookUrl: prev.webhookUrl,
         webhookSecret: prev.webhookSecret,
         alertsEnabled: prev.alertsEnabled
@@ -573,7 +561,6 @@ export default function Settings() {
           exchange: 'bybit',
           apiKey: apiSettings.bybitApiKey,
           apiSecret: apiSettings.bybitApiSecret,
-          isTestnet: apiSettings.bybitTestnet,
         });
         
         if (!testResult.success) {
@@ -585,7 +572,6 @@ export default function Settings() {
           exchange: 'bybit',
           apiKey: apiSettings.bybitApiKey,
           apiSecret: apiSettings.bybitApiSecret,
-          isTestnet: apiSettings.bybitTestnet,
         });
         // Clear only Bybit fields after saving
         setApiSettings(prev => ({
@@ -605,7 +591,6 @@ export default function Settings() {
           apiKey: apiSettings.okxApiKey,
           apiSecret: apiSettings.okxApiSecret,
           passphrase: apiSettings.okxPassphrase,
-          isTestnet: apiSettings.okxTestnet,
         });
         
         if (!testResult.success) {
@@ -618,7 +603,6 @@ export default function Settings() {
           apiKey: apiSettings.okxApiKey,
           apiSecret: apiSettings.okxApiSecret,
           passphrase: apiSettings.okxPassphrase,
-          isTestnet: apiSettings.okxTestnet,
         });
         // Clear only OKX fields after saving
         setApiSettings(prev => ({
@@ -636,11 +620,10 @@ export default function Settings() {
         // Test connection first before saving
         const testResult = await testConnection({
           exchange: 'bitunix',
-          apiKey: apiSettings.bitunixApiKey,
-          apiSecret: apiSettings.bitunixApiSecret,
-          passphrase: '', // Bitunix doesn't use passphrase
-          isTestnet: apiSettings.bitunixTestnet,
-        });
+            apiKey: apiSettings.bitunixApiKey,
+            apiSecret: apiSettings.bitunixApiSecret,
+            passphrase: '' // Bitunix doesn't use passphrase
+          });
         
         if (!testResult.success) {
           const proceed = confirm(`⚠️ Connection test failed: ${testResult.message}\n\nDo you still want to save these keys?`);
@@ -652,7 +635,6 @@ export default function Settings() {
           apiKey: apiSettings.bitunixApiKey,
           apiSecret: apiSettings.bitunixApiSecret,
           passphrase: '', // Bitunix doesn't use passphrase
-          isTestnet: apiSettings.bitunixTestnet
         });
         // Clear only Bitunix fields after saving
         setApiSettings(prev => ({
@@ -805,7 +787,6 @@ export default function Settings() {
           exchange: 'bybit',
           apiKey: apiSettings.bybitApiKey,
           apiSecret: apiSettings.bybitApiSecret,
-          isTestnet: apiSettings.bybitTestnet,
         };
       } else if (exchange === 'okx') {
         if (!apiSettings.okxApiKey || !apiSettings.okxApiSecret) {
@@ -817,7 +798,6 @@ export default function Settings() {
           apiKey: apiSettings.okxApiKey,
           apiSecret: apiSettings.okxApiSecret,
           passphrase: apiSettings.okxPassphrase,
-          isTestnet: apiSettings.okxTestnet,
         };
       } else if (exchange === 'bitunix') {
         if (!apiSettings.bitunixApiKey || !apiSettings.bitunixApiSecret) {
@@ -826,11 +806,10 @@ export default function Settings() {
         }
         formData = {
           exchange: 'bitunix',
-          apiKey: apiSettings.bitunixApiKey,
-          apiSecret: apiSettings.bitunixApiSecret,
-          passphrase: '', // Bitunix doesn't use passphrase
-          isTestnet: apiSettings.bitunixTestnet,
-        };
+            apiKey: apiSettings.bitunixApiKey,
+            apiSecret: apiSettings.bitunixApiSecret,
+            passphrase: '' // Bitunix doesn't use passphrase
+          };
       } else {
         alert('Invalid exchange');
         return;
@@ -1021,7 +1000,7 @@ export default function Settings() {
                 <div>
                       <p className="font-medium text-gray-900">{apiKey.exchange.toUpperCase()} API</p>
                   <p className="text-sm text-gray-500">
-                        {apiKey.isActive ? 'Active' : 'Inactive'} • {apiKey.isTestnet ? 'Testnet' : 'Live'}
+                        {apiKey.isActive ? 'Active' : 'Inactive'} • Live
                   </p>
                 </div>
               </div>
@@ -1763,21 +1742,6 @@ export default function Settings() {
                         placeholder="Enter Bybit API Secret"
                       />
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-700">Use Testnet</span>
-                      <button
-                        onClick={() => handleApiChange('bybitTestnet', !apiSettings.bybitTestnet)}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                          apiSettings.bybitTestnet ? 'bg-blue-600' : 'bg-gray-200'
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                            apiSettings.bybitTestnet ? 'translate-x-6' : 'translate-x-1'
-                          }`}
-                        />
-                      </button>
-                    </div>
                     <div className="flex space-x-2">
                       <button
                         onClick={() => handleTestConnection('bybit')}
@@ -1839,21 +1803,6 @@ export default function Settings() {
                         placeholder="Enter OKX Passphrase"
                       />
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-700">Use Testnet</span>
-                      <button
-                        onClick={() => handleApiChange('okxTestnet', !apiSettings.okxTestnet)}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                          apiSettings.okxTestnet ? 'bg-blue-600' : 'bg-gray-200'
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                            apiSettings.okxTestnet ? 'translate-x-6' : 'translate-x-1'
-                          }`}
-                        />
-                      </button>
-                    </div>
                     <div className="flex space-x-2">
                       <button
                         onClick={() => handleTestConnection('okx')}
@@ -1902,21 +1851,6 @@ export default function Settings() {
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                         placeholder="Enter Bitunix API Secret"
                       />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-700">Use Testnet</span>
-                      <button
-                        onClick={() => handleApiChange('bitunixTestnet', !apiSettings.bitunixTestnet)}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                          apiSettings.bitunixTestnet ? 'bg-blue-600' : 'bg-gray-200'
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                            apiSettings.bitunixTestnet ? 'translate-x-6' : 'translate-x-1'
-                          }`}
-                        />
-                      </button>
                     </div>
                     <div className="flex space-x-2">
                       <button

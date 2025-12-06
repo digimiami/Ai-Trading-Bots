@@ -5937,7 +5937,7 @@ class BotExecutor {
       // Real trading also uses mainnet keys (is_testnet = false)
       const { data: apiKeys, error: apiKeysError } = await serviceRoleClient
         .from('api_keys')
-        .select('api_key, api_secret, passphrase, is_testnet')
+        .select('api_key, api_secret, passphrase')
         .eq('user_id', botOwnerUserId)
         .eq('exchange', bot.exchange)
         .eq('is_active', true)
@@ -6014,7 +6014,7 @@ class BotExecutor {
       
       if (bot.exchange === 'bybit') {
         // Check balance for Bybit before placing order
-        const balanceCheck = await this.checkBybitBalance(apiKey, apiSecret, apiKeys.is_testnet, bot.symbol, tradeSignal.side, orderValue, tradingType, amount);
+        const balanceCheck = await this.checkBybitBalance(apiKey, apiSecret, bot.symbol, tradeSignal.side, orderValue, tradingType, amount);
         if (!balanceCheck.hasBalance) {
           const shortfall = balanceCheck.totalRequired - balanceCheck.availableBalance;
           
@@ -6032,13 +6032,13 @@ class BotExecutor {
             throw new Error(`Insufficient balance for ${bot.symbol} ${tradeSignal.side} order. Available: $${balanceCheck.availableBalance.toFixed(2)}, Required: $${balanceCheck.totalRequired.toFixed(2)} (order: $${orderValue.toFixed(2)} + 5% buffer). Shortfall: $${shortfall.toFixed(2)}. Please add funds to your Bybit ${tradingType === 'futures' ? 'UNIFIED/Futures' : 'Spot'} wallet.`);
           }
         }
-        return await this.placeBybitOrder(apiKey, apiSecret, apiKeys.is_testnet, bot.symbol, tradeSignal.side, amount, price, tradingType, bot, tradeSignal);
+        return await this.placeBybitOrder(apiKey, apiSecret, bot.symbol, tradeSignal.side, amount, price, tradingType, bot, tradeSignal);
       } else if (bot.exchange === 'okx') {
         // TODO: Add balance check for OKX
-        return await this.placeOKXOrder(apiKey, apiSecret, passphrase, apiKeys.is_testnet, bot.symbol, tradeSignal.side, amount, price);
+        return await this.placeOKXOrder(apiKey, apiSecret, passphrase, bot.symbol, tradeSignal.side, amount, price);
       } else if (bot.exchange === 'bitunix') {
         // Check balance for Bitunix before placing order
-        const balanceCheck = await this.checkBitunixBalance(apiKey, apiSecret, apiKeys.is_testnet, bot.symbol, tradeSignal.side, orderValue, tradingType, amount);
+        const balanceCheck = await this.checkBitunixBalance(apiKey, apiSecret, bot.symbol, tradeSignal.side, orderValue, tradingType, amount);
         if (!balanceCheck.hasBalance) {
           const shortfall = balanceCheck.totalRequired - balanceCheck.availableBalance;
           
@@ -6056,7 +6056,7 @@ class BotExecutor {
             throw new Error(`Insufficient balance for ${bot.symbol} ${tradeSignal.side} order. Available: $${balanceCheck.availableBalance.toFixed(2)}, Required: $${balanceCheck.totalRequired.toFixed(2)} (order: $${orderValue.toFixed(2)} + 5% buffer). Shortfall: $${shortfall.toFixed(2)}. Please add funds to your Bitunix ${tradingType === 'futures' ? 'Futures' : 'Spot'} wallet.`);
           }
         }
-        return await this.placeBitunixOrder(apiKey, apiSecret, apiKeys.is_testnet, bot.symbol, tradeSignal.side, amount, price, tradingType, bot);
+        return await this.placeBitunixOrder(apiKey, apiSecret, bot.symbol, tradeSignal.side, amount, price, tradingType, bot);
       }
       
       throw new Error(`Unsupported exchange: ${bot.exchange}`);
@@ -6066,14 +6066,12 @@ class BotExecutor {
     }
   }
   
-  private async placeBybitOrder(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string, side: string, amount: number, price: number, tradingType: string = 'spot', bot: any = null, tradeSignal: any = null): Promise<any> {
-    // Use Bybit API domain (mainnet or testnet)
-    const baseDomains = isTestnet 
-      ? ['https://api-testnet.bybit.com']
-      : ['https://api.bybit.com'];
+  private async placeBybitOrder(apiKey: string, apiSecret: string, symbol: string, side: string, amount: number, price: number, tradingType: string = 'spot', bot: any = null, tradeSignal: any = null): Promise<any> {
+    // Always use mainnet
+    const baseDomains = ['https://api.bybit.com'];
     
     console.log(`🔑 Bybit Order Details:`);
-    console.log(`   Domains: ${baseDomains.join(', ')} (isTestnet: ${isTestnet})`);
+    console.log(`   Domains: ${baseDomains.join(', ')} (Mainnet)`);
     console.log(`   API Key length: ${apiKey.length}, starts with: ${apiKey.substring(0, 8)}...`);
     console.log(`   API Secret length: ${apiSecret.length}, starts with: ${apiSecret.substring(0, 8)}...`);
     console.log(`   Symbol: ${symbol}, Side: ${side}, Amount: ${amount}, Price: ${price}`);
@@ -6437,7 +6435,7 @@ class BotExecutor {
               side: side,
               http_status: 403,
               domains_tried: baseDomains,
-              is_testnet: isTestnet,
+              is_testnet: false, // Always mainnet
               api_key_preview: apiKey.substring(0, 8) + '...',
               error: errorMessage,
               action_required: 'Check API key validity, IP whitelist settings, and rate limits',
@@ -6479,7 +6477,7 @@ class BotExecutor {
           console.error(`📋 RetMsg: ${data.retMsg}`);
           console.error(`🔑 API Key (first 8 chars): ${apiKey.substring(0, 8)}...`);
           console.error(`🌐 Domain used: ${baseDomains[baseDomains.length - 1]}`);
-          console.error(`🧪 Testnet: ${isTestnet}`);
+          console.error(`🌐 Environment: Mainnet`);
           
           // Log to bot activity logs with actionable message
           if (bot?.id) {
@@ -6492,7 +6490,7 @@ class BotExecutor {
                 retCode: 10003,
                 retMsg: data.retMsg,
                 exchange: 'bybit',
-                is_testnet: isTestnet,
+                is_testnet: false, // Always mainnet
                 api_key_preview: apiKey.substring(0, 8) + '...',
                 action_required: 'Update Bybit API keys in account settings. Ensure keys are valid and have trading permissions.',
                 troubleshooting: [
@@ -6593,10 +6591,9 @@ class BotExecutor {
         } else if (data.retCode === 10024) {
           // Regulatory restriction - account/region limitation
           console.error(`❌ Regulatory restriction for ${symbol}`);
-          console.error(`📋 Environment: ${isTestnet ? 'TESTNET' : 'MAINNET'}`);
+          console.error(`📋 Environment: MAINNET`);
           console.error(`📋 This is an account/region restriction from Bybit. Please contact Bybit support.`);
-          console.error(`💡 Suggestion: If using mainnet, try switching to testnet. If using testnet, verify your account has access.`);
-          throw new Error(`Bybit account restriction (Code: ${data.retCode}): ${data.retMsg} This trading pair or service is not available in your region (${isTestnet ? 'Testnet' : 'Mainnet'}). Please contact Bybit support (/en/help-center/s/webform) to enable trading for your region, or switch to testnet if using mainnet.`);
+          throw new Error(`Bybit account restriction (Code: ${data.retCode}): ${data.retMsg} This trading pair or service is not available in your region. Please contact Bybit support (/en/help-center/s/webform) to enable trading for your region.`);
         }
         
         throw new Error(`Bybit order error: ${data.retMsg} (Code: ${data.retCode})`);
@@ -6616,12 +6613,12 @@ class BotExecutor {
           await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
           
           // Get actual position entry price from Bybit
-          const entryPrice = await this.getBybitPositionEntryPrice(apiKey, apiSecret, isTestnet, symbol);
+          const entryPrice = await this.getBybitPositionEntryPrice(apiKey, apiSecret, symbol);
           if (entryPrice && entryPrice > 0) {
             // Get bot object from the outer scope - need to pass it through
             // For now, we'll get it from the bot parameter passed to placeBybitOrder
             // But we need to pass bot through the call chain
-            await this.setBybitSLTP(apiKey, apiSecret, isTestnet, symbol, capitalizedSide, entryPrice, bot, tradeSignal);
+            await this.setBybitSLTP(apiKey, apiSecret, symbol, capitalizedSide, entryPrice, bot, tradeSignal);
           } else {
             console.warn('⚠️ Could not fetch position entry price, skipping SL/TP (position may have been closed)');
           }
@@ -6661,16 +6658,14 @@ class BotExecutor {
    * Check if account has sufficient balance for order
    * Returns balance check result with details
    */
-  private async checkBybitBalance(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string, side: string, orderValue: number, tradingType: string, amount?: number): Promise<{
+  private async checkBybitBalance(apiKey: string, apiSecret: string, symbol: string, side: string, orderValue: number, tradingType: string, amount?: number): Promise<{
     hasBalance: boolean;
     availableBalance: number;
     totalRequired: number;
     orderValue: number;
   }> {
-    // Use Bybit API domain (mainnet or testnet)
-    const baseDomains = isTestnet
-      ? ['https://api-testnet.bybit.com']
-      : ['https://api.bybit.com'];
+    // Always use mainnet
+    const baseDomains = ['https://api.bybit.com'];
     
     try {
       const timestamp = Date.now().toString();
@@ -7052,16 +7047,15 @@ class BotExecutor {
    * Check if Bitunix account has sufficient balance for order
    * Returns balance check result with details
    */
-  private async checkBitunixBalance(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string, side: string, orderValue: number, tradingType: string, amount?: number): Promise<{
+  private async checkBitunixBalance(apiKey: string, apiSecret: string, symbol: string, side: string, orderValue: number, tradingType: string, amount?: number): Promise<{
     hasBalance: boolean;
     availableBalance: number;
     totalRequired: number;
     orderValue: number;
   }> {
     const marketType = tradingType === 'futures' || tradingType === 'linear' ? 'futures' : 'spot';
-    const baseUrls = isTestnet 
-      ? ['https://api-testnet.bitunix.com']
-      : marketType === 'futures'
+    // Always use mainnet
+    const baseUrls = marketType === 'futures'
       ? ['https://fapi.bitunix.com']
       : ['https://api.bitunix.com'];
     
@@ -7239,8 +7233,9 @@ class BotExecutor {
     }
   }
 
-  private async getBybitPositionEntryPrice(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string): Promise<number | null> {
-    const baseUrl = isTestnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com';
+  private async getBybitPositionEntryPrice(apiKey: string, apiSecret: string, symbol: string): Promise<number | null> {
+    // Always use mainnet
+    const baseUrl = 'https://api.bybit.com';
     
     try {
       const timestamp = Date.now().toString();
@@ -7310,8 +7305,9 @@ class BotExecutor {
     }
   }
   
-  private async setBybitSLTP(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string, side: string, entryPrice: number, bot: any, tradeSignal: any = null): Promise<void> {
-    const baseUrl = isTestnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com';
+  private async setBybitSLTP(apiKey: string, apiSecret: string, symbol: string, side: string, entryPrice: number, bot: any, tradeSignal: any = null): Promise<void> {
+    // Always use mainnet
+    const baseUrl = 'https://api.bybit.com';
     const recvWindow = '5000';
     
     try {
@@ -7992,7 +7988,6 @@ class BotExecutor {
               const closeOrderResult = await this.placeBybitOrder(
                 apiKey,
                 apiSecret,
-                isTestnet,
                 symbol,
                 closeSide,
                 closePositionSize,
@@ -8095,8 +8090,9 @@ class BotExecutor {
     }
   }
   
-  private async placeOKXOrder(apiKey: string, apiSecret: string, passphrase: string, isTestnet: boolean, symbol: string, side: string, amount: number, price: number): Promise<any> {
-    const baseUrl = isTestnet ? 'https://www.okx.com' : 'https://www.okx.com';
+  private async placeOKXOrder(apiKey: string, apiSecret: string, passphrase: string, symbol: string, side: string, amount: number, price: number): Promise<any> {
+    // Always use mainnet
+    const baseUrl = 'https://www.okx.com';
     
     try {
       const timestamp = new Date().toISOString();
@@ -8191,12 +8187,11 @@ class BotExecutor {
     return btoa(String.fromCharCode(...hashArray));
   }
   
-  private async placeBitunixOrder(apiKey: string, apiSecret: string, isTestnet: boolean, symbol: string, side: string, amount: number, price: number, tradingType: string = 'spot', bot: any = null): Promise<any> {
+  private async placeBitunixOrder(apiKey: string, apiSecret: string, symbol: string, side: string, amount: number, price: number, tradingType: string = 'spot', bot: any = null): Promise<any> {
     // Use correct base URL based on trading type (per official docs)
     const marketType = tradingType === 'futures' || tradingType === 'linear' ? 'futures' : 'spot';
-    const baseUrls = isTestnet 
-      ? ['https://api-testnet.bitunix.com']
-      : marketType === 'futures'
+    // Always use mainnet
+    const baseUrls = marketType === 'futures'
       ? ['https://fapi.bitunix.com'] // Official futures API domain
       : ['https://api.bitunix.com'];
     
@@ -8318,7 +8313,7 @@ class BotExecutor {
                 console.error(`📋 Error message: ${errorMsg}`);
                 console.error(`🔑 API Key (first 8 chars): ${apiKey.substring(0, 8)}...`);
                 console.error(`🌐 Base URL: ${baseUrl}`);
-                console.error(`🧪 Testnet: ${isTestnet}`);
+                console.error(`🌐 Environment: Mainnet`);
                 
                 // Log to bot activity logs with actionable message
                 if (bot?.id) {
@@ -8331,7 +8326,7 @@ class BotExecutor {
                       code: 10003,
                       msg: errorMsg,
                       exchange: 'bitunix',
-                      is_testnet: isTestnet,
+                      is_testnet: false, // Always mainnet
                       api_key_preview: apiKey.substring(0, 8) + '...',
                       action_required: 'Update Bitunix API keys in account settings. Ensure keys are valid and have trading permissions.',
                       troubleshooting: [
@@ -9563,9 +9558,8 @@ class BotExecutor {
             
             // Fetch available balance directly from Bybit API
             try {
-              const baseDomains = apiKeys.is_testnet
-                ? ['https://api-testnet.bybit.com']
-                : ['https://api.bybit.com'];
+              // Always use mainnet
+              const baseDomains = ['https://api.bybit.com'];
               
               const timestamp = Date.now().toString();
               const recvWindow = '5000';
@@ -11031,16 +11025,13 @@ serve(async (req) => {
           // Decrypt API keys
           const apiKey = atob(apiKeys.api_key);
           const apiSecret = atob(apiKeys.api_secret);
-          const isTestnet = apiKeys.is_testnet;
-
           console.log('🧪 Test order - API Key:', apiKey.substring(0, 10) + '...');
-          console.log('🧪 Test order - Testnet:', isTestnet);
+          console.log('🌐 Environment: Mainnet');
 
           // Create a small test order
           const testOrder = await botExecutor.placeBybitOrder(
             apiKey, 
             apiSecret, 
-            isTestnet, 
             'BTCUSDT', 
             'buy', 
             0.001, // Very small amount
@@ -11053,8 +11044,7 @@ serve(async (req) => {
           return new Response(JSON.stringify({ 
             success: true,
             message: 'Test order placed successfully',
-            order: testOrder,
-            testnet: isTestnet
+            order: testOrder
           }), {
             status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }

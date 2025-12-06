@@ -204,7 +204,6 @@ export interface MarketData {
 export interface ExchangeConfig {
   apiKey: string;
   apiSecret: string;
-  testnet: boolean;
   maxPositions: number;
   dailyLossLimit: number;
   slippageThreshold: number;

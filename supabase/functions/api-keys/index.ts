@@ -28,8 +28,9 @@ function decrypt(encryptedText: string): string {
 }
 
 // Exchange API functions
-async function fetchBybitBalance(apiKey: string, apiSecret: string, isTestnet: boolean) {
-  const baseUrl = isTestnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com'
+async function fetchBybitBalance(apiKey: string, apiSecret: string) {
+  // Always use mainnet
+  const baseUrl = 'https://api.bybit.com'
   
   try {
     const timestamp = Date.now().toString()
@@ -63,7 +64,7 @@ async function fetchBybitBalance(apiKey: string, apiSecret: string, isTestnet: b
     const signatureString = timestamp + apiKey + recvWindow + sortedParams
     
     console.log('=== BYBIT SIGNATURE DEBUG (HEADER AUTH) ===')
-    console.log('0. Environment:', isTestnet ? 'TESTNET' : 'MAINNET')
+    console.log('0. Environment: MAINNET')
     console.log('0. Base URL:', baseUrl)
     console.log('0. Endpoint: /v5/account/wallet-balance')
     console.log('0. IMPORTANT: If TESTNET, account might be empty - need testnet funds!')
@@ -243,7 +244,7 @@ async function fetchBybitBalance(apiKey: string, apiSecret: string, isTestnet: b
   }
 }
 
-async function fetchOKXBalance(apiKey: string, apiSecret: string, passphrase: string, isTestnet: boolean) {
+async function fetchOKXBalance(apiKey: string, apiSecret: string, passphrase: string) {
   const baseUrl = 'https://www.okx.com' // OKX uses same URL for both testnet and live
   
   try {
@@ -254,7 +255,7 @@ async function fetchOKXBalance(apiKey: string, apiSecret: string, passphrase: st
     const body = ''
     
     console.log('=== OKX SIGNATURE DEBUG ===')
-    console.log('0. Environment:', isTestnet ? 'TESTNET' : 'MAINNET')
+    console.log('0. Environment: MAINNET')
     console.log('0. Base URL:', baseUrl)
     console.log('1. Timestamp:', timestamp)
     console.log('2. Method:', method)
@@ -280,7 +281,8 @@ async function fetchOKXBalance(apiKey: string, apiSecret: string, passphrase: st
     }
     
     // Add simulated trading header for testnet
-    if (isTestnet) {
+    // Always use mainnet - testnet removed
+    if (false) {
       headers['x-simulated-trading'] = '1'
     }
     
@@ -373,7 +375,7 @@ function generateNonce(): string {
   return nonce
 }
 
-async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet: boolean) {
+async function fetchBitunixBalance(apiKey: string, apiSecret: string) {
   // According to official documentation: https://openapidoc.bitunix.com
   // API domain: https://fapi.bitunix.com (for futures API)
   // But bot-executor uses api.bitunix.com for orders, so try both
@@ -384,7 +386,7 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string, isTestnet:
     const nonce = generateNonce() // 32-bit random string
     
     console.log('=== BITUNIX BALANCE DEBUG (Official API) ===')
-    console.log('0. Environment:', isTestnet ? 'TESTNET' : 'MAINNET')
+    console.log('0. Environment: MAINNET')
     console.log('0. Base URLs to try:', baseUrls.join(', '))
     console.log('1. Timestamp (ms):', timestamp)
     console.log('2. Nonce (32-bit):', nonce)
@@ -826,7 +828,7 @@ serve(async (req) => {
         if (action === 'list') {
           const { data: apiKeys, error } = await supabaseClient
             .from('api_keys')
-            .select('id, exchange, is_testnet, is_active, created_at')
+            .select('id, exchange, is_active, created_at')
             .eq('user_id', user.id)
             .order('created_at', { ascending: false })
 
@@ -844,7 +846,7 @@ serve(async (req) => {
           
           const { data: apiKeys, error } = await supabaseClient
             .from('api_keys')
-            .select('exchange, api_key, api_secret, passphrase, is_testnet')
+            .select('exchange, api_key, api_secret, passphrase')
             .eq('user_id', user.id)
             .eq('is_active', true)
 
@@ -865,11 +867,11 @@ serve(async (req) => {
 
               // Fetch balance from exchange API
               if (apiKey.exchange === 'bybit') {
-                exchangeBalance = await fetchBybitBalance(decryptedApiKey, decryptedApiSecret, apiKey.is_testnet)
+                exchangeBalance = await fetchBybitBalance(decryptedApiKey, decryptedApiSecret)
               } else if (apiKey.exchange === 'okx') {
-                exchangeBalance = await fetchOKXBalance(decryptedApiKey, decryptedApiSecret, decryptedPassphrase || '', apiKey.is_testnet)
+                exchangeBalance = await fetchOKXBalance(decryptedApiKey, decryptedApiSecret, decryptedPassphrase || '')
               } else if (apiKey.exchange === 'bitunix') {
-                exchangeBalance = await fetchBitunixBalance(decryptedApiKey, decryptedApiSecret, apiKey.is_testnet)
+                exchangeBalance = await fetchBitunixBalance(decryptedApiKey, decryptedApiSecret)
               }
 
               if (exchangeBalance) {
@@ -900,7 +902,7 @@ serve(async (req) => {
       case 'POST':
         if (action === 'save') {
           const body = await req.json()
-          const { exchange, apiKey, apiSecret, passphrase, isTestnet } = body
+          const { exchange, apiKey, apiSecret, passphrase } = body
 
           // Ensure user exists in users table
           const { data: existingUser, error: userCheckError } = await supabaseClient
@@ -945,10 +947,10 @@ serve(async (req) => {
               api_key: encryptedApiKey,
               api_secret: encryptedApiSecret,
               passphrase: encryptedPassphrase,
-              is_testnet: isTestnet,
+              is_testnet: false, // Always mainnet
               is_active: true
             })
-            .select('id, exchange, is_testnet, is_active, created_at')
+            .select('id, exchange, is_active, created_at')
             .single()
 
           if (error) throw error
@@ -960,7 +962,7 @@ serve(async (req) => {
 
         if (action === 'test') {
           const body = await req.json()
-          const { exchange, apiKey, apiSecret, passphrase, isTestnet } = body
+          const { exchange, apiKey, apiSecret, passphrase } = body
 
           if (!apiKey || !apiSecret) {
             return new Response(JSON.stringify({
@@ -976,34 +978,31 @@ serve(async (req) => {
             let testResult: any = { success: false, message: 'Unknown error' }
 
             if (exchange === 'bybit') {
-              const balance = await fetchBybitBalance(apiKey, apiSecret, isTestnet)
+              const balance = await fetchBybitBalance(apiKey, apiSecret)
               testResult = {
                 success: balance.status === 'connected',
                 message: balance.status === 'connected' 
                   ? 'Connection successful' 
                   : balance.error || 'Connection failed',
-                exchange,
-                testnet: isTestnet
+                exchange
               }
             } else if (exchange === 'okx') {
-              const balance = await fetchOKXBalance(apiKey, apiSecret, passphrase || '', isTestnet)
+              const balance = await fetchOKXBalance(apiKey, apiSecret, passphrase || '')
               testResult = {
                 success: balance.status === 'connected',
                 message: balance.status === 'connected' 
                   ? 'Connection successful' 
                   : balance.error || 'Connection failed',
-                exchange,
-                testnet: isTestnet
+                exchange
               }
             } else if (exchange === 'bitunix') {
-              const balance = await fetchBitunixBalance(apiKey, apiSecret, isTestnet)
+              const balance = await fetchBitunixBalance(apiKey, apiSecret)
               testResult = {
                 success: balance.status === 'connected',
                 message: balance.status === 'connected' 
                   ? 'Connection successful' 
                   : balance.error || 'Connection failed',
-                exchange,
-                testnet: isTestnet
+                exchange
               }
             } else {
               testResult = {
@@ -1021,7 +1020,6 @@ serve(async (req) => {
               success: false,
               message: error.message || 'Failed to test connection',
               exchange,
-              testnet: isTestnet
             }), {
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             })
@@ -1039,7 +1037,7 @@ serve(async (req) => {
             .update({ is_active: isActive, updated_at: new Date().toISOString() })
             .eq('id', id)
             .eq('user_id', user.id)
-            .select('id, exchange, is_testnet, is_active, created_at')
+            .select('id, exchange, is_active, created_at')
             .single()
 
           if (error) throw error

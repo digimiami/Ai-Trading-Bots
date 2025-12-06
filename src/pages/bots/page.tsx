@@ -742,7 +742,7 @@ export default function BotsPage() {
 
     if (!nextModeIsPaper) {
       const prerequisites = [
-        '✅ Real exchange API keys are connected and ACTIVE (non-testnet)',
+        '✅ Real exchange API keys are connected and ACTIVE',
         '✅ Wallets have sufficient available balance for this bot\'s trade size',
         '✅ Stop-loss, take-profit, and risk limits are reviewed for live execution',
         '✅ You understand trades will execute on your real exchange account'

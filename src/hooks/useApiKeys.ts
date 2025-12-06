@@ -4,7 +4,6 @@ import { API_ENDPOINTS, apiCall } from '../lib/supabase'
 export interface ApiKey {
   id: string
   exchange: string
-  isTestnet: boolean
   isActive: boolean
   createdAt: string
 }
@@ -14,7 +13,6 @@ export interface ApiKeyFormData {
   apiKey: string
   apiSecret: string
   passphrase?: string
-  isTestnet: boolean
 }
 
 export function useApiKeys() {
