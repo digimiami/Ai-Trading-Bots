@@ -114,6 +114,18 @@ echo "📋 Recent PM2 logs (last 10 lines):"
 pm2 logs --lines 10 --nostream
 echo ""
 
+# Update nginx configuration if script exists
+if [ -f "scripts/setup-nginx.sh" ]; then
+    echo "🔧 Updating nginx configuration..."
+    if sudo bash scripts/setup-nginx.sh; then
+        echo "✅ Nginx configuration updated"
+    else
+        echo "⚠️  Nginx configuration update failed, but continuing..."
+        echo "   You may need to run: sudo bash scripts/setup-nginx.sh"
+    fi
+    echo ""
+fi
+
 echo "✅ Deployment complete!"
 echo ""
 echo "🔍 Check logs with:"
