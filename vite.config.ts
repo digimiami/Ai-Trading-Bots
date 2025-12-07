@@ -27,6 +27,12 @@ export default defineConfig({
     allowedHosts: [
       'pablobots.net',
       'www.pablobots.net',
+      'pablobots.com',
+      'www.pablobots.com',
+      'pablobots.live',
+      'www.pablobots.live',
+      'pablobots.online',
+      'www.pablobots.online',
       'localhost',
       '127.0.0.1'
     ],
@@ -54,6 +60,12 @@ export default defineConfig({
     allowedHosts: [
       'pablobots.net',
       'www.pablobots.net',
+      'pablobots.com',
+      'www.pablobots.com',
+      'pablobots.live',
+      'www.pablobots.live',
+      'pablobots.online',
+      'www.pablobots.online',
       'localhost',
       '127.0.0.1'
     ],
