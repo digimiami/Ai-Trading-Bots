@@ -43,7 +43,7 @@ SELECT
   CASE 
     WHEN tb.next_execution_at IS NULL THEN 'No next execution scheduled'
     WHEN tb.next_execution_at < NOW() THEN 'Overdue for execution'
-    WHEN EXTRACT(EPOCH FROM (tb.next_execution_at - NOW())) / 60) < 1 THEN 'Executing too frequently'
+    WHEN (EXTRACT(EPOCH FROM (tb.next_execution_at - NOW())) / 60) < 1 THEN 'Executing too frequently'
     ELSE 'Normal schedule'
   END as execution_status
 FROM public.trading_bots tb
