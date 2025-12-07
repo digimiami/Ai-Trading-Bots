@@ -14,9 +14,9 @@ CREATE TABLE IF NOT EXISTS subscription_plans (
   description TEXT,
   price_monthly_usd DECIMAL(10,2) NOT NULL DEFAULT 0,
   price_crypto JSONB, -- { "BTC": "0.001", "USDT": "50", "ETH": "0.02" }
-  max_bots INTEGER NOT NULL DEFAULT 1,
+  max_bots INTEGER, -- NULL = unlimited
   max_trades_per_day INTEGER, -- NULL = unlimited
-  max_exchanges INTEGER DEFAULT 1, -- How many exchange API keys allowed
+  max_exchanges INTEGER DEFAULT 1, -- How many exchange API keys allowed, NULL = unlimited
   features JSONB DEFAULT '{}', -- { "ai_optimization": true, "paper_trading": true, "real_trading": false }
   is_active BOOLEAN DEFAULT true,
   sort_order INTEGER DEFAULT 0,

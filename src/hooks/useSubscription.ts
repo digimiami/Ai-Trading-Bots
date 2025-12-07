@@ -149,7 +149,16 @@ export function useSubscription() {
       } else {
         // Get subscription to show limit
         await fetchSubscription()
-        const maxBots = subscription?.max_bots || 0
+        const maxBots = subscription?.max_bots
+        
+        // If max_bots is null, it means unlimited - this shouldn't happen if function returned false
+        // But handle it anyway
+        if (maxBots === null || maxBots === undefined) {
+          return { 
+            allowed: true,
+            currentCount: 0
+          }
+        }
         
         const { count } = await supabase
           .from('trading_bots')
