@@ -1,0 +1,244 @@
+/**
+ * Hook for managing user subscriptions
+ * Handles subscription status, plan limits, and payment integration
+ */
+
+import { useState, useEffect } from 'react'
+import { supabase } from '../lib/supabase'
+
+export interface SubscriptionPlan {
+  id: string
+  name: string
+  display_name: string
+  description: string | null
+  price_monthly_usd: number
+  price_crypto: Record<string, string> | null
+  max_bots: number | null
+  max_trades_per_day: number | null
+  max_exchanges: number | null
+  features: Record<string, any>
+}
+
+export interface UserSubscription {
+  subscription_id: string
+  plan_id: string
+  plan_name: string
+  plan_display_name: string
+  status: string
+  expires_at: string | null
+  next_billing_date: string | null
+  max_bots: number
+  max_trades_per_day: number | null
+  max_exchanges: number
+  features: Record<string, any>
+}
+
+export interface Invoice {
+  id: string
+  checkoutLink: string
+  amount: string
+  currency: string
+  status: string
+}
+
+export function useSubscription() {
+  const [subscription, setSubscription] = useState<UserSubscription | null>(null)
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // Fetch subscription plans
+  const fetchPlans = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('subscription_plans')
+        .select('*')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true })
+
+      if (error) throw error
+      setPlans(data || [])
+    } catch (err) {
+      console.error('Error fetching plans:', err)
+      setError(err instanceof Error ? err.message : 'Failed to fetch plans')
+    }
+  }
+
+  // Fetch user's active subscription
+  const fetchSubscription = async () => {
+    try {
+      setLoading(true)
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (!user) {
+        setSubscription(null)
+        setLoading(false)
+        return
+      }
+
+      // Call the database function
+      const { data, error } = await supabase
+        .rpc('get_user_active_subscription', { p_user_id: user.id })
+
+      if (error) throw error
+
+      if (data && data.length > 0) {
+        setSubscription(data[0])
+      } else {
+        // No active subscription, check for free plan
+        const { data: freePlan } = await supabase
+          .from('subscription_plans')
+          .select('*')
+          .eq('name', 'Free')
+          .eq('is_active', true)
+          .single()
+
+        if (freePlan) {
+          // Return free plan as default
+          setSubscription({
+            subscription_id: '',
+            plan_id: freePlan.id,
+            plan_name: 'Free',
+            plan_display_name: freePlan.display_name,
+            status: 'active',
+            expires_at: null,
+            next_billing_date: null,
+            max_bots: freePlan.max_bots,
+            max_trades_per_day: freePlan.max_trades_per_day,
+            max_exchanges: freePlan.max_exchanges,
+            features: freePlan.features
+          })
+        } else {
+          setSubscription(null)
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching subscription:', err)
+      setError(err instanceof Error ? err.message : 'Failed to fetch subscription')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Check if user can create more bots
+  const canCreateBot = async (): Promise<{ allowed: boolean; reason?: string; currentCount?: number }> => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        return { allowed: false, reason: 'Not authenticated' }
+      }
+
+      // Call database function
+      const { data, error } = await supabase
+        .rpc('can_user_create_bot', { p_user_id: user.id })
+
+      if (error) throw error
+
+      if (data === true) {
+        // Get current bot count for display
+        const { count } = await supabase
+          .from('trading_bots')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .neq('status', 'deleted')
+
+        return { 
+          allowed: true, 
+          currentCount: count || 0 
+        }
+      } else {
+        // Get subscription to show limit
+        await fetchSubscription()
+        const maxBots = subscription?.max_bots || 0
+        
+        const { count } = await supabase
+          .from('trading_bots')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .neq('status', 'deleted')
+
+        return { 
+          allowed: false, 
+          reason: `You've reached your bot limit (${count || 0}/${maxBots}). Upgrade your plan to create more bots.`,
+          currentCount: count || 0
+        }
+      }
+    } catch (err) {
+      console.error('Error checking bot creation limit:', err)
+      return { 
+        allowed: false, 
+        reason: 'Error checking subscription limits' 
+      }
+    }
+  }
+
+  // Create invoice for subscription
+  const createInvoice = async (planId: string, currency: string = 'USD'): Promise<{ invoice: Invoice; subscription: any } | null> => {
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/btcpay-integration?action=create-invoice`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+          },
+          body: JSON.stringify({ planId, currency })
+        }
+      )
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Failed to create invoice')
+      }
+
+      const data = await response.json()
+      return data
+    } catch (err) {
+      console.error('Error creating invoice:', err)
+      setError(err instanceof Error ? err.message : 'Failed to create invoice')
+      return null
+    }
+  }
+
+  // Get invoice status
+  const getInvoiceStatus = async (invoiceId: string) => {
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/btcpay-integration?action=invoice-status&invoiceId=${invoiceId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+          }
+        }
+      )
+
+      if (!response.ok) throw new Error('Failed to get invoice status')
+      return await response.json()
+    } catch (err) {
+      console.error('Error getting invoice status:', err)
+      return null
+    }
+  }
+
+  // Refresh subscription data
+  const refresh = async () => {
+    await Promise.all([fetchPlans(), fetchSubscription()])
+  }
+
+  useEffect(() => {
+    refresh()
+  }, [])
+
+  return {
+    subscription,
+    plans,
+    loading,
+    error,
+    canCreateBot,
+    createInvoice,
+    getInvoiceStatus,
+    refresh
+  }
+}
+
