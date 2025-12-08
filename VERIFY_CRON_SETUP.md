@@ -1,216 +1,140 @@
-# 🔍 Verify Cron Setup - Quick Guide
+# ✅ Verify Subscription Renewal Cron Setup
 
-## **Current Status Check**
+## Step 1: Verify Cron Job is Installed
 
-Based on your output:
-
-### ✅ **Working:**
-- Cron job is installed: `*/5 * * * * /var/www/Ai-Trading-Bots/scripts/call-bot-scheduler.sh`
-- Script exists and is executable
-- Logs show one successful call: `[2025-10-30 22:32:20] ✅ Bot scheduler called successfully (HTTP 200, 3.302825s)`
-
-### ⚠️ **Issues Found:**
-- Old 401 errors in logs (from before ANON_KEY was added)
-- Manual script run shows no output (script is working but not showing output)
-
----
-
-## **Quick Verification Steps**
-
-### **1. Check .env.cron File**
+On your VPS (`srv853835`), run:
 
 ```bash
-cat /var/www/Ai-Trading-Bots/.env.cron
+crontab -l | grep subscription-renewal
 ```
 
-**Should contain:**
-```
-SUPABASE_URL=https://dkawxgwdqiirgmmjbvhc.supabase.co
-SUPABASE_ANON_KEY=your-anon-key-here
-CRON_SECRET=your-cron-secret-here
-```
-
-**If missing or incorrect:**
-```bash
-cd /var/www/Ai-Trading-Bots
-nano .env.cron
-# Add the three variables above
-```
-
----
-
-### **2. Test Script Manually (Improved Output)**
-
-After pulling latest code, test again:
+You should see your cron job. If not, add it:
 
 ```bash
-cd /var/www/Ai-Trading-Bots
-git pull  # Get latest fixes
-bash scripts/call-bot-scheduler.sh
+crontab -e
 ```
 
-**Should now show:**
+Then add this line:
+
 ```
-✅ Bot scheduler called successfully
-📊 Response: {"success":true,"botsExecuted":2}
-⏱️  Time: 3.30s
-📝 Full logs: /var/log/bot-scheduler/bot-scheduler.log
+0 2 * * * curl -X POST https://dkawxgwdqiirgmmjbvhc.supabase.co/functions/v1/subscription-renewal \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRrYXd4Z3dkcWlpcmdtbWpidmhjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MDgxOTI2NiwiZXhwIjoyMDc2Mzk1MjY2fQ.bVkrjuQJ4HJ8hzeBMe1AqC8e_Dv7m6gKq5I05ONM07U" \
+  -H "x-cron-secret: 22ad6fb976c39c8355a736a1837e5d2775ebd48ec9f0124a9bd7d41b958385fc" \
+  -H "Content-Type: application/json" \
+  -d '{}' \
+  >> /var/log/subscription-renewal.log 2>&1
 ```
 
----
+## Step 2: Add SUBSCRIPTION_RENEWAL_SECRET to Supabase
 
-### **3. Check Recent Cron Execution**
+**CRITICAL**: You must add this secret to Supabase for the endpoint to work!
+
+1. Go to **Supabase Dashboard** → **Project Settings** → **Edge Functions** → **Secrets**
+2. Click **"Add new secret"**
+3. Add:
+   - **Name**: `SUBSCRIPTION_RENEWAL_SECRET`
+   - **Value**: `22ad6fb976c39c8355a736a1837e5d2775ebd48ec9f0124a9bd7d41b958385fc`
+4. Click **"Save"**
+
+## Step 3: Test the Endpoint
+
+On your VPS, run the test script:
 
 ```bash
-# Check last 20 log entries
-tail -20 /var/log/bot-scheduler/bot-scheduler.log
-
-# Watch live (wait 5 minutes)
-tail -f /var/log/bot-scheduler/bot-scheduler.log
+# Upload test_subscription_renewal.sh to your VPS, then:
+chmod +x test_subscription_renewal.sh
+./test_subscription_renewal.sh
 ```
 
-**Should see:**
-- ✅ Success messages every ~5 minutes
-- 📊 `botsExecuted` count
-- ⏱️ Execution time
+Or test manually:
 
----
+```bash
+curl -X POST https://dkawxgwdqiirgmmjbvhc.supabase.co/functions/v1/subscription-renewal \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRrYXd4Z3dkcWlpcmdtbWpidmhjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MDgxOTI2NiwiZXhwIjoyMDc2Mzk1MjY2fQ.bVkrjuQJ4HJ8hzeBMe1AqC8e_Dv7m6gKq5I05ONM07U" \
+  -H "x-cron-secret: 22ad6fb976c39c8355a736a1837e5d2775ebd48ec9f0124a9bd7d41b958385fc" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
 
-### **4. Verify Cron is Running**
+**Expected Response** (if working):
+```json
+{
+  "message": "Subscription renewal check complete",
+  "checked": 0,
+  "renewed": 0,
+  "errors": []
+}
+```
 
+**If you get 401 Unauthorized**:
+- The `SUBSCRIPTION_RENEWAL_SECRET` is not set in Supabase
+- Or the secret value doesn't match
+
+**If you get 500 Error**:
+- Check Edge Function logs in Supabase Dashboard
+- Verify BTCPay Server configuration is set
+
+## Step 4: Check Logs
+
+Monitor the cron job logs:
+
+```bash
+# View recent logs
+tail -f /var/log/subscription-renewal.log
+
+# Or check last 50 lines
+tail -n 50 /var/log/subscription-renewal.log
+```
+
+## Step 5: Verify Cron Runs Daily
+
+To test immediately (without waiting for 2 AM), you can:
+
+1. **Run manually**:
+   ```bash
+   curl -X POST https://dkawxgwdqiirgmmjbvhc.supabase.co/functions/v1/subscription-renewal \
+     -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRrYXd4Z3dkcWlpcmdtbWpidmhjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MDgxOTI2NiwiZXhwIjoyMDc2Mzk1MjY2fQ.bVkrjuQJ4HJ8hzeBMe1AqC8e_Dv7m6gKq5I05ONM07U" \
+     -H "x-cron-secret: 22ad6fb976c39c8355a736a1837e5d2775ebd48ec9f0124a9bd7d41b958385fc" \
+     -H "Content-Type: application/json" \
+     -d '{}'
+   ```
+
+2. **Or temporarily change cron to run every minute** (for testing):
+   ```bash
+   crontab -e
+   # Change: 0 2 * * * → * * * * *
+   # Remember to change it back after testing!
+   ```
+
+## Summary Checklist
+
+- [ ] Cron job added to crontab (`crontab -l` shows it)
+- [ ] `SUBSCRIPTION_RENEWAL_SECRET` added to Supabase Edge Function Secrets
+- [ ] Test endpoint returns 200 (not 401 or 500)
+- [ ] Log file `/var/log/subscription-renewal.log` exists and is writable
+- [ ] BTCPay Server configuration is set in Supabase Secrets
+
+## Troubleshooting
+
+### Cron job not running?
 ```bash
 # Check cron service
 systemctl status cron
 
-# Or on some systems:
-service cron status
-
-# Should show: "active (running)"
-```
-
----
-
-### **5. Check Supabase Logs**
-
-1. Go to **Supabase Dashboard**
-2. **Edge Functions** → **`bot-executor`** → **Logs**
-3. Should see logs every ~5 minutes
-4. Check timestamps - should continue even when browser is closed
-
----
-
-## **Troubleshooting**
-
-### **Issue: No Output When Running Manually**
-
-**Cause**: Script logs to file, not stdout (old behavior)
-
-**Fix**: Pull latest code - script now shows output when run manually:
-```bash
-cd /var/www/Ai-Trading-Bots
-git pull
-bash scripts/call-bot-scheduler.sh
-```
-
----
-
-### **Issue: Still Seeing 401 Errors**
-
-**Cause**: `.env.cron` missing or incorrect `SUPABASE_ANON_KEY`
-
-**Fix**:
-```bash
-cd /var/www/Ai-Trading-Bots
-nano .env.cron
-# Make sure SUPABASE_ANON_KEY is set correctly
-```
-
----
-
-### **Issue: Cron Not Executing**
-
-**Check cron service:**
-```bash
-systemctl status cron
-service cron status
-```
-
-**Restart cron if needed:**
-```bash
-sudo systemctl restart cron
-# Or
-sudo service cron restart
-```
-
-**Check cron permissions:**
-```bash
-# Make sure script is executable
-chmod +x /var/www/Ai-Trading-Bots/scripts/call-bot-scheduler.sh
-```
-
----
-
-### **Issue: Cron Executing But Failing**
-
-**Check cron email/logs:**
-```bash
-# Check system mail (cron often sends email on errors)
-mail
-
-# Or check syslog
+# Check cron logs
 grep CRON /var/log/syslog | tail -20
 ```
 
----
+### 401 Unauthorized?
+- Verify `SUBSCRIPTION_RENEWAL_SECRET` is set in Supabase
+- Check the secret value matches exactly (no extra spaces)
 
-## **Expected Behavior**
-
-### **Working Setup:**
-- ✅ Cron runs every 5 minutes
-- ✅ Script calls `bot-scheduler` Edge Function
-- ✅ Edge Function executes all running bots
-- ✅ Logs show successful executions
-- ✅ Bots trade even when browser is closed
-
-### **Check Intervals:**
-- **Every 5 minutes**: Cron executes script
-- **Every 5 minutes**: Script calls bot-scheduler
-- **Every 5 minutes**: Bot-executor runs all running bots
-
----
-
-## **Quick Test Commands**
-
-```bash
-# 1. Test script manually
-bash /var/www/Ai-Trading-Bots/scripts/call-bot-scheduler.sh
-
-# 2. Check recent logs
-tail -20 /var/log/bot-scheduler/bot-scheduler.log
-
-# 3. Check cron is scheduled
-crontab -l
-
-# 4. Watch for next execution (wait up to 5 minutes)
-tail -f /var/log/bot-scheduler/bot-scheduler.log
-```
-
----
-
-## **Summary**
-
-Based on your output:
-- ✅ **Cron is installed correctly**
-- ✅ **Script exists and is executable**
-- ✅ **One successful call logged** (22:32:20)
-- ⚠️ **Old 401 errors** (from before ANON_KEY was configured)
-- ⚠️ **Manual run needs better output** (fixed in latest code)
-
-**Next Steps:**
-1. Pull latest code: `git pull`
-2. Verify `.env.cron` has all three variables
-3. Test manually: `bash scripts/call-bot-scheduler.sh`
-4. Wait 5 minutes and check logs: `tail -f /var/log/bot-scheduler/bot-scheduler.log`
-
-**Your setup looks mostly correct! Just need to verify `.env.cron` and test with improved output.** ✅
-
+### 500 Server Error?
+- Check Supabase Edge Function logs
+- Verify BTCPay Server is running and accessible
+- Verify all required secrets are set:
+  - `BTCPAY_SERVER_URL`
+  - `BTCPAY_STORE_ID`
+  - `BTCPAY_API_KEY`
+  - `SUPABASE_URL`
+  - `SUPABASE_SERVICE_ROLE_KEY`
