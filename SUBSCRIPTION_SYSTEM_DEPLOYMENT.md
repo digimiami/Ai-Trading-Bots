@@ -60,7 +60,7 @@ BTCPAY_STORE_ID=your-store-id-here
 BTCPAY_API_KEY=token_your-api-key-here
 SITE_URL=https://pablobots.com
 RESEND_API_KEY=your-resend-api-key (optional, for emails)
-CRON_SECRET=your-random-secret (optional, for renewal cron)
+SUBSCRIPTION_RENEWAL_SECRET=your-random-secret (optional, for renewal cron)
 ```
 
 ### Step 4: Set Up BTCPay Server

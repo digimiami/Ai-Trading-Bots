@@ -86,14 +86,14 @@ END $$;
 -- # Subscription Renewal - Daily at 2 AM UTC
 -- 0 2 * * * curl -X POST https://dkawxgwdqiirgmmjbvhc.supabase.co/functions/v1/subscription-renewal \
 --   -H "Authorization: Bearer YOUR_SERVICE_ROLE_KEY" \
---   -H "x-cron-secret: YOUR_CRON_SECRET" \
+--   -H "x-cron-secret: YOUR_SUBSCRIPTION_RENEWAL_SECRET" \
 --   -H "Content-Type: application/json" \
 --   -d '{}' \
 --   >> /var/log/subscription-renewal.log 2>&1
 --
 -- Replace:
 --   YOUR_SERVICE_ROLE_KEY - Get from Supabase Dashboard → Settings → API
---   YOUR_CRON_SECRET - Set in Supabase Edge Function Secrets as CRON_SECRET
+--   YOUR_CRON_SECRET - Set in Supabase Edge Function Secrets as SUBSCRIPTION_RENEWAL_SECRET
 --
 -- This runs daily at 2 AM UTC
 

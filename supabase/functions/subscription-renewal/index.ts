@@ -31,7 +31,7 @@ serve(async (req) => {
 
     // Verify cron secret (optional but recommended)
     const cronSecret = req.headers.get('x-cron-secret')
-    const expectedSecret = Deno.env.get('CRON_SECRET')
+    const expectedSecret = Deno.env.get('SUBSCRIPTION_RENEWAL_SECRET')
     
     if (expectedSecret && cronSecret !== expectedSecret) {
       return new Response(
