@@ -102,6 +102,7 @@ export default function Navigation() {
     { path: '/futures-pairs-finder', icon: 'ri-search-line', label: 'Futures' },
     { path: '/contact', icon: 'ri-customer-service-line', label: 'Contact' },
     { path: '/messages', icon: 'ri-message-3-line', label: 'Messages' },
+    { path: '/pricing', icon: 'ri-vip-crown-line', label: 'Pricing' },
     { path: '/settings', icon: 'ri-settings-line', label: t('nav.settings') }
   ];
   

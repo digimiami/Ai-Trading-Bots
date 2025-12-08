@@ -145,8 +145,8 @@ async function handlePaymentSettled(
   // Log activity
   console.log(`✅ Subscription ${subscription.id} activated until ${expiresAt.toISOString()}`)
 
-  // TODO: Send confirmation email to user
-  // TODO: Notify user via app notification
+  // Send confirmation email to user
+  await sendSubscriptionEmail(supabaseClient, subscription, 'activated')
 }
 
 /**
@@ -170,6 +170,84 @@ async function handlePaymentReceived(
     .eq('status', 'pending')
 
   // Subscription will be activated when payment settles
+}
+
+/**
+ * Send subscription email notification
+ */
+async function sendSubscriptionEmail(
+  supabaseClient: any,
+  subscription: any,
+  eventType: 'activated' | 'expiring' | 'expired'
+) {
+  try {
+    // Get user email
+    const { data: user } = await supabaseClient.auth.admin.getUserById(subscription.user_id)
+    if (!user || !user.email) {
+      console.warn(`⚠️ User email not found for subscription ${subscription.id}`)
+      return
+    }
+
+    const plan = subscription.subscription_plans
+    const emailSubject = 
+      eventType === 'activated' ? 'Subscription Activated - Pablo Trading Bots' :
+      eventType === 'expiring' ? 'Subscription Renewal Required - Pablo Trading Bots' :
+      'Subscription Expired - Pablo Trading Bots'
+
+    const emailBody = eventType === 'activated'
+      ? `
+        <h2>Subscription Activated!</h2>
+        <p>Your ${plan?.display_name || 'subscription'} has been activated successfully.</p>
+        <p><strong>Plan:</strong> ${plan?.display_name}</p>
+        <p><strong>Expires:</strong> ${subscription.expires_at ? new Date(subscription.expires_at).toLocaleDateString() : 'Never'}</p>
+        <p>You can now create up to ${plan?.max_bots === null ? 'unlimited' : plan.max_bots} trading bots.</p>
+        <p><a href="${Deno.env.get('SITE_URL') || 'https://pablobots.com'}/bots">Start Creating Bots</a></p>
+      `
+      : eventType === 'expiring'
+      ? `
+        <h2>Subscription Renewal Required</h2>
+        <p>Your ${plan?.display_name || 'subscription'} is expiring soon.</p>
+        <p><strong>Expires:</strong> ${new Date(subscription.expires_at).toLocaleDateString()}</p>
+        <p>Please renew your subscription to continue using all features.</p>
+        <p><a href="${subscription.metadata?.renewal_invoice_url || `${Deno.env.get('SITE_URL')}/pricing`}">Renew Now</a></p>
+      `
+      : `
+        <h2>Subscription Expired</h2>
+        <p>Your ${plan?.display_name || 'subscription'} has expired.</p>
+        <p>Please renew to continue using premium features.</p>
+        <p><a href="${Deno.env.get('SITE_URL') || 'https://pablobots.com'}/pricing">Renew Subscription</a></p>
+      `
+
+    // Use Supabase's built-in email function or Resend API
+    const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
+    
+    if (RESEND_API_KEY) {
+      // Send via Resend
+      const emailResponse = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${RESEND_API_KEY}`
+        },
+        body: JSON.stringify({
+          from: 'Pablo Trading Bots <noreply@pablobots.com>',
+          to: user.email,
+          subject: emailSubject,
+          html: emailBody
+        })
+      })
+
+      if (emailResponse.ok) {
+        console.log(`✅ Email sent to ${user.email} for subscription ${subscription.id}`)
+      } else {
+        console.error(`❌ Failed to send email:`, await emailResponse.text())
+      }
+    } else {
+      console.log(`ℹ️ Email notification (${eventType}) for ${user.email} - Resend API key not configured`)
+    }
+  } catch (error) {
+    console.error('Error sending subscription email:', error)
+  }
 }
 
 /**
