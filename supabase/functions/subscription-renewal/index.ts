@@ -30,12 +30,22 @@ serve(async (req) => {
     )
 
     // Verify cron secret (optional but recommended)
-    const cronSecret = req.headers.get('x-cron-secret')
-    const expectedSecret = Deno.env.get('SUBSCRIPTION_RENEWAL_SECRET')
+    const cronSecret = req.headers.get('x-cron-secret')?.trim()
+    const expectedSecret = Deno.env.get('SUBSCRIPTION_RENEWAL_SECRET')?.trim()
+    
+    // Log for debugging (remove in production if needed)
+    if (expectedSecret) {
+      console.log(`[DEBUG] Expected secret length: ${expectedSecret.length}, Received length: ${cronSecret?.length || 0}`)
+      console.log(`[DEBUG] Secret match: ${cronSecret === expectedSecret}`)
+    }
     
     if (expectedSecret && cronSecret !== expectedSecret) {
+      console.error(`[AUTH] Secret mismatch. Expected: ${expectedSecret.substring(0, 8)}...${expectedSecret.substring(expectedSecret.length - 8)}, Got: ${cronSecret?.substring(0, 8) || 'none'}...${cronSecret?.substring(cronSecret.length - 8) || 'none'}`)
       return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
+        JSON.stringify({ 
+          error: 'Unauthorized',
+          message: 'SUBSCRIPTION_RENEWAL_SECRET mismatch. Check Edge Function logs for details.'
+        }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
