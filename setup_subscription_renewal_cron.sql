@@ -36,35 +36,64 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- Note: This requires pg_cron extension to be enabled
 -- If not available, use external cron job instead
 
+-- =====================================================
+-- 2. SET UP PG_CRON JOB (if pg_cron extension available)
+-- =====================================================
+-- Note: pg_cron may not be available in all Supabase projects
+-- If this fails, use external cron job (Option B below)
+
 DO $$
 BEGIN
   -- Check if pg_cron extension exists
   IF EXISTS (
     SELECT 1 FROM pg_extension WHERE extname = 'pg_cron'
   ) THEN
+    -- Remove existing job if it exists
+    BEGIN
+      PERFORM cron.unschedule('subscription-renewal-daily');
+    EXCEPTION
+      WHEN OTHERS THEN
+        -- Job doesn't exist, that's okay
+        NULL;
+    END;
+    
     -- Schedule daily check at 2 AM UTC
+    -- Note: This will call the function, but the function doesn't make HTTP calls
+    -- You still need external cron for actual HTTP calls to Edge Function
     PERFORM cron.schedule(
       'subscription-renewal-daily',
       '0 2 * * *', -- Daily at 2 AM UTC
-      $$SELECT trigger_subscription_renewal()$$
+      'SELECT trigger_subscription_renewal();'
     );
     
-    RAISE NOTICE 'pg_cron job scheduled successfully';
+    RAISE NOTICE 'pg_cron job scheduled successfully (but external cron still needed for HTTP calls)';
   ELSE
     RAISE NOTICE 'pg_cron extension not available. Use external cron job instead.';
   END IF;
+EXCEPTION
+  WHEN OTHERS THEN
+    RAISE NOTICE 'Could not set up pg_cron job: %. Use external cron job instead.', SQLERRM;
 END $$;
 
 -- =====================================================
--- 3. ALTERNATIVE: EXTERNAL CRON JOB SETUP
+-- 3. EXTERNAL CRON JOB SETUP (RECOMMENDED)
 -- =====================================================
--- If pg_cron is not available, set up a cron job on your server:
---
--- Add to crontab (crontab -e):
--- 0 2 * * * curl -X POST https://your-project.supabase.co/functions/v1/subscription-renewal \
+-- Since Supabase Edge Functions need HTTP calls, use external cron job
+-- This is the recommended method
+
+-- Add to your server's crontab (crontab -e):
+-- 
+-- # Subscription Renewal - Daily at 2 AM UTC
+-- 0 2 * * * curl -X POST https://dkawxgwdqiirgmmjbvhc.supabase.co/functions/v1/subscription-renewal \
 --   -H "Authorization: Bearer YOUR_SERVICE_ROLE_KEY" \
 --   -H "x-cron-secret: YOUR_CRON_SECRET" \
---   -H "Content-Type: application/json"
+--   -H "Content-Type: application/json" \
+--   -d '{}' \
+--   >> /var/log/subscription-renewal.log 2>&1
+--
+-- Replace:
+--   YOUR_SERVICE_ROLE_KEY - Get from Supabase Dashboard → Settings → API
+--   YOUR_CRON_SECRET - Set in Supabase Edge Function Secrets as CRON_SECRET
 --
 -- This runs daily at 2 AM UTC
 
