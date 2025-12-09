@@ -13,6 +13,7 @@ import { supabase } from '../../lib/supabase';
 import WebhookTestPage from '../webhook-test/page';
 import CryptoNewsManager from './components/CryptoNewsManager';
 import ContactMessages from './components/ContactMessages';
+import SubscriptionManagement from './components/SubscriptionManagement';
 
 interface User {
   id: string;
@@ -2519,6 +2520,11 @@ export default function AdminPage() {
         {/* Contact Messages Tab */}
         {activeTab === 'contact-messages' && (
           <ContactMessages />
+        )}
+
+        {/* Subscriptions Tab */}
+        {activeTab === 'subscriptions' && (
+          <SubscriptionManagement />
         )}
 
         {/* Webhook Test Tab */}

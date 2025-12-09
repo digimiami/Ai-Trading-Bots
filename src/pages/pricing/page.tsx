@@ -169,6 +169,13 @@ export default function PricingPage() {
                   <h3 className="text-2xl font-bold text-white mb-2">
                     {plan.display_name}
                   </h3>
+                  {plan.name === 'Testing' && (
+                    <div className="mb-2">
+                      <span className="bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded text-xs font-semibold">
+                        2-Week Free Trial
+                      </span>
+                    </div>
+                  )}
                   <p className="text-gray-400 text-sm mb-6 min-h-[40px]">
                     {plan.description}
                   </p>

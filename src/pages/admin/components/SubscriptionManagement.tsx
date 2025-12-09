@@ -32,6 +32,7 @@ export default function SubscriptionManagement() {
   const [subscriptions, setSubscriptions] = useState<UserSubscription[]>([])
   const [plans, setPlans] = useState<SubscriptionPlan[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [upgradingUserId, setUpgradingUserId] = useState<string | null>(null)
   const [selectedPlanId, setSelectedPlanId] = useState<string>('')
 
@@ -42,20 +43,26 @@ export default function SubscriptionManagement() {
 
   const fetchSubscriptions = async () => {
     try {
+      setError(null)
+      // Use left join instead of inner join to show subscriptions even if user is deleted
       const { data, error } = await supabase
         .from('user_subscriptions')
         .select(`
           *,
-          users!inner (email),
+          users (email),
           subscription_plans (name, display_name, max_bots)
         `)
         .order('created_at', { ascending: false })
         .limit(100)
 
-      if (error) throw error
+      if (error) {
+        console.error('Subscription fetch error:', error)
+        throw error
+      }
       setSubscriptions(data || [])
     } catch (err) {
       console.error('Error fetching subscriptions:', err)
+      setError(err instanceof Error ? err.message : 'Failed to load subscriptions')
     } finally {
       setLoading(false)
     }
@@ -194,25 +201,49 @@ export default function SubscriptionManagement() {
     )
   }
 
+  if (error) {
+    return (
+      <Card>
+        <div className="text-center py-8">
+          <p className="text-red-400 mb-4">Error: {error}</p>
+          <Button onClick={fetchSubscriptions}>Retry</Button>
+        </div>
+      </Card>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <Card>
-        <h2 className="text-2xl font-bold text-white mb-6">User Subscriptions</h2>
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-white">User Subscriptions</h2>
+          <Button variant="secondary" size="sm" onClick={fetchSubscriptions}>
+            <i className="ri-refresh-line mr-2"></i>
+            Refresh
+          </Button>
+        </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-b border-gray-700">
-                <th className="pb-3 text-gray-400 font-semibold">User</th>
-                <th className="pb-3 text-gray-400 font-semibold">Plan</th>
-                <th className="pb-3 text-gray-400 font-semibold">Status</th>
-                <th className="pb-3 text-gray-400 font-semibold">Trial Days</th>
-                <th className="pb-3 text-gray-400 font-semibold">Expires</th>
-                <th className="pb-3 text-gray-400 font-semibold">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {subscriptions.map((sub) => {
+        {subscriptions.length === 0 ? (
+          <div className="text-center py-12">
+            <i className="ri-wallet-line text-6xl text-gray-600 mb-4"></i>
+            <p className="text-gray-400 text-lg mb-2">No subscriptions found</p>
+            <p className="text-gray-500 text-sm">Subscriptions will appear here once users sign up.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-gray-700">
+                  <th className="pb-3 text-gray-400 font-semibold">User</th>
+                  <th className="pb-3 text-gray-400 font-semibold">Plan</th>
+                  <th className="pb-3 text-gray-400 font-semibold">Status</th>
+                  <th className="pb-3 text-gray-400 font-semibold">Trial Days</th>
+                  <th className="pb-3 text-gray-400 font-semibold">Expires</th>
+                  <th className="pb-3 text-gray-400 font-semibold">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {subscriptions.map((sub) => {
                 const trialDays = getTrialDaysRemaining(sub)
                 const isExpired = sub.expires_at && new Date(sub.expires_at) < new Date()
                 const isTrialExpired = trialDays !== null && trialDays <= 0
@@ -288,10 +319,11 @@ export default function SubscriptionManagement() {
                     </td>
                   </tr>
                 )
-              })}
-            </tbody>
-          </table>
-        </div>
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
     </div>
   )
