@@ -131,14 +131,56 @@ export function useSubscription() {
         return { allowed: false, reason: 'Not authenticated' }
       }
 
-      // Call database function
+      // Check if user is admin - admins get unlimited access
+      const { data: userData } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+
+      if (userData?.role === 'admin') {
+        // Get current bot count for display
+        const { count } = await supabase
+          .from('trading_bots')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .neq('status', 'deleted')
+
+        return { 
+          allowed: true, 
+          reason: 'Admin users have unlimited access',
+          currentCount: count || 0 
+        }
+      }
+
+      // Call database function (returns JSONB)
       const { data, error } = await supabase
         .rpc('can_user_create_bot', { p_user_id: user.id })
 
       if (error) throw error
 
+      // Handle JSONB response
+      if (data && typeof data === 'object') {
+        const result = data as any
+        const allowed = result.allowed === true
+        
+        if (allowed) {
+          return { 
+            allowed: true, 
+            reason: result.reason || 'Allowed',
+            currentCount: result.current_bots || 0 
+          }
+        } else {
+          return { 
+            allowed: false, 
+            reason: result.reason || 'You have reached your bot creation limit. Please upgrade your plan.',
+            currentCount: result.current_bots || 0
+          }
+        }
+      }
+
+      // Fallback for old boolean response (shouldn't happen, but handle it)
       if (data === true) {
-        // Get current bot count for display
         const { count } = await supabase
           .from('trading_bots')
           .select('*', { count: 'exact', head: true })
@@ -149,31 +191,12 @@ export function useSubscription() {
           allowed: true, 
           currentCount: count || 0 
         }
-      } else {
-        // Get subscription to show limit
-        await fetchSubscription()
-        const maxBots = subscription?.max_bots
-        
-        // If max_bots is null, it means unlimited - this shouldn't happen if function returned false
-        // But handle it anyway
-        if (maxBots === null || maxBots === undefined) {
-          return { 
-            allowed: true,
-            currentCount: 0
-          }
-        }
-        
-        const { count } = await supabase
-          .from('trading_bots')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-          .neq('status', 'deleted')
+      }
 
-        return { 
-          allowed: false, 
-          reason: `You've reached your bot limit (${count || 0}/${maxBots}). Upgrade your plan to create more bots.`,
-          currentCount: count || 0
-        }
+      // Default deny
+      return { 
+        allowed: false, 
+        reason: 'Unable to verify subscription limits' 
       }
     } catch (err) {
       console.error('Error checking bot creation limit:', err)

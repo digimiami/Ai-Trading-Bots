@@ -1119,10 +1119,10 @@ export default function AdminPage() {
                     <i className="ri-timer-line mr-2"></i>
                     Test Period
                   </Button>
-                  <Button onClick={() => setShowCreateUser(true)}>
-                    <i className="ri-user-add-line mr-2"></i>
-                    Create User
-                  </Button>
+                <Button onClick={() => setShowCreateUser(true)}>
+                  <i className="ri-user-add-line mr-2"></i>
+                  Create User
+                </Button>
                 </div>
               </div>
               {loading ? (
@@ -1318,7 +1318,7 @@ export default function AdminPage() {
                             <> / {code.user_limit} {code.users_created >= code.user_limit && <span className="text-red-600">(Limit Reached)</span>}</>
                           )}
                           {(!code.user_limit || code.user_limit === null) && <span className="text-gray-400"> (Unlimited)</span>}
-                        </div>
+                      </div>
                       </div>
                       <Button
                         variant="danger"
