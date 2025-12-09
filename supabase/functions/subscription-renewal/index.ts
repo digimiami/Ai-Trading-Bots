@@ -50,18 +50,18 @@ serve(async (req) => {
       )
     }
 
-    // Get BTCPay configuration
+    // Get BTCPay configuration (optional - skip if not configured)
     const btcpayConfig: BTCPayConfig = {
       serverUrl: Deno.env.get('BTCPAY_SERVER_URL') ?? '',
       storeId: Deno.env.get('BTCPAY_STORE_ID') ?? '',
       apiKey: Deno.env.get('BTCPAY_API_KEY') ?? '',
     }
 
-    if (!btcpayConfig.serverUrl || !btcpayConfig.storeId || !btcpayConfig.apiKey) {
-      return new Response(
-        JSON.stringify({ error: 'BTCPay Server not configured' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+    const btcpayConfigured = !!(btcpayConfig.serverUrl && btcpayConfig.storeId && btcpayConfig.apiKey)
+    
+    if (!btcpayConfigured) {
+      console.log('⚠️ BTCPay Server not configured - skipping renewal invoice generation')
+      // Continue without BTCPay - just log that subscriptions need manual renewal
     }
 
     console.log('🔄 Starting subscription renewal check...')
@@ -133,6 +133,18 @@ serve(async (req) => {
           },
           redirectURL: `${Deno.env.get('SITE_URL') || 'https://pablobots.com'}/subscription/success`,
           notificationURL: `${Deno.env.get('SUPABASE_URL')}/functions/v1/btcpay-webhook`
+        }
+
+        if (!btcpayConfigured) {
+          // BTCPay not configured - log that manual renewal is needed
+          console.log(`⚠️ Subscription ${subscription.id} needs renewal but BTCPay is not configured`)
+          results.push({
+            subscriptionId: subscription.id,
+            userId: subscription.user_id,
+            status: 'pending_manual_renewal',
+            message: 'BTCPay Server not configured - manual renewal required'
+          })
+          continue
         }
 
         console.log(`📝 Creating renewal invoice for subscription ${subscription.id}`)

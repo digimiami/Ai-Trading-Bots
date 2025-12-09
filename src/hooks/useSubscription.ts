@@ -31,6 +31,9 @@ export interface UserSubscription {
   max_trades_per_day: number | null
   max_exchanges: number
   features: Record<string, any>
+  trial_days_remaining?: number | null
+  trial_started_at?: string | null
+  trial_period_days?: number | null
 }
 
 export interface Invoice {

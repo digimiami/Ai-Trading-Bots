@@ -174,11 +174,11 @@ export default function PricingPage() {
                   </p>
 
                   <div className="mb-6">
-                    <span className="text-4xl font-bold text-white">
+                    <span className="text-4xl font-bold text-black dark:text-black">
                       {plan.price_monthly_usd === 0 ? 'Free' : displayPrice}
                     </span>
                     {plan.price_monthly_usd > 0 && (
-                      <span className="text-gray-400 ml-2">/month</span>
+                      <span className="text-gray-600 dark:text-gray-600 ml-2">/month</span>
                     )}
                   </div>
 

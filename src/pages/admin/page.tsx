@@ -919,6 +919,7 @@ export default function AdminPage() {
 
   const tabs = [
     { id: 'contact-messages', label: 'Contact Messages', icon: 'ri-mail-line' },
+    { id: 'subscriptions', label: 'Subscriptions', icon: 'ri-wallet-line' },
     { id: 'overview', label: 'Overview', icon: 'ri-dashboard-line' },
     { id: 'users', label: 'Users', icon: 'ri-user-line' },
     { id: 'bots', label: 'Trading Bots', icon: 'ri-robot-line' },
