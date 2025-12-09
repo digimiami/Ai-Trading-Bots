@@ -109,23 +109,23 @@ ORDER BY u.email;
 -- ============================================================================
 WITH bot_trade_stats AS (
     SELECT 
-        bot_id,
-        user_id,
+        t.bot_id,
+        tb.user_id,
         -- Daily loss
         COALESCE(SUM(
             CASE 
-                WHEN DATE(executed_at) = CURRENT_DATE 
-                 AND status IN ('closed', 'filled', 'completed')
-                 AND pnl < 0 THEN ABS(pnl)
+                WHEN DATE(t.executed_at) = CURRENT_DATE 
+                 AND t.status IN ('closed', 'filled', 'completed')
+                 AND t.pnl < 0 THEN ABS(t.pnl)
                 ELSE 0
             END
         ), 0) as daily_loss,
         -- Weekly loss
         COALESCE(SUM(
             CASE 
-                WHEN executed_at >= NOW() - INTERVAL '7 days'
-                 AND status IN ('closed', 'filled', 'completed')
-                 AND pnl < 0 THEN ABS(pnl)
+                WHEN t.executed_at >= NOW() - INTERVAL '7 days'
+                 AND t.status IN ('closed', 'filled', 'completed')
+                 AND t.pnl < 0 THEN ABS(t.pnl)
                 ELSE 0
             END
         ), 0) as weekly_loss,
@@ -133,27 +133,27 @@ WITH bot_trade_stats AS (
         (
             SELECT COUNT(*)
             FROM (
-                SELECT pnl
-                FROM trades
-                WHERE bot_id = tb.id
-                  AND status IN ('closed', 'filled', 'completed')
-                ORDER BY executed_at DESC
+                SELECT t2.pnl
+                FROM trades t2
+                WHERE t2.bot_id = tb.id
+                  AND t2.status IN ('closed', 'filled', 'completed')
+                ORDER BY t2.executed_at DESC
                 LIMIT 10
             ) recent_trades
-            WHERE pnl < 0
+            WHERE recent_trades.pnl < 0
         ) as consecutive_losses_count,
         -- Trades today
         COUNT(*) FILTER (
-            WHERE DATE(executed_at) = CURRENT_DATE
-              AND status IN ('filled', 'completed', 'open')
+            WHERE DATE(t.executed_at) = CURRENT_DATE
+              AND t.status IN ('filled', 'completed', 'open')
         ) as trades_today,
         -- Open positions
-        COUNT(*) FILTER (WHERE status = 'open') as open_positions
+        COUNT(*) FILTER (WHERE t.status = 'open') as open_positions
     FROM trades t
     JOIN trading_bots tb ON t.bot_id = tb.id
     WHERE (tb.paper_trading = false OR tb.paper_trading IS NULL)
       AND tb.status = 'running'
-    GROUP BY bot_id, user_id, tb.id
+    GROUP BY t.bot_id, tb.user_id, tb.id
 )
 SELECT 
     '=== SAFETY LIMITS CHECK (RISK MANAGEMENT) ===' as category,
