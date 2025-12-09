@@ -5135,6 +5135,61 @@ class BotExecutor {
       console.log(`💰 Trade Amount: ${bot.trade_amount || bot.tradeAmount}`);
       console.log(`🏦 Exchange: ${bot.exchange}`);
       
+      // ⚠️ CRITICAL: Check subscription/trial limits BEFORE executing real trades
+      if (bot.paper_trading !== true) {
+        console.log(`🔍 Checking subscription trade limits for user ${bot.user_id}...`);
+        try {
+          const { data: tradeCheck, error: tradeCheckError } = await this.supabaseClient
+            .rpc('can_user_trade', { 
+              p_user_id: bot.user_id, 
+              p_trade_type: 'real' 
+            });
+
+          if (tradeCheckError) {
+            console.error(`❌ Error checking trade limits:`, tradeCheckError);
+            await this.addBotLog(bot.id, {
+              level: 'error',
+              category: 'subscription',
+              message: `❌ Failed to verify trade permissions: ${tradeCheckError.message}`,
+              details: { error: tradeCheckError }
+            });
+            throw new Error(`Failed to verify trade permissions: ${tradeCheckError.message}`);
+          }
+
+          if (!tradeCheck || !tradeCheck.allowed) {
+            const reason = tradeCheck?.reason || 'Trade limit reached or subscription expired';
+            console.warn(`⚠️ Trading blocked: ${reason}`);
+            await this.addBotLog(bot.id, {
+              level: 'warning',
+              category: 'subscription',
+              message: `⚠️ Trading blocked: ${reason}`,
+              details: {
+                allowed: false,
+                reason: reason,
+                max_trades: tradeCheck?.max_trades,
+                current_trades: tradeCheck?.current_trades,
+                remaining_trades: tradeCheck?.remaining_trades,
+                trial_expired: tradeCheck?.trial_expired
+              }
+            });
+            throw new Error(reason);
+          }
+
+          console.log(`✅ Trade permission check passed: ${tradeCheck.reason || 'Allowed'}`);
+          if (tradeCheck.remaining_trades !== null && tradeCheck.remaining_trades !== undefined) {
+            console.log(`📊 Trade limits: ${tradeCheck.current_trades || 0}/${tradeCheck.max_trades || 'unlimited'} (${tradeCheck.remaining_trades} remaining)`);
+          }
+        } catch (err: any) {
+          // If it's already an error we threw, re-throw it
+          if (err.message && (err.message.includes('Trading blocked') || err.message.includes('subscription') || err.message.includes('trial'))) {
+            throw err;
+          }
+          // Otherwise log and re-throw
+          console.error(`❌ Subscription check failed:`, err);
+          throw new Error(`Subscription verification failed: ${err.message || err}`);
+        }
+      }
+      
       // Get trading type with fallback (handle both camelCase and snake_case)
       const tradingType = bot.tradingType || bot.trading_type || 'futures';
       console.log(`📊 Trading Type: ${tradingType}`);
@@ -8871,6 +8926,38 @@ class BotExecutor {
    */
   private async checkSafetyLimits(bot: any): Promise<{ canTrade: boolean; reason: string; shouldPause: boolean }> {
     try {
+      // 0. Check subscription/trial limits FIRST (only for real trading, not paper trading)
+      if (bot.paper_trading !== true) {
+        try {
+          const { data: tradeCheck, error: tradeCheckError } = await this.supabaseClient
+            .rpc('can_user_trade', { 
+              p_user_id: bot.user_id, 
+              p_trade_type: 'real' 
+            });
+
+          if (tradeCheckError) {
+            console.error(`❌ Error checking subscription trade limits:`, tradeCheckError);
+            // Don't block on subscription check errors, let other checks proceed
+          } else if (tradeCheck && !tradeCheck.allowed) {
+            const reason = tradeCheck.reason || 'Subscription limit reached or trial expired';
+            console.warn(`⚠️ Trading blocked by subscription limits: ${reason}`);
+            return {
+              canTrade: false,
+              reason: reason,
+              shouldPause: tradeCheck.trial_expired === true // Pause if trial expired
+            };
+          } else if (tradeCheck && tradeCheck.allowed) {
+            // Log remaining trades if available
+            if (tradeCheck.remaining_trades !== null && tradeCheck.remaining_trades !== undefined) {
+              console.log(`✅ Subscription check passed: ${tradeCheck.current_trades || 0}/${tradeCheck.max_trades || 'unlimited'} trades today (${tradeCheck.remaining_trades} remaining)`);
+            }
+          }
+        } catch (err: any) {
+          console.error('❌ Error checking subscription limits:', err);
+          // Don't block on subscription check errors, let other checks proceed
+        }
+      }
+
       // 1. Emergency Stop Check (Global Kill Switch)
       const emergencyStop = await this.checkEmergencyStop(bot.user_id);
       if (emergencyStop) {
