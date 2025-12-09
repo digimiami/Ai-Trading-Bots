@@ -45,7 +45,6 @@ SELECT
         ELSE 'Unknown'
     END as execution_status,
     EXTRACT(EPOCH FROM (NOW() - tb.last_execution_at)) / 60 as minutes_since_last_execution,
-    tb.health_status,
     tb.created_at
 FROM trading_bots tb
 LEFT JOIN users u ON tb.user_id = u.id
@@ -308,7 +307,6 @@ SELECT
         WHEN tb.next_execution_at <= NOW() THEN 'OVERDUE - Should execute'
         ELSE 'Unknown'
     END as execution_status,
-    tb.health_status,
     u.email as user_email
 FROM trading_bots tb
 LEFT JOIN users u ON tb.user_id = u.id
