@@ -343,7 +343,7 @@ WITH issues AS (
     WHERE u.id IN (
         SELECT DISTINCT user_id 
         FROM trading_bots 
-        WHERE (paper_trading = false OR tb.paper_trading IS NULL) 
+        WHERE (paper_trading = false OR paper_trading IS NULL) 
           AND status = 'running'
     )
     AND (
