@@ -7,7 +7,10 @@ ALTER TABLE user_subscriptions
 ADD COLUMN IF NOT EXISTS trial_period_days INTEGER DEFAULT NULL,
 ADD COLUMN IF NOT EXISTS trial_started_at TIMESTAMP WITH TIME ZONE DEFAULT NULL;
 
--- 2. Update can_user_create_bot to check admin and trial expiration
+-- 2. Drop existing function if it exists (to change return type)
+DROP FUNCTION IF EXISTS can_user_create_bot(UUID);
+
+-- 3. Update can_user_create_bot to check admin and trial expiration
 CREATE OR REPLACE FUNCTION can_user_create_bot(p_user_id UUID)
 RETURNS JSONB AS $$
 DECLARE
@@ -152,7 +155,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 3. Add Testing plan with 2-week trial
+-- 4. Add Testing plan with 2-week trial
 INSERT INTO subscription_plans (name, display_name, description, price_monthly_usd, price_crypto, max_bots, max_trades_per_day, max_exchanges, features, sort_order)
 VALUES
   (
@@ -178,7 +181,7 @@ ON CONFLICT (name) DO UPDATE SET
   features = EXCLUDED.features,
   sort_order = EXCLUDED.sort_order;
 
--- 4. Function to assign Testing plan with trial
+-- 5. Function to assign Testing plan with trial
 CREATE OR REPLACE FUNCTION assign_testing_plan_to_new_user(p_user_id UUID)
 RETURNS UUID AS $$
 DECLARE
@@ -220,7 +223,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 5. Update assign_free_plan_to_new_user to use Testing plan instead
+-- 6. Update assign_free_plan_to_new_user to use Testing plan instead
 CREATE OR REPLACE FUNCTION assign_free_plan_to_new_user(p_user_id UUID)
 RETURNS UUID AS $$
 BEGIN
@@ -229,7 +232,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 6. Function to check if user can trade (check daily trade limit and trial)
+-- 7. Function to check if user can trade (check daily trade limit and trial)
 CREATE OR REPLACE FUNCTION can_user_trade(p_user_id UUID, p_trade_type TEXT DEFAULT 'real')
 RETURNS JSONB AS $$
 DECLARE
