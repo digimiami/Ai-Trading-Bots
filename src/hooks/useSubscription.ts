@@ -88,28 +88,28 @@ export function useSubscription() {
       if (data && data.length > 0) {
         setSubscription(data[0])
       } else {
-        // No active subscription, check for free plan
-        const { data: freePlan } = await supabase
+        // No active subscription, check for Testing plan instead of Free plan
+        const { data: testingPlan } = await supabase
           .from('subscription_plans')
           .select('*')
-          .eq('name', 'Free')
+          .eq('name', 'Testing')
           .eq('is_active', true)
           .single()
 
-        if (freePlan) {
-          // Return free plan as default
+        if (testingPlan) {
+          // Return Testing plan as default
           setSubscription({
             subscription_id: '',
-            plan_id: freePlan.id,
-            plan_name: 'Free',
-            plan_display_name: freePlan.display_name,
+            plan_id: testingPlan.id,
+            plan_name: 'Testing',
+            plan_display_name: testingPlan.display_name,
             status: 'active',
             expires_at: null,
             next_billing_date: null,
-            max_bots: freePlan.max_bots,
-            max_trades_per_day: freePlan.max_trades_per_day,
-            max_exchanges: freePlan.max_exchanges,
-            features: freePlan.features
+            max_bots: testingPlan.max_bots,
+            max_trades_per_day: testingPlan.max_trades_per_day,
+            max_exchanges: testingPlan.max_exchanges,
+            features: testingPlan.features
           })
         } else {
           setSubscription(null)
