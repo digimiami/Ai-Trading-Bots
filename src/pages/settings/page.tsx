@@ -1760,113 +1760,37 @@ export default function Settings() {
                   </div>
                 </div>
 
-                {/* OKX API */}
+                {/* OKX API - Coming Soon */}
                 <div>
                   <h3 className="text-lg font-medium text-gray-900 mb-3 flex items-center">
                     <i className="ri-exchange-line text-blue-600 mr-2"></i>
                     OKX API
+                    <span className="ml-2 px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full font-medium">
+                      Coming Soon
+                    </span>
                   </h3>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        API Key
-                      </label>
-                      <input
-                        type="password"
-                        value={apiSettings.okxApiKey}
-                        onChange={(e) => handleApiChange('okxApiKey', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                        placeholder="Enter OKX API Key"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        API Secret
-                      </label>
-                      <input
-                        type="password"
-                        value={apiSettings.okxApiSecret}
-                        onChange={(e) => handleApiChange('okxApiSecret', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                        placeholder="Enter OKX API Secret"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Passphrase
-                      </label>
-                      <input
-                        type="password"
-                        value={apiSettings.okxPassphrase}
-                        onChange={(e) => handleApiChange('okxPassphrase', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                        placeholder="Enter OKX Passphrase"
-                      />
-                    </div>
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={() => handleTestConnection('okx')}
-                        className="flex-1 bg-blue-100 hover:bg-blue-200 text-blue-700 py-2 px-4 rounded-lg transition-colors text-sm"
-                      >
-                        Test Connection
-                      </button>
-                      <button
-                        onClick={() => handleSaveExchange('okx')}
-                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg transition-colors text-sm font-medium"
-                      >
-                        <i className="ri-save-line mr-1"></i>
-                        Save
-                      </button>
-                    </div>
+                  <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p className="text-sm text-yellow-800 flex items-center">
+                      <i className="ri-time-line mr-2"></i>
+                      OKX exchange integration is coming soon. We're working on it and will notify you when it's available!
+                    </p>
                   </div>
                 </div>
 
-                {/* Bitunix API */}
+                {/* Bitunix API - Coming Soon */}
                 <div>
                   <h3 className="text-lg font-medium text-gray-900 mb-3 flex items-center">
                     <i className="ri-exchange-line text-green-600 mr-2"></i>
                     Bitunix API
+                    <span className="ml-2 px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full font-medium">
+                      Coming Soon
+                    </span>
                   </h3>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        API Key
-                      </label>
-                      <input
-                        type="password"
-                        value={apiSettings.bitunixApiKey}
-                        onChange={(e) => handleApiChange('bitunixApiKey', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                        placeholder="Enter Bitunix API Key"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        API Secret
-                      </label>
-                      <input
-                        type="password"
-                        value={apiSettings.bitunixApiSecret}
-                        onChange={(e) => handleApiChange('bitunixApiSecret', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                        placeholder="Enter Bitunix API Secret"
-                      />
-                    </div>
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={() => handleTestConnection('bitunix')}
-                        className="flex-1 bg-green-100 hover:bg-green-200 text-green-700 py-2 px-4 rounded-lg transition-colors text-sm"
-                      >
-                        Test Connection
-                      </button>
-                      <button
-                        onClick={() => handleSaveExchange('bitunix')}
-                        className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-lg transition-colors text-sm font-medium"
-                      >
-                        <i className="ri-save-line mr-1"></i>
-                        Save
-                      </button>
-                    </div>
+                  <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p className="text-sm text-yellow-800 flex items-center">
+                      <i className="ri-time-line mr-2"></i>
+                      Bitunix exchange integration is coming soon. We're working on it and will notify you when it's available!
+                    </p>
                   </div>
                 </div>
 

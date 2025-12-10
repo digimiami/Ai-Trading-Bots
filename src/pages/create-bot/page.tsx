@@ -47,7 +47,9 @@ export default function CreateBotPage() {
   
   // Get initial values from URL params (for navigation from Futures Pairs Finder or Pablo Ready)
   const urlSymbol = searchParams.get('symbol') || 'BTCUSDT';
-  const urlExchange = (searchParams.get('exchange') || 'bybit') as 'bybit' | 'okx';
+  const urlExchangeParam = searchParams.get('exchange') || 'bybit';
+  // Force bybit if okx or bitunix is passed (they're disabled)
+  const urlExchange = (urlExchangeParam === 'okx' || urlExchangeParam === 'bitunix') ? 'bybit' : (urlExchangeParam as 'bybit' | 'okx');
   const urlTradingType = (searchParams.get('tradingType') || 'spot') as 'spot' | 'futures';
   const urlLeverage = searchParams.get('leverage') ? parseInt(searchParams.get('leverage')!) : 5;
   const urlRiskLevel = (searchParams.get('riskLevel') || 'medium') as 'low' | 'medium' | 'high';
@@ -199,19 +201,24 @@ export default function CreateBotPage() {
               }
             }
 
-            setFormData(prev => ({
-              ...prev,
-              name: searchParams.get('name') || data.name || prev.name,
-              exchange: (searchParams.get('exchange') || data.exchange || prev.exchange) as 'bybit' | 'okx',
-              tradingType: (searchParams.get('tradingType') || data.trading_type || prev.tradingType) as 'spot' | 'futures',
-              symbol: searchParams.get('symbol') || data.symbol || prev.symbol,
-              timeframe: (searchParams.get('timeframe') || data.timeframe || prev.timeframe) as any,
-              leverage: searchParams.get('leverage') ? parseInt(searchParams.get('leverage')!) : (data.leverage || prev.leverage),
-              riskLevel: (searchParams.get('riskLevel') || data.risk_level || prev.riskLevel) as 'low' | 'medium' | 'high',
-              tradeAmount: searchParams.get('tradeAmount') ? parseFloat(searchParams.get('tradeAmount')!) : (data.trade_amount || prev.tradeAmount),
-              stopLoss: searchParams.get('stopLoss') ? parseFloat(searchParams.get('stopLoss')!) : (data.stop_loss || prev.stopLoss),
-              takeProfit: searchParams.get('takeProfit') ? parseFloat(searchParams.get('takeProfit')!) : (data.take_profit || prev.takeProfit),
-            }));
+            setFormData(prev => {
+              const exchangeParam = searchParams.get('exchange') || data.exchange || prev.exchange;
+              // Force bybit if okx or bitunix is passed (they're disabled)
+              const finalExchange = (exchangeParam === 'okx' || exchangeParam === 'bitunix') ? 'bybit' : (exchangeParam as 'bybit' | 'okx');
+              return {
+                ...prev,
+                name: searchParams.get('name') || data.name || prev.name,
+                exchange: finalExchange,
+                tradingType: (searchParams.get('tradingType') || data.trading_type || prev.tradingType) as 'spot' | 'futures',
+                symbol: searchParams.get('symbol') || data.symbol || prev.symbol,
+                timeframe: (searchParams.get('timeframe') || data.timeframe || prev.timeframe) as any,
+                leverage: searchParams.get('leverage') ? parseInt(searchParams.get('leverage')!) : (data.leverage || prev.leverage),
+                riskLevel: (searchParams.get('riskLevel') || data.risk_level || prev.riskLevel) as 'low' | 'medium' | 'high',
+                tradeAmount: searchParams.get('tradeAmount') ? parseFloat(searchParams.get('tradeAmount')!) : (data.trade_amount || prev.tradeAmount),
+                stopLoss: searchParams.get('stopLoss') ? parseFloat(searchParams.get('stopLoss')!) : (data.stop_loss || prev.stopLoss),
+                takeProfit: searchParams.get('takeProfit') ? parseFloat(searchParams.get('takeProfit')!) : (data.take_profit || prev.takeProfit),
+              };
+            });
 
             // Set strategy and config - merge with defaults to ensure all required fields are present
             if (parsedStrategy && Object.keys(parsedStrategy).length > 0) {
@@ -414,6 +421,13 @@ export default function CreateBotPage() {
             navigate('/pricing');
           }
         }, 1500);
+        return;
+      }
+      
+      // Validate exchange is enabled
+      if (formData.exchange === 'okx' || formData.exchange === 'bitunix') {
+        setError('OKX and Bitunix exchanges are coming soon. Please use Bybit for now.');
+        setIsCreating(false);
         return;
       }
       // Handle multiple pairs or single pair
@@ -850,7 +864,7 @@ All settings have been applied to your bot configuration.`;
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                     Exchange
-                    <HelpTooltip text="Select the cryptocurrency exchange where your bot will trade. Currently supports Bybit, OKX, and Bitunix." />
+                    <HelpTooltip text="Select the cryptocurrency exchange where your bot will trade. Currently supports Bybit. OKX and Bitunix are coming soon." />
                   </label>
                   <select
                     value={formData.exchange}
@@ -858,8 +872,8 @@ All settings have been applied to your bot configuration.`;
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="bybit">Bybit</option>
-                    <option value="okx">OKX</option>
-                    <option value="bitunix">Bitunix</option>
+                    <option value="okx" disabled>OKX (Coming Soon)</option>
+                    <option value="bitunix" disabled>Bitunix (Coming Soon)</option>
                   </select>
                 </div>
 
