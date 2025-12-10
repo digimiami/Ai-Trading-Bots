@@ -44,7 +44,9 @@ export default function SubscriptionManagement() {
   const fetchSubscriptions = async () => {
     try {
       setError(null)
-      // Use left join instead of inner join to show subscriptions even if user is deleted
+      setLoading(true)
+      
+      // First, try to fetch subscriptions with joins
       const { data, error } = await supabase
         .from('user_subscriptions')
         .select(`
@@ -57,12 +59,75 @@ export default function SubscriptionManagement() {
 
       if (error) {
         console.error('Subscription fetch error:', error)
+        
+        // If the error is about missing table or RLS, try a simpler query
+        if (error.code === 'PGRST116' || error.message?.includes('relation') || error.message?.includes('permission')) {
+          console.warn('Table might not exist or RLS issue, trying alternative approach...')
+          
+          // Try fetching just subscriptions without joins
+          const { data: simpleData, error: simpleError } = await supabase
+            .from('user_subscriptions')
+            .select('*')
+            .order('created_at', { ascending: false })
+            .limit(100)
+          
+          if (simpleError) {
+            // If even simple query fails, the table likely doesn't exist
+            console.warn('user_subscriptions table may not exist:', simpleError)
+            setSubscriptions([])
+            setError(null) // Don't show error if table doesn't exist, just show empty state
+            return
+          }
+          
+          // If we got data without joins, enrich it manually
+          if (simpleData && simpleData.length > 0) {
+            const enrichedData = await Promise.all(
+              simpleData.map(async (sub: any) => {
+                // Fetch user email
+                const { data: userData } = await supabase
+                  .from('users')
+                  .select('email')
+                  .eq('id', sub.user_id)
+                  .single()
+                
+                // Fetch plan details
+                const { data: planData } = await supabase
+                  .from('subscription_plans')
+                  .select('name, display_name, max_bots')
+                  .eq('id', sub.plan_id)
+                  .single()
+                
+                return {
+                  ...sub,
+                  users: userData ? { email: userData.email } : null,
+                  subscription_plans: planData || null
+                }
+              })
+            )
+            setSubscriptions(enrichedData)
+            return
+          }
+        }
+        
         throw error
       }
+      
       setSubscriptions(data || [])
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching subscriptions:', err)
-      setError(err instanceof Error ? err.message : 'Failed to load subscriptions')
+      
+      // Provide more specific error messages
+      let errorMessage = 'Failed to load subscriptions'
+      if (err.code === 'PGRST116') {
+        errorMessage = 'Subscriptions table not found. Please ensure the database is set up correctly.'
+      } else if (err.message?.includes('permission') || err.message?.includes('RLS')) {
+        errorMessage = 'Permission denied. Please check Row Level Security policies.'
+      } else if (err.message) {
+        errorMessage = err.message
+      }
+      
+      setError(errorMessage)
+      setSubscriptions([]) // Set empty array on error to show empty state
     } finally {
       setLoading(false)
     }
