@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/useAuth';
@@ -12,7 +12,6 @@ export default function Navigation() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const isMountedRef = useRef(true);
 
   // Detect mobile screen size
   useEffect(() => {
@@ -130,33 +129,31 @@ export default function Navigation() {
     window.location.reload();
   };
 
-  // Track mount state
+  // Close dropdown when clicking outside - only when dropdown is open
   useEffect(() => {
-    isMountedRef.current = true;
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, []);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    if (!isDropdownOpen || !isMountedRef.current) {
+    if (!isDropdownOpen) {
       return;
     }
     
     const handleClickOutside = (event: MouseEvent) => {
-      if (!isMountedRef.current) return;
-      
       const target = event.target as HTMLElement;
-      if (target && !target.closest('.dropdown-menu') && !target.closest('.dropdown-button')) {
-        setIsDropdownOpen(false);
+      const dropdownElement = document.querySelector('.dropdown-menu');
+      const buttonElement = document.querySelector('.dropdown-button');
+      
+      if (target && dropdownElement && buttonElement) {
+        if (!dropdownElement.contains(target) && !buttonElement.contains(target)) {
+          setIsDropdownOpen(false);
+        }
       }
     };
     
-    // Use capture phase to catch events early
-    document.addEventListener('mousedown', handleClickOutside, true);
+    // Add a small delay to avoid immediate closure
+    const timeoutId = setTimeout(() => {
+      document.addEventListener('mousedown', handleClickOutside, true);
+    }, 0);
     
     return () => {
+      clearTimeout(timeoutId);
       document.removeEventListener('mousedown', handleClickOutside, true);
     };
   }, [isDropdownOpen]);
