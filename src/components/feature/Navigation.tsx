@@ -1,5 +1,5 @@
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/useAuth';
@@ -84,15 +84,17 @@ export default function Navigation() {
   }
 
   // Don't render navigation until user data is loaded (for authenticated routes)
-  // But be more lenient to prevent blank screens
+  // But be more lenient to prevent blank screens - only return null if loading is true
   const authRequiredRoutes = ['/dashboard', '/bots', '/settings', '/admin', '/trades', '/performance', '/pablo-ready', '/ai-assistant', '/backtest', '/bot-activity', '/transaction-log', '/paper-trading', '/futures-pairs-finder', '/messages', '/pricing'];
   const isAuthRequired = authRequiredRoutes.some(route => location.pathname.startsWith(route));
   
-  // Only return null if we're on an authenticated route and still loading
-  if (isAuthRequired && (loading || !user || user.role === undefined)) {
-    // Give it a moment - user might be loading
+  // Only return null if we're actively loading - don't block on missing user/role
+  if (isAuthRequired && loading) {
     return null;
   }
+  
+  // If user is not available after loading completes, still render (might be a race condition)
+  // The page itself will handle redirecting if needed
 
   // Main visible navigation items
   const mainNavItems = [
@@ -123,10 +125,10 @@ export default function Navigation() {
     ...(user?.role === 'admin' ? [{ path: '/admin', icon: 'ri-admin-line', label: 'Admin' }] : [])
   ];
 
-  // Refresh handler - memoized
-  const handleRefresh = useCallback(() => {
+  // Refresh handler
+  const handleRefresh = () => {
     window.location.reload();
-  }, []);
+  };
 
   // Track mount state
   useEffect(() => {
