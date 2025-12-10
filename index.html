@@ -37,17 +37,26 @@
       window.__BASE_PATH__ = window.__BASE_PATH__ || '/';
     </script>
     <script type="module" src="/src/main.tsx"></script>
-    <script 
-      src="https://readdy.ai/api/public/assistant/widget?projectId=01f35e8f-3cad-44dd-986e-ceb29e52b9b5"
-      mode="hybrid"
-      voice-show-transcript="true"
-      theme="light"
-      size="tiny"
-      accent-color="#14B8A6"
-      button-base-color="#000000"
-      button-accent-color="#FFFFFF"
-      defer
-    ></script>
+    <!-- Readdy.ai widget - Loaded asynchronously to prevent blocking -->
+    <script>
+      // Load Readdy.ai widget asynchronously after page load to prevent blocking
+      window.addEventListener('load', function() {
+        const script = document.createElement('script');
+        script.src = 'https://readdy.ai/api/public/assistant/widget?projectId=01f35e8f-3cad-44dd-986e-ceb29e52b9b5';
+        script.setAttribute('mode', 'hybrid');
+        script.setAttribute('voice-show-transcript', 'true');
+        script.setAttribute('theme', 'light');
+        script.setAttribute('size', 'tiny');
+        script.setAttribute('accent-color', '#14B8A6');
+        script.setAttribute('button-base-color', '#000000');
+        script.setAttribute('button-accent-color', '#FFFFFF');
+        script.defer = true;
+        script.onerror = function() {
+          console.warn('Readdy.ai widget failed to load');
+        };
+        document.body.appendChild(script);
+      });
+    </script>
     <script src="https://aiworkers.vip/widget.js?clientId=1e2d0fff534f389d6f6b47ece19fde2715a9e5888b9c4ae63c31b2119b572db4"></script>
   </body>
 </html>

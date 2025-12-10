@@ -28,6 +28,36 @@ export default function Navigation() {
     setIsMobileMenuOpen(false);
   }, [location.pathname]);
 
+  // Close dropdown when clicking outside - only when dropdown is open
+  // MUST be called before any conditional returns to follow Rules of Hooks
+  useEffect(() => {
+    if (!isDropdownOpen) {
+      return;
+    }
+    
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      const dropdownElement = document.querySelector('.dropdown-menu');
+      const buttonElement = document.querySelector('.dropdown-button');
+      
+      if (target && dropdownElement && buttonElement) {
+        if (!dropdownElement.contains(target) && !buttonElement.contains(target)) {
+          setIsDropdownOpen(false);
+        }
+      }
+    };
+    
+    // Add a small delay to avoid immediate closure
+    const timeoutId = setTimeout(() => {
+      document.addEventListener('mousedown', handleClickOutside, true);
+    }, 0);
+    
+    return () => {
+      clearTimeout(timeoutId);
+      document.removeEventListener('mousedown', handleClickOutside, true);
+    };
+  }, [isDropdownOpen]);
+
   // Public routes that don't require login
   const publicRoutes = ['/market-dashboard', '/crypto-bubbles', '/crypto-news'];
   const isPublicRoute = publicRoutes.includes(location.pathname) || location.pathname.startsWith('/crypto-news/');
@@ -128,35 +158,6 @@ export default function Navigation() {
   const handleRefresh = () => {
     window.location.reload();
   };
-
-  // Close dropdown when clicking outside - only when dropdown is open
-  useEffect(() => {
-    if (!isDropdownOpen) {
-      return;
-    }
-    
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      const dropdownElement = document.querySelector('.dropdown-menu');
-      const buttonElement = document.querySelector('.dropdown-button');
-      
-      if (target && dropdownElement && buttonElement) {
-        if (!dropdownElement.contains(target) && !buttonElement.contains(target)) {
-          setIsDropdownOpen(false);
-        }
-      }
-    };
-    
-    // Add a small delay to avoid immediate closure
-    const timeoutId = setTimeout(() => {
-      document.addEventListener('mousedown', handleClickOutside, true);
-    }, 0);
-    
-    return () => {
-      clearTimeout(timeoutId);
-      document.removeEventListener('mousedown', handleClickOutside, true);
-    };
-  }, [isDropdownOpen]);
 
   // Mobile menu drawer
   const MobileMenuDrawer = () => (
