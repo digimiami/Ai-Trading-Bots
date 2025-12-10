@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../hooks/useAuth';
@@ -12,6 +12,7 @@ export default function Navigation() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const isMountedRef = useRef(true);
 
   // Detect mobile screen size
   useEffect(() => {
@@ -83,64 +84,88 @@ export default function Navigation() {
   }
 
   // Don't render navigation until user data is loaded (for authenticated routes)
-  if (loading || !user || user.role === undefined) {
+  // But be more lenient to prevent blank screens
+  const authRequiredRoutes = ['/dashboard', '/bots', '/settings', '/admin', '/trades', '/performance', '/pablo-ready', '/ai-assistant', '/backtest', '/bot-activity', '/transaction-log', '/paper-trading', '/futures-pairs-finder', '/messages', '/pricing'];
+  const isAuthRequired = authRequiredRoutes.some(route => location.pathname.startsWith(route));
+  
+  // Only return null if we're on an authenticated route and still loading
+  if (isAuthRequired && (loading || !user || user.role === undefined)) {
+    // Give it a moment - user might be loading
     return null;
   }
 
-  // Main visible navigation items
-  const mainNavItems = [
+  // Main visible navigation items - memoized to prevent re-renders
+  const mainNavItems = useMemo(() => [
     { path: '/dashboard', icon: 'ri-home-line', label: t('nav.home') },
     { path: '/bots', icon: 'ri-robot-line', label: t('nav.bots') },
     { path: '/pablo-ready', icon: 'ri-star-line', label: 'Pablo Ready' },
     { path: '/settings', icon: 'ri-settings-line', label: t('nav.settings') }
-  ];
+  ], [t]);
 
-  // Dropdown menu items
-  const dropdownItems = [
-    { path: '/academy', icon: 'ri-graduation-cap-line', label: t('nav.academy') },
-    { path: '/market-dashboard', icon: 'ri-line-chart-line', label: t('nav.market') },
-    { path: '/ai-assistant', icon: 'ri-robot-2-line', label: 'AI Assistant' },
-    { path: '/backtest', icon: 'ri-test-tube-line', label: 'Backtest' },
-    { path: '/bot-activity', icon: 'ri-file-list-line', label: 'Activity' },
-    { path: '/trades', icon: 'ri-exchange-line', label: t('nav.trades') },
-    { path: '/performance', icon: 'ri-line-chart-line', label: t('nav.performance') },
-    { path: '/transaction-log', icon: 'ri-bar-chart-2-line', label: 'Log' },
-    { path: '/paper-trading', icon: 'ri-edit-box-line', label: t('nav.paperTrading') },
-    { path: '/futures-pairs-finder', icon: 'ri-search-line', label: 'Futures' },
-    { path: '/contact', icon: 'ri-customer-service-line', label: 'Contact' },
-    { path: '/messages', icon: 'ri-message-3-line', label: 'Messages' },
-    { path: '/pricing', icon: 'ri-vip-crown-line', label: 'Pricing' }
-  ];
-  
-  // Add AI/ML Dashboard if feature is enabled
-  if (import.meta.env.VITE_FEATURE_AI_ML === '1') {
-    dropdownItems.push({ path: '/ai-ml/dashboard', icon: 'ri-brain-line', label: 'AI/ML' });
-  }
+  // Dropdown menu items - memoized to prevent re-renders
+  const dropdownItems = useMemo(() => {
+    const items = [
+      { path: '/academy', icon: 'ri-graduation-cap-line', label: t('nav.academy') },
+      { path: '/market-dashboard', icon: 'ri-line-chart-line', label: t('nav.market') },
+      { path: '/ai-assistant', icon: 'ri-robot-2-line', label: 'AI Assistant' },
+      { path: '/backtest', icon: 'ri-test-tube-line', label: 'Backtest' },
+      { path: '/bot-activity', icon: 'ri-file-list-line', label: 'Activity' },
+      { path: '/trades', icon: 'ri-exchange-line', label: t('nav.trades') },
+      { path: '/performance', icon: 'ri-line-chart-line', label: t('nav.performance') },
+      { path: '/transaction-log', icon: 'ri-bar-chart-2-line', label: 'Log' },
+      { path: '/paper-trading', icon: 'ri-edit-box-line', label: t('nav.paperTrading') },
+      { path: '/futures-pairs-finder', icon: 'ri-search-line', label: 'Futures' },
+      { path: '/contact', icon: 'ri-customer-service-line', label: 'Contact' },
+      { path: '/messages', icon: 'ri-message-3-line', label: 'Messages' },
+      { path: '/pricing', icon: 'ri-vip-crown-line', label: 'Pricing' }
+    ];
+    
+    // Add AI/ML Dashboard if feature is enabled
+    if (import.meta.env.VITE_FEATURE_AI_ML === '1') {
+      items.push({ path: '/ai-ml/dashboard', icon: 'ri-brain-line', label: 'AI/ML' });
+    }
 
-  // Add admin link if user is admin
-  if (user?.role === 'admin') {
-    dropdownItems.push({ path: '/admin', icon: 'ri-admin-line', label: 'Admin' });
-  }
+    // Add admin link if user is admin
+    if (user?.role === 'admin') {
+      items.push({ path: '/admin', icon: 'ri-admin-line', label: 'Admin' });
+    }
+    
+    return items;
+  }, [t, user?.role]);
 
-  // Refresh handler
-  const handleRefresh = () => {
+  // Refresh handler - memoized
+  const handleRefresh = useCallback(() => {
     window.location.reload();
-  };
+  }, []);
+
+  // Track mount state
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // Close dropdown when clicking outside
   useEffect(() => {
-    if (!isDropdownOpen) return;
+    if (!isDropdownOpen || !isMountedRef.current) {
+      return;
+    }
     
     const handleClickOutside = (event: MouseEvent) => {
+      if (!isMountedRef.current) return;
+      
       const target = event.target as HTMLElement;
-      if (!target.closest('.dropdown-menu') && !target.closest('.dropdown-button')) {
+      if (target && !target.closest('.dropdown-menu') && !target.closest('.dropdown-button')) {
         setIsDropdownOpen(false);
       }
     };
     
-    document.addEventListener('mousedown', handleClickOutside);
+    // Use capture phase to catch events early
+    document.addEventListener('mousedown', handleClickOutside, true);
+    
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('mousedown', handleClickOutside, true);
     };
   }, [isDropdownOpen]);
 
