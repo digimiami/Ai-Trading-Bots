@@ -132,7 +132,15 @@ export default function PricingPage() {
 
         {/* Pricing Plans */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
-          {plans.filter(plan => plan.name !== 'Free' && plan.display_name !== 'Free Plan').map((plan) => {
+          {plans.filter(plan => {
+            const nameLower = (plan.name || '').toLowerCase();
+            const displayNameLower = (plan.display_name || '').toLowerCase();
+            // Filter out Free Plan in any variation
+            return nameLower !== 'free' && 
+                   displayNameLower !== 'free plan' &&
+                   !displayNameLower.includes('free plan') &&
+                   !nameLower.includes('free');
+          }).map((plan) => {
             const isCurrentPlan = currentPlan?.id === plan.id
             const isPopular = plan.name === 'Pro'
             const priceCrypto = plan.price_crypto as Record<string, string> || {}

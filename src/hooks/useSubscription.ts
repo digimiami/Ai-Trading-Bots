@@ -57,10 +57,19 @@ export function useSubscription() {
         .from('subscription_plans')
         .select('*')
         .eq('is_active', true)
+        .neq('name', 'Free')
         .order('sort_order', { ascending: true })
 
       if (error) throw error
-      setPlans(data || [])
+      // Double filter to ensure Free Plan is removed
+      const filteredPlans = (data || []).filter(plan => {
+        const nameLower = (plan.name || '').toLowerCase();
+        const displayNameLower = (plan.display_name || '').toLowerCase();
+        return nameLower !== 'free' && 
+               displayNameLower !== 'free plan' &&
+               !displayNameLower.includes('free plan');
+      });
+      setPlans(filteredPlans)
     } catch (err) {
       console.error('Error fetching plans:', err)
       setError(err instanceof Error ? err.message : 'Failed to fetch plans')
