@@ -261,6 +261,22 @@ export default function Home() {
             </Button>
             <Button
               variant="secondary"
+              onClick={() => navigate('/market-dashboard')}
+              className="h-12 flex items-center justify-center"
+            >
+              <i className="ri-line-chart-line mr-2"></i>
+              Market Dashboard
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => navigate('/crypto-news')}
+              className="h-12 flex items-center justify-center"
+            >
+              <i className="ri-newspaper-line mr-2"></i>
+              Crypto News
+            </Button>
+            <Button
+              variant="secondary"
               onClick={() => navigate('/academy')}
               className="h-12 flex items-center justify-center"
             >
