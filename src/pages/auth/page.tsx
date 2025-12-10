@@ -162,33 +162,11 @@ export default function AuthPage() {
           }
         }
       } else {
-        // REQUIRE invitation code for signup
-        if (!inviteCode || !inviteCode.trim()) {
-          setError('Invitation code is required to create an account. Please contact an admin for an invitation code.')
-          setLoading(false)
-          return
-        }
-
-        // Validate invitation code before signup
-        if (inviteValid === false) {
-          setError('Invalid or expired invitation code. Please check your invitation code and try again.')
-          setLoading(false)
-          return
-        }
-
-        if (inviteValid === null) {
-          // Still validating, wait a moment
-          await new Promise(resolve => setTimeout(resolve, 500))
-          if (inviteValid === false) {
-            setError('Invalid or expired invitation code. Please check your invitation code and try again.')
-            setLoading(false)
-            return
-          }
-        }
-
+        // Free signup - no invitation code required
+        // Users will automatically get the Testing plan with 14-day trial
         result = await signUp(email, password)
         
-        // If signup successful, mark invitation code as used
+        // Optional: If invitation code was provided, mark it as used (but not required)
         if (!result.error && result.data?.user && inviteCode) {
           try {
             let activeSession = result.data?.session || null
@@ -283,51 +261,10 @@ export default function AuthPage() {
 
         <form onSubmit={isForgotPassword ? handlePasswordReset : handleSubmit} className="space-y-6">
           {!isLogin && !isForgotPassword && (
-            <div>
-              <label htmlFor="inviteCode" className="block text-sm font-medium text-gray-700 mb-2">
-                Invitation Code <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="inviteCode"
-                type="text"
-                value={inviteCode}
-                onChange={async (e) => {
-                  const code = e.target.value
-                  setInviteCode(code)
-                  if (code.trim()) {
-                    await validateInviteCode(code)
-                  } else {
-                    setInviteValid(null)
-                  }
-                }}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Enter admin invitation code"
-                required
-              />
-              {inviteCode && (
-                <div className={`mt-2 text-xs ${
-                  inviteValid === true ? 'text-green-600' : 
-                  inviteValid === false ? 'text-red-600' : 
-                  'text-gray-500'
-                }`}>
-                  {inviteValid === true ? '✓ Valid invitation code' : 
-                   inviteValid === false ? '✗ Invalid or expired invitation code' : 
-                   'Validating...'}
-                </div>
-              )}
-              <p className="mt-1 text-xs text-gray-500">
-                An invitation code from an admin is required to create an account.{' '}
-                <a
-                  href="/contact"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    navigate('/contact');
-                  }}
-                  className="text-blue-600 hover:text-blue-700 underline font-medium"
-                >
-                  Contact us
-                </a>{' '}
-                to request an invitation code.
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+              <p className="text-sm text-blue-800">
+                <i className="ri-gift-line mr-2"></i>
+                <strong>Free 14-Day Trial!</strong> Start with 1 bot and 10 trades/day. No credit card required.
               </p>
             </div>
           )}
@@ -419,7 +356,7 @@ export default function AuthPage() {
           <Button
             type="submit"
             className="w-full"
-            disabled={!!(loading || (!isForgotPassword && !isLogin && (!inviteCode || inviteCode.trim() === '' || inviteValid === false)))}
+            disabled={loading}
           >
             {loading 
               ? 'Processing...' 

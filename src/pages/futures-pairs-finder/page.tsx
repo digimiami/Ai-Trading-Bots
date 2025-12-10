@@ -38,6 +38,16 @@ export default function FuturesPairsFinderPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedExchange, setSelectedExchange] = useState<'all' | 'bybit' | 'okx' | 'bitunix'>('all');
+  
+  // Ensure only enabled exchanges can be selected
+  const handleExchangeChange = (value: string) => {
+    if (value === 'okx' || value === 'bitunix') {
+      // If disabled exchange is selected, default to 'all' (which will only show Bybit)
+      setSelectedExchange('all');
+    } else {
+      setSelectedExchange(value as 'all' | 'bybit');
+    }
+  };
   const [sortBy, setSortBy] = useState<'performance' | 'volume' | 'change24h' | 'change30d'>('performance');
   const [minVolume, setMinVolume] = useState<number>(1000000); // Minimum 24h volume filter
   const [expandedPair, setExpandedPair] = useState<string | null>(null);
@@ -50,9 +60,11 @@ export default function FuturesPairsFinderPage() {
       const allPairs: FuturesPair[] = [];
 
       const exchangesToFetch: Array<'bybit' | 'okx' | 'bitunix'> = [];
-      if (selectedExchange === 'all' || selectedExchange === 'bybit') exchangesToFetch.push('bybit');
-      if (selectedExchange === 'all' || selectedExchange === 'okx') exchangesToFetch.push('okx');
-      if (selectedExchange === 'all' || selectedExchange === 'bitunix') exchangesToFetch.push('bitunix');
+      // Only fetch from Bybit (OKX and Bitunix are disabled)
+      if (selectedExchange === 'all' || selectedExchange === 'bybit') {
+        exchangesToFetch.push('bybit');
+      }
+      // OKX and Bitunix are disabled - don't fetch from them
 
       for (const exchange of exchangesToFetch) {
 
@@ -491,9 +503,11 @@ export default function FuturesPairsFinderPage() {
   };
 
   const handleCreateBot = (pair: FuturesPair, suggestedSettings?: SuggestedBotSettings) => {
+    // Force bybit if exchange is disabled (okx or bitunix)
+    const exchange = (pair.exchange === 'okx' || pair.exchange === 'bitunix') ? 'bybit' : pair.exchange;
     const params = new URLSearchParams({
       symbol: pair.symbol,
-      exchange: pair.exchange,
+      exchange: exchange,
       tradingType: 'futures'
     });
 
@@ -536,14 +550,14 @@ export default function FuturesPairsFinderPage() {
                   Exchange
                 </label>
                 <select
-                  value={selectedExchange}
-                  onChange={(e) => setSelectedExchange(e.target.value as any)}
+                  value={selectedExchange === 'okx' || selectedExchange === 'bitunix' ? 'all' : selectedExchange}
+                  onChange={(e) => handleExchangeChange(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="all">All Exchanges</option>
                   <option value="bybit">Bybit</option>
-                  <option value="okx">OKX</option>
-                  <option value="bitunix">Bitunix</option>
+                  <option value="okx" disabled>OKX (Coming Soon)</option>
+                  <option value="bitunix" disabled>Bitunix (Coming Soon)</option>
                 </select>
               </div>
 
