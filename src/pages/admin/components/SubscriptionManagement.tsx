@@ -46,73 +46,81 @@ export default function SubscriptionManagement() {
       setError(null)
       setLoading(true)
       
-      // First, try to fetch subscriptions with joins
-      const { data, error } = await supabase
+      // Fetch subscriptions without joins (to avoid relationship errors)
+      const { data: subscriptionsData, error: subscriptionsError } = await supabase
         .from('user_subscriptions')
-        .select(`
-          *,
-          users (email),
-          subscription_plans (name, display_name, max_bots)
-        `)
+        .select('*')
         .order('created_at', { ascending: false })
         .limit(100)
 
-      if (error) {
-        console.error('Subscription fetch error:', error)
+      if (subscriptionsError) {
+        console.error('Subscription fetch error:', subscriptionsError)
         
-        // If the error is about missing table or RLS, try a simpler query
-        if (error.code === 'PGRST116' || error.message?.includes('relation') || error.message?.includes('permission')) {
-          console.warn('Table might not exist or RLS issue, trying alternative approach...')
-          
-          // Try fetching just subscriptions without joins
-          const { data: simpleData, error: simpleError } = await supabase
-            .from('user_subscriptions')
-            .select('*')
-            .order('created_at', { ascending: false })
-            .limit(100)
-          
-          if (simpleError) {
-            // If even simple query fails, the table likely doesn't exist
-            console.warn('user_subscriptions table may not exist:', simpleError)
-            setSubscriptions([])
-            setError(null) // Don't show error if table doesn't exist, just show empty state
-            return
-          }
-          
-          // If we got data without joins, enrich it manually
-          if (simpleData && simpleData.length > 0) {
-            const enrichedData = await Promise.all(
-              simpleData.map(async (sub: any) => {
-                // Fetch user email
-                const { data: userData } = await supabase
-                  .from('users')
-                  .select('email')
-                  .eq('id', sub.user_id)
-                  .single()
-                
-                // Fetch plan details
-                const { data: planData } = await supabase
-                  .from('subscription_plans')
-                  .select('name, display_name, max_bots')
-                  .eq('id', sub.plan_id)
-                  .single()
-                
-                return {
-                  ...sub,
-                  users: userData ? { email: userData.email } : null,
-                  subscription_plans: planData || null
-                }
-              })
-            )
-            setSubscriptions(enrichedData)
-            return
-          }
+        // If table doesn't exist, show empty state
+        if (subscriptionsError.code === 'PGRST116' || subscriptionsError.message?.includes('relation')) {
+          console.warn('user_subscriptions table may not exist:', subscriptionsError)
+          setSubscriptions([])
+          setError(null) // Don't show error if table doesn't exist, just show empty state
+          return
         }
         
-        throw error
+        throw subscriptionsError
       }
-      
-      setSubscriptions(data || [])
+
+      if (!subscriptionsData || subscriptionsData.length === 0) {
+        setSubscriptions([])
+        return
+      }
+
+      // Manually enrich subscriptions with user and plan data
+      const enrichedData = await Promise.all(
+        subscriptionsData.map(async (sub: any) => {
+          let userEmail = 'Unknown'
+          let planData = null
+
+          // Fetch user email
+          if (sub.user_id) {
+            try {
+              const { data: userData, error: userError } = await supabase
+                .from('users')
+                .select('email')
+                .eq('id', sub.user_id)
+                .maybeSingle()
+              
+              if (!userError && userData) {
+                userEmail = userData.email || 'Unknown'
+              }
+            } catch (err) {
+              console.warn(`Failed to fetch user ${sub.user_id}:`, err)
+            }
+          }
+
+          // Fetch plan details
+          if (sub.plan_id) {
+            try {
+              const { data: plan, error: planError } = await supabase
+                .from('subscription_plans')
+                .select('name, display_name, max_bots')
+                .eq('id', sub.plan_id)
+                .maybeSingle()
+              
+              if (!planError && plan) {
+                planData = plan
+              }
+            } catch (err) {
+              console.warn(`Failed to fetch plan ${sub.plan_id}:`, err)
+            }
+          }
+
+          return {
+            ...sub,
+            users: { email: userEmail },
+            subscription_plans: planData
+          }
+        })
+      )
+
+      setSubscriptions(enrichedData)
     } catch (err: any) {
       console.error('Error fetching subscriptions:', err)
       
