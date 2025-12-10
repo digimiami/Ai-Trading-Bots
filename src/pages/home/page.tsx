@@ -194,6 +194,21 @@ export default function Home() {
                 <p className="text-gray-600 text-sm mb-4">
                   Ready to start automated trading? Create your first AI trading bot and let it work 24/7 for you.
                 </p>
+                <div className="mb-3 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                  <p className="text-xs text-gray-700 mb-2">
+                    <i className="ri-information-line text-orange-600 mr-1"></i>
+                    <strong>Need a Bybit account?</strong> Sign up with our referral link to get started:
+                  </p>
+                  <a
+                    href="https://www.bybit.com/invite?ref=LJXQEA"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center text-sm font-medium text-orange-600 hover:text-orange-700 hover:underline"
+                  >
+                    <i className="ri-external-link-line mr-1"></i>
+                    Sign up for Bybit Account
+                  </a>
+                </div>
                 <div className="flex space-x-3">
                   <Button
                     variant="primary"

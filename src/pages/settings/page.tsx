@@ -1742,6 +1742,21 @@ export default function Settings() {
                         placeholder="Enter Bybit API Secret"
                       />
                     </div>
+                    <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                      <p className="text-xs text-gray-700 mb-2">
+                        <i className="ri-information-line text-orange-600 mr-1"></i>
+                        <strong>Don't have a Bybit account?</strong>
+                      </p>
+                      <a
+                        href="https://www.bybit.com/invite?ref=LJXQEA"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center text-sm font-medium text-orange-600 hover:text-orange-700 hover:underline"
+                      >
+                        <i className="ri-external-link-line mr-1"></i>
+                        Sign up for Bybit Account
+                      </a>
+                    </div>
                     <div className="flex space-x-2">
                       <button
                         onClick={() => handleTestConnection('bybit')}
