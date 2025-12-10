@@ -129,16 +129,19 @@ export default function Navigation() {
 
   // Close dropdown when clicking outside
   useEffect(() => {
+    if (!isDropdownOpen) return;
+    
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
       if (!target.closest('.dropdown-menu') && !target.closest('.dropdown-button')) {
         setIsDropdownOpen(false);
       }
     };
-    if (isDropdownOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, [isDropdownOpen]);
 
   // Mobile menu drawer

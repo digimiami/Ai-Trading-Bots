@@ -8,6 +8,7 @@ import { useBotExecutor } from './hooks/useBotExecutor';
 import { useSoundNotifications } from './hooks/useSoundNotifications';
 import { ONBOARDING_ENABLED } from './constants/featureFlags';
 import CookieConsent from './components/ui/CookieConsent';
+import { supabase } from './lib/supabase';
 
 function AppRoutes() {
   const element = useRoutes(routes);
@@ -52,6 +53,54 @@ function AppRoutes() {
       localStorage.removeItem('appearance_settings');
     }
   }, []);
+
+  useEffect(() => {
+    if (!loading && user) {
+      const checkFirstTimeLogin = async () => {
+        try {
+          // Wait a bit for user profile to be created by trigger
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          
+          // Check if user has API keys configured
+          const { data: { session } } = await supabase.auth.getSession();
+          if (!session) return;
+
+          const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/api-keys/list`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            const hasApiKeys = data.apiKeys && data.apiKeys.length > 0;
+            const currentPath = window.location.pathname;
+            const settingsRoutes = ['/settings', '/auth', '/onboarding'];
+            const publicRoutes = ['/', '/market-dashboard', '/crypto-bubbles', '/crypto-news', '/contact'];
+            
+            // If no API keys and not already on settings/auth/onboarding/public pages, redirect to settings
+            if (!hasApiKeys && !settingsRoutes.includes(currentPath) && !publicRoutes.includes(currentPath)) {
+              console.log('🔄 First-time user detected (no API keys), redirecting to settings');
+              navigate('/settings', { replace: true });
+              return;
+            }
+          }
+        } catch (error) {
+          console.error('Error checking API keys for first-time login:', error);
+          // Don't block navigation on error
+        }
+      };
+
+      // Only check on first load, not on every route change
+      const hasCheckedFirstTime = sessionStorage.getItem('firstTimeLoginChecked');
+      if (!hasCheckedFirstTime) {
+        checkFirstTimeLogin();
+        sessionStorage.setItem('firstTimeLoginChecked', 'true');
+      }
+    }
+  }, [user, loading, navigate]);
 
   useEffect(() => {
     if (!loading) {

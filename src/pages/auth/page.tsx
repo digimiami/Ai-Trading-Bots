@@ -166,6 +166,28 @@ export default function AuthPage() {
         // Users will automatically get the Testing plan with 14-day trial
         result = await signUp(email, password)
         
+        // Check if email confirmation is required
+        if (!result.error && result.data?.user) {
+          // Check if user needs to confirm email
+          if (!result.data.user.email_confirmed_at) {
+            setSuccess('✅ Account created successfully! Please check your email inbox to confirm your account. Once confirmed, you can sign in.')
+            setLoading(false)
+            // Clear form
+            setEmail('')
+            setPassword('')
+            // Switch to login after showing message
+            setTimeout(() => {
+              setIsLogin(true)
+              setSuccess(null)
+            }, 8000)
+            return
+          } else {
+            // Email already confirmed (shouldn't happen normally, but handle it)
+            setSuccess('✅ Account created successfully! Redirecting...')
+            setLoading(false)
+          }
+        }
+        
         // Optional: If invitation code was provided, mark it as used (but not required)
         if (!result.error && result.data?.user && inviteCode) {
           try {
