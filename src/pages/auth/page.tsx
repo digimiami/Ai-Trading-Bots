@@ -21,10 +21,20 @@ export default function AuthPage() {
   const navigate = useNavigate()
   const { user, loading: authLoading, signIn, signUp } = useAuth()
 
-  // Redirect authenticated users to home page
+  // Redirect authenticated users - new users go to pricing to pay first
   useEffect(() => {
     if (!authLoading && user) {
-      navigate('/dashboard')
+      // For new signups or users coming from auth flow, redirect to pricing page to pay before using the app
+      // This ensures users create an invoice and pay before accessing the dashboard
+      const currentPath = window.location.pathname
+      const isAuthPage = currentPath === '/auth' || currentPath.startsWith('/auth/')
+      const isRoot = currentPath === '/'
+      
+      if (isAuthPage || isRoot) {
+        // New signup or returning from email confirmation - redirect to pricing to pay
+        navigate('/pricing', { replace: true })
+      }
+      // If already on another page (like /dashboard), don't redirect (let them stay there)
     }
   }, [user, authLoading, navigate])
 
@@ -183,8 +193,13 @@ export default function AuthPage() {
             return
           } else {
             // Email already confirmed (shouldn't happen normally, but handle it)
-            setSuccess('✅ Account created successfully! Redirecting...')
+            setSuccess('✅ Account created successfully! Redirecting to pricing to select a plan...')
             setLoading(false)
+            // Redirect to pricing page so user can pay before using the app
+            setTimeout(() => {
+              navigate('/pricing')
+            }, 1500)
+            return
           }
         }
         

@@ -43,6 +43,8 @@ serve(async (req) => {
   }
 
   try {
+    console.log('📝 [BTCPay] Request received:', req.method, req.url)
+    
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
@@ -55,7 +57,18 @@ serve(async (req) => {
       apiKey: Deno.env.get('BTCPAY_API_KEY') ?? '',
     }
 
+    console.log('📝 [BTCPay] Configuration check:', {
+      hasServerUrl: !!btcpayConfig.serverUrl,
+      hasStoreId: !!btcpayConfig.storeId,
+      hasApiKey: !!btcpayConfig.apiKey
+    })
+
     if (!btcpayConfig.serverUrl || !btcpayConfig.storeId || !btcpayConfig.apiKey) {
+      console.error('❌ [BTCPay] Configuration missing:', {
+        missingServerUrl: !btcpayConfig.serverUrl,
+        missingStoreId: !btcpayConfig.storeId,
+        missingApiKey: !btcpayConfig.apiKey
+      })
       return new Response(
         JSON.stringify({ 
           error: 'BTCPay Server not configured',
@@ -67,23 +80,28 @@ serve(async (req) => {
 
     // Get authenticated user
     const authHeader = req.headers.get('Authorization')
+    console.log('📝 [BTCPay] Auth header present:', !!authHeader)
+    
     if (!authHeader) {
+      console.error('❌ [BTCPay] No authorization header')
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(
-      authHeader.replace('Bearer ', '')
-    )
+    const token = authHeader.replace('Bearer ', '')
+    console.log('📝 [BTCPay] Validating token...')
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token)
 
     if (authError || !user) {
+      console.error('❌ [BTCPay] Auth failed:', authError?.message || 'No user')
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
+    console.log('✅ [BTCPay] User authenticated:', user.id)
 
     const url = new URL(req.url)
     const action = url.searchParams.get('action') || 'create-invoice'
@@ -92,10 +110,13 @@ serve(async (req) => {
     // CREATE INVOICE
     // ============================================================
     if (action === 'create-invoice' && req.method === 'POST') {
+      console.log('📝 [BTCPay] Invoice creation request received')
       const body: CreateInvoiceRequest = await req.json()
       const { planId, currency = 'USD' } = body
+      console.log('📝 [BTCPay] Request body:', { planId, currency, userId: user.id })
 
       if (!planId) {
+        console.error('❌ [BTCPay] Missing planId')
         return new Response(
           JSON.stringify({ error: 'planId is required' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -103,6 +124,7 @@ serve(async (req) => {
       }
 
       // Get subscription plan details
+      console.log('📝 [BTCPay] Fetching plan:', planId)
       const { data: plan, error: planError } = await supabaseClient
         .from('subscription_plans')
         .select('*')
@@ -111,11 +133,13 @@ serve(async (req) => {
         .single()
 
       if (planError || !plan) {
+        console.error('❌ [BTCPay] Plan not found:', planError?.message || 'Plan not found')
         return new Response(
           JSON.stringify({ error: 'Subscription plan not found' }),
           { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
+      console.log('✅ [BTCPay] Plan found:', plan.name, plan.display_name)
 
       // Calculate amount based on currency
       let amount: string
@@ -149,24 +173,32 @@ serve(async (req) => {
         notificationURL: `${Deno.env.get('SUPABASE_URL')}/functions/v1/btcpay-webhook`
       }
 
-      console.log(`📝 Creating BTCPay invoice for user ${user.id}, plan: ${plan.name}`)
+      console.log(`📝 [BTCPay] Creating invoice for user ${user.id}, plan: ${plan.name}`)
+      console.log(`📝 [BTCPay] Invoice data:`, JSON.stringify(invoiceData, null, 2))
+      console.log(`📝 [BTCPay] BTCPay config:`, { 
+        serverUrl: btcpayConfig.serverUrl ? 'SET' : 'MISSING',
+        storeId: btcpayConfig.storeId ? 'SET' : 'MISSING',
+        apiKey: btcpayConfig.apiKey ? 'SET' : 'MISSING'
+      })
 
       // Call BTCPay Server Greenfield API
-      const btcpayResponse = await fetch(
-        `${btcpayConfig.serverUrl}/api/v1/stores/${btcpayConfig.storeId}/invoices`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `token ${btcpayConfig.apiKey}`
-          },
-          body: JSON.stringify(invoiceData)
-        }
-      )
+      const btcpayUrl = `${btcpayConfig.serverUrl}/api/v1/stores/${btcpayConfig.storeId}/invoices`
+      console.log(`📝 [BTCPay] Calling BTCPay API: ${btcpayUrl}`)
+      
+      const btcpayResponse = await fetch(btcpayUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `token ${btcpayConfig.apiKey}`
+        },
+        body: JSON.stringify(invoiceData)
+      })
+
+      console.log(`📝 [BTCPay] BTCPay response status: ${btcpayResponse.status}`)
 
       if (!btcpayResponse.ok) {
         const errorText = await btcpayResponse.text()
-        console.error('❌ BTCPay invoice creation failed:', errorText)
+        console.error('❌ [BTCPay] Invoice creation failed:', errorText)
         return new Response(
           JSON.stringify({ 
             error: 'Failed to create invoice',
@@ -177,8 +209,11 @@ serve(async (req) => {
       }
 
       const btcpayInvoice: BTCPayInvoice = await btcpayResponse.json()
+      console.log(`✅ [BTCPay] Invoice created successfully: ${btcpayInvoice.id}`)
+      console.log(`✅ [BTCPay] Checkout link: ${btcpayInvoice.checkoutLink}`)
 
       // Create subscription record
+      console.log(`📝 [BTCPay] Creating subscription record for user ${user.id}`)
       const { data: subscription, error: subError } = await supabaseClient
         .from('user_subscriptions')
         .insert({
@@ -201,12 +236,13 @@ serve(async (req) => {
         .single()
 
       if (subError) {
-        console.error('❌ Failed to create subscription record:', subError)
+        console.error('❌ [BTCPay] Failed to create subscription record:', subError)
         return new Response(
           JSON.stringify({ error: 'Failed to create subscription' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
+      console.log(`✅ [BTCPay] Subscription record created: ${subscription.id}`)
 
       // Create payment history record
       await supabaseClient
@@ -227,23 +263,28 @@ serve(async (req) => {
           }
         })
 
-      console.log(`✅ Invoice created: ${btcpayInvoice.id}`)
+      console.log(`✅ [BTCPay] Invoice created: ${btcpayInvoice.id}`)
+      console.log(`✅ [BTCPay] Returning response with checkout link`)
+
+      const responseData = {
+        success: true,
+        invoice: {
+          id: btcpayInvoice.id,
+          checkoutLink: btcpayInvoice.checkoutLink,
+          amount: amount,
+          currency: currency,
+          status: btcpayInvoice.status
+        },
+        subscription: {
+          id: subscription.id,
+          planName: plan.display_name
+        }
+      }
+      
+      console.log(`✅ [BTCPay] Response data:`, JSON.stringify(responseData, null, 2))
 
       return new Response(
-        JSON.stringify({
-          success: true,
-          invoice: {
-            id: btcpayInvoice.id,
-            checkoutLink: btcpayInvoice.checkoutLink,
-            amount: amount,
-            currency: currency,
-            status: btcpayInvoice.status
-          },
-          subscription: {
-            id: subscription.id,
-            planName: plan.display_name
-          }
-        }),
+        JSON.stringify(responseData),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
