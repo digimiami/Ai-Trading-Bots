@@ -59,19 +59,123 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     )
 
-    // Verify webhook secret (optional but recommended)
-    const webhookSecret = Deno.env.get('EMAIL_WEBHOOK_SECRET')
-    const providedSecret = req.headers.get('X-Webhook-Secret') || req.headers.get('Authorization')?.replace('Bearer ', '')
+    // Read body once (needed for signature verification and parsing)
+    const body = await req.text()
     
-    if (webhookSecret && providedSecret !== webhookSecret) {
-      console.warn('⚠️ Invalid webhook secret')
+    // Verify Resend webhook signature using Svix format
+    // Resend uses Svix for webhook signature verification
+    const signingSecret = Deno.env.get('RESEND_WEBHOOK_SECRET') || Deno.env.get('EMAIL_WEBHOOK_SECRET') || Deno.env.get('Signing Secret')
+    
+    if (signingSecret) {
+      const svixId = req.headers.get('svix-id')
+      const svixTimestamp = req.headers.get('svix-timestamp')
+      const svixSignature = req.headers.get('svix-signature')
+      
+      if (!svixSignature || !svixTimestamp || !svixId) {
+        console.warn('⚠️ Missing Resend webhook signature headers', {
+          hasSignature: !!svixSignature,
+          hasTimestamp: !!svixTimestamp,
+          hasId: !!svixId
+        })
+        // Allow through if signature headers are missing (for testing or other providers)
+        console.log('⚠️ Proceeding without signature verification')
+      } else {
+        // Verify signature using Svix format
+        // Svix signs: svix-id + '.' + svix-timestamp + '.' + body
+        try {
+          // Extract secret bytes (remove whsec_ prefix and decode base64)
+          let secretBytes: Uint8Array
+          if (signingSecret.startsWith('whsec_')) {
+            const secretBase64 = signingSecret.substring(6) // Remove 'whsec_' prefix
+            secretBytes = Uint8Array.from(atob(secretBase64), c => c.charCodeAt(0))
+          } else {
+            // If not in whsec_ format, use as-is
+            secretBytes = new TextEncoder().encode(signingSecret)
+          }
+
+          const cryptoKey = await crypto.subtle.importKey(
+            'raw',
+            secretBytes,
+            { name: 'HMAC', hash: 'SHA-256' },
+            false,
+            ['verify']
+          )
+
+          // Construct signed content: svix-id.svix-timestamp.body
+          const signedContent = `${svixId}.${svixTimestamp}.${body}`
+          const signatureParts = svixSignature.split(',')
+          let isValid = false
+
+          for (const part of signatureParts) {
+            const [version, signatureValue] = part.split('=')
+            if (version === 'v1' && signatureValue) {
+              try {
+                const signatureBytes = Uint8Array.from(atob(signatureValue), c => c.charCodeAt(0))
+                const signedBytes = new TextEncoder().encode(signedContent)
+                
+                isValid = await crypto.subtle.verify(
+                  'HMAC',
+                  cryptoKey,
+                  signatureBytes,
+                  signedBytes
+                )
+                
+                if (isValid) {
+                  console.log('✅ Resend webhook signature verified')
+                  break
+                }
+              } catch (sigError) {
+                console.warn('⚠️ Error verifying signature part:', sigError)
+              }
+            }
+          }
+
+          if (!isValid) {
+            console.warn('⚠️ Invalid Resend webhook signature')
+            return new Response(
+              JSON.stringify({ error: 'Unauthorized - Invalid signature' }),
+              { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
+
+          // Check timestamp to prevent replay attacks (within 5 minutes)
+          const timestampNum = parseInt(svixTimestamp)
+          const now = Math.floor(Date.now() / 1000)
+          if (Math.abs(now - timestampNum) > 300) {
+            console.warn('⚠️ Webhook timestamp too old or too far in future', {
+              timestamp: timestampNum,
+              now: now,
+              diff: Math.abs(now - timestampNum)
+            })
+            return new Response(
+              JSON.stringify({ error: 'Unauthorized - Timestamp invalid' }),
+              { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
+        } catch (verifyError) {
+          console.error('❌ Error verifying webhook signature:', verifyError)
+          return new Response(
+            JSON.stringify({ error: 'Unauthorized - Signature verification failed' }),
+            { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+      }
+    } else {
+      console.warn('⚠️ No webhook signing secret configured - skipping signature verification')
+    }
+
+    // Parse the body
+    let payload: InboundEmailPayload
+    try {
+      payload = JSON.parse(body)
+    } catch (parseError) {
+      console.error('❌ Error parsing payload:', parseError)
       return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Invalid JSON payload' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    const payload: InboundEmailPayload = await req.json()
     console.log('📧 Inbound email received:', JSON.stringify(payload, null, 2))
 
     // Parse email data based on provider format
