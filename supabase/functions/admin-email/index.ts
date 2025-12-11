@@ -23,7 +23,17 @@ interface SendEmailRequest {
 }
 
 serve(async (req) => {
+  const requestStartTime = Date.now()
+  const requestId = crypto.randomUUID()
+  
+  console.log(`\n${'='.repeat(60)}`)
+  console.log(`📧 [${requestId}] Admin Email Function INVOKED`)
+  console.log(`📅 Timestamp: ${new Date().toISOString()}`)
+  console.log(`🔍 Request method: ${req.method}`)
+  console.log(`🔗 Request URL: ${req.url}`)
+
   if (req.method === 'OPTIONS') {
+    console.log(`✅ [${requestId}] CORS preflight - returning OK`)
     return new Response('ok', { headers: corsHeaders })
   }
 
@@ -36,8 +46,9 @@ serve(async (req) => {
     // Get authenticated user
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
+      console.error(`❌ [${requestId}] Unauthorized: Missing Authorization header`)
       return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
+        JSON.stringify({ error: 'Unauthorized', requestId: requestId }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
@@ -47,11 +58,14 @@ serve(async (req) => {
     )
 
     if (authError || !user) {
+      console.error(`❌ [${requestId}] Unauthorized: ${authError?.message || 'User not found'}`)
       return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
+        JSON.stringify({ error: 'Unauthorized', requestId: requestId }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
+    
+    console.log(`👤 [${requestId}] Authenticated user: ${user.id}`)
 
     // Check if user is admin
     const { data: userData } = await supabaseClient
@@ -276,14 +290,43 @@ serve(async (req) => {
 
     // Broadcast email to all users or selected users (check BEFORE send handler)
     if (action === 'broadcast' && req.method === 'POST') {
-      console.log('📧 [admin-email] Processing broadcast action')
-      const body = await req.json()
+      console.log(`📧 [${requestId}] Processing broadcast action`)
+      
+      let body: any
+      try {
+        body = await req.json()
+        console.log(`📋 [${requestId}] Request body:`, JSON.stringify({
+          from: body.from,
+          subject: body.subject,
+          hasHtml: !!body.html,
+          hasText: !!body.text,
+          sendToAll: body.sendToAll,
+          userIdsCount: body.userIds?.length || 0,
+          userEmailsCount: body.userEmails?.length || 0
+        }))
+      } catch (parseError) {
+        console.error(`❌ [${requestId}] Failed to parse request body:`, parseError)
+        return new Response(
+          JSON.stringify({ 
+            error: 'Invalid request body', 
+            details: parseError instanceof Error ? parseError.message : 'Unknown error',
+            requestId: requestId
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      
       const { from, subject, html, text, userIds, userEmails, sendToAll } = body
 
       // Validate required fields
       if (!from || !subject) {
+        console.error(`❌ [${requestId}] Missing required fields:`, { from: !!from, subject: !!subject })
         return new Response(
-          JSON.stringify({ error: 'Missing required fields: from, subject' }),
+          JSON.stringify({ 
+            error: 'Missing required fields: from, subject',
+            received: { from: !!from, subject: !!subject },
+            requestId: requestId
+          }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
@@ -297,11 +340,22 @@ serve(async (req) => {
         .single()
 
       if (mailboxError || !mailbox) {
+        console.error(`❌ [${requestId}] Mailbox not found or inactive:`, {
+          email: from,
+          error: mailboxError?.message,
+          mailboxExists: !!mailbox
+        })
         return new Response(
-          JSON.stringify({ error: `Mailbox ${from} not found or inactive` }),
+          JSON.stringify({ 
+            error: `Mailbox ${from} not found or inactive`,
+            details: mailboxError?.message,
+            requestId: requestId
+          }),
           { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
+      
+      console.log(`✅ [${requestId}] Mailbox verified: ${mailbox.email_address}`)
 
       // Get recipients
       let recipients: string[] = []
@@ -339,18 +393,28 @@ serve(async (req) => {
       } else if (userEmails && userEmails.length > 0) {
         recipients = Array.isArray(userEmails) ? userEmails : [userEmails]
       } else {
+        console.error(`❌ [${requestId}] No recipients specified`)
         return new Response(
-          JSON.stringify({ error: 'No recipients specified. Provide userIds, userEmails, or set sendToAll=true' }),
+          JSON.stringify({ 
+            error: 'No recipients specified. Provide userIds, userEmails, or set sendToAll=true',
+            requestId: requestId
+          }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
 
       if (recipients.length === 0) {
+        console.error(`❌ [${requestId}] No valid recipients found after processing`)
         return new Response(
-          JSON.stringify({ error: 'No valid recipients found' }),
+          JSON.stringify({ 
+            error: 'No valid recipients found',
+            requestId: requestId
+          }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
+      
+      console.log(`📬 [${requestId}] Sending to ${recipients.length} recipients`)
 
       // Send emails via Resend (batch sending)
       const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
@@ -438,10 +502,16 @@ serve(async (req) => {
         }
       }
 
+      const duration = Date.now() - requestStartTime
+      console.log(`✅ [${requestId}] Broadcast completed: ${results.sent} sent, ${results.failed} failed`)
+      console.log(`📊 [${requestId}] Request duration: ${duration}ms`)
+      console.log(`${'='.repeat(60)}\n`)
+
       return new Response(
         JSON.stringify({
           success: true,
           message: `Broadcast completed: ${results.sent} sent, ${results.failed} failed`,
+          requestId: requestId,
           results: {
             total: recipients.length,
             sent: results.sent,
@@ -583,17 +653,41 @@ serve(async (req) => {
       )
     }
 
-    console.log('❌ [admin-email] Invalid action:', action, 'Method:', req.method)
+    console.error(`❌ [${requestId}] Invalid action: ${action}, Method: ${req.method}`)
     return new Response(
-      JSON.stringify({ error: 'Invalid action', receivedAction: action, method: req.method }),
+      JSON.stringify({ 
+        error: 'Invalid action', 
+        receivedAction: action, 
+        method: req.method,
+        requestId: requestId
+      }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
 
   } catch (error) {
-    console.error('Admin email error:', error)
+    const duration = Date.now() - requestStartTime
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    const errorStack = error instanceof Error ? error.stack : undefined
+    
+    console.error(`\n${'='.repeat(60)}`)
+    console.error(`❌ [${requestId}] Admin Email ERROR`)
+    console.error(`📅 Timestamp: ${new Date().toISOString()}`)
+    console.error(`⏱️ Duration before error: ${duration}ms`)
+    console.error(`💥 Error type: ${error instanceof Error ? error.constructor.name : typeof error}`)
+    console.error(`📝 Error message: ${errorMessage}`)
+    
+    if (errorStack) {
+      console.error(`📚 Stack trace:`)
+      console.error(errorStack)
+    }
+    
+    console.error(`📊 [${requestId}] Request failed after ${duration}ms`)
+    console.error(`${'='.repeat(60)}\n`)
+    
     return new Response(
       JSON.stringify({ 
-        error: error instanceof Error ? error.message : 'Unknown error'
+        error: errorMessage,
+        requestId: requestId
       }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
