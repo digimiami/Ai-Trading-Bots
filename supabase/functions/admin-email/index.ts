@@ -199,11 +199,18 @@ serve(async (req) => {
 
     // Get mailboxes
     if (action === 'get-mailboxes' && req.method === 'GET') {
-      const { data: mailboxes, error } = await supabaseClient
+      // Get all mailboxes for management, but filter active ones for sending
+      const includeInactive = url.searchParams.get('include_inactive') === 'true'
+      let query = supabaseClient
         .from('mailboxes')
         .select('*')
-        .eq('is_active', true)
         .order('email_address')
+
+      if (!includeInactive) {
+        query = query.eq('is_active', true)
+      }
+
+      const { data: mailboxes, error } = await query
 
       if (error) {
         return new Response(
@@ -263,6 +270,127 @@ serve(async (req) => {
 
       return new Response(
         JSON.stringify({ emails }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Create mailbox
+    if (action === 'create-mailbox' && req.method === 'POST') {
+      const body = await req.json()
+      const { email_address, display_name, is_active } = body
+
+      if (!email_address) {
+        return new Response(
+          JSON.stringify({ error: 'email_address is required' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (!emailRegex.test(email_address)) {
+        return new Response(
+          JSON.stringify({ error: 'Invalid email address format' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      const { data: mailbox, error } = await supabaseClient
+        .from('mailboxes')
+        .insert({
+          email_address,
+          display_name: display_name || email_address.split('@')[0],
+          is_active: is_active !== undefined ? is_active : true,
+        })
+        .select()
+        .single()
+
+      if (error) {
+        return new Response(
+          JSON.stringify({ error: error.message }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      return new Response(
+        JSON.stringify({ mailbox }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Update mailbox
+    if (action === 'update-mailbox' && req.method === 'POST') {
+      const body = await req.json()
+      const { id, email_address, display_name, is_active } = body
+
+      if (!id) {
+        return new Response(
+          JSON.stringify({ error: 'id is required' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      const updateData: any = {}
+      if (email_address !== undefined) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+        if (!emailRegex.test(email_address)) {
+          return new Response(
+            JSON.stringify({ error: 'Invalid email address format' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        updateData.email_address = email_address
+      }
+      if (display_name !== undefined) updateData.display_name = display_name
+      if (is_active !== undefined) updateData.is_active = is_active
+      updateData.updated_at = new Date().toISOString()
+
+      const { data: mailbox, error } = await supabaseClient
+        .from('mailboxes')
+        .update(updateData)
+        .eq('id', id)
+        .select()
+        .single()
+
+      if (error) {
+        return new Response(
+          JSON.stringify({ error: error.message }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      return new Response(
+        JSON.stringify({ mailbox }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Delete mailbox
+    if (action === 'delete-mailbox' && req.method === 'POST') {
+      const body = await req.json()
+      const { id } = body
+
+      if (!id) {
+        return new Response(
+          JSON.stringify({ error: 'id is required' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      const { error } = await supabaseClient
+        .from('mailboxes')
+        .delete()
+        .eq('id', id)
+
+      if (error) {
+        return new Response(
+          JSON.stringify({ error: error.message }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      return new Response(
+        JSON.stringify({ success: true }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }

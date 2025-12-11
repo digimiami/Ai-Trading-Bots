@@ -37,7 +37,7 @@ interface Email {
 }
 
 export default function EmailCenter() {
-  const { sendEmail, getMailboxes, getEmails, loading, error } = useAdmin();
+  const { sendEmail, getMailboxes, getEmails, createMailbox, updateMailbox, deleteMailbox, loading } = useAdmin();
   
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [emails, setEmails] = useState<Email[]>([]);
@@ -45,6 +45,13 @@ export default function EmailCenter() {
   const [selectedDirection, setSelectedDirection] = useState<'inbound' | 'outbound' | 'all'>('all');
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
   const [showCompose, setShowCompose] = useState(false);
+  const [showMailboxManager, setShowMailboxManager] = useState(false);
+  const [editingMailbox, setEditingMailbox] = useState<Mailbox | null>(null);
+  const [mailboxForm, setMailboxForm] = useState({
+    email_address: '',
+    display_name: '',
+    is_active: true
+  });
   const [composeForm, setComposeForm] = useState({
     from: '',
     to: '',
@@ -67,10 +74,12 @@ export default function EmailCenter() {
 
   const loadMailboxes = async () => {
     try {
-      const data = await getMailboxes();
+      const data = await getMailboxes(true); // Include inactive for management
       setMailboxes(data);
-      if (data.length > 0 && !composeForm.from) {
-        setComposeForm(prev => ({ ...prev, from: data[0].email_address }));
+      // Set default to first active mailbox
+      const activeMailbox = data.find(mb => mb.is_active);
+      if (activeMailbox && !composeForm.from) {
+        setComposeForm(prev => ({ ...prev, from: activeMailbox.email_address }));
       }
     } catch (err) {
       console.error('Failed to load mailboxes:', err);
@@ -104,6 +113,10 @@ export default function EmailCenter() {
     e.preventDefault();
     if (!composeForm.from || !composeForm.to || !composeForm.subject) {
       alert('Please fill in From, To, and Subject fields');
+      return;
+    }
+    if (mailboxes.length === 0 || !mailboxes.find(m => m.email_address === composeForm.from)) {
+      alert('⚠️ Please select a valid mailbox or create one first.');
       return;
     }
 
@@ -166,6 +179,64 @@ export default function EmailCenter() {
     setShowCompose(true);
   };
 
+  const handleCreateMailbox = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await createMailbox(mailboxForm.email_address, mailboxForm.display_name || undefined, mailboxForm.is_active);
+      alert('✅ Mailbox created successfully!');
+      setShowMailboxManager(false);
+      setMailboxForm({ email_address: '', display_name: '', is_active: true });
+      loadMailboxes();
+    } catch (err: any) {
+      alert(`❌ Failed to create mailbox: ${err.message}`);
+    }
+  };
+
+  const handleUpdateMailbox = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingMailbox) return;
+    try {
+      await updateMailbox(editingMailbox.id, {
+        email_address: mailboxForm.email_address,
+        display_name: mailboxForm.display_name || undefined,
+        is_active: mailboxForm.is_active
+      });
+      alert('✅ Mailbox updated successfully!');
+      setShowMailboxManager(false);
+      setEditingMailbox(null);
+      setMailboxForm({ email_address: '', display_name: '', is_active: true });
+      loadMailboxes();
+    } catch (err: any) {
+      alert(`❌ Failed to update mailbox: ${err.message}`);
+    }
+  };
+
+  const handleDeleteMailbox = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this mailbox? This action cannot be undone.')) {
+      return;
+    }
+    try {
+      await deleteMailbox(id);
+      alert('✅ Mailbox deleted successfully!');
+      loadMailboxes();
+      if (composeForm.from && mailboxes.find(m => m.id === id)?.email_address === composeForm.from) {
+        setComposeForm(prev => ({ ...prev, from: mailboxes[0]?.email_address || '' }));
+      }
+    } catch (err: any) {
+      alert(`❌ Failed to delete mailbox: ${err.message}`);
+    }
+  };
+
+  const startEditMailbox = (mailbox: Mailbox) => {
+    setEditingMailbox(mailbox);
+    setMailboxForm({
+      email_address: mailbox.email_address,
+      display_name: mailbox.display_name || '',
+      is_active: mailbox.is_active
+    });
+    setShowMailboxManager(true);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header with Compose Button */}
@@ -174,15 +245,48 @@ export default function EmailCenter() {
           <h2 className="text-2xl font-bold">Email Center</h2>
           <p className="text-gray-600">Manage outbound emails and view inbound messages</p>
         </div>
-        <Button
-          variant="primary"
-          onClick={() => setShowCompose(true)}
-          className="flex items-center gap-2"
-        >
-          <i className="ri-mail-send-line"></i>
-          Compose Email
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => setShowMailboxManager(true)}
+            className="flex items-center gap-2"
+          >
+            <i className="ri-mail-settings-line"></i>
+            Manage Mailboxes
+          </Button>
+          <Button
+            variant="primary"
+            onClick={() => setShowCompose(true)}
+            className="flex items-center gap-2"
+          >
+            <i className="ri-mail-send-line"></i>
+            Compose Email
+          </Button>
+        </div>
       </div>
+
+      {/* Info if no mailboxes */}
+      {mailboxes.length === 0 && (
+        <Card className="p-4 bg-blue-50 border-blue-200">
+          <div className="flex items-start gap-3">
+            <i className="ri-information-line text-blue-600 text-xl mt-0.5"></i>
+            <div>
+              <h3 className="font-semibold text-blue-800 mb-1">No Mailboxes Configured</h3>
+              <p className="text-sm text-blue-700 mb-2">
+                Create a mailbox to start sending and receiving emails.
+              </p>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setShowMailboxManager(true)}
+                className="mt-2"
+              >
+                <i className="ri-add-line"></i> Create Your First Mailbox
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Filters */}
       <Card className="p-4">
@@ -223,6 +327,133 @@ export default function EmailCenter() {
         </div>
       </Card>
 
+      {/* Mailbox Manager Modal */}
+      {showMailboxManager && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">
+                {editingMailbox ? 'Edit Mailbox' : 'Manage Mailboxes'}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowMailboxManager(false);
+                  setEditingMailbox(null);
+                  setMailboxForm({ email_address: '', display_name: '', is_active: true });
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <i className="ri-close-line text-2xl"></i>
+              </button>
+            </div>
+
+            {/* Mailbox Form */}
+            <form onSubmit={editingMailbox ? handleUpdateMailbox : handleCreateMailbox} className="space-y-4 mb-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email Address *</label>
+                <input
+                  type="email"
+                  value={mailboxForm.email_address}
+                  onChange={(e) => setMailboxForm({ ...mailboxForm, email_address: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  placeholder="support@pablobots.com"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
+                <input
+                  type="text"
+                  value={mailboxForm.display_name}
+                  onChange={(e) => setMailboxForm({ ...mailboxForm, display_name: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  placeholder="Pablo Bots - Support"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="is_active"
+                  checked={mailboxForm.is_active}
+                  onChange={(e) => setMailboxForm({ ...mailboxForm, is_active: e.target.checked })}
+                  className="w-4 h-4"
+                />
+                <label htmlFor="is_active" className="text-sm font-medium text-gray-700">
+                  Active (can send/receive emails)
+                </label>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  type="submit"
+                  variant="primary"
+                  className="flex-1"
+                >
+                  {editingMailbox ? 'Update Mailbox' : 'Create Mailbox'}
+                </Button>
+                {editingMailbox && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      setEditingMailbox(null);
+                      setMailboxForm({ email_address: '', display_name: '', is_active: true });
+                    }}
+                  >
+                    Cancel Edit
+                  </Button>
+                )}
+              </div>
+            </form>
+
+            {/* Mailboxes List */}
+            <div className="border-t pt-4">
+              <h4 className="font-semibold mb-3">Existing Mailboxes</h4>
+              {mailboxes.length === 0 ? (
+                <p className="text-gray-500 text-sm">No mailboxes created yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {mailboxes.map(mb => (
+                    <div
+                      key={mb.id}
+                      className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50"
+                    >
+                      <div className="flex-1">
+                        <div className="font-medium">{mb.display_name || mb.email_address}</div>
+                        <div className="text-sm text-gray-600">{mb.email_address}</div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className={`text-xs px-2 py-0.5 rounded ${
+                            mb.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            {mb.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => startEditMailbox(mb)}
+                        >
+                          <i className="ri-edit-line"></i>
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleDeleteMailbox(mb.id)}
+                          className="text-red-600 hover:text-red-700"
+                        >
+                          <i className="ri-delete-bin-line"></i>
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
+      )}
+
       {/* Compose Modal */}
       {showCompose && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -239,18 +470,38 @@ export default function EmailCenter() {
             <form onSubmit={handleSendEmail} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">From</label>
-                <select
-                  value={composeForm.from}
-                  onChange={(e) => setComposeForm({ ...composeForm, from: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  required
-                >
-                  {mailboxes.map(mb => (
-                    <option key={mb.id} value={mb.email_address}>
-                      {mb.display_name || mb.email_address}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex gap-2">
+                  <select
+                    value={composeForm.from}
+                    onChange={(e) => setComposeForm({ ...composeForm, from: e.target.value })}
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+                    required
+                  >
+                    <option value="">Select a mailbox...</option>
+                    {mailboxes.map(mb => (
+                      <option key={mb.id} value={mb.email_address}>
+                        {mb.display_name || mb.email_address} {!mb.is_active ? '(inactive)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      setShowCompose(false);
+                      setShowMailboxManager(true);
+                    }}
+                    className="whitespace-nowrap"
+                  >
+                    <i className="ri-add-line"></i> New
+                  </Button>
+                </div>
+                {mailboxes.length === 0 && (
+                  <p className="mt-1 text-sm text-blue-600">
+                    💡 No mailboxes yet. Click "New" to create one.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">To</label>
@@ -317,7 +568,7 @@ export default function EmailCenter() {
                 <Button
                   type="submit"
                   variant="primary"
-                  disabled={sending}
+                  disabled={sending || !composeForm.from}
                   className="flex-1"
                 >
                   {sending ? 'Sending...' : 'Send Email'}

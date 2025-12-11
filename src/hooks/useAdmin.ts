@@ -271,7 +271,7 @@ export function useAdmin() {
     }
   };
 
-  const getMailboxes = async () => {
+  const getMailboxes = async (includeInactive: boolean = true) => {
     try {
       setLoading(true);
       setError(null);
@@ -283,7 +283,8 @@ export function useAdmin() {
         throw new Error('No active session');
       }
 
-      const response = await fetch(`${supabaseUrl}/functions/v1/admin-email?action=get-mailboxes`, {
+      const url = `${supabaseUrl}/functions/v1/admin-email?action=get-mailboxes${includeInactive ? '&include_inactive=true' : ''}`;
+      const response = await fetch(url, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
@@ -349,6 +350,116 @@ export function useAdmin() {
     }
   };
 
+  const createMailbox = async (email_address: string, display_name?: string, is_active: boolean = true) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL;
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('No active session');
+      }
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/admin-email?action=create-mailbox`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email_address, display_name, is_active }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create mailbox');
+      }
+
+      const data = await response.json();
+      return data.mailbox;
+    } catch (err: any) {
+      const errorMessage = err.message || 'Failed to create mailbox';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateMailbox = async (id: string, updates: { email_address?: string; display_name?: string; is_active?: boolean }) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL;
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('No active session');
+      }
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/admin-email?action=update-mailbox`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ id, ...updates }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to update mailbox');
+      }
+
+      const data = await response.json();
+      return data.mailbox;
+    } catch (err: any) {
+      const errorMessage = err.message || 'Failed to update mailbox';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteMailbox = async (id: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL;
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('No active session');
+      }
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/admin-email?action=delete-mailbox`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ id }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete mailbox');
+      }
+
+      return true;
+    } catch (err: any) {
+      const errorMessage = err.message || 'Failed to delete mailbox';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return {
     loading,
     error,
@@ -386,6 +497,9 @@ export function useAdmin() {
     // Email Management
     sendEmail,
     getMailboxes,
-    getEmails
+    getEmails,
+    createMailbox,
+    updateMailbox,
+    deleteMailbox
   };
 }
