@@ -84,8 +84,177 @@ serve(async (req) => {
       );
     }
 
+    // Create service role client for bot operations
+    const supabaseServiceClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+    );
+
+    // Fetch user's bots for context
+    const { data: userBots, error: botsError } = await supabaseServiceClient
+      .from('trading_bots')
+      .select('id, name, exchange, trading_type, symbol, timeframe, leverage, risk_level, trade_amount, stop_loss, take_profit, strategy, strategy_config, status, pnl, pnl_percentage, total_trades, win_rate, paper_trading')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    const botsContext = botsError ? [] : (userBots || []);
+
     // Build comprehensive knowledge base prompt
     const knowledgeBase = buildKnowledgeBase();
+
+    // Build user's bots context
+    const botsContextText = botsContext.length > 0
+      ? `\n\n## USER'S CURRENT BOTS (${botsContext.length} total):\n` +
+        botsContext.map((bot: any, idx: number) => {
+          const strategy = typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy;
+          const strategyConfig = bot.strategy_config ? (typeof bot.strategy_config === 'string' ? JSON.parse(bot.strategy_config) : bot.strategy_config) : null;
+          return `${idx + 1}. **${bot.name}** (ID: ${bot.id})
+   - Exchange: ${bot.exchange}, Type: ${bot.trading_type || 'spot'}
+   - Symbol: ${bot.symbol}, Timeframe: ${bot.timeframe || '1h'}
+   - Leverage: ${bot.leverage || 1}x, Risk: ${bot.risk_level || 'medium'}
+   - Trade Amount: ${bot.trade_amount || 100} USDT
+   - Stop Loss: ${bot.stop_loss || 2.0}%, Take Profit: ${bot.take_profit || 4.0}%
+   - Strategy: ${JSON.stringify(strategy)}
+   - Status: ${bot.status}
+   - Performance: PnL ${bot.pnl || 0} USDT (${bot.pnl_percentage || 0}%), Win Rate: ${bot.win_rate || 0}%, Trades: ${bot.total_trades || 0}
+   - Paper Trading: ${bot.paper_trading ? 'Yes' : 'No'}`;
+        }).join('\n\n')
+      : '\n\n## USER'S CURRENT BOTS: None (user has no bots yet)';
+
+    // Define functions/tools for OpenAI function calling
+    const functions = [
+      {
+        name: 'create_bot',
+        description: 'Create a new trading bot with specified configuration. Use this when user asks to create, add, or set up a new bot.',
+        parameters: {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              description: 'Bot name (e.g., "BTCUSDT RSI Low Risk")'
+            },
+            exchange: {
+              type: 'string',
+              enum: ['bybit', 'okx', 'bitunix'],
+              description: 'Exchange to trade on'
+            },
+            tradingType: {
+              type: 'string',
+              enum: ['spot', 'futures'],
+              description: 'Trading type'
+            },
+            symbol: {
+              type: 'string',
+              description: 'Trading pair symbol (e.g., BTCUSDT, ETHUSDT)'
+            },
+            timeframe: {
+              type: 'string',
+              enum: ['1m', '3m', '5m', '15m', '30m', '45m', '1h', '2h', '3h', '4h', '5h', '6h', '7h', '8h', '9h', '10h', '12h', '1d', '1w', '1M'],
+              description: 'Chart timeframe'
+            },
+            leverage: {
+              type: 'number',
+              description: 'Leverage (1-100x, only for futures, default: 1 for spot)'
+            },
+            riskLevel: {
+              type: 'string',
+              enum: ['low', 'medium', 'high'],
+              description: 'Risk level (affects default parameters)'
+            },
+            tradeAmount: {
+              type: 'number',
+              description: 'Trade amount in USDT (default: 100)'
+            },
+            stopLoss: {
+              type: 'number',
+              description: 'Stop loss percentage (default: 2.0 for low risk, 3.0 for medium, 4.0 for high)'
+            },
+            takeProfit: {
+              type: 'number',
+              description: 'Take profit percentage (default: 4.0 for low risk, 6.0 for medium, 8.0 for high)'
+            },
+            strategy: {
+              type: 'object',
+              description: 'Trading strategy configuration'
+            },
+            strategyConfig: {
+              type: 'object',
+              description: 'Advanced strategy configuration (optional)'
+            },
+            paperTrading: {
+              type: 'boolean',
+              description: 'Enable paper trading mode (default: true for safety)'
+            }
+          },
+          required: ['name', 'exchange', 'symbol']
+        }
+      },
+      {
+        name: 'update_bot',
+        description: 'Update an existing bot\'s configuration. Use this when user asks to modify, change, or optimize a bot.',
+        parameters: {
+          type: 'object',
+          properties: {
+            botId: {
+              type: 'string',
+              description: 'ID of the bot to update'
+            },
+            name: {
+              type: 'string',
+              description: 'New bot name'
+            },
+            stopLoss: {
+              type: 'number',
+              description: 'New stop loss percentage'
+            },
+            takeProfit: {
+              type: 'number',
+              description: 'New take profit percentage'
+            },
+            tradeAmount: {
+              type: 'number',
+              description: 'New trade amount in USDT'
+            },
+            leverage: {
+              type: 'number',
+              description: 'New leverage value'
+            },
+            riskLevel: {
+              type: 'string',
+              enum: ['low', 'medium', 'high'],
+              description: 'New risk level'
+            },
+            strategy: {
+              type: 'object',
+              description: 'Updated strategy configuration'
+            },
+            strategyConfig: {
+              type: 'object',
+              description: 'Updated advanced strategy configuration'
+            },
+            paperTrading: {
+              type: 'boolean',
+              description: 'Paper trading mode'
+            }
+          },
+          required: ['botId']
+        }
+      },
+      {
+        name: 'get_bot_performance',
+        description: 'Get detailed performance metrics for a specific bot. Use this when user asks about bot performance, stats, or results.',
+        parameters: {
+          type: 'object',
+          properties: {
+            botId: {
+              type: 'string',
+              description: 'ID of the bot to analyze'
+            }
+          },
+          required: ['botId']
+        }
+      }
+    ];
 
     // Build conversation messages
     const messages = [
@@ -94,6 +263,7 @@ serve(async (req) => {
         content: `You are an expert AI Trading Assistant for the Pablo AI Trading Platform. Your role is to help users understand bot settings, trading strategies, risk management, and platform features.
 
 ${knowledgeBase}
+${botsContextText}
 
 IMPORTANT GUIDELINES:
 1. Be helpful, clear, and concise
@@ -103,7 +273,11 @@ IMPORTANT GUIDELINES:
 5. Always prioritize risk management in your advice
 6. If you don't know something, admit it rather than guessing
 7. Format your responses in a readable way with bullet points, code blocks, or numbered lists when appropriate
-8. Never provide financial advice that could be considered as investment recommendations`
+8. Never provide financial advice that could be considered as investment recommendations
+9. When user asks to create or modify bots, use the available functions to perform the actions
+10. Always suggest paper trading mode for new bots unless user explicitly requests live trading
+11. When creating bots, use sensible defaults based on risk level (low risk = conservative, high risk = aggressive)
+12. Reference user's existing bots when making recommendations to avoid duplicates or conflicts`
       },
       ...conversationHistory.map((msg: any) => ({
         role: msg.role,
@@ -115,8 +289,16 @@ IMPORTANT GUIDELINES:
       }
     ];
 
-    // Call AI API
-    const response = await fetch(`${baseUrl}/chat/completions`, {
+    // Call AI API with function calling support
+    let aiResponse = '';
+    let finalResponse = '';
+    let actions: any[] = [];
+
+    // DeepSeek may not support function calling, so only use it for OpenAI
+    const supportsFunctionCalling = !useDeepSeek;
+
+    // First AI call - may request function calls (only for OpenAI)
+    let response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -125,6 +307,10 @@ IMPORTANT GUIDELINES:
       body: JSON.stringify({
         model,
         messages,
+        ...(supportsFunctionCalling ? {
+          tools: functions.map(f => ({ type: 'function', function: f })),
+          tool_choice: 'auto',
+        } : {}),
         temperature: 0.7,
         max_tokens: 2000,
       }),
@@ -136,14 +322,96 @@ IMPORTANT GUIDELINES:
       throw new Error(`AI API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
     }
 
-    const data = await response.json();
-    const aiResponse = data.choices[0]?.message?.content || 'I apologize, but I could not generate a response.';
+    let data = await response.json();
+    const message = data.choices[0]?.message;
+    aiResponse = message?.content || '';
+    const toolCalls = supportsFunctionCalling ? (message?.tool_calls || []) : [];
+
+    // Execute function calls if any (only for OpenAI)
+    if (supportsFunctionCalling && toolCalls.length > 0) {
+      console.log(`🔧 AI requested ${toolCalls.length} function call(s)`);
+      
+      const toolResults: any[] = [];
+      
+      for (const toolCall of toolCalls) {
+        const functionName = toolCall.function.name;
+        const functionArgs = JSON.parse(toolCall.function.arguments || '{}');
+        
+        console.log(`📞 Executing function: ${functionName}`, functionArgs);
+        
+        try {
+          let result: any;
+          
+          if (functionName === 'create_bot') {
+            result = await executeCreateBot(supabaseServiceClient, user.id, functionArgs);
+            actions.push({ type: 'create_bot', result });
+          } else if (functionName === 'update_bot') {
+            result = await executeUpdateBot(supabaseServiceClient, user.id, functionArgs);
+            actions.push({ type: 'update_bot', result });
+          } else if (functionName === 'get_bot_performance') {
+            result = await executeGetBotPerformance(supabaseServiceClient, user.id, functionArgs.botId);
+            actions.push({ type: 'get_bot_performance', result });
+          } else {
+            result = { error: `Unknown function: ${functionName}` };
+          }
+          
+          toolResults.push({
+            tool_call_id: toolCall.id,
+            role: 'tool',
+            name: functionName,
+            content: JSON.stringify(result)
+          });
+        } catch (error: any) {
+          console.error(`❌ Error executing ${functionName}:`, error);
+          toolResults.push({
+            tool_call_id: toolCall.id,
+            role: 'tool',
+            name: functionName,
+            content: JSON.stringify({ error: error.message || 'Function execution failed' })
+          });
+        }
+      }
+      
+      // Second AI call with function results
+      messages.push({
+        role: 'assistant',
+        content: aiResponse,
+        tool_calls: toolCalls
+      });
+      
+      messages.push(...toolResults);
+      
+      response = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          temperature: 0.7,
+          max_tokens: 2000,
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`AI API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
+      }
+      
+      data = await response.json();
+      finalResponse = data.choices[0]?.message?.content || aiResponse;
+    } else {
+      finalResponse = aiResponse;
+    }
 
     return new Response(
       JSON.stringify({ 
-        response: aiResponse,
+        response: finalResponse,
         provider: useDeepSeek ? 'DeepSeek' : 'OpenAI',
-        model 
+        model,
+        actions: actions.length > 0 ? actions : undefined
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
@@ -360,5 +628,188 @@ Pablo AI Trading is an automated cryptocurrency trading platform that allows use
 - Adjust settings based on market conditions
 - Contact support through the Contact page if needed
 `;
+}
+
+// Execute bot creation
+async function executeCreateBot(supabaseClient: any, userId: string, params: any) {
+  try {
+    // Check subscription limits
+    const { data: limitCheck } = await supabaseClient
+      .rpc('can_user_create_bot', { p_user_id: userId });
+    
+    if (limitCheck && typeof limitCheck === 'object' && limitCheck.allowed !== true) {
+      return { 
+        success: false, 
+        error: limitCheck.reason || 'Bot creation limit reached' 
+      };
+    }
+
+    // Set defaults based on risk level
+    const riskLevel = params.riskLevel || 'medium';
+    const defaults = {
+      low: { stopLoss: 1.5, takeProfit: 3.0, tradeAmount: 50, leverage: 1 },
+      medium: { stopLoss: 2.5, takeProfit: 5.0, tradeAmount: 100, leverage: 2 },
+      high: { stopLoss: 4.0, takeProfit: 8.0, tradeAmount: 200, leverage: 5 }
+    };
+    
+    const riskDefaults = defaults[riskLevel as keyof typeof defaults] || defaults.medium;
+
+    // Build default strategy if not provided
+    let strategy = params.strategy;
+    if (!strategy) {
+      // Default to RSI strategy with sensible parameters
+      strategy = {
+        type: 'rsi',
+        enabled: true,
+        rsi_period: 14,
+        rsi_oversold: 30,
+        rsi_overbought: 70
+      };
+    }
+
+    // Prepare bot data
+    const botData: any = {
+      user_id: userId,
+      name: params.name,
+      exchange: params.exchange || 'bybit',
+      trading_type: params.tradingType || 'spot',
+      symbol: params.symbol,
+      timeframe: params.timeframe || '1h',
+      leverage: params.leverage || (params.tradingType === 'futures' ? riskDefaults.leverage : 1),
+      risk_level: riskLevel,
+      trade_amount: params.tradeAmount || riskDefaults.tradeAmount,
+      stop_loss: params.stopLoss || riskDefaults.stopLoss,
+      take_profit: params.takeProfit || riskDefaults.takeProfit,
+      strategy: JSON.stringify(strategy),
+      strategy_config: params.strategyConfig ? JSON.stringify(params.strategyConfig) : null,
+      paper_trading: params.paperTrading !== undefined ? params.paperTrading : true, // Default to paper trading for safety
+      status: 'stopped', // Start stopped, user can start manually
+      created_at: new Date().toISOString()
+    };
+
+    // Add symbols array
+    botData.symbols = JSON.stringify([params.symbol]);
+
+    const { data: bot, error } = await supabaseClient
+      .from('trading_bots')
+      .insert(botData)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Bot creation error:', error);
+      return { success: false, error: error.message };
+    }
+
+    return {
+      success: true,
+      bot: {
+        id: bot.id,
+        name: bot.name,
+        exchange: bot.exchange,
+        symbol: bot.symbol,
+        status: bot.status,
+        paperTrading: bot.paper_trading
+      }
+    };
+  } catch (error: any) {
+    console.error('Error in executeCreateBot:', error);
+    return { success: false, error: error.message || 'Failed to create bot' };
+  }
+}
+
+// Execute bot update
+async function executeUpdateBot(supabaseClient: any, userId: string, params: any) {
+  try {
+    const { botId, ...updates } = params;
+
+    // Verify bot belongs to user
+    const { data: existingBot, error: fetchError } = await supabaseClient
+      .from('trading_bots')
+      .select('id, user_id')
+      .eq('id', botId)
+      .eq('user_id', userId)
+      .single();
+
+    if (fetchError || !existingBot) {
+      return { success: false, error: 'Bot not found or access denied' };
+    }
+
+    // Transform updates to database format
+    const dbUpdates: any = {};
+    if (updates.name) dbUpdates.name = updates.name;
+    if (updates.stopLoss !== undefined) dbUpdates.stop_loss = updates.stopLoss;
+    if (updates.takeProfit !== undefined) dbUpdates.take_profit = updates.takeProfit;
+    if (updates.tradeAmount !== undefined) dbUpdates.trade_amount = updates.tradeAmount;
+    if (updates.leverage !== undefined) dbUpdates.leverage = updates.leverage;
+    if (updates.riskLevel) dbUpdates.risk_level = updates.riskLevel;
+    if (updates.strategy) dbUpdates.strategy = JSON.stringify(updates.strategy);
+    if (updates.strategyConfig !== undefined) {
+      dbUpdates.strategy_config = JSON.stringify(updates.strategyConfig);
+    }
+    if (updates.paperTrading !== undefined) dbUpdates.paper_trading = updates.paperTrading;
+
+    if (Object.keys(dbUpdates).length === 0) {
+      return { success: false, error: 'No valid updates provided' };
+    }
+
+    const { data: bot, error } = await supabaseClient
+      .from('trading_bots')
+      .update(dbUpdates)
+      .eq('id', botId)
+      .eq('user_id', userId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Bot update error:', error);
+      return { success: false, error: error.message };
+    }
+
+    return {
+      success: true,
+      bot: {
+        id: bot.id,
+        name: bot.name,
+        updates: Object.keys(dbUpdates)
+      }
+    };
+  } catch (error: any) {
+    console.error('Error in executeUpdateBot:', error);
+    return { success: false, error: error.message || 'Failed to update bot' };
+  }
+}
+
+// Get bot performance
+async function executeGetBotPerformance(supabaseClient: any, userId: string, botId: string) {
+  try {
+    const { data: bot, error } = await supabaseClient
+      .from('trading_bots')
+      .select('id, name, pnl, pnl_percentage, total_trades, win_rate, status, created_at, last_trade_at')
+      .eq('id', botId)
+      .eq('user_id', userId)
+      .single();
+
+    if (error || !bot) {
+      return { success: false, error: 'Bot not found or access denied' };
+    }
+
+    return {
+      success: true,
+      performance: {
+        name: bot.name,
+        pnl: bot.pnl || 0,
+        pnlPercentage: bot.pnl_percentage || 0,
+        totalTrades: bot.total_trades || 0,
+        winRate: bot.win_rate || 0,
+        status: bot.status,
+        createdAt: bot.created_at,
+        lastTradeAt: bot.last_trade_at
+      }
+    };
+  } catch (error: any) {
+    console.error('Error in executeGetBotPerformance:', error);
+    return { success: false, error: error.message || 'Failed to get bot performance' };
+  }
 }
 

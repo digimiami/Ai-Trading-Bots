@@ -4,6 +4,7 @@ import Header from '../../components/feature/Header';
 import Card from '../../components/base/Card';
 import Button from '../../components/base/Button';
 import { useAuth } from '../../hooks/useAuth';
+import { useBots } from '../../hooks/useBots';
 import { openAIService } from '../../services/openai';
 import { supabase } from '../../lib/supabase';
 
@@ -17,11 +18,13 @@ interface Message {
 export default function AiAssistantPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { fetchBots } = useBots();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [apiConfigured, setApiConfigured] = useState(false);
+  const [pendingActions, setPendingActions] = useState<any[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -45,6 +48,12 @@ export default function AiAssistantPage() {
 • **Risk Management**: Help configure stop-loss, take-profit, and position sizing
 • **Platform Features**: Guide you through creating bots, managing trades, and more
 • **Trading Questions**: Answer questions about cryptocurrency trading, technical analysis, and market behavior
+• **Create & Edit Bots**: I can create new bots or modify existing ones based on your requests!
+
+**Try saying:**
+- "Create a BTCUSDT bot with RSI strategy, low risk"
+- "Update my bot to use tighter stop loss"
+- "Show me my bot performance"
 
 What would you like to know?`,
       timestamp: new Date()
@@ -133,14 +142,52 @@ What would you like to know?`,
 
       const data = await response.json();
       
-      const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: data.response || 'I apologize, but I could not generate a response.',
-        timestamp: new Date()
-      };
+      // Handle bot actions if any
+      if (data.actions && data.actions.length > 0) {
+        setPendingActions(data.actions);
+        
+        // Show action summary in message
+        const actionSummary = data.actions.map((action: any) => {
+          if (action.type === 'create_bot' && action.result?.success) {
+            return `✅ Created bot: "${action.result.bot?.name}" (${action.result.bot?.symbol})`;
+          } else if (action.type === 'update_bot' && action.result?.success) {
+            return `✅ Updated bot: "${action.result.bot?.name}"`;
+          } else if (action.type === 'get_bot_performance' && action.result?.success) {
+            return `📊 Bot Performance: ${action.result.performance?.name} - PnL: ${action.result.performance?.pnl} USDT (${action.result.performance?.pnlPercentage}%)`;
+          } else if (action.result?.error) {
+            return `❌ ${action.type} failed: ${action.result.error}`;
+          }
+          return null;
+        }).filter(Boolean).join('\n');
+        
+        // Refresh bot list
+        try {
+          await fetchBots();
+        } catch (err) {
+          console.warn('Failed to refresh bots:', err);
+        }
+        
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: `${data.response || 'I apologize, but I could not generate a response.'}\n\n${actionSummary ? `\n**Actions Completed:**\n${actionSummary}` : ''}`,
+          timestamp: new Date()
+        };
 
-      setMessages(prev => [...prev, assistantMessage]);
+        setMessages(prev => [...prev, assistantMessage]);
+        
+        // Clear pending actions after showing
+        setTimeout(() => setPendingActions([]), 5000);
+      } else {
+        const assistantMessage: Message = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: data.response || 'I apologize, but I could not generate a response.',
+          timestamp: new Date()
+        };
+
+        setMessages(prev => [...prev, assistantMessage]);
+      }
     } catch (err: any) {
       console.error('Error sending message:', err);
       setError(err.message || 'Failed to get AI response. Please try again.');
@@ -175,6 +222,12 @@ What would you like to know?`,
 • **Risk Management**: Help configure stop-loss, take-profit, and position sizing
 • **Platform Features**: Guide you through creating bots, managing trades, and more
 • **Trading Questions**: Answer questions about cryptocurrency trading, technical analysis, and market behavior
+• **Create & Edit Bots**: I can create new bots or modify existing ones based on your requests!
+
+**Try saying:**
+- "Create a BTCUSDT bot with RSI strategy, low risk"
+- "Update my bot to use tighter stop loss"
+- "Show me my bot performance"
 
 What would you like to know?`,
       timestamp: new Date()
@@ -212,6 +265,30 @@ What would you like to know?`,
         )}
 
         <Card className="p-0 overflow-hidden flex flex-col" style={{ height: 'calc(100vh - 250px)' }}>
+          {/* Action Notifications */}
+          {pendingActions.length > 0 && (
+            <div className="bg-green-50 dark:bg-green-900/20 border-b border-green-200 dark:border-green-800 p-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <i className="ri-checkbox-circle-line text-green-600 dark:text-green-400"></i>
+                  <span className="text-sm font-medium text-green-900 dark:text-green-100">
+                    {pendingActions.length} action(s) completed
+                  </span>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    navigate('/bots');
+                    setPendingActions([]);
+                  }}
+                >
+                  View Bots
+                </Button>
+              </div>
+            </div>
+          )}
+          
           {/* Messages Area */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {messages.map((message) => (
