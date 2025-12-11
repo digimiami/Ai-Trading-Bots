@@ -37,7 +37,7 @@ interface Email {
 }
 
 export default function EmailCenter() {
-  const { sendEmail, getMailboxes, getEmails, createMailbox, updateMailbox, deleteMailbox, loading } = useAdmin();
+  const { sendEmail, broadcastEmail, getMailboxes, getEmails, createMailbox, updateMailbox, deleteMailbox, loading, getUsers } = useAdmin();
   
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [emails, setEmails] = useState<Email[]>([]);
@@ -45,8 +45,10 @@ export default function EmailCenter() {
   const [selectedDirection, setSelectedDirection] = useState<'inbound' | 'outbound' | 'all'>('all');
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
   const [showCompose, setShowCompose] = useState(false);
+  const [showBroadcast, setShowBroadcast] = useState(false);
   const [showMailboxManager, setShowMailboxManager] = useState(false);
   const [editingMailbox, setEditingMailbox] = useState<Mailbox | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [mailboxForm, setMailboxForm] = useState({
     email_address: '',
     display_name: '',
@@ -62,7 +64,18 @@ export default function EmailCenter() {
     text: '',
     replyTo: ''
   });
+  const [broadcastForm, setBroadcastForm] = useState({
+    from: '',
+    subject: '',
+    html: '',
+    text: '',
+    sendToAll: false,
+    selectedUserIds: [] as string[],
+    selectedUserEmails: [] as string[]
+  });
+  const [users, setUsers] = useState<any[]>([]);
   const [sending, setSending] = useState(false);
+  const [broadcasting, setBroadcasting] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
   const [totalEmails, setTotalEmails] = useState(0);
   const emailsPerPage = 20;
@@ -106,6 +119,17 @@ export default function EmailCenter() {
       setTotalEmails(data.length);
     } catch (err) {
       console.error('Failed to load emails:', err);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([loadMailboxes(), loadEmails()]);
+    } catch (err) {
+      console.error('Failed to refresh:', err);
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -248,11 +272,39 @@ export default function EmailCenter() {
         <div className="flex gap-2">
           <Button
             variant="secondary"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="flex items-center gap-2"
+          >
+            <i className={`ri-refresh-line ${refreshing ? 'animate-spin' : ''}`}></i>
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </Button>
+          <Button
+            variant="secondary"
             onClick={() => setShowMailboxManager(true)}
             className="flex items-center gap-2"
           >
             <i className="ri-mail-settings-line"></i>
             Manage Mailboxes
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setBroadcastForm({
+                from: mailboxes.find(m => m.is_active)?.email_address || '',
+                subject: '',
+                html: '',
+                text: '',
+                sendToAll: false,
+                selectedUserIds: [],
+                selectedUserEmails: []
+              });
+              setShowBroadcast(true);
+            }}
+            className="flex items-center gap-2"
+          >
+            <i className="ri-broadcast-line"></i>
+            Broadcast
           </Button>
           <Button
             variant="primary"
@@ -587,11 +639,193 @@ export default function EmailCenter() {
         </div>
       )}
 
+      {/* Broadcast Modal */}
+      {showBroadcast && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">Broadcast Email to Users</h3>
+              <button
+                onClick={() => setShowBroadcast(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <i className="ri-close-line text-2xl"></i>
+              </button>
+            </div>
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              if (!broadcastForm.from || !broadcastForm.subject) {
+                alert('Please fill in From and Subject fields');
+                return;
+              }
+              if (!broadcastForm.sendToAll && broadcastForm.selectedUserIds.length === 0 && broadcastForm.selectedUserEmails.length === 0) {
+                alert('Please select recipients or choose "Send to All Users"');
+                return;
+              }
+
+              setBroadcasting(true);
+              try {
+                const result = await broadcastEmail({
+                  from: broadcastForm.from,
+                  subject: broadcastForm.subject,
+                  html: broadcastForm.html,
+                  text: broadcastForm.text,
+                  sendToAll: broadcastForm.sendToAll,
+                  userIds: broadcastForm.sendToAll ? undefined : broadcastForm.selectedUserIds.length > 0 ? broadcastForm.selectedUserIds : undefined,
+                  userEmails: broadcastForm.sendToAll ? undefined : broadcastForm.selectedUserEmails.length > 0 ? broadcastForm.selectedUserEmails : undefined
+                });
+                alert(`✅ Broadcast completed! ${result.results?.sent || 0} sent, ${result.results?.failed || 0} failed`);
+                setShowBroadcast(false);
+                setBroadcastForm({
+                  from: mailboxes.find(m => m.is_active)?.email_address || '',
+                  subject: '',
+                  html: '',
+                  text: '',
+                  sendToAll: false,
+                  selectedUserIds: [],
+                  selectedUserEmails: []
+                });
+                loadEmails();
+              } catch (err: any) {
+                alert(`❌ Failed to broadcast email: ${err.message}`);
+              } finally {
+                setBroadcasting(false);
+              }
+            }} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">From</label>
+                <select
+                  value={broadcastForm.from}
+                  onChange={(e) => setBroadcastForm({ ...broadcastForm, from: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  required
+                >
+                  <option value="">Select a mailbox...</option>
+                  {mailboxes.map(mb => (
+                    <option key={mb.id} value={mb.email_address}>
+                      {mb.display_name || mb.email_address} {!mb.is_active ? '(inactive)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+                <input
+                  type="text"
+                  value={broadcastForm.subject}
+                  onChange={(e) => setBroadcastForm({ ...broadcastForm, subject: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">HTML Body</label>
+                <textarea
+                  value={broadcastForm.html}
+                  onChange={(e) => setBroadcastForm({ ...broadcastForm, html: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  rows={8}
+                  placeholder="HTML content..."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Text Body (fallback)</label>
+                <textarea
+                  value={broadcastForm.text}
+                  onChange={(e) => setBroadcastForm({ ...broadcastForm, text: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  rows={4}
+                  placeholder="Plain text content..."
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="sendToAll"
+                  checked={broadcastForm.sendToAll}
+                  onChange={(e) => setBroadcastForm({ ...broadcastForm, sendToAll: e.target.checked, selectedUserIds: [], selectedUserEmails: [] })}
+                  className="w-4 h-4"
+                />
+                <label htmlFor="sendToAll" className="text-sm font-medium text-gray-700">
+                  Send to All Active Users ({users.filter(u => u.status === 'active').length} users)
+                </label>
+              </div>
+              {!broadcastForm.sendToAll && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Select Users</label>
+                  <div className="max-h-60 overflow-y-auto border border-gray-300 rounded-lg p-2">
+                    {users.map(user => (
+                      <div key={user.id} className="flex items-center gap-2 p-2 hover:bg-gray-50">
+                        <input
+                          type="checkbox"
+                          id={`user-${user.id}`}
+                          checked={broadcastForm.selectedUserIds.includes(user.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setBroadcastForm({
+                                ...broadcastForm,
+                                selectedUserIds: [...broadcastForm.selectedUserIds, user.id]
+                              });
+                            } else {
+                              setBroadcastForm({
+                                ...broadcastForm,
+                                selectedUserIds: broadcastForm.selectedUserIds.filter(id => id !== user.id)
+                              });
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <label htmlFor={`user-${user.id}`} className="text-sm cursor-pointer flex-1">
+                          {user.email} {user.status !== 'active' && <span className="text-gray-400">({user.status})</span>}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Selected: {broadcastForm.selectedUserIds.length} user(s)
+                  </p>
+                </div>
+              )}
+              <div className="flex gap-3">
+                <Button
+                  type="submit"
+                  variant="primary"
+                  disabled={broadcasting || !broadcastForm.from}
+                  className="flex-1"
+                >
+                  {broadcasting ? 'Broadcasting...' : `Send to ${broadcastForm.sendToAll ? `All Users (${users.filter(u => u.status === 'active').length})` : `${broadcastForm.selectedUserIds.length} Selected`}`}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setShowBroadcast(false)}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
+      )}
+
       {/* Email List */}
       <Card className="p-4">
-        <h3 className="text-lg font-semibold mb-4">
-          {selectedDirection === 'all' ? 'All Emails' : selectedDirection === 'inbound' ? 'Inbound Emails' : 'Outbound Emails'}
-        </h3>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold">
+            {selectedDirection === 'all' ? 'All Emails' : selectedDirection === 'inbound' ? 'Inbound Emails' : 'Outbound Emails'}
+          </h3>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="flex items-center gap-2"
+          >
+            <i className={`ri-refresh-line ${refreshing ? 'animate-spin' : ''}`}></i>
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </Button>
+        </div>
         {loading ? (
           <div className="text-center py-8">
             <i className="ri-loader-4-line animate-spin text-2xl text-gray-400"></i>

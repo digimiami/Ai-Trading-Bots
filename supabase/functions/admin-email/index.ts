@@ -395,6 +395,185 @@ serve(async (req) => {
       )
     }
 
+    // Broadcast email to all users or selected users
+    if (action === 'broadcast' && req.method === 'POST') {
+      const body = await req.json()
+      const { from, subject, html, text, userIds, userEmails, sendToAll } = body
+
+      // Validate required fields
+      if (!from || !subject) {
+        return new Response(
+          JSON.stringify({ error: 'Missing required fields: from, subject' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      // Verify mailbox exists and is active
+      const { data: mailbox, error: mailboxError } = await supabaseClient
+        .from('mailboxes')
+        .select('*')
+        .eq('email_address', from)
+        .eq('is_active', true)
+        .single()
+
+      if (mailboxError || !mailbox) {
+        return new Response(
+          JSON.stringify({ error: `Mailbox ${from} not found or inactive` }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      // Get recipients
+      let recipients: string[] = []
+      
+      if (sendToAll) {
+        // Get all active users
+        const { data: users, error: usersError } = await supabaseClient
+          .from('users')
+          .select('email')
+          .eq('status', 'active')
+        
+        if (usersError) {
+          return new Response(
+            JSON.stringify({ error: 'Failed to fetch users', details: usersError.message }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        
+        recipients = users?.map(u => u.email).filter(Boolean) || []
+      } else if (userIds && userIds.length > 0) {
+        // Get emails for specific user IDs
+        const { data: users, error: usersError } = await supabaseClient
+          .from('users')
+          .select('email')
+          .in('id', userIds)
+        
+        if (usersError) {
+          return new Response(
+            JSON.stringify({ error: 'Failed to fetch users', details: usersError.message }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        
+        recipients = users?.map(u => u.email).filter(Boolean) || []
+      } else if (userEmails && userEmails.length > 0) {
+        recipients = Array.isArray(userEmails) ? userEmails : [userEmails]
+      } else {
+        return new Response(
+          JSON.stringify({ error: 'No recipients specified. Provide userIds, userEmails, or set sendToAll=true' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      if (recipients.length === 0) {
+        return new Response(
+          JSON.stringify({ error: 'No valid recipients found' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      // Send emails via Resend (batch sending)
+      const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY')
+      if (!RESEND_API_KEY) {
+        return new Response(
+          JSON.stringify({ error: 'RESEND_API_KEY not configured' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      const results = {
+        sent: 0,
+        failed: 0,
+        errors: [] as string[],
+        emailIds: [] as string[]
+      }
+
+      // Send to each recipient (Resend doesn't support true BCC for multiple recipients in one call)
+      for (const recipient of recipients) {
+        try {
+          const emailResponse = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${RESEND_API_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              from: `${mailbox.display_name || mailbox.email_address} <${mailbox.email_address}>`,
+              to: recipient,
+              subject: subject,
+              html: html || text?.replace(/\n/g, '<br>'),
+              text: text || html?.replace(/<[^>]*>/g, ''),
+            }),
+          })
+
+          if (!emailResponse.ok) {
+            const errorData = await emailResponse.json()
+            results.failed++
+            results.errors.push(`${recipient}: ${errorData.message || 'Failed to send'}`)
+            
+            // Save failed email to database
+            await supabaseClient
+              .from('emails')
+              .insert({
+                mailbox_id: mailbox.id,
+                direction: 'outbound',
+                from_address: from,
+                to_address: recipient,
+                subject: subject,
+                html_body: html,
+                text_body: text,
+                status: 'failed',
+                error_message: errorData.message || 'Failed to send email',
+                sent_at: new Date().toISOString(),
+              })
+          } else {
+            const emailResult = await emailResponse.json()
+            results.sent++
+            
+            // Save email to database
+            const { data: savedEmail } = await supabaseClient
+              .from('emails')
+              .insert({
+                mailbox_id: mailbox.id,
+                direction: 'outbound',
+                from_address: from,
+                to_address: recipient,
+                subject: subject,
+                html_body: html,
+                text_body: text,
+                message_id: emailResult.id,
+                status: 'sent',
+                sent_at: new Date().toISOString(),
+              })
+              .select()
+              .single()
+            
+            if (savedEmail) {
+              results.emailIds.push(savedEmail.id)
+            }
+          }
+        } catch (err: any) {
+          results.failed++
+          results.errors.push(`${recipient}: ${err.message || 'Unknown error'}`)
+        }
+      }
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: `Broadcast completed: ${results.sent} sent, ${results.failed} failed`,
+          results: {
+            total: recipients.length,
+            sent: results.sent,
+            failed: results.failed,
+            errors: results.errors,
+            emailIds: results.emailIds
+          }
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
     return new Response(
       JSON.stringify({ error: 'Invalid action' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

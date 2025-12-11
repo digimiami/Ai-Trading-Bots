@@ -460,6 +460,51 @@ export function useAdmin() {
     }
   };
 
+  const broadcastEmail = async (emailData: {
+    from: string;
+    subject: string;
+    html?: string;
+    text?: string;
+    userIds?: string[];
+    userEmails?: string[];
+    sendToAll?: boolean;
+  }) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL;
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('No active session');
+      }
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/admin-email?action=broadcast`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(emailData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to broadcast email');
+      }
+
+      const data = await response.json();
+      return data;
+    } catch (err: any) {
+      const errorMessage = err.message || 'Failed to broadcast email';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return {
     loading,
     error,
@@ -496,6 +541,7 @@ export function useAdmin() {
     updateTestPeriodSettings,
     // Email Management
     sendEmail,
+    broadcastEmail,
     getMailboxes,
     getEmails,
     createMailbox,

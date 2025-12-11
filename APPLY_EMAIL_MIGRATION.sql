@@ -1,5 +1,5 @@
 -- Email System Migration
--- Creates mailboxes and emails tables for admin email management
+-- Run this in Supabase SQL Editor to create mailboxes and emails tables
 
 -- Mailboxes table (for managing email addresses)
 CREATE TABLE IF NOT EXISTS public.mailboxes (
@@ -55,11 +55,29 @@ ON CONFLICT (email_address) DO NOTHING;
 ALTER TABLE public.mailboxes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.emails ENABLE ROW LEVEL SECURITY;
 
--- Drop existing policies if they exist (to avoid conflicts)
-DROP POLICY IF EXISTS "Admins can manage mailboxes" ON public.mailboxes;
-DROP POLICY IF EXISTS "Admins can view all emails" ON public.emails;
-DROP POLICY IF EXISTS "Admins can insert emails" ON public.emails;
-DROP POLICY IF EXISTS "Admins can update emails" ON public.emails;
+-- Drop ALL existing policies on both tables (to avoid conflicts)
+DO $$ 
+DECLARE
+    pol RECORD;
+BEGIN
+    -- Drop all policies on mailboxes
+    FOR pol IN 
+        SELECT policyname 
+        FROM pg_policies 
+        WHERE schemaname = 'public' AND tablename = 'mailboxes'
+    LOOP
+        EXECUTE format('DROP POLICY IF EXISTS %I ON public.mailboxes', pol.policyname);
+    END LOOP;
+    
+    -- Drop all policies on emails
+    FOR pol IN 
+        SELECT policyname 
+        FROM pg_policies 
+        WHERE schemaname = 'public' AND tablename = 'emails'
+    LOOP
+        EXECUTE format('DROP POLICY IF EXISTS %I ON public.emails', pol.policyname);
+    END LOOP;
+END $$;
 
 -- Admin can manage mailboxes
 CREATE POLICY "Admins can manage mailboxes"
@@ -113,6 +131,11 @@ CREATE POLICY "Admins can update emails"
 COMMENT ON TABLE public.mailboxes IS 'Email addresses managed by admin for sending emails';
 COMMENT ON TABLE public.emails IS 'Sent and received emails stored for admin management';
 
+-- Refresh PostgREST schema cache (CRITICAL - must do this!)
+NOTIFY pgrst, 'reload schema';
 
+-- Wait a moment for cache refresh
+SELECT pg_sleep(1);
 
-
+-- Success message
+SELECT 'Email system tables created successfully! Schema cache refreshed.' as status;
