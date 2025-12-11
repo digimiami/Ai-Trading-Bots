@@ -247,7 +247,12 @@ export default function AuthPage() {
       }
 
       if (result.error) {
-        setError(result.error.message || 'Authentication failed')
+        // Handle rate limiting errors with a user-friendly message
+        if (result.error.message?.includes('429') || result.error.message?.toLowerCase().includes('rate limit') || result.error.message?.toLowerCase().includes('too many requests')) {
+          setError('Too many signup attempts. Please wait a few minutes before trying again.')
+        } else {
+          setError(result.error.message || 'Authentication failed')
+        }
         setLoading(false)
       } else if (isLogin && result.data?.user) {
         // Sign in successful - loading will be managed by redirect
