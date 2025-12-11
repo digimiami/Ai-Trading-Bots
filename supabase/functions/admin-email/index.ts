@@ -69,6 +69,12 @@ serve(async (req) => {
 
     const url = new URL(req.url)
     const action = url.searchParams.get('action')
+    
+    console.log('📧 [admin-email] Request received:', {
+      method: req.method,
+      action: action,
+      url: req.url
+    })
 
     // Get mailboxes (check this first as it's a common operation)
     if (action === 'get-mailboxes' && req.method === 'GET') {
@@ -269,7 +275,9 @@ serve(async (req) => {
     }
 
     // Send email (default action if no action specified)
+    // NOTE: This must come AFTER broadcast handler to avoid conflicts
     if ((action === 'send' || !action) && req.method === 'POST') {
+      console.log('📧 [admin-email] Processing send action (default)')
       const body: SendEmailRequest = await req.json()
       const { from, to, cc, bcc, subject, html, text, replyTo } = body
 
@@ -395,8 +403,9 @@ serve(async (req) => {
       )
     }
 
-    // Broadcast email to all users or selected users
+    // Broadcast email to all users or selected users (check BEFORE send handler)
     if (action === 'broadcast' && req.method === 'POST') {
+      console.log('📧 [admin-email] Processing broadcast action')
       const body = await req.json()
       const { from, subject, html, text, userIds, userEmails, sendToAll } = body
 
@@ -574,8 +583,9 @@ serve(async (req) => {
       )
     }
 
+    console.log('❌ [admin-email] Invalid action:', action, 'Method:', req.method)
     return new Response(
-      JSON.stringify({ error: 'Invalid action' }),
+      JSON.stringify({ error: 'Invalid action', receivedAction: action, method: req.method }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
 
