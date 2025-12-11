@@ -234,6 +234,121 @@ export function useAdmin() {
     });
   };
 
+  // Email Management Functions
+  const sendEmail = async (emailData: {
+    from: string;
+    to: string | string[];
+    cc?: string | string[];
+    bcc?: string | string[];
+    subject: string;
+    html?: string;
+    text?: string;
+    replyTo?: string;
+  }) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const { data, error: invokeError } = await supabase.functions.invoke('admin-email', {
+        body: emailData
+      });
+
+      if (invokeError) {
+        throw new Error(invokeError.message || 'Failed to send email');
+      }
+
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+
+      return data;
+    } catch (err: any) {
+      const errorMessage = err.message || 'Failed to send email';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getMailboxes = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL;
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('No active session');
+      }
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/admin-email?action=get-mailboxes`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to fetch mailboxes');
+      }
+
+      const data = await response.json();
+      return data.mailboxes || [];
+    } catch (err: any) {
+      const errorMessage = err.message || 'Failed to fetch mailboxes';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getEmails = async (params: {
+    mailboxId?: string;
+    direction?: 'inbound' | 'outbound' | 'all';
+    limit?: number;
+    offset?: number;
+  } = {}) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL;
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        throw new Error('No active session');
+      }
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/admin-email?action=get-emails`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(params),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to fetch emails');
+      }
+
+      const data = await response.json();
+      return data.emails || [];
+    } catch (err: any) {
+      const errorMessage = err.message || 'Failed to fetch emails';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return {
     loading,
     error,
@@ -267,6 +382,10 @@ export function useAdmin() {
     exportData,
     // Test Period Management
     getTestPeriodSettings,
-    updateTestPeriodSettings
+    updateTestPeriodSettings,
+    // Email Management
+    sendEmail,
+    getMailboxes,
+    getEmails
   };
 }

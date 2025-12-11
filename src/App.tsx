@@ -8,6 +8,7 @@ import { useBotExecutor } from './hooks/useBotExecutor';
 import { useSoundNotifications } from './hooks/useSoundNotifications';
 import { ONBOARDING_ENABLED } from './constants/featureFlags';
 import CookieConsent from './components/ui/CookieConsent';
+import PopupDisplay from './components/ui/PopupDisplay';
 import { supabase } from './lib/supabase';
 
 function AppRoutes() {
@@ -184,6 +185,7 @@ function App() {
           // Disable analytics tracking here if needed
         }}
       />
+      <PopupDisplay />
     </BrowserRouter>
   );
 }

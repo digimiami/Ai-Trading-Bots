@@ -14,6 +14,8 @@ import WebhookTestPage from '../webhook-test/page';
 import CryptoNewsManager from './components/CryptoNewsManager';
 import ContactMessages from './components/ContactMessages';
 import SubscriptionManagement from './components/SubscriptionManagement';
+import PopupManager from './components/PopupManager';
+import EmailCenter from './components/EmailCenter';
 
 interface User {
   id: string;
@@ -919,8 +921,10 @@ export default function AdminPage() {
   }
 
   const tabs = [
+    { id: 'email-center', label: 'Email Center', icon: 'ri-mail-send-line' },
     { id: 'contact-messages', label: 'Contact Messages', icon: 'ri-mail-line' },
     { id: 'subscriptions', label: 'Subscriptions', icon: 'ri-wallet-line' },
+    { id: 'popups', label: 'Popup Manager', icon: 'ri-notification-line' },
     { id: 'overview', label: 'Overview', icon: 'ri-dashboard-line' },
     { id: 'users', label: 'Users', icon: 'ri-user-line' },
     { id: 'bots', label: 'Trading Bots', icon: 'ri-robot-line' },
@@ -2517,6 +2521,11 @@ export default function AdminPage() {
           <CryptoNewsManager />
         )}
 
+        {/* Email Center Tab */}
+        {activeTab === 'email-center' && (
+          <EmailCenter />
+        )}
+
         {/* Contact Messages Tab */}
         {activeTab === 'contact-messages' && (
           <ContactMessages />
@@ -2525,6 +2534,11 @@ export default function AdminPage() {
         {/* Subscriptions Tab */}
         {activeTab === 'subscriptions' && (
           <SubscriptionManagement />
+        )}
+
+        {/* Popup Manager Tab */}
+        {activeTab === 'popups' && (
+          <PopupManager />
         )}
 
         {/* Webhook Test Tab */}
