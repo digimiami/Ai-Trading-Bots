@@ -83,7 +83,18 @@ export default function EmailCenter() {
   useEffect(() => {
     loadMailboxes();
     loadEmails();
+    loadUsers();
   }, [selectedMailbox, selectedDirection, currentPage]);
+
+  const loadUsers = async () => {
+    try {
+      const data = await getUsers();
+      setUsers(data || []);
+    } catch (err) {
+      console.error('Failed to load users:', err);
+      setUsers([]);
+    }
+  };
 
   const loadMailboxes = async () => {
     try {
@@ -289,7 +300,9 @@ export default function EmailCenter() {
           </Button>
           <Button
             variant="secondary"
-            onClick={() => {
+            onClick={async () => {
+              // Load users when opening broadcast modal
+              await loadUsers();
               setBroadcastForm({
                 from: mailboxes.find(m => m.is_active)?.email_address || '',
                 subject: '',
