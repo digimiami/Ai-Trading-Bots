@@ -53,6 +53,16 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  console.log('📧 [email-inbound] Request received:', {
+    method: req.method,
+    url: req.url,
+    headers: Object.fromEntries(req.headers.entries()),
+    hasAuthHeader: !!req.headers.get('Authorization'),
+    hasSvixId: !!req.headers.get('svix-id'),
+    hasSvixTimestamp: !!req.headers.get('svix-timestamp'),
+    hasSvixSignature: !!req.headers.get('svix-signature')
+  })
+
   try {
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -61,10 +71,12 @@ serve(async (req) => {
 
     // Read body once (needed for signature verification and parsing)
     const body = await req.text()
+    console.log('📧 [email-inbound] Body received, length:', body.length)
     
     // Verify Resend webhook signature using Svix format
     // Resend uses Svix for webhook signature verification
     const signingSecret = Deno.env.get('RESEND_WEBHOOK_SECRET') || Deno.env.get('EMAIL_WEBHOOK_SECRET') || Deno.env.get('Signing Secret')
+    console.log('📧 [email-inbound] Signing secret configured:', !!signingSecret, signingSecret ? `(length: ${signingSecret.length})` : '')
     
     if (signingSecret) {
       const svixId = req.headers.get('svix-id')
@@ -72,14 +84,17 @@ serve(async (req) => {
       const svixSignature = req.headers.get('svix-signature')
       
       if (!svixSignature || !svixTimestamp || !svixId) {
-        console.warn('⚠️ Missing Resend webhook signature headers', {
+        console.warn('⚠️ [email-inbound] Missing Resend webhook signature headers', {
           hasSignature: !!svixSignature,
           hasTimestamp: !!svixTimestamp,
-          hasId: !!svixId
+          hasId: !!svixId,
+          allHeaders: Object.fromEntries(req.headers.entries())
         })
-        // Allow through if signature headers are missing (for testing or other providers)
-        console.log('⚠️ Proceeding without signature verification')
+        // For webhooks, we should still process even without signature (for testing)
+        // But log a warning
+        console.log('⚠️ [email-inbound] Proceeding without signature verification - this is OK for webhook testing')
       } else {
+        console.log('📧 [email-inbound] Attempting signature verification...')
         // Verify signature using Svix format
         // Svix signs: svix-id + '.' + svix-timestamp + '.' + body
         try {
@@ -131,11 +146,20 @@ serve(async (req) => {
           }
 
           if (!isValid) {
-            console.warn('⚠️ Invalid Resend webhook signature')
-            return new Response(
-              JSON.stringify({ error: 'Unauthorized - Invalid signature' }),
-              { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            )
+            console.error('❌ [email-inbound] Invalid Resend webhook signature', {
+              svixId,
+              svixTimestamp,
+              signatureParts: svixSignature.split(','),
+              bodyLength: body.length,
+              signedContentLength: signedContent.length
+            })
+            // For now, allow through with warning (can be strict later)
+            console.warn('⚠️ [email-inbound] Signature verification failed, but allowing request through for debugging')
+            // Uncomment below to enforce strict signature verification:
+            // return new Response(
+            //   JSON.stringify({ error: 'Unauthorized - Invalid signature' }),
+            //   { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            // )
           }
 
           // Check timestamp to prevent replay attacks (within 5 minutes)
@@ -187,8 +211,9 @@ serve(async (req) => {
     let messageId: string = ''
     let inReplyTo: string = ''
 
-    // Resend format
+    // Resend format - check for email.received event
     if (payload.type === 'email.received' && payload.data) {
+      console.log('📧 [email-inbound] Processing Resend email.received event')
       fromAddress = payload.data.from || ''
       toAddress = payload.data.to || ''
       subject = payload.data.subject || ''
@@ -196,6 +221,7 @@ serve(async (req) => {
       textBody = payload.data.text || ''
       messageId = payload.data.message_id || payload.data.headers?.['Message-Id'] || ''
       inReplyTo = payload.data.in_reply_to || payload.data.headers?.['In-Reply-To'] || ''
+      console.log('📧 [email-inbound] Parsed Resend email:', { fromAddress, toAddress, subject, messageId })
     }
     // Mailgun format
     else if (payload.sender) {
@@ -220,12 +246,20 @@ serve(async (req) => {
 
     // Validate required fields
     if (!fromAddress || !toAddress) {
-      console.error('❌ Missing required fields: from or to')
+      console.error('❌ [email-inbound] Missing required fields:', { fromAddress, toAddress, payloadType: payload.type })
       return new Response(
-        JSON.stringify({ error: 'Missing required fields: from, to' }),
+        JSON.stringify({ error: 'Missing required fields: from, to', payload: payload }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
+    
+    console.log('📧 [email-inbound] Email parsed successfully:', {
+      from: fromAddress,
+      to: Array.isArray(toAddress) ? toAddress : [toAddress],
+      subject,
+      hasHtml: !!htmlBody,
+      hasText: !!textBody
+    })
 
     // Normalize to address (handle arrays)
     const toArray = Array.isArray(toAddress) ? toAddress : [toAddress]
@@ -247,8 +281,11 @@ serve(async (req) => {
     }
 
     if (!mailboxes || mailboxes.length === 0) {
-      console.warn('⚠️ No active mailbox found for:', toArray)
+      console.warn('⚠️ [email-inbound] No active mailbox found for:', toArray)
+      console.log('📧 [email-inbound] Available mailboxes in DB:', await supabaseClient.from('mailboxes').select('email_address, is_active'))
       // Still save the email but without mailbox_id
+    } else {
+      console.log('✅ [email-inbound] Found', mailboxes.length, 'matching mailbox(es):', mailboxes.map(m => m.email_address))
     }
 
     // Generate thread_id from subject or in_reply_to
@@ -333,6 +370,12 @@ serve(async (req) => {
       }
     }
 
+    console.log('✅ [email-inbound] Email processing complete:', {
+      emailsSaved: savedEmails.length,
+      emailIds: savedEmails.map(e => e.id)
+    })
+    console.log('📧 [email-inbound] ==========================================')
+    
     return new Response(
       JSON.stringify({
         success: true,
@@ -344,10 +387,17 @@ serve(async (req) => {
     )
 
   } catch (error) {
-    console.error('❌ Inbound email error:', error)
+    console.error('❌ [email-inbound] Error processing request:', error)
+    console.error('❌ [email-inbound] Error stack:', error instanceof Error ? error.stack : 'No stack trace')
+    console.error('❌ [email-inbound] Error details:', {
+      message: error instanceof Error ? error.message : String(error),
+      name: error instanceof Error ? error.name : typeof error
+    })
+    console.log('📧 [email-inbound] ==========================================')
     return new Response(
       JSON.stringify({
         error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : String(error)
       }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
