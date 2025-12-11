@@ -76,7 +76,23 @@ export default function PaperTradingBalance() {
       return;
     }
 
-    if (error?.code === 'PGRST116' || !data) {
+    // Handle various error cases
+    if (error) {
+      // 406 Not Acceptable - might be RLS or query format issue
+      if (error.code === 'PGRST204' || error.code === 'PGRST116' || error.message?.includes('406')) {
+        console.log('⚠️ Paper trading account not found or access denied, attempting to create:', error);
+        const ensuredAccount = await ensureAccountExists();
+        if (ensuredAccount) {
+          setBalance(ensuredAccount);
+        } else {
+          setBalance(null);
+        }
+      } else {
+        console.error('❌ Error fetching paper trading balance:', error);
+        setBalance(null);
+      }
+    } else if (!data) {
+      // No error but no data - try to create account
       const ensuredAccount = await ensureAccountExists();
       if (ensuredAccount) {
         setBalance(ensuredAccount);

@@ -1,0 +1,22 @@
+[
+  {
+    "fileName": "main-overview.mdc",
+    "description": "Complete system overview documenting the core trading platform architecture, component relationships, and high-level system design"
+  },
+  {
+    "fileName": "trading-algorithms.mdc",
+    "description": "Detailed documentation of critical trading algorithms including performance scoring, risk assessment, position sizing, and AI-driven optimization systems"
+  },
+  {
+    "fileName": "data-models.mdc",
+    "description": "Comprehensive documentation of data models for trading bots, performance metrics, user configurations, and their relationships across the system"
+  },
+  {
+    "fileName": "trading-data-flow.mdc",
+    "description": "Documentation of data flow between components including real-time trading operations, bot execution pipeline, and performance tracking system"
+  },
+  {
+    "fileName": "ai-ml-integration.mdc",
+    "description": "Detailed documentation of AI/ML system integration, including trading strategy optimization, feature engineering, and prediction engine implementation"
+  }
+]

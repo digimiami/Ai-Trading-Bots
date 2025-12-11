@@ -52,7 +52,10 @@ serve(async (req) => {
       })
     }
 
-    // Get user role
+    // Get user role - handle gracefully if user doesn't exist in users table yet
+    let isAdmin = false
+    let userName: string | null = null
+    
     const { data: userData, error: userError } = await supabaseClient
       .from('users')
       .select('role, name')
@@ -60,17 +63,26 @@ serve(async (req) => {
       .single()
 
     if (userError) {
-      console.error('❌ Error fetching user data:', userError)
-      return new Response(JSON.stringify({ 
-        error: 'Failed to get user data',
-        details: userError.message 
-      }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      })
+      // If user doesn't exist in users table (e.g., profile not created yet), default to non-admin
+      // This can happen if the ensure_user_profile trigger hasn't run yet
+      if (userError.code === 'PGRST116') {
+        console.log('⚠️ User not found in users table, defaulting to non-admin. User ID:', user.id)
+        isAdmin = false
+        userName = user.email || null
+      } else {
+        console.error('❌ Error fetching user data:', userError)
+        return new Response(JSON.stringify({ 
+          error: 'Failed to get user data',
+          details: userError.message 
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+    } else {
+      isAdmin = userData?.role === 'admin'
+      userName = userData?.name || null
     }
-
-    const isAdmin = userData?.role === 'admin'
 
     // Parse request body
     let body: any = {}

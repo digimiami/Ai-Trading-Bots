@@ -1,0 +1,60 @@
+---
+description: Specifications for trading algorithm implementations including performance scoring, risk assessment, and AI optimization
+---
+
+
+# trading-algorithms
+
+Core Trading Algorithm Components:
+
+1. Performance Scoring System
+- Custom scoring algorithms combining:
+  - 30-day historical performance (40%)
+  - 24h momentum indicators (20%) 
+  - Volume-based logarithmic scoring (20%)
+  - Volatility-adjusted penalties (20%)
+- Dynamic risk assessment generating leverage recommendations (2x-7x)
+- Adaptive stop-loss calculations (1.5%-4.0%)
+- Volume-based position sizing rules
+
+2. AI Strategy Optimization
+- Confidence-based parameter optimization
+- Historical trade analysis with performance benchmarking
+- Multi-factor analysis integrating:
+  - Win rate patterns
+  - Drawdown metrics
+  - Profit factor calculations
+  - Volume profile analysis
+- Dynamic parameter adjustment with version control
+
+3. Trade Signal Processing
+- Multi-exchange signal validation
+- Custom side/action resolution logic
+- Template-based trade execution
+- Real-time performance monitoring
+- Exchange-specific payload formatting
+
+4. Backtesting Engine
+- Multi-pair trading simulation
+- Position sizing optimization
+- Risk management rule validation
+- Performance metrics calculation:
+  - Sharpe ratio
+  - Maximum drawdown
+  - Win rate analysis
+  - Fee impact modeling
+
+5. Market Analysis System
+- Technical indicator aggregation:
+  - VWAP calculation
+  - ATR-based volatility
+  - Custom momentum indicators
+- Multi-timeframe trend analysis
+- Volume profile assessment
+- Market sentiment scoring
+
+Implements sophisticated trading algorithms focused on automated strategy optimization, risk management, and performance analysis. Core strength lies in AI-driven parameter optimization and comprehensive backtesting capabilities.
+
+$END$
+
+ If you're using this file in context, clearly say in italics in one small line that "Context added by Giga trading-algorithms" along with specifying exactly what information was used from this file in a human-friendly way, instead of using kebab-case use normal sentence case.

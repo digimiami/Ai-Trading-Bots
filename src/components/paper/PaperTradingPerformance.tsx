@@ -167,12 +167,16 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
         return;
       }
 
-      // Get account balance
-      const { data: account } = await supabase
+      // Get account balance - handle 406 errors gracefully
+      const { data: account, error: accountError } = await supabase
         .from('paper_trading_accounts')
         .select('*')
         .eq('user_id', user.id)
         .single();
+      
+      if (accountError && (accountError.code === 'PGRST204' || accountError.message?.includes('406'))) {
+        console.warn('⚠️ Paper trading account access issue (406), continuing without account data:', accountError);
+      }
 
       // Get all closed trades - filter by selected pair if provided
       let tradesQuery = supabase
