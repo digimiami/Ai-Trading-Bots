@@ -307,9 +307,39 @@ serve(async (req) => {
       if (action === 'create') {
         const { name, exchange, tradingType, symbol, symbols, customPairs, timeframe, leverage, riskLevel, tradeAmount, stopLoss, takeProfit, strategy, strategyConfig, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt, paperTrading, soundNotificationsEnabled } = body
 
+        // #region agent log
+        await fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot-management/index.ts:307',message:'Bot create action started',data:{userId:user.id,name,exchange},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H6'})}).catch(()=>{});
+        // #endregion
+
         // Debug logging
         console.log('Received bot data:', { name, exchange, symbol, symbols, customPairs, timeframe, leverage, riskLevel, tradeAmount, stopLoss, takeProfit, strategy, status, pnl, pnlPercentage, totalTrades, winRate, lastTradeAt })
         console.log('Exchange value:', exchange, 'Type:', typeof exchange, 'Is null:', exchange === null, 'Is undefined:', exchange === undefined)
+
+        // Check subscription limits before creating bot
+        // #region agent log
+        await fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot-management/index.ts:315',message:'Checking subscription limits',data:{userId:user.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H6'})}).catch(()=>{});
+        // #endregion
+        const { data: limitCheck, error: limitError } = await supabaseClient
+          .rpc('can_user_create_bot', { p_user_id: user.id })
+        
+        // #region agent log
+        await fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot-management/index.ts:320',message:'Limit check result',data:{hasError:!!limitError,error:limitError?.message,hasData:!!limitCheck,dataValue:limitCheck},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H6'})}).catch(()=>{});
+        // #endregion
+        
+        if (!limitError && limitCheck) {
+          const result = typeof limitCheck === 'object' ? limitCheck : { allowed: limitCheck }
+          if (result.allowed !== true) {
+            // #region agent log
+            await fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'bot-management/index.ts:325',message:'Bot creation blocked by limit',data:{reason:result.reason,currentBots:result.current_bots},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H6'})}).catch(()=>{});
+            // #endregion
+            return new Response(
+              JSON.stringify({ 
+                error: result.reason || 'You have reached your bot creation limit. Please upgrade your plan.'
+              }),
+              { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
+        }
 
         // Validate required fields
         if (!name || !exchange || !symbol) {

@@ -23,21 +23,36 @@ export default function PricingPage() {
   }, [])
 
   const handleSubscribe = async (planId: string) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'pricing/page.tsx:25',message:'handleSubscribe called',data:{planId,selectedCurrency},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H4'})}).catch(()=>{});
+    // #endregion
     try {
       setIsProcessing(true)
       setError(null)
       setSelectedPlan(planId)
 
       const result = await createInvoice(planId, selectedCurrency)
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'pricing/page.tsx:33',message:'createInvoice result',data:{hasResult:!!result,hasInvoice:!!result?.invoice,hasCheckoutLink:!!result?.invoice?.checkoutLink},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H4'})}).catch(()=>{});
+      // #endregion
       
       if (result && result.invoice) {
         // Redirect to BTCPay payment page
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'pricing/page.tsx:35',message:'Redirecting to BTCPay',data:{checkoutLink:result.invoice.checkoutLink},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H4'})}).catch(()=>{});
+        // #endregion
         window.location.href = result.invoice.checkoutLink
       } else {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'pricing/page.tsx:37',message:'Invoice creation failed',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
+        // #endregion
         setError('Failed to create invoice. Please try again.')
         setIsProcessing(false)
       }
     } catch (err) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'pricing/page.tsx:42',message:'handleSubscribe exception',data:{error:err instanceof Error ? err.message : String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
+      // #endregion
       console.error('Subscription error:', err)
       setError(err instanceof Error ? err.message : 'Failed to create subscription')
       setIsProcessing(false)

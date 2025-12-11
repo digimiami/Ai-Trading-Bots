@@ -134,8 +134,14 @@ export function useSubscription() {
 
   // Check if user can create more bots
   const canCreateBot = async (): Promise<{ allowed: boolean; reason?: string; currentCount?: number }> => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useSubscription.ts:136',message:'canCreateBot called',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H7'})}).catch(()=>{});
+    // #endregion
     try {
       const { data: { user } } = await supabase.auth.getUser()
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useSubscription.ts:140',message:'User check',data:{hasUser:!!user,userId:user?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H7'})}).catch(()=>{});
+      // #endregion
       if (!user) {
         return { allowed: false, reason: 'Not authenticated' }
       }
@@ -147,6 +153,9 @@ export function useSubscription() {
         .eq('id', user.id)
         .single()
 
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useSubscription.ts:150',message:'User role check',data:{role:userData?.role,isAdmin:userData?.role === 'admin'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H7'})}).catch(()=>{});
+      // #endregion
       if (userData?.role === 'admin') {
         // Get current bot count for display
         const { count } = await supabase
@@ -165,6 +174,9 @@ export function useSubscription() {
       // Call database function (returns JSONB)
       const { data, error } = await supabase
         .rpc('can_user_create_bot', { p_user_id: user.id })
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useSubscription.ts:168',message:'RPC can_user_create_bot called',data:{hasError:!!error,error:error?.message,hasData:!!data,dataType:typeof data,dataValue:data},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H5'})}).catch(()=>{});
+      // #endregion
 
       if (error) throw error
 
@@ -172,6 +184,9 @@ export function useSubscription() {
       if (data && typeof data === 'object') {
         const result = data as any
         const allowed = result.allowed === true
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useSubscription.ts:175',message:'RPC result parsed',data:{allowed,reason:result.reason,currentBots:result.current_bots},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H5'})}).catch(()=>{});
+        // #endregion
         
         if (allowed) {
           return { 
@@ -203,11 +218,17 @@ export function useSubscription() {
       }
 
       // Default deny
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useSubscription.ts:205',message:'Default deny - unable to verify',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H5'})}).catch(()=>{});
+      // #endregion
       return { 
         allowed: false, 
         reason: 'Unable to verify subscription limits' 
       }
     } catch (err) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useSubscription.ts:212',message:'canCreateBot exception',data:{error:err instanceof Error ? err.message : String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H5'})}).catch(()=>{});
+      // #endregion
       console.error('Error checking bot creation limit:', err)
       return { 
         allowed: false, 
@@ -218,27 +239,50 @@ export function useSubscription() {
 
   // Create invoice for subscription
   const createInvoice = async (planId: string, currency: string = 'USD'): Promise<{ invoice: Invoice; subscription: any } | null> => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useSubscription.ts:220',message:'createInvoice called',data:{planId,currency,envVar:import.meta.env.VITE_SUPABASE_URL,publicEnvVar:import.meta.env.VITE_PUBLIC_SUPABASE_URL},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
+    // #endregion
     try {
+      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL;
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useSubscription.ts:224',message:'Using supabase URL',data:{supabaseUrl,hasPublic:!!import.meta.env.VITE_PUBLIC_SUPABASE_URL,hasRegular:!!import.meta.env.VITE_SUPABASE_URL},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H1'})}).catch(()=>{});
+      // #endregion
+      const session = await supabase.auth.getSession();
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useSubscription.ts:227',message:'Got session',data:{hasSession:!!session.data.session,hasToken:!!session.data.session?.access_token},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H3'})}).catch(()=>{});
+      // #endregion
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/btcpay-integration?action=create-invoice`,
+        `${supabaseUrl}/functions/v1/btcpay-integration?action=create-invoice`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`
+            'Authorization': `Bearer ${session.data.session?.access_token}`
           },
           body: JSON.stringify({ planId, currency })
         }
       )
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useSubscription.ts:238',message:'BTCPay response received',data:{status:response.status,ok:response.ok,statusText:response.statusText},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
+      // #endregion
 
       if (!response.ok) {
         const error = await response.json()
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useSubscription.ts:242',message:'BTCPay error response',data:{error,status:response.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
+        // #endregion
         throw new Error(error.error || 'Failed to create invoice')
       }
 
       const data = await response.json()
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useSubscription.ts:247',message:'BTCPay success',data:{hasInvoice:!!data.invoice,hasCheckoutLink:!!data.invoice?.checkoutLink},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
+      // #endregion
       return data
     } catch (err) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useSubscription.ts:250',message:'createInvoice exception',data:{error:err instanceof Error ? err.message : String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
+      // #endregion
       console.error('Error creating invoice:', err)
       setError(err instanceof Error ? err.message : 'Failed to create invoice')
       return null
