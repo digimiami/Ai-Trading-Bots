@@ -212,6 +212,53 @@ serve(async (req) => {
       console.log(`✅ [BTCPay] Invoice created successfully: ${btcpayInvoice.id}`)
       console.log(`✅ [BTCPay] Checkout link: ${btcpayInvoice.checkoutLink}`)
 
+      // Ensure user exists in users table (for new users)
+      console.log(`📝 [BTCPay] Checking if user exists in users table: ${user.id}`)
+      const { data: existingUser, error: userCheckError } = await supabaseClient
+        .from('users')
+        .select('id')
+        .eq('id', user.id)
+        .single()
+
+      if (userCheckError && userCheckError.code === 'PGRST116') {
+        // User doesn't exist in users table - create it
+        console.log(`📝 [BTCPay] User not found in users table, creating record...`)
+        const { error: createUserError } = await supabaseClient
+          .from('users')
+          .insert({
+            id: user.id,
+            email: user.email || '',
+            name: user.user_metadata?.name || user.email?.split('@')[0] || 'User',
+            role: 'user',
+            status: 'active',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+
+        if (createUserError) {
+          console.error('❌ [BTCPay] Failed to create user record:', createUserError)
+          return new Response(
+            JSON.stringify({ 
+              error: 'Failed to create user record',
+              details: createUserError.message 
+            }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        console.log(`✅ [BTCPay] User record created successfully`)
+      } else if (userCheckError) {
+        console.error('❌ [BTCPay] Error checking user:', userCheckError)
+        return new Response(
+          JSON.stringify({ 
+            error: 'Failed to verify user',
+            details: userCheckError.message 
+          }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      } else {
+        console.log(`✅ [BTCPay] User exists in users table`)
+      }
+
       // Create subscription record
       console.log(`📝 [BTCPay] Creating subscription record for user ${user.id}`)
       const { data: subscription, error: subError } = await supabaseClient
@@ -238,7 +285,11 @@ serve(async (req) => {
       if (subError) {
         console.error('❌ [BTCPay] Failed to create subscription record:', subError)
         return new Response(
-          JSON.stringify({ error: 'Failed to create subscription' }),
+          JSON.stringify({ 
+            error: 'Failed to create subscription',
+            details: subError.message,
+            code: subError.code
+          }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }

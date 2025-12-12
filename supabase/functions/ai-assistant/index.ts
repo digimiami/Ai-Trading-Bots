@@ -119,7 +119,7 @@ serve(async (req) => {
    - Performance: PnL ${bot.pnl || 0} USDT (${bot.pnl_percentage || 0}%), Win Rate: ${bot.win_rate || 0}%, Trades: ${bot.total_trades || 0}
    - Paper Trading: ${bot.paper_trading ? 'Yes' : 'No'}`;
         }).join('\n\n')
-      : '\n\n## USER'S CURRENT BOTS: None (user has no bots yet)';
+      : `\n\n## USER'S CURRENT BOTS: None (user has no bots yet)`;
 
     // Define functions/tools for OpenAI function calling
     const functions = [
@@ -323,9 +323,9 @@ IMPORTANT GUIDELINES:
     }
 
     let data = await response.json();
-    const message = data.choices[0]?.message;
-    aiResponse = message?.content || '';
-    const toolCalls = supportsFunctionCalling ? (message?.tool_calls || []) : [];
+    const aiMessage = data.choices[0]?.message;
+    aiResponse = aiMessage?.content || '';
+    const toolCalls = supportsFunctionCalling ? (aiMessage?.tool_calls || []) : [];
 
     // Execute function calls if any (only for OpenAI)
     if (supportsFunctionCalling && toolCalls.length > 0) {
