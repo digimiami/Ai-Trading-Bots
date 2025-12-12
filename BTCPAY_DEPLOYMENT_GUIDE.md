@@ -206,3 +206,4 @@ Once all steps are complete:
    - Check `user_subscriptions` table regularly
    - Monitor Edge Function logs for errors
 
+

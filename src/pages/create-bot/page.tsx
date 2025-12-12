@@ -8,6 +8,7 @@ import Header from '../../components/feature/Header';
 import type { TradingStrategy, AdvancedStrategyConfig } from '../../types/trading';
 import { useBots } from '../../hooks/useBots';
 import { useSubscription } from '../../hooks/useSubscription';
+import { useApiKeys } from '../../hooks/useApiKeys';
 import { supabase } from '../../lib/supabase';
 import PairRecommendations from '../../components/bot/PairRecommendations';
 import type { PairRecommendation } from '../../services/pairRecommendations';
@@ -409,6 +410,28 @@ export default function CreateBotPage() {
     setError(null);
     
     try {
+      // Check if user has API keys configured
+      if (!apiKeysLoading && (!apiKeys || apiKeys.length === 0)) {
+        const hasApiKeys = apiKeys && apiKeys.length > 0;
+        if (!hasApiKeys) {
+          const bybitLink = 'https://www.bybit.com/invite?ref=LJXQEA';
+          const message = `⚠️ Exchange API Keys Required\n\nTo create a trading bot, you need to add API keys from your exchange first.\n\nSteps:\n1. Sign up for Bybit (if you don't have an account)\n2. Generate API keys from your Bybit account\n3. Add the API keys in Settings\n\nClick OK to go to Settings, or Cancel to sign up for Bybit.`;
+          
+          if (window.confirm(message)) {
+            navigate('/settings');
+          } else {
+            // Open Bybit signup in new tab
+            window.open(bybitLink, '_blank');
+            // Still navigate to settings so they can add keys after signing up
+            setTimeout(() => {
+              navigate('/settings');
+            }, 1000);
+          }
+          setIsCreating(false);
+          return;
+        }
+      }
+      
       // Check subscription limits before creating bot
       const subscriptionCheck = await canCreateBot();
       if (!subscriptionCheck.allowed) {

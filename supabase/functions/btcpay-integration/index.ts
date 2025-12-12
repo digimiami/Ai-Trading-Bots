@@ -341,6 +341,181 @@ serve(async (req) => {
     }
 
     // ============================================================
+    // ASSIGN PLAN TO USER (for new signups)
+    // ============================================================
+    if (action === 'assign-plan' && req.method === 'POST') {
+      console.log('📝 [BTCPay] Assign plan request received')
+      const body = await req.json()
+      const { planId, userId } = body
+      console.log('📝 [BTCPay] Request body:', { planId, userId, authenticatedUserId: user.id })
+
+      if (!planId) {
+        console.error('❌ [BTCPay] Missing planId')
+        return new Response(
+          JSON.stringify({ error: 'planId is required' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      // Verify userId matches authenticated user (or allow admin to assign to others)
+      const targetUserId = userId || user.id
+      if (targetUserId !== user.id) {
+        // Check if user is admin
+        const { data: userData } = await supabaseClient
+          .from('users')
+          .select('role')
+          .eq('id', user.id)
+          .single()
+        
+        if (userData?.role !== 'admin') {
+          return new Response(
+            JSON.stringify({ error: 'Unauthorized - can only assign plan to yourself' }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+      }
+
+      // Get subscription plan details
+      console.log('📝 [BTCPay] Fetching plan:', planId)
+      const { data: plan, error: planError } = await supabaseClient
+        .from('subscription_plans')
+        .select('*')
+        .eq('id', planId)
+        .eq('is_active', true)
+        .single()
+
+      if (planError || !plan) {
+        console.error('❌ [BTCPay] Plan not found:', planError?.message || 'Plan not found')
+        return new Response(
+          JSON.stringify({ error: 'Subscription plan not found' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      console.log('✅ [BTCPay] Plan found:', plan.name, plan.display_name)
+
+      // Check if user already has a subscription
+      const { data: existingSub, error: subCheckError } = await supabaseClient
+        .from('user_subscriptions')
+        .select('*')
+        .eq('user_id', targetUserId)
+        .in('status', ['active', 'pending', 'trial'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+
+      if (subCheckError) {
+        console.error('❌ [BTCPay] Error checking existing subscription:', subCheckError)
+        return new Response(
+          JSON.stringify({ error: 'Failed to check existing subscription' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      // If user has existing subscription, update it instead of creating new one
+      if (existingSub && existingSub.length > 0) {
+        console.log('📝 [BTCPay] User has existing subscription, updating...')
+        const existingSubscription = existingSub[0]
+        
+        // Calculate trial period if Testing plan
+        let expiresAt = null
+        let trialPeriodDays = null
+        let trialStartedAt = null
+        
+        if (plan.name === 'Testing') {
+          trialPeriodDays = 14
+          trialStartedAt = new Date().toISOString()
+          expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
+        }
+
+        const { data: updatedSub, error: updateError } = await supabaseClient
+          .from('user_subscriptions')
+          .update({
+            plan_id: planId,
+            status: plan.name === 'Testing' ? 'active' : 'pending',
+            trial_period_days: trialPeriodDays,
+            trial_started_at: trialStartedAt,
+            expires_at: expiresAt,
+            started_at: plan.name === 'Testing' ? new Date().toISOString() : existingSubscription.started_at,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingSubscription.id)
+          .select()
+          .single()
+
+        if (updateError) {
+          console.error('❌ [BTCPay] Failed to update subscription:', updateError)
+          return new Response(
+            JSON.stringify({ error: 'Failed to update subscription', details: updateError.message }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        console.log(`✅ [BTCPay] Subscription updated: ${updatedSub.id}`)
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: `Plan ${plan.display_name} assigned successfully`,
+            subscription: {
+              id: updatedSub.id,
+              planName: plan.display_name,
+              status: updatedSub.status
+            }
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      // Create new subscription
+      console.log('📝 [BTCPay] Creating new subscription for user:', targetUserId)
+      
+      // Calculate trial period if Testing plan
+      let expiresAt = null
+      let trialPeriodDays = null
+      let trialStartedAt = null
+      
+      if (plan.name === 'Testing') {
+        trialPeriodDays = 14
+        trialStartedAt = new Date().toISOString()
+        expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
+      }
+
+      const { data: newSub, error: createError } = await supabaseClient
+        .from('user_subscriptions')
+        .insert({
+          user_id: targetUserId,
+          plan_id: planId,
+          status: plan.name === 'Testing' ? 'active' : 'pending',
+          trial_period_days: trialPeriodDays,
+          trial_started_at: trialStartedAt,
+          expires_at: expiresAt,
+          started_at: plan.name === 'Testing' ? new Date().toISOString() : null
+        })
+        .select()
+        .single()
+
+      if (createError) {
+        console.error('❌ [BTCPay] Failed to create subscription:', createError)
+        return new Response(
+          JSON.stringify({ error: 'Failed to create subscription', details: createError.message }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      console.log(`✅ [BTCPay] Subscription created: ${newSub.id}`)
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: `Plan ${plan.display_name} assigned successfully`,
+          subscription: {
+            id: newSub.id,
+            planName: plan.display_name,
+            status: newSub.status
+          }
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // ============================================================
     // GET INVOICE STATUS
     // ============================================================
     if (action === 'invoice-status' && req.method === 'GET') {

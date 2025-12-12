@@ -57,17 +57,18 @@ export function useSubscription() {
         .from('subscription_plans')
         .select('*')
         .eq('is_active', true)
-        .neq('name', 'Free')
         .order('sort_order', { ascending: true })
 
       if (error) throw error
-      // Double filter to ensure Free Plan is removed
+      // Filter out Free Plan but keep Testing plan
       const filteredPlans = (data || []).filter(plan => {
         const nameLower = (plan.name || '').toLowerCase();
         const displayNameLower = (plan.display_name || '').toLowerCase();
-        return nameLower !== 'free' && 
+        // Keep Testing plan, remove Free plan
+        return (nameLower === 'testing' || nameLower === 'test') ||
+               (nameLower !== 'free' && 
                displayNameLower !== 'free plan' &&
-               !displayNameLower.includes('free plan');
+               !displayNameLower.includes('free plan'));
       });
       setPlans(filteredPlans)
     } catch (err) {

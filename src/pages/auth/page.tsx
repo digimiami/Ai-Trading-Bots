@@ -21,31 +21,77 @@ export default function AuthPage() {
   const navigate = useNavigate()
   const { user, loading: authLoading, signIn, signUp } = useAuth()
 
-  // Redirect authenticated users - new users go to pricing to pay first
+  // Redirect authenticated users - new users go to settings first for API setup
   useEffect(() => {
     if (!authLoading && user) {
-      // For new signups or users coming from auth flow, redirect to pricing page to pay before using the app
-      // This ensures users create an invoice and pay before accessing the dashboard
       const currentPath = window.location.pathname
       const isAuthPage = currentPath === '/auth' || currentPath.startsWith('/auth/')
       const isRoot = currentPath === '/'
       
       if (isAuthPage || isRoot) {
-        // New signup or returning from email confirmation - redirect to pricing to pay
-        navigate('/pricing', { replace: true })
+        // Check if this is first-time login (no API keys)
+        const checkFirstTime = async () => {
+          try {
+            const { data: { session } } = await supabase.auth.getSession()
+            if (!session) return
+
+            const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL
+            const response = await fetch(`${supabaseUrl}/functions/v1/api-keys/list`, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${session.access_token}`,
+                'Content-Type': 'application/json',
+              },
+            })
+
+            if (response.ok) {
+              const data = await response.json()
+              const hasApiKeys = data.apiKeys && data.apiKeys.length > 0
+              
+              // First-time user - redirect to settings to setup API keys
+              if (!hasApiKeys) {
+                console.log('🔄 First-time user detected (no API keys), redirecting to settings')
+                navigate('/settings', { replace: true })
+              } else {
+                // Has API keys - redirect to dashboard
+                navigate('/dashboard', { replace: true })
+              }
+            } else {
+              // If API check fails, still redirect to settings as safe default
+              navigate('/settings', { replace: true })
+            }
+          } catch (error) {
+            console.error('Error checking API keys:', error)
+            // On error, redirect to settings as safe default
+            navigate('/settings', { replace: true })
+          }
+        }
+        
+        checkFirstTime()
       }
       // If already on another page (like /dashboard), don't redirect (let them stay there)
     }
   }, [user, authLoading, navigate])
 
-  // Check for invitation code in URL
+  // Check for invitation code and selected plan in URL
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search)
     const invite = urlParams.get('invite')
+    const planId = urlParams.get('plan')
+    const isSignup = urlParams.get('signup') === 'true'
+    
     if (invite) {
       setInviteCode(invite)
       setIsLogin(false)
       validateInviteCode(invite)
+    }
+    
+    // If plan is selected and signup=true, switch to signup mode
+    if (planId && isSignup) {
+      setIsLogin(false)
+      // Store plan ID for later use during signup
+      localStorage.setItem('selectedPlanId', planId)
+      sessionStorage.setItem('selectedPlanId', planId)
     }
   }, [])
 
@@ -172,12 +218,54 @@ export default function AuthPage() {
           }
         }
       } else {
-        // Free signup - no invitation code required
-        // Users will automatically get the Testing plan with 14-day trial
+        // Get selected plan from localStorage/URL
+        const selectedPlanId = localStorage.getItem('selectedPlanId') || sessionStorage.getItem('selectedPlanId')
+        const selectedPlanName = localStorage.getItem('selectedPlanName')
+        
+        // Signup with selected plan info
         result = await signUp(email, password)
         
         // Check if email confirmation is required
         if (!result.error && result.data?.user) {
+          // If plan was selected, assign it after signup
+          if (selectedPlanId && result.data.user) {
+            try {
+              // Wait a moment for user profile to be created
+              await new Promise(resolve => setTimeout(resolve, 1000))
+              
+              const { data: { session } } = await supabase.auth.getSession()
+              if (session) {
+                const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL
+                
+                // Assign selected plan to user
+                const assignResponse = await fetch(`${supabaseUrl}/functions/v1/btcpay-integration?action=assign-plan`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`
+                  },
+                  body: JSON.stringify({ 
+                    planId: selectedPlanId,
+                    userId: result.data.user.id
+                  })
+                })
+                
+                if (assignResponse.ok) {
+                  console.log('✅ Plan assigned to user:', selectedPlanName || selectedPlanId)
+                  // Clear stored plan selection
+                  localStorage.removeItem('selectedPlanId')
+                  localStorage.removeItem('selectedPlanName')
+                  sessionStorage.removeItem('selectedPlanId')
+                } else {
+                  console.warn('⚠️ Failed to assign plan, will be assigned via trigger')
+                }
+              }
+            } catch (planError) {
+              console.error('Error assigning plan:', planError)
+              // Continue anyway - trigger will assign Testing plan
+            }
+          }
+          
           // Check if user needs to confirm email
           if (!result.data.user.email_confirmed_at) {
             setSuccess('✅ Account created successfully! Please check your email inbox to confirm your account. Once confirmed, you can sign in.')
@@ -193,11 +281,15 @@ export default function AuthPage() {
             return
           } else {
             // Email already confirmed (shouldn't happen normally, but handle it)
-            setSuccess('✅ Account created successfully! Redirecting to pricing to select a plan...')
+            setSuccess('✅ Account created successfully! Redirecting to settings to configure API keys...')
             setLoading(false)
-            // Redirect to pricing page so user can pay before using the app
+            // Clear stored plan selection
+            localStorage.removeItem('selectedPlanId')
+            localStorage.removeItem('selectedPlanName')
+            sessionStorage.removeItem('selectedPlanId')
+            // Redirect to settings for first-time setup
             setTimeout(() => {
-              navigate('/pricing')
+              navigate('/settings')
             }, 1500)
             return
           }

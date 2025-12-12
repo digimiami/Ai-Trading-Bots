@@ -111,3 +111,4 @@ CREATE TRIGGER trigger_update_user_settings_updated_at
 
 -- Grant permissions
 GRANT ALL ON user_settings TO authenticated;
+

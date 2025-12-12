@@ -60,3 +60,4 @@ After running, you should see:
   - `pablo@pablobots.com`
 - RLS policies for admin access
 - Indexes for performance
+

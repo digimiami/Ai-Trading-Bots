@@ -6,12 +6,14 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSubscription, type SubscriptionPlan } from '../../hooks/useSubscription'
+import { useAuth } from '../../hooks/useAuth'
 import Button from '../../components/base/Button'
 import Card from '../../components/base/Card'
 import Header from '../../components/feature/Header'
 
 export default function PricingPage() {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const { plans, subscription, loading, createInvoice, refresh } = useSubscription()
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null)
   const [selectedCurrency, setSelectedCurrency] = useState<string>('USD')
@@ -21,6 +23,22 @@ export default function PricingPage() {
   useEffect(() => {
     refresh()
   }, [])
+
+  const handleSelectPlan = (planId: string, planName: string) => {
+    // If user is not authenticated, store plan selection and redirect to signup
+    if (!user) {
+      // Store selected plan in localStorage and sessionStorage for signup
+      localStorage.setItem('selectedPlanId', planId)
+      localStorage.setItem('selectedPlanName', planName)
+      sessionStorage.setItem('selectedPlanId', planId)
+      // Redirect to signup with plan info
+      navigate(`/auth?plan=${planId}&signup=true`, { replace: false })
+      return
+    }
+
+    // If user is authenticated, proceed with subscription
+    handleSubscribe(planId)
+  }
 
   const handleSubscribe = async (planId: string) => {
     // #region agent log
@@ -145,16 +163,22 @@ export default function PricingPage() {
           </div>
         )}
 
-        {/* Pricing Plans */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
+        {/* Pricing Plans - Show all plans including Testing */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-7xl mx-auto">
           {plans.filter(plan => {
             const nameLower = (plan.name || '').toLowerCase();
             const displayNameLower = (plan.display_name || '').toLowerCase();
-            // Filter out Free Plan in any variation
-            return nameLower !== 'free' && 
+            // Include Testing plan, but filter out Free Plan in any variation
+            return (nameLower === 'testing' || nameLower === 'test') || 
+                   (nameLower !== 'free' && 
                    displayNameLower !== 'free plan' &&
                    !displayNameLower.includes('free plan') &&
-                   !nameLower.includes('free');
+                   !nameLower.includes('free'));
+          }).sort((a, b) => {
+            // Sort Testing plan first, then by price
+            if (a.name === 'Testing') return -1;
+            if (b.name === 'Testing') return 1;
+            return a.price_monthly_usd - b.price_monthly_usd;
           }).map((plan) => {
             const isCurrentPlan = currentPlan?.id === plan.id
             const isPopular = plan.name === 'Pro'
@@ -266,7 +290,11 @@ export default function PricingPage() {
                     onClick={() => {
                       if (isCurrentPlan) {
                         navigate('/bots')
+                      } else if (!user) {
+                        // Not authenticated - select plan and go to signup
+                        handleSelectPlan(plan.id, plan.name)
                       } else {
+                        // Authenticated - proceed with subscription
                         handleSubscribe(plan.id)
                       }
                     }}
@@ -280,6 +308,8 @@ export default function PricingPage() {
                       </>
                     ) : isCurrentPlan ? (
                       'Current Plan'
+                    ) : !user ? (
+                      plan.price_monthly_usd === 0 ? 'Sign Up Free' : 'Sign Up & Subscribe'
                     ) : plan.price_monthly_usd === 0 ? (
                       'Get Started'
                     ) : (
