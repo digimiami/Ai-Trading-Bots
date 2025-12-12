@@ -60,13 +60,17 @@ function AppRoutes() {
       const checkFirstTimeLogin = async () => {
         try {
           // Wait a bit for user profile to be created by trigger
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          await new Promise(resolve => setTimeout(resolve, 1500));
           
           // Check if user has API keys configured
           const { data: { session } } = await supabase.auth.getSession();
-          if (!session) return;
+          if (!session) {
+            console.log('⚠️ No session found, skipping API key check');
+            return;
+          }
 
-          const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/api-keys/list`, {
+          const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL;
+          const response = await fetch(`${supabaseUrl}/functions/v1/api-keys/list`, {
             method: 'GET',
             headers: {
               'Authorization': `Bearer ${session.access_token}`,
@@ -79,7 +83,14 @@ function AppRoutes() {
             const hasApiKeys = data.apiKeys && data.apiKeys.length > 0;
             const currentPath = window.location.pathname;
             const settingsRoutes = ['/settings', '/auth', '/onboarding'];
-            const publicRoutes = ['/', '/market-dashboard', '/crypto-bubbles', '/crypto-news', '/contact'];
+            const publicRoutes = ['/', '/market-dashboard', '/crypto-bubbles', '/crypto-news', '/contact', '/pricing'];
+            
+            console.log('🔍 First-time login check:', { 
+              hasApiKeys, 
+              currentPath, 
+              isSettingsRoute: settingsRoutes.includes(currentPath),
+              isPublicRoute: publicRoutes.includes(currentPath)
+            });
             
             // If no API keys and not already on settings/auth/onboarding/public pages, redirect to settings
             if (!hasApiKeys && !settingsRoutes.includes(currentPath) && !publicRoutes.includes(currentPath)) {
@@ -87,9 +98,11 @@ function AppRoutes() {
               navigate('/settings', { replace: true });
               return;
             }
+          } else {
+            console.warn('⚠️ Failed to check API keys:', response.status, response.statusText);
           }
         } catch (error) {
-          console.error('Error checking API keys for first-time login:', error);
+          console.error('❌ Error checking API keys for first-time login:', error);
           // Don't block navigation on error
         }
       };
@@ -97,9 +110,15 @@ function AppRoutes() {
       // Only check on first load, not on every route change
       const hasCheckedFirstTime = sessionStorage.getItem('firstTimeLoginChecked');
       if (!hasCheckedFirstTime) {
+        console.log('🔄 Starting first-time login check...');
         checkFirstTimeLogin();
         sessionStorage.setItem('firstTimeLoginChecked', 'true');
+      } else {
+        console.log('✅ First-time login already checked, skipping');
       }
+    } else if (!loading && !user) {
+      // Clear the check flag when user logs out
+      sessionStorage.removeItem('firstTimeLoginChecked');
     }
   }, [user, loading, navigate]);
 

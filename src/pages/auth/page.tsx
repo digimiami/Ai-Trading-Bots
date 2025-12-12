@@ -21,7 +21,8 @@ export default function AuthPage() {
   const navigate = useNavigate()
   const { user, loading: authLoading, signIn, signUp } = useAuth()
 
-  // Redirect authenticated users - new users go to settings first for API setup
+  // Redirect authenticated users - let App.tsx handle first-time login redirect
+  // This prevents conflicts between auth page and App.tsx redirects
   useEffect(() => {
     if (!authLoading && user) {
       const currentPath = window.location.pathname
@@ -29,47 +30,16 @@ export default function AuthPage() {
       const isRoot = currentPath === '/'
       
       if (isAuthPage || isRoot) {
-        // Check if this is first-time login (no API keys)
-        const checkFirstTime = async () => {
-          try {
-            const { data: { session } } = await supabase.auth.getSession()
-            if (!session) return
-
-            const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL
-            const response = await fetch(`${supabaseUrl}/functions/v1/api-keys/list`, {
-              method: 'GET',
-              headers: {
-                'Authorization': `Bearer ${session.access_token}`,
-                'Content-Type': 'application/json',
-              },
-            })
-
-            if (response.ok) {
-              const data = await response.json()
-              const hasApiKeys = data.apiKeys && data.apiKeys.length > 0
-              
-              // First-time user - redirect to settings to setup API keys
-              if (!hasApiKeys) {
-                console.log('🔄 First-time user detected (no API keys), redirecting to settings')
-                navigate('/settings', { replace: true })
-              } else {
-                // Has API keys - redirect to dashboard
-                navigate('/dashboard', { replace: true })
-              }
-            } else {
-              // If API check fails, still redirect to settings as safe default
-              navigate('/settings', { replace: true })
-            }
-          } catch (error) {
-            console.error('Error checking API keys:', error)
-            // On error, redirect to settings as safe default
-            navigate('/settings', { replace: true })
+        // Clear first-time login check flag so App.tsx can handle the redirect
+        sessionStorage.removeItem('firstTimeLoginChecked')
+        // Small delay to let App.tsx handle the redirect logic
+        setTimeout(() => {
+          // If still on auth page after delay, redirect to dashboard (App.tsx will override if needed)
+          if (window.location.pathname === '/auth' || window.location.pathname === '/') {
+            navigate('/dashboard', { replace: true })
           }
-        }
-        
-        checkFirstTime()
+        }, 2000)
       }
-      // If already on another page (like /dashboard), don't redirect (let them stay there)
     }
   }, [user, authLoading, navigate])
 
@@ -273,6 +243,8 @@ export default function AuthPage() {
             // Clear form
             setEmail('')
             setPassword('')
+            // Clear first-time login check so it works after email confirmation
+            sessionStorage.removeItem('firstTimeLoginChecked')
             // Switch to login after showing message
             setTimeout(() => {
               setIsLogin(true)
@@ -287,9 +259,11 @@ export default function AuthPage() {
             localStorage.removeItem('selectedPlanId')
             localStorage.removeItem('selectedPlanName')
             sessionStorage.removeItem('selectedPlanId')
+            // Clear first-time login check so App.tsx can redirect properly
+            sessionStorage.removeItem('firstTimeLoginChecked')
             // Redirect to settings for first-time setup
             setTimeout(() => {
-              navigate('/settings')
+              navigate('/settings', { replace: true })
             }, 1500)
             return
           }

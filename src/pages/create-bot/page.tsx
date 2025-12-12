@@ -25,6 +25,7 @@ export default function CreateBotPage() {
   const [searchParams] = useSearchParams();
   const { createBot, getBotById } = useBots();
   const { canCreateBot, subscription } = useSubscription();
+  const { apiKeys, loading: apiKeysLoading } = useApiKeys();
   
   // Check if coming from backtest
   const backtestData = location.state as any;
