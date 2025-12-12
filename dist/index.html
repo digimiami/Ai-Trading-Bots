@@ -29,8 +29,8 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/remixicon/4.5.0/remixicon.min.css">
 
-    <script type="module" crossorigin src="/assets/index-ec86b016.js"></script>
-    <link rel="stylesheet" href="/assets/index-0ab86b63.css">
+    <script type="module" crossorigin src="/assets/index-68d34212.js"></script>
+    <link rel="stylesheet" href="/assets/index-1b458006.css">
   </head>
   <body class="bg-gray-50 dark:bg-gray-900">
     <div id="root"></div>
@@ -46,13 +46,13 @@
         const currentPath = window.location.pathname;
         // Load only on homepage (root path or /dashboard)
         if (currentPath === '/' || currentPath === '/dashboard') {
-          const script = document.createElement('script');
+        const script = document.createElement('script');
           script.src = 'https://aiworkers.vip/widget.js?clientId=1e2d0fff534f389d6f6b47ece19fde2715a9e5888b9c4ae63c31b2119b572db4';
-          script.onerror = function() {
+        script.onerror = function() {
             // Silently fail - widget is optional
             console.warn('aiworkers.vip widget failed to load');
-          };
-          document.body.appendChild(script);
+        };
+        document.body.appendChild(script);
         }
       });
     </script>

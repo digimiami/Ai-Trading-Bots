@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Button from '../../components/base/Button';
 import { useAuth } from '../../hooks/useAuth';
 import { useSubscription } from '../../hooks/useSubscription';
+import SocialShare from '../../components/ui/SocialShare';
 
 const META_TAGS = [
   {
@@ -455,6 +456,14 @@ export default function LandingPage() {
             <p className="mt-3 text-xs text-slate-500/80">
               © {new Date().getFullYear()} Pablo Bots Trading Systems. Crafted for forward-looking funds and traders.
             </p>
+            <div className="mt-4">
+              <SocialShare 
+                variant="compact"
+                title="Pablo AI Trading Bots | Hyper-Automated Crypto Execution"
+                description="Launch institutional-grade trading bots in minutes. Pablo orchestrates market data, machine learning, and risk controls so you can scale across exchanges without writing code."
+                className="text-slate-300/80"
+              />
+            </div>
           </div>
           <div className="flex flex-col items-start space-y-3 text-sm md:flex-row md:items-center md:space-x-6 md:space-y-0">
             <button onClick={() => navigate('/auth')} className="text-slate-300/80 transition hover:text-white">

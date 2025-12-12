@@ -216,10 +216,10 @@ export default function PricingPage() {
                   <h3 className="text-2xl font-bold text-white mb-2">
                     {plan.display_name}
                   </h3>
-                  {plan.name === 'Testing' && (
+                  {(plan.name === 'Testing' || plan.name === 'Test') && (
                     <div className="mb-2">
                       <span className="bg-yellow-500/20 text-yellow-400 px-2 py-1 rounded text-xs font-semibold">
-                        2-Week Free Trial
+                        14-Day Free Trial
                       </span>
                     </div>
                   )}
@@ -309,7 +309,9 @@ export default function PricingPage() {
                     ) : isCurrentPlan ? (
                       'Current Plan'
                     ) : !user ? (
-                      plan.price_monthly_usd === 0 ? 'Sign Up Free' : 'Sign Up & Subscribe'
+                      (plan.name === 'Testing' || plan.name === 'Test') ? 'Start Free Trial' : (plan.price_monthly_usd === 0 ? 'Sign Up Free' : 'Sign Up & Subscribe')
+                    ) : (plan.name === 'Testing' || plan.name === 'Test') ? (
+                      'Start Free Trial'
                     ) : plan.price_monthly_usd === 0 ? (
                       'Get Started'
                     ) : (
