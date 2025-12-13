@@ -321,6 +321,143 @@ serve(async (req) => {
         })
 
       console.log(`✅ [BTCPay] Invoice created: ${btcpayInvoice.id}`)
+      
+      // Send invoice email to user
+      try {
+        const resendApiKey = Deno.env.get('RESEND_API_KEY')
+        if (resendApiKey && user.email) {
+          console.log(`📧 [BTCPay] Sending invoice email to ${user.email}`)
+          
+          // Get default mailbox for sending
+          const { data: defaultMailbox } = await supabaseClient
+            .from('mailboxes')
+            .select('email_address, display_name')
+            .eq('is_active', true)
+            .eq('is_default', true)
+            .single()
+          
+          const fromEmail = defaultMailbox?.email_address || 'noreply@pablobots.com'
+          const fromName = defaultMailbox?.display_name || 'Pablo AI Trading'
+          
+          const emailHtml = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="utf-8">
+              <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+                .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+                .invoice-details { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; }
+                .button { display: inline-block; padding: 12px 30px; background: #667eea; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+                .footer { text-align: center; margin-top: 30px; color: #666; font-size: 12px; }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <div class="header">
+                  <h1>📧 Invoice Created</h1>
+                </div>
+                <div class="content">
+                  <p>Hello,</p>
+                  <p>Your invoice for <strong>${plan.display_name}</strong> has been created successfully.</p>
+                  
+                  <div class="invoice-details">
+                    <h3>Invoice Details</h3>
+                    <p><strong>Plan:</strong> ${plan.display_name}</p>
+                    <p><strong>Amount:</strong> ${amount} ${currency}</p>
+                    <p><strong>Invoice ID:</strong> ${btcpayInvoice.id}</p>
+                    <p><strong>Status:</strong> ${btcpayInvoice.status}</p>
+                  </div>
+                  
+                  <p>Please complete your payment by clicking the button below:</p>
+                  <a href="${btcpayInvoice.checkoutLink}" class="button">Pay Invoice</a>
+                  
+                  <p>Or copy and paste this link into your browser:</p>
+                  <p style="word-break: break-all; color: #667eea;">${btcpayInvoice.checkoutLink}</p>
+                  
+                  <div class="footer">
+                    <p>Thank you for using Pablo AI Trading!</p>
+                    <p>If you have any questions, please contact our support team.</p>
+                  </div>
+                </div>
+              </div>
+            </body>
+            </html>
+          `
+          
+          const emailText = `
+Invoice Created
+
+Hello,
+
+Your invoice for ${plan.display_name} has been created successfully.
+
+Invoice Details:
+- Plan: ${plan.display_name}
+- Amount: ${amount} ${currency}
+- Invoice ID: ${btcpayInvoice.id}
+- Status: ${btcpayInvoice.status}
+
+Please complete your payment by visiting:
+${btcpayInvoice.checkoutLink}
+
+Thank you for using Pablo AI Trading!
+          `
+          
+          const emailResponse = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${resendApiKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              from: `${fromName} <${fromEmail}>`,
+              to: user.email,
+              subject: `Invoice Created - ${plan.display_name} - ${amount} ${currency}`,
+              html: emailHtml,
+              text: emailText
+            })
+          })
+          
+          if (emailResponse.ok) {
+            const emailData = await emailResponse.json()
+            console.log(`✅ [BTCPay] Invoice email sent successfully: ${emailData.id}`)
+            
+            // Store email in database
+            await supabaseClient
+              .from('emails')
+              .insert({
+                mailbox_id: defaultMailbox?.id || null,
+                direction: 'outbound',
+                to_address: user.email,
+                from_address: fromEmail,
+                subject: `Invoice Created - ${plan.display_name} - ${amount} ${currency}`,
+                html_body: emailHtml,
+                text_body: emailText,
+                status: 'sent',
+                message_id: emailData.id,
+                sent_at: new Date().toISOString(),
+                metadata: {
+                  invoice_id: btcpayInvoice.id,
+                  plan_id: planId,
+                  subscription_id: subscription.id
+                }
+              })
+          } else {
+            const errorText = await emailResponse.text()
+            console.warn(`⚠️ [BTCPay] Failed to send invoice email: ${errorText}`)
+            // Don't fail invoice creation if email fails
+          }
+        } else {
+          console.warn(`⚠️ [BTCPay] Resend API key not configured or user email missing`)
+        }
+      } catch (emailError) {
+        console.error(`❌ [BTCPay] Error sending invoice email:`, emailError)
+        // Don't fail invoice creation if email fails
+      }
+      
       console.log(`✅ [BTCPay] Returning response with checkout link`)
 
       const responseData = {
@@ -560,6 +697,48 @@ serve(async (req) => {
           amount: invoice.amount,
           currency: invoice.currency,
           checkoutLink: invoice.checkoutLink
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // ============================================================
+    // GET USER INVOICES
+    // ============================================================
+    if (action === 'get-invoices' && req.method === 'GET') {
+      console.log('📝 [BTCPay] Get invoices request received')
+      
+      // Get payment history for user
+      const { data: payments, error: paymentsError } = await supabaseClient
+        .from('payment_history')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(100)
+
+      if (paymentsError) {
+        console.error('❌ [BTCPay] Error fetching payment history:', paymentsError)
+        return new Response(
+          JSON.stringify({ error: 'Failed to fetch invoices', details: paymentsError.message }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      // Get subscriptions for user
+      const { data: subscriptions, error: subsError } = await supabaseClient
+        .from('user_subscriptions')
+        .select('*, subscription_plans(display_name, name)')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+
+      if (subsError) {
+        console.error('❌ [BTCPay] Error fetching subscriptions:', subsError)
+      }
+
+      return new Response(
+        JSON.stringify({
+          invoices: payments || [],
+          subscriptions: subscriptions || []
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )

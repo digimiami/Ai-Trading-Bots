@@ -34,6 +34,7 @@ const CryptoNews = lazy(() => import('../pages/crypto-news/page'));
 const Messages = lazy(() => import('../pages/messages/page'));
 const AiAssistant = lazy(() => import('../pages/ai-assistant/page'));
 const Pricing = lazy(() => import('../pages/pricing/page'));
+const Subscription = lazy(() => import('../pages/subscription/page'));
 const SubscriptionSuccess = lazy(() => import('../pages/subscription/success'));
 const NotFound = lazy(() => import('../pages/NotFound'));
 const Privacy = lazy(() => import('../pages/legal/privacy'));
@@ -170,7 +171,7 @@ const routes: RouteObject[] = [
   },
   {
     path: '/subscription',
-    element: <Pricing />
+    element: <Subscription />
   },
   {
     path: '/subscription/success',
