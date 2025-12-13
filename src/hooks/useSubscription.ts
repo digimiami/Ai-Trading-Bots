@@ -268,25 +268,41 @@ export function useSubscription() {
       // #endregion
 
       if (!response.ok) {
-        const error = await response.json()
+        let error: any
+        try {
+          error = await response.json()
+        } catch (e) {
+          // If response is not JSON, get text
+          const errorText = await response.text()
+          error = { error: errorText || `HTTP ${response.status}: ${response.statusText}` }
+        }
         // #region agent log
         fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useSubscription.ts:242',message:'BTCPay error response',data:{error,status:response.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
         // #endregion
-        throw new Error(error.error || 'Failed to create invoice')
+        const errorMessage = error.error || error.details || `Failed to create invoice (${response.status})`
+        throw new Error(errorMessage)
       }
 
       const data = await response.json()
       // #region agent log
       fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useSubscription.ts:247',message:'BTCPay success',data:{hasInvoice:!!data.invoice,hasCheckoutLink:!!data.invoice?.checkoutLink},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
       // #endregion
+      
+      // Check if response has error even if status is ok
+      if (data.error) {
+        throw new Error(data.error || data.details || 'Failed to create invoice')
+      }
+      
       return data
     } catch (err) {
       // #region agent log
       fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useSubscription.ts:250',message:'createInvoice exception',data:{error:err instanceof Error ? err.message : String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
       // #endregion
       console.error('Error creating invoice:', err)
-      setError(err instanceof Error ? err.message : 'Failed to create invoice')
-      return null
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create invoice'
+      setError(errorMessage)
+      // Return error object instead of null so pricing page can show specific error
+      return { error: errorMessage, details: err instanceof Error ? err.stack : String(err) }
     }
   }
 

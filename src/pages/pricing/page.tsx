@@ -62,9 +62,11 @@ export default function PricingPage() {
         window.location.href = result.invoice.checkoutLink
       } else {
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'pricing/page.tsx:37',message:'Invoice creation failed',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'pricing/page.tsx:37',message:'Invoice creation failed',data:{hasResult:!!result,result},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
         // #endregion
-        setError('Failed to create invoice. Please try again.')
+        // Show more specific error message if available
+        const errorMessage = result?.error || result?.details || 'Failed to create invoice. Please try again.'
+        setError(errorMessage)
         setIsProcessing(false)
       }
     } catch (err) {
@@ -72,7 +74,8 @@ export default function PricingPage() {
       fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'pricing/page.tsx:42',message:'handleSubscribe exception',data:{error:err instanceof Error ? err.message : String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H2'})}).catch(()=>{});
       // #endregion
       console.error('Subscription error:', err)
-      setError(err instanceof Error ? err.message : 'Failed to create subscription')
+      const errorMessage = err instanceof Error ? err.message : 'Failed to create subscription'
+      setError(errorMessage)
       setIsProcessing(false)
     }
   }
