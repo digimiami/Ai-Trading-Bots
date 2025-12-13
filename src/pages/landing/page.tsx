@@ -125,23 +125,66 @@ export default function LandingPage() {
   useEffect(() => {
     const scriptId = 'aiworkers-widget-script';
     
-    // Check if script already exists (prevent duplicates)
-    if (document.getElementById(scriptId)) {
-      return;
+    // Remove any existing script/widget from previous installations
+    const existingScript = document.getElementById(scriptId);
+    if (existingScript && existingScript.parentNode) {
+      existingScript.parentNode.removeChild(existingScript);
     }
 
+    // Remove any existing widget containers that might have been created
+    const widgetContainers = document.querySelectorAll('[id*="aiworkers"], [class*="aiworkers"], [id*="widget"], [data-aiworkers]');
+    widgetContainers.forEach(el => {
+      try {
+        el.parentNode?.removeChild(el);
+      } catch (e) {
+        // Ignore errors if element was already removed
+      }
+    });
+
+    // Remove script tags by src
+    const existingScripts = document.querySelectorAll('script[src*="aiworkers.vip"]');
+    existingScripts.forEach(script => {
+      try {
+        script.parentNode?.removeChild(script);
+      } catch (e) {
+        // Ignore errors if element was already removed
+      }
+    });
+
+    // Create and add the script
     const script = document.createElement('script');
     script.id = scriptId;
     script.src = 'https://aiworkers.vip/widget.js?clientId=1e2d0fff534f389d6f6b47ece19fde2715a9e5888b9c4ae63c31b2119b572db4';
     script.async = true;
     document.head.appendChild(script);
 
-    // Cleanup: remove script when component unmounts
+    // Cleanup: remove script and widget when component unmounts
     return () => {
-      const existingScript = document.getElementById(scriptId);
-      if (existingScript && existingScript.parentNode) {
-        existingScript.parentNode.removeChild(existingScript);
+      // Remove script
+      const scriptToRemove = document.getElementById(scriptId);
+      if (scriptToRemove && scriptToRemove.parentNode) {
+        scriptToRemove.parentNode.removeChild(scriptToRemove);
       }
+
+      // Remove any widget containers
+      const widgets = document.querySelectorAll('[id*="aiworkers"], [class*="aiworkers"], [id*="widget"], [data-aiworkers]');
+      widgets.forEach(el => {
+        try {
+          el.parentNode?.removeChild(el);
+        } catch (e) {
+          // Ignore errors
+        }
+      });
+
+      // Remove any remaining script tags
+      const scriptsToRemove = document.querySelectorAll('script[src*="aiworkers.vip"]');
+      scriptsToRemove.forEach(s => {
+        try {
+          s.parentNode?.removeChild(s);
+        } catch (e) {
+          // Ignore errors
+        }
+      });
     };
   }, []);
 

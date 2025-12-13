@@ -148,6 +148,45 @@ function AppRoutes() {
   useEffect(() => {
     // Force remount on route change
     setKey(prev => prev + 1);
+    
+    // Remove AI Workers widget if not on homepage
+    const isHomepage = location.pathname === '/';
+    if (!isHomepage) {
+      // Remove script tags
+      const scripts = document.querySelectorAll('script[src*="aiworkers.vip"]');
+      scripts.forEach(script => {
+        try {
+          script.parentNode?.removeChild(script);
+        } catch (e) {
+          // Ignore errors
+        }
+      });
+      
+      // Remove widget containers (common patterns for chat widgets)
+      const widgetSelectors = [
+        '[id*="aiworkers"]',
+        '[class*="aiworkers"]',
+        '[data-aiworkers]',
+        '[id*="widget-chat"]',
+        '[class*="widget-chat"]',
+        'iframe[src*="aiworkers"]'
+      ];
+      
+      widgetSelectors.forEach(selector => {
+        try {
+          const elements = document.querySelectorAll(selector);
+          elements.forEach(el => {
+            try {
+              el.parentNode?.removeChild(el);
+            } catch (e) {
+              // Ignore errors
+            }
+          });
+        } catch (e) {
+          // Ignore selector errors
+        }
+      });
+    }
   }, [location.pathname]);
 
   if (loading) {

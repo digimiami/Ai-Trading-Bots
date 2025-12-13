@@ -37,22 +37,5 @@
       window.__BASE_PATH__ = window.__BASE_PATH__ || '/';
     </script>
     <script type="module" src="/src/main.tsx"></script>
-    <!-- aiworkers.vip widget - Only load on homepage -->
-    <script>
-      // Only load widget on homepage
-      window.addEventListener('load', function() {
-        const currentPath = window.location.pathname;
-        // Load only on homepage (root path or /dashboard)
-        if (currentPath === '/' || currentPath === '/dashboard') {
-        const script = document.createElement('script');
-          script.src = 'https://aiworkers.vip/widget.js?clientId=1e2d0fff534f389d6f6b47ece19fde2715a9e5888b9c4ae63c31b2119b572db4';
-        script.onerror = function() {
-            // Silently fail - widget is optional
-            console.warn('aiworkers.vip widget failed to load');
-        };
-        document.body.appendChild(script);
-        }
-      });
-    </script>
   </body>
 </html>
