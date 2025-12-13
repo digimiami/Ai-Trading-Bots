@@ -36,13 +36,36 @@ serve(async (req) => {
       );
     }
 
-    const { message, conversationHistory = [], apiKey: userApiKey, provider: userProvider } = await req.json();
+    const { message, conversationHistory = [], attachments = [], apiKey: userApiKey, provider: userProvider } = await req.json();
 
     if (!message || typeof message !== 'string') {
       return new Response(
         JSON.stringify({ error: 'Message is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // Process attachments - extract text content if available
+    let attachmentContext = '';
+    if (attachments && attachments.length > 0) {
+      attachmentContext = '\n\n## ATTACHED DOCUMENTS:\n';
+      for (const att of attachments) {
+        attachmentContext += `- **${att.name}** (${att.type})\n`;
+        // For text-based files, try to extract content from base64 data
+        if (att.type?.includes('text/') || att.name?.endsWith('.txt') || att.name?.endsWith('.csv')) {
+          try {
+            const base64Data = att.data.split(',')[1]; // Remove data URL prefix
+            const textContent = atob(base64Data);
+            // Limit to first 2000 chars to avoid token limits
+            const preview = textContent.length > 2000 ? textContent.substring(0, 2000) + '...' : textContent;
+            attachmentContext += `  Content preview: ${preview}\n`;
+          } catch (e) {
+            attachmentContext += `  (Could not extract text content)\n`;
+          }
+        } else {
+          attachmentContext += `  (Binary file - please describe the contents in your message)\n`;
+        }
+      }
     }
 
     // Get AI API keys: Priority: user-provided > environment variables
@@ -285,7 +308,7 @@ IMPORTANT GUIDELINES:
       })),
       {
         role: 'user',
-        content: message
+        content: message + attachmentContext
       }
     ];
 

@@ -13,6 +13,15 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  attachments?: Attachment[];
+}
+
+interface Attachment {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  file: File;
 }
 
 export default function AiAssistantPage() {
@@ -25,9 +34,26 @@ export default function AiAssistantPage() {
   const [error, setError] = useState<string | null>(null);
   const [apiConfigured, setApiConfigured] = useState(false);
   const [pendingActions, setPendingActions] = useState<any[]>([]);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [isRecording, setIsRecording] = useState(false);
+  const [voiceChatEnabled, setVoiceChatEnabled] = useState(false);
+  const [documentAnalysisEnabled, setDocumentAnalysisEnabled] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    // Load AI Assistant settings from localStorage
+    try {
+      const saved = localStorage.getItem('ai_assistant_settings');
+      if (saved) {
+        const settings = JSON.parse(saved);
+        setVoiceChatEnabled(settings.voiceChatEnabled || false);
+        setDocumentAnalysisEnabled(settings.documentAnalysisEnabled !== false); // Default to true
+      }
+    } catch (e) {
+      console.error('Error loading AI Assistant settings:', e);
+    }
+
     // Check if AI API is configured
     const checkApiConfig = () => {
       const isOpenAIAvailable = openAIService.isProviderAvailable('openai');
@@ -65,23 +91,67 @@ What would you like to know?`,
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || !documentAnalysisEnabled) return;
+
+    const newAttachments: Attachment[] = Array.from(files).map(file => ({
+      id: `${Date.now()}-${Math.random()}`,
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      file
+    }));
+
+    setAttachments(prev => [...prev, ...newAttachments]);
+    
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const removeAttachment = (id: string) => {
+    setAttachments(prev => prev.filter(att => att.id !== id));
+  };
+
   const handleSend = async () => {
-    if (!input.trim() || loading) return;
+    if ((!input.trim() && attachments.length === 0) || loading) return;
 
     if (!apiConfigured) {
       setError('Please configure your OpenAI or DeepSeek API key in Settings → AI API Configuration first.');
       return;
     }
 
+    // Convert attachments to base64 for sending
+    const attachmentData = await Promise.all(
+      attachments.map(async (att) => {
+        return new Promise<{ name: string; type: string; data: string }>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            resolve({
+              name: att.name,
+              type: att.type,
+              data: reader.result as string
+            });
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(att.file);
+        });
+      })
+    );
+
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
       content: input.trim(),
-      timestamp: new Date()
+      timestamp: new Date(),
+      attachments: attachments.length > 0 ? attachments : undefined
     };
 
     setMessages(prev => [...prev, userMessage]);
     setInput('');
+    setAttachments([]);
     setLoading(true);
     setError(null);
 
@@ -131,6 +201,7 @@ What would you like to know?`,
             role: m.role,
             content: m.content
           })),
+          attachments: attachmentData.length > 0 ? attachmentData : undefined,
           ...(apiKey && provider ? { apiKey, provider } : {}) // Include user's API key if available
         })
       });
@@ -306,6 +377,23 @@ What would you like to know?`,
                   <div className="whitespace-pre-wrap break-words">
                     {message.content}
                   </div>
+                  {/* Show attachments if any */}
+                  {message.attachments && message.attachments.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {message.attachments.map((att) => (
+                        <div
+                          key={att.id}
+                          className="flex items-center space-x-2 bg-blue-500/20 dark:bg-blue-900/40 border border-blue-400/30 dark:border-blue-700/50 rounded px-2 py-1 text-xs"
+                        >
+                          <i className="ri-file-line"></i>
+                          <span>{att.name}</span>
+                          <span className="text-blue-200 dark:text-blue-300">
+                            ({(att.size / 1024).toFixed(1)} KB)
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <div className={`text-xs mt-1 ${
                     message.role === 'user' ? 'text-blue-100' : 'text-gray-500'
                   }`}>
@@ -335,21 +423,89 @@ What would you like to know?`,
                 {error}
               </div>
             )}
+            
+            {/* Attachments Preview */}
+            {attachments.length > 0 && (
+              <div className="mb-3 flex flex-wrap gap-2">
+                {attachments.map((att) => (
+                  <div
+                    key={att.id}
+                    className="flex items-center space-x-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg px-3 py-2 text-sm"
+                  >
+                    <i className="ri-file-line text-blue-600 dark:text-blue-400"></i>
+                    <span className="text-blue-900 dark:text-blue-100">{att.name}</span>
+                    <span className="text-blue-600 dark:text-blue-400 text-xs">
+                      ({(att.size / 1024).toFixed(1)} KB)
+                    </span>
+                    <button
+                      onClick={() => removeAttachment(att.id)}
+                      className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                      type="button"
+                    >
+                      <i className="ri-close-line"></i>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <div className="flex space-x-2">
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyPress={handleKeyPress}
-                placeholder="Ask me anything about bot settings, trading strategies, or platform features..."
-                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none dark:bg-gray-700 dark:text-white"
-                rows={3}
-                disabled={loading || !apiConfigured}
-              />
+              <div className="flex-1 flex flex-col">
+                <textarea
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  placeholder="Ask me anything about bot settings, trading strategies, or platform features..."
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none dark:bg-gray-700 dark:text-white"
+                  rows={3}
+                  disabled={loading || !apiConfigured}
+                />
+                <div className="flex items-center space-x-2 mt-2">
+                  {documentAnalysisEnabled && (
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={loading || !apiConfigured}
+                      className="p-2 text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50"
+                      title="Attach Document"
+                      type="button"
+                    >
+                      <i className="ri-attachment-line text-lg"></i>
+                    </button>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    onChange={handleFileSelect}
+                    className="hidden"
+                    accept=".pdf,.txt,.doc,.docx,.csv,.xlsx,.json"
+                    disabled={!documentAnalysisEnabled}
+                  />
+                  {voiceChatEnabled && (
+                    <button
+                      onClick={() => {
+                        // TODO: Implement voice chat
+                        alert('Voice chat feature coming soon!');
+                      }}
+                      disabled={loading || !apiConfigured || isRecording}
+                      className={`p-2 rounded-lg transition-colors disabled:opacity-50 ${
+                        isRecording
+                          ? 'text-red-600 bg-red-50 dark:bg-red-900/20'
+                          : 'text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                      }`}
+                      title={isRecording ? 'Recording...' : 'Voice Chat'}
+                      type="button"
+                    >
+                      <i className={`ri-mic-line text-lg ${isRecording ? 'animate-pulse' : ''}`}></i>
+                    </button>
+                  )}
+                </div>
+              </div>
               <div className="flex flex-col space-y-2">
                 <Button
                   variant="primary"
                   onClick={handleSend}
-                  disabled={loading || !input.trim() || !apiConfigured}
+                  disabled={loading || (!input.trim() && attachments.length === 0) || !apiConfigured}
                   className="h-full"
                 >
                   {loading ? (
@@ -371,6 +527,8 @@ What would you like to know?`,
             </div>
             <p className="text-xs text-gray-500 mt-2">
               Press Enter to send, Shift+Enter for new line
+              {documentAnalysisEnabled && ' • Click attachment icon to upload documents'}
+              {voiceChatEnabled && ' • Click microphone for voice chat'}
             </p>
           </div>
         </Card>
