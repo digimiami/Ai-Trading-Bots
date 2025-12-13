@@ -11,6 +11,7 @@ export default function Navigation() {
   const { t } = useTranslation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   // Detect mobile screen size
   useEffect(() => {
@@ -26,6 +27,26 @@ export default function Navigation() {
   useEffect(() => {
     setIsMobileMenuOpen(false);
   }, [location.pathname]);
+
+  // Close dropdown when route changes
+  useEffect(() => {
+    setIsDropdownOpen(false);
+  }, [location.pathname]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (isDropdownOpen && !target.closest('.dropdown-container')) {
+        setIsDropdownOpen(false);
+      }
+    };
+
+    if (isDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isDropdownOpen]);
 
 
   // Public routes that don't require login
@@ -251,11 +272,11 @@ export default function Navigation() {
     );
   }
 
-  // Desktop/Tablet: Bottom navigation with main items only
+  // Desktop/Tablet: Bottom navigation with main items + dropdown menu
   return (
     <>
       <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-blue-200/60 bg-white/95 backdrop-blur-sm shadow-[0_-6px_18px_-12px_rgba(30,64,175,0.45)] dark:border-blue-400/30 dark:bg-gray-900/95">
-        <div className="flex h-18 sm:h-20 px-2 sm:px-3 py-1.5 sm:py-2 justify-center items-center">
+        <div className="flex h-18 sm:h-20 px-2 sm:px-3 py-1.5 sm:py-2 justify-center items-center relative">
           {mainNavItems.map((item) => {
             const isActive = location.pathname === item.path;
             return (
@@ -286,6 +307,60 @@ export default function Navigation() {
               </button>
             );
           })}
+          
+          {/* Desktop Dropdown Menu Button - Bottom Right */}
+          <div className="dropdown-container absolute right-2 sm:right-4 bottom-2 sm:bottom-3">
+            <button
+              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+              className={`group relative flex flex-col items-center justify-center gap-0.5 sm:gap-1 rounded-xl transition-all duration-150 px-2 sm:px-4 ${
+                isDropdownOpen
+                  ? 'text-blue-600 dark:text-blue-300'
+                  : 'text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-300'
+              }`}
+            >
+              <span
+                className={`flex h-9 w-9 sm:h-11 sm:w-11 items-center justify-center rounded-full border transition-all duration-150 ${
+                  isDropdownOpen
+                    ? 'border-blue-500 bg-blue-600 text-white shadow-lg shadow-blue-500/30'
+                    : 'border-slate-200 bg-slate-50 text-inherit group-hover:border-blue-300 group-hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800 dark:group-hover:border-blue-500/60 dark:group-hover:bg-slate-800'
+                }`}
+              >
+                <i className={`ri-more-line text-lg sm:text-[1.35rem] ${isDropdownOpen ? 'rotate-90' : ''} transition-transform duration-200`}></i>
+              </span>
+              <span className="text-[0.65rem] sm:text-[0.72rem] font-semibold uppercase tracking-wide whitespace-nowrap drop-shadow-sm leading-tight text-center">
+                More
+              </span>
+            </button>
+
+            {/* Dropdown Menu */}
+            {isDropdownOpen && (
+              <div className="absolute bottom-full right-0 mb-2 w-56 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden z-50 max-h-[70vh] overflow-y-auto">
+                {dropdownItems.map((item) => {
+                  const isActive = location.pathname === item.path;
+                  return (
+                    <button
+                      key={item.path}
+                      onClick={() => {
+                        navigate(item.path);
+                        setIsDropdownOpen(false);
+                      }}
+                      className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors ${
+                        isActive
+                          ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-300'
+                          : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      <i className={`${item.icon} text-xl ${isActive ? 'text-blue-600 dark:text-blue-400' : ''}`}></i>
+                      <span className="text-sm font-medium">{item.label}</span>
+                      {isActive && (
+                        <i className="ri-check-line text-blue-600 dark:text-blue-400 ml-auto"></i>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </nav>
     </>
