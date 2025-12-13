@@ -101,6 +101,20 @@ async function fetchBybitBalance(apiKey: string, apiSecret: string) {
     if (!response.ok) {
       const errorText = await response.text()
       console.error('Bybit API HTTP Error:', response.status, errorText)
+      
+      // Check if it's a CloudFront 403 blocking error (geographic restriction)
+      const isCloudFrontError = response.status === 403 && (
+        errorText.includes('CloudFront') ||
+        errorText.includes('block access from your country') ||
+        errorText.includes('Amazon CloudFront distribution is configured to block') ||
+        (errorText.includes('<!DOCTYPE') && errorText.includes('403 ERROR') && errorText.includes('could not be satisfied'))
+      )
+      
+      if (isCloudFrontError) {
+        const friendlyError = 'Bybit API is not accessible from your current location. This is due to geographic restrictions by Bybit. Please use a VPN to connect from an allowed country, or contact Bybit support for assistance.'
+        throw new Error(friendlyError)
+      }
+      
       throw new Error(`Bybit API error: ${response.status} - ${errorText}`)
     }
     
@@ -231,6 +245,21 @@ async function fetchBybitBalance(apiKey: string, apiSecret: string) {
     }
   } catch (error) {
     console.error('Bybit balance fetch error:', error)
+    
+    // Check if the error message contains CloudFront blocking information
+    let errorMessage = error.message || 'Unknown error occurred'
+    
+    // Check for CloudFront geographic blocking errors
+    const isCloudFrontBlocking = 
+      errorMessage.includes('CloudFront') || 
+      errorMessage.includes('block access from your country') ||
+      errorMessage.includes('Amazon CloudFront distribution is configured to block') ||
+      (errorMessage.includes('403') && (errorMessage.includes('<!DOCTYPE') || errorMessage.includes('<HTML>') || errorMessage.includes('CloudFront')))
+    
+    if (isCloudFrontBlocking) {
+      errorMessage = 'Bybit API is not accessible from your current location. This is due to geographic restrictions by Bybit. Please use a VPN to connect from an allowed country, or contact Bybit support for assistance.'
+    }
+    
     return {
       exchange: 'bybit',
       totalBalance: 0,
@@ -239,7 +268,7 @@ async function fetchBybitBalance(apiKey: string, apiSecret: string) {
       assets: [],
       lastUpdated: new Date().toISOString(),
       status: 'error',
-      error: error.message
+      error: errorMessage
     }
   }
 }
