@@ -43,6 +43,7 @@ const Risk = lazy(() => import('../pages/legal/risk'));
 
 // AI/ML Dashboard - only loads when feature flag is enabled
 const AiMlDashboard = lazy(() => import('../pages/ai-ml-dashboard/page'));
+const FunnelPageViewer = lazy(() => import('../pages/funnel/page'));
 
 const routes: RouteObject[] = [
   {
@@ -188,6 +189,10 @@ const routes: RouteObject[] = [
   {
     path: '/risk',
     element: <Risk />
+  },
+  {
+    path: '/funnel/:funnelSlug/:pageSlug',
+    element: <FunnelPageViewer />
   },
   {
     path: '*',

@@ -16,6 +16,7 @@ import ContactMessages from './components/ContactMessages';
 import SubscriptionManagement from './components/SubscriptionManagement';
 import PopupManager from './components/PopupManager';
 import EmailCenter from './components/EmailCenter';
+import FunnelManager from './components/FunnelManager';
 
 interface User {
   id: string;
@@ -925,6 +926,7 @@ export default function AdminPage() {
     { id: 'contact-messages', label: 'Contact Messages', icon: 'ri-mail-line' },
     { id: 'subscriptions', label: 'Subscriptions', icon: 'ri-wallet-line' },
     { id: 'popups', label: 'Popup Manager', icon: 'ri-notification-line' },
+    { id: 'funnels', label: 'Funnel Manager', icon: 'ri-stack-line' },
     { id: 'overview', label: 'Overview', icon: 'ri-dashboard-line' },
     { id: 'users', label: 'Users', icon: 'ri-user-line' },
     { id: 'bots', label: 'Trading Bots', icon: 'ri-robot-line' },
@@ -2539,6 +2541,11 @@ export default function AdminPage() {
         {/* Popup Manager Tab */}
         {activeTab === 'popups' && (
           <PopupManager />
+        )}
+
+        {/* Funnel Manager Tab */}
+        {activeTab === 'funnels' && (
+          <FunnelManager />
         )}
 
         {/* Webhook Test Tab */}
