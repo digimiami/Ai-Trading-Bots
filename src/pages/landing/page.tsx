@@ -4,6 +4,7 @@ import Button from '../../components/base/Button';
 import { useAuth } from '../../hooks/useAuth';
 import { useSubscription } from '../../hooks/useSubscription';
 import SocialShare from '../../components/ui/SocialShare';
+import TradingRobot3D from '../../components/ui/TradingRobot3D';
 
 const META_TAGS = [
   {
@@ -194,6 +195,8 @@ export default function LandingPage() {
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-slate-950 text-white">
+      {/* 3D Trading Robot Effect */}
+      <TradingRobot3D />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(79,70,229,0.35),_transparent_55%)] blur-3xl opacity-80 pointer-events-none" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom,_rgba(14,165,233,0.35),_transparent_55%)] blur-3xl opacity-70 pointer-events-none" />
 
