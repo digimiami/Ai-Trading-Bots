@@ -11,7 +11,6 @@ export default function Navigation() {
   const { t } = useTranslation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   // Detect mobile screen size
   useEffect(() => {
@@ -28,35 +27,6 @@ export default function Navigation() {
     setIsMobileMenuOpen(false);
   }, [location.pathname]);
 
-  // Close dropdown when clicking outside - only when dropdown is open
-  // MUST be called before any conditional returns to follow Rules of Hooks
-  useEffect(() => {
-    if (!isDropdownOpen) {
-      return;
-    }
-    
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      const dropdownElement = document.querySelector('.dropdown-menu');
-      const buttonElement = document.querySelector('.dropdown-button');
-      
-      if (target && dropdownElement && buttonElement) {
-        if (!dropdownElement.contains(target) && !buttonElement.contains(target)) {
-          setIsDropdownOpen(false);
-        }
-      }
-    };
-    
-    // Add a small delay to avoid immediate closure
-    const timeoutId = setTimeout(() => {
-      document.addEventListener('mousedown', handleClickOutside, true);
-    }, 0);
-    
-    return () => {
-      clearTimeout(timeoutId);
-      document.removeEventListener('mousedown', handleClickOutside, true);
-    };
-  }, [isDropdownOpen]);
 
   // Public routes that don't require login
   const publicRoutes = ['/market-dashboard', '/crypto-bubbles', '/crypto-news'];
@@ -242,9 +212,9 @@ export default function Navigation() {
         {/* Mobile Menu Drawer */}
         <MobileMenuDrawer />
 
-        {/* Bottom Quick Nav (Mobile) - Show main items + refresh + dropdown */}
+        {/* Bottom Quick Nav (Mobile) - Show main items only */}
         <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-blue-200/60 bg-white/95 backdrop-blur-sm shadow-[0_-6px_18px_-12px_rgba(30,64,175,0.45)] dark:border-blue-400/30 dark:bg-gray-900/95 safe-area-inset-bottom md:hidden">
-          <div className="flex h-16 overflow-x-auto px-2 py-1.5 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] snap-x snap-mandatory">
+          <div className="flex h-16 overflow-x-auto px-2 py-1.5 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] snap-x snap-mandatory justify-center">
             {mainNavItems.map((item) => {
               const isActive = location.pathname === item.path;
               return (
@@ -275,73 +245,24 @@ export default function Navigation() {
                 </button>
               );
             })}
-            {/* Dropdown Button */}
-            <div className="relative dropdown-button">
-              <button
-                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                className={`group relative flex flex-col items-center justify-center gap-0.5 rounded-xl transition-all duration-150 min-w-[64px] flex-shrink-0 px-1 touch-manipulation snap-center ${
-                  isDropdownOpen
-                    ? 'text-blue-600 dark:text-blue-300'
-                    : 'text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-300'
-                }`}
-              >
-                <span className={`flex h-9 w-9 items-center justify-center rounded-full border transition-all duration-150 ${
-                  isDropdownOpen
-                    ? 'border-blue-500 bg-blue-600 text-white shadow-lg shadow-blue-500/30'
-                    : 'border-slate-200 bg-slate-50 text-inherit group-hover:border-blue-300 group-hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800 dark:group-hover:border-blue-500/60 dark:group-hover:bg-slate-800'
-                }`}>
-                  <i className="ri-menu-line text-lg"></i>
-                </span>
-                <span className="text-[0.65rem] font-semibold uppercase tracking-wide whitespace-nowrap drop-shadow-sm leading-tight text-center">
-                  More
-                </span>
-              </button>
-              {/* Dropdown Menu */}
-              {isDropdownOpen && (
-                <div className="dropdown-menu fixed bottom-20 right-2 z-50 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl max-h-[60vh] overflow-y-auto min-w-[200px]">
-                  <div className="p-2">
-                    {dropdownItems.map((item) => {
-                      const isActive = location.pathname === item.path;
-                      return (
-                        <button
-                          key={item.path}
-                          onClick={() => {
-                            navigate(item.path);
-                            setIsDropdownOpen(false);
-                          }}
-                          className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-                            isActive
-                              ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-300'
-                              : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
-                          }`}
-                        >
-                          <i className={`${item.icon} text-lg`}></i>
-                          <span className="text-sm font-medium">{item.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
           </div>
         </nav>
       </>
     );
   }
 
-  // Desktop/Tablet: Bottom navigation with main items + refresh + dropdown
+  // Desktop/Tablet: Bottom navigation with main items only
   return (
     <>
       <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-blue-200/60 bg-white/95 backdrop-blur-sm shadow-[0_-6px_18px_-12px_rgba(30,64,175,0.45)] dark:border-blue-400/30 dark:bg-gray-900/95">
-        <div className="grid grid-cols-5 h-18 sm:h-20 px-2 sm:px-3 py-1.5 sm:py-2">
+        <div className="flex h-18 sm:h-20 px-2 sm:px-3 py-1.5 sm:py-2 justify-center items-center">
           {mainNavItems.map((item) => {
             const isActive = location.pathname === item.path;
             return (
               <button
                 key={item.path}
                 onClick={() => navigate(item.path)}
-                className={`group relative flex flex-col items-center justify-center gap-0.5 sm:gap-1 rounded-xl transition-all duration-150 touch-manipulation px-1 sm:px-2 ${
+                className={`group relative flex flex-col items-center justify-center gap-0.5 sm:gap-1 rounded-xl transition-all duration-150 touch-manipulation px-2 sm:px-4 ${
                   isActive
                     ? 'text-blue-600 dark:text-blue-300'
                     : 'text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-300'
@@ -365,55 +286,6 @@ export default function Navigation() {
               </button>
             );
           })}
-          {/* Dropdown Button */}
-          <div className="relative dropdown-button">
-            <button
-              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-              className={`group relative flex flex-col items-center justify-center gap-0.5 sm:gap-1 rounded-xl transition-all duration-150 px-1 sm:px-2 touch-manipulation ${
-                isDropdownOpen
-                  ? 'text-blue-600 dark:text-blue-300'
-                  : 'text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-300'
-              }`}
-            >
-              <span className={`flex h-9 w-9 sm:h-11 sm:w-11 items-center justify-center rounded-full border transition-all duration-150 ${
-                isDropdownOpen
-                  ? 'border-blue-500 bg-blue-600 text-white shadow-lg shadow-blue-500/30'
-                  : 'border-slate-200 bg-slate-50 text-inherit group-hover:border-blue-300 group-hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800 dark:group-hover:border-blue-500/60 dark:group-hover:bg-slate-800'
-              }`}>
-                <i className="ri-menu-line text-lg sm:text-[1.35rem]"></i>
-              </span>
-              <span className="text-[0.65rem] sm:text-[0.72rem] font-semibold uppercase tracking-wide whitespace-nowrap drop-shadow-sm leading-tight text-center">
-                More
-              </span>
-            </button>
-            {/* Dropdown Menu */}
-            {isDropdownOpen && (
-              <div className="dropdown-menu fixed bottom-20 right-4 z-50 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl max-h-[60vh] overflow-y-auto min-w-[220px]">
-                <div className="p-2">
-                  {dropdownItems.map((item) => {
-                    const isActive = location.pathname === item.path;
-                    return (
-                      <button
-                        key={item.path}
-                        onClick={() => {
-                          navigate(item.path);
-                          setIsDropdownOpen(false);
-                        }}
-                        className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors ${
-                          isActive
-                            ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-300'
-                            : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
-                        }`}
-                      >
-                        <i className={`${item.icon} text-lg`}></i>
-                        <span className="text-sm font-medium">{item.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
         </div>
       </nav>
     </>
