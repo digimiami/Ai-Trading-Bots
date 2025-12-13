@@ -85,7 +85,10 @@ serve(async (req) => {
     if (!authHeader) {
       console.error('❌ [BTCPay] No authorization header')
       return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
+        JSON.stringify({ 
+          error: 'Unauthorized', 
+          details: 'Missing authorization header. Please sign in and try again.' 
+        }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
@@ -97,11 +100,14 @@ serve(async (req) => {
     if (authError || !user) {
       console.error('❌ [BTCPay] Auth failed:', authError?.message || 'No user')
       return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
+        JSON.stringify({ 
+          error: 'Unauthorized', 
+          details: authError?.message || 'Invalid or expired token. Please sign in again.' 
+        }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
-    console.log('✅ [BTCPay] User authenticated:', user.id)
+    console.log('✅ [BTCPay] User authenticated:', user.id, user.email)
 
     const url = new URL(req.url)
     const action = url.searchParams.get('action') || 'create-invoice'
