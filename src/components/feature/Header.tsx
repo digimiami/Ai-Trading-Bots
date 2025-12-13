@@ -41,6 +41,11 @@ export function Header({ title, subtitle, showBack = false, action, rightAction 
       onClick: () => navigate('/settings?tab=profile'),
     },
     {
+      label: 'Subscription',
+      icon: 'ri-vip-crown-line',
+      onClick: () => navigate('/subscription'),
+    },
+    {
       label: 'Messages',
       icon: 'ri-message-3-line',
       onClick: () => navigate('/messages'),
