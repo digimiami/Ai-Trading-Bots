@@ -12,7 +12,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useBots } from '../../hooks/useBots';
 import { useMarketData } from '../../hooks/useMarketData';
 import { useExchangeBalance } from '../../hooks/useExchangeBalance';
-import { useAcademy, isModuleCompleted } from '../../hooks/useAcademy';
+import { useAcademy } from '../../hooks/useAcademy';
 import ExchangeBalanceDisplay from './components/ExchangeBalance';
 import NotificationBell from '../../components/feature/NotificationBell';
 
@@ -40,9 +40,6 @@ export default function Home() {
     const totalLessons = orientationModule.lessons.length;
     return { completedLessons, totalLessons };
   }, [academyProgress, orientationModule]);
-
-  const hasCompletedOrientation = orientationModule ? isModuleCompleted(orientationModule, academyProgress) : false;
-  const showAcademyBanner = !academyLoading && orientationModule && !hasCompletedOrientation;
 
   const foundationBadgeUnlocked = academySummary?.badge_foundation_finisher ?? false;
   const foundationProgress =
@@ -106,41 +103,6 @@ export default function Home() {
       />
       
       <div className="pt-20 pb-20 px-4 space-y-6">
-        {showAcademyBanner && orientationModule && (
-          <Card className="relative overflow-hidden border border-sky-500/60 bg-slate-900">
-            <div className="absolute inset-0 bg-gradient-to-r from-sky-500/30 via-indigo-500/25 to-purple-500/30 opacity-80" />
-            <div className="relative z-10 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h3 className="text-xl font-semibold text-white drop-shadow-lg">Launch the Pablo Academy</h3>
-                <p className="mt-2 text-sm text-slate-100">
-                  Complete Orientation & Setup to unlock advanced templates, badges, and faster onboarding for your team.
-                </p>
-                <div className="mt-3 flex items-center space-x-4 text-xs text-slate-200">
-                  <span className="flex items-center">
-                    <i className="ri-time-line mr-1 text-slate-100" />
-                    <span>{orientationModule.duration_minutes} minutes</span>
-                  </span>
-                  <span className="flex items-center">
-                    <i className="ri-stack-line mr-1 text-slate-100" />
-                    <span>{orientationModule.lessons.length} lessons</span>
-                  </span>
-                  {orientationStats.totalLessons > 0 && (
-                    <span className="flex items-center">
-                      <i className="ri-progress-8-line mr-1 text-slate-100" />
-                      <span>
-                        {orientationStats.completedLessons}/{orientationStats.totalLessons} complete
-                      </span>
-                    </span>
-                  )}
-                </div>
-              </div>
-              <Button size="lg" className="shadow-lg shadow-cyan-500/30" onClick={() => navigate(`/academy/${orientationModule.slug}`)}>
-                Start Module 1
-              </Button>
-            </div>
-          </Card>
-        )}
-
         {/* Welcome Message for New Users */}
         {showWelcome && (
           <Card className="flex flex-col items-start gap-4 border border-blue-200 bg-gradient-to-r from-blue-50 via-white to-indigo-50 p-6 shadow-sm dark:border-blue-900/40 dark:from-blue-950/40 dark:via-gray-900 dark:to-indigo-950/40">

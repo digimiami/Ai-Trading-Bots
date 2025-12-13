@@ -130,6 +130,7 @@ export default function Navigation() {
     { path: '/dashboard', icon: 'ri-home-line', label: t('nav.home') },
     { path: '/bots', icon: 'ri-robot-line', label: t('nav.bots') },
     { path: '/pablo-ready', icon: 'ri-star-line', label: 'Pablo Ready' },
+    { path: '/ai-assistant', icon: 'ri-robot-2-line', label: 'AI Assistant' },
     { path: '/settings', icon: 'ri-settings-line', label: t('nav.settings') }
   ];
 
@@ -137,7 +138,6 @@ export default function Navigation() {
   const dropdownItems = [
     { path: '/academy', icon: 'ri-graduation-cap-line', label: t('nav.academy') },
     { path: '/market-dashboard', icon: 'ri-line-chart-line', label: t('nav.market') },
-    { path: '/ai-assistant', icon: 'ri-robot-2-line', label: 'AI Assistant' },
     { path: '/backtest', icon: 'ri-test-tube-line', label: 'Backtest' },
     { path: '/bot-activity', icon: 'ri-file-list-line', label: 'Activity' },
     { path: '/trades', icon: 'ri-exchange-line', label: t('nav.trades') },
@@ -153,11 +153,6 @@ export default function Navigation() {
     // Add admin link if user is admin
     ...(user?.role === 'admin' ? [{ path: '/admin', icon: 'ri-admin-line', label: 'Admin' }] : [])
   ];
-
-  // Refresh handler
-  const handleRefresh = () => {
-    window.location.reload();
-  };
 
   // Mobile menu drawer
   const MobileMenuDrawer = () => (
@@ -280,18 +275,6 @@ export default function Navigation() {
                 </button>
               );
             })}
-            {/* Refresh Button */}
-            <button
-              onClick={handleRefresh}
-              className="group relative flex flex-col items-center justify-center gap-0.5 rounded-xl transition-all duration-150 min-w-[64px] flex-shrink-0 px-1 touch-manipulation snap-center text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-300"
-            >
-              <span className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-inherit group-hover:border-blue-300 group-hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800 dark:group-hover:border-blue-500/60 dark:group-hover:bg-slate-800">
-                <i className="ri-refresh-line text-lg"></i>
-              </span>
-              <span className="text-[0.65rem] font-semibold uppercase tracking-wide whitespace-nowrap drop-shadow-sm leading-tight text-center">
-                Refresh
-              </span>
-            </button>
             {/* Dropdown Button */}
             <div className="relative dropdown-button">
               <button
@@ -351,7 +334,7 @@ export default function Navigation() {
   return (
     <>
       <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-blue-200/60 bg-white/95 backdrop-blur-sm shadow-[0_-6px_18px_-12px_rgba(30,64,175,0.45)] dark:border-blue-400/30 dark:bg-gray-900/95">
-        <div className="grid grid-cols-6 h-18 sm:h-20 px-2 sm:px-3 py-1.5 sm:py-2">
+        <div className="grid grid-cols-5 h-18 sm:h-20 px-2 sm:px-3 py-1.5 sm:py-2">
           {mainNavItems.map((item) => {
             const isActive = location.pathname === item.path;
             return (
@@ -382,18 +365,6 @@ export default function Navigation() {
               </button>
             );
           })}
-          {/* Refresh Button */}
-          <button
-            onClick={handleRefresh}
-            className="group relative flex flex-col items-center justify-center gap-0.5 sm:gap-1 rounded-xl transition-all duration-150 px-1 sm:px-2 touch-manipulation text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-300"
-          >
-            <span className="flex h-9 w-9 sm:h-11 sm:w-11 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-inherit group-hover:border-blue-300 group-hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-800 dark:group-hover:border-blue-500/60 dark:group-hover:bg-slate-800">
-              <i className="ri-refresh-line text-lg sm:text-[1.35rem]"></i>
-            </span>
-            <span className="text-[0.65rem] sm:text-[0.72rem] font-semibold uppercase tracking-wide whitespace-nowrap drop-shadow-sm leading-tight text-center">
-              Refresh
-            </span>
-          </button>
           {/* Dropdown Button */}
           <div className="relative dropdown-button">
             <button
