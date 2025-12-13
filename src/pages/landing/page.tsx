@@ -121,6 +121,30 @@ export default function LandingPage() {
     };
   }, []);
 
+  // Add AI Workers script only on homepage
+  useEffect(() => {
+    const scriptId = 'aiworkers-widget-script';
+    
+    // Check if script already exists (prevent duplicates)
+    if (document.getElementById(scriptId)) {
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.id = scriptId;
+    script.src = 'https://aiworkers.vip/widget.js?clientId=1e2d0fff534f389d6f6b47ece19fde2715a9e5888b9c4ae63c31b2119b572db4';
+    script.async = true;
+    document.head.appendChild(script);
+
+    // Cleanup: remove script when component unmounts
+    return () => {
+      const existingScript = document.getElementById(scriptId);
+      if (existingScript && existingScript.parentNode) {
+        existingScript.parentNode.removeChild(existingScript);
+      }
+    };
+  }, []);
+
   const handleSignup = () => {
     navigate('/auth');
   };
