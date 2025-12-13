@@ -8,6 +8,55 @@ import { useBots } from '../../hooks/useBots';
 import { openAIService } from '../../services/openai';
 import { supabase } from '../../lib/supabase';
 
+// TypeScript declarations for Web Speech API
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start(): void;
+  stop(): void;
+  abort(): void;
+  onresult: ((event: SpeechRecognitionEvent) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
+  onend: (() => void) | null;
+}
+
+interface SpeechRecognitionEvent {
+  resultIndex: number;
+  results: SpeechRecognitionResultList;
+}
+
+interface SpeechRecognitionErrorEvent {
+  error: string;
+  message: string;
+}
+
+interface SpeechRecognitionResultList {
+  length: number;
+  item(index: number): SpeechRecognitionResult;
+  [index: number]: SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionResult {
+  length: number;
+  item(index: number): SpeechRecognitionAlternative;
+  [index: number]: SpeechRecognitionAlternative;
+  isFinal: boolean;
+}
+
+interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence: number;
+}
+
+declare var SpeechRecognition: {
+  new (): SpeechRecognition;
+};
+
+declare var webkitSpeechRecognition: {
+  new (): SpeechRecognition;
+};
+
 interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -38,8 +87,11 @@ export default function AiAssistantPage() {
   const [isRecording, setIsRecording] = useState(false);
   const [voiceChatEnabled, setVoiceChatEnabled] = useState(false);
   const [documentAnalysisEnabled, setDocumentAnalysisEnabled] = useState(true);
+  const [transcript, setTranscript] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const synthRef = useRef<SpeechSynthesis | null>(null);
 
   useEffect(() => {
     // Load AI Assistant settings from localStorage
@@ -86,6 +138,76 @@ What would you like to know?`,
     }]);
   }, []);
 
+  // Initialize Speech Recognition (Web Speech API)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
+
+        recognition.onresult = (event: SpeechRecognitionEvent) => {
+          let interimTranscript = '';
+          let finalTranscript = '';
+
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              finalTranscript += transcript + ' ';
+            } else {
+              interimTranscript += transcript;
+            }
+          }
+
+          if (finalTranscript) {
+            setTranscript(prev => prev + finalTranscript);
+            setInput(prev => (prev + finalTranscript).trim());
+          } else {
+            setTranscript(prev => {
+              const base = prev;
+              const current = base + interimTranscript;
+              setInput(current.trim());
+              return base;
+            });
+          }
+        };
+
+        recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+          console.error('Speech recognition error:', event.error);
+          setIsRecording(false);
+          if (event.error === 'no-speech') {
+            setError('No speech detected. Please try again.');
+          } else if (event.error === 'not-allowed') {
+            setError('Microphone permission denied. Please enable microphone access.');
+          } else {
+            setError(`Speech recognition error: ${event.error}`);
+          }
+        };
+
+        recognition.onend = () => {
+          setIsRecording(false);
+          setTranscript(''); // Clear interim transcript display
+        };
+
+        recognitionRef.current = recognition;
+      }
+
+      // Initialize Speech Synthesis
+      if ('speechSynthesis' in window) {
+        synthRef.current = window.speechSynthesis;
+      }
+    }
+
+    // Cleanup
+    return () => {
+      if (recognitionRef.current && isRecording) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, [isRecording]);
+
   useEffect(() => {
     // Auto-scroll to bottom when new messages arrive
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -113,6 +235,47 @@ What would you like to know?`,
 
   const removeAttachment = (id: string) => {
     setAttachments(prev => prev.filter(att => att.id !== id));
+  };
+
+  const toggleVoiceRecording = () => {
+    if (!recognitionRef.current) {
+      setError('Speech recognition is not supported in your browser. Please use Chrome, Edge, or Safari.');
+      return;
+    }
+
+    if (isRecording) {
+      // Stop recording
+      recognitionRef.current.stop();
+      setIsRecording(false);
+      // Don't clear transcript here - let onend handler process it
+    } else {
+      // Start recording
+      setTranscript('');
+      setInput(''); // Clear input to start fresh
+      setError(null);
+      try {
+        recognitionRef.current.start();
+        setIsRecording(true);
+      } catch (err: any) {
+        console.error('Error starting speech recognition:', err);
+        setError('Failed to start recording. Please try again.');
+        setIsRecording(false);
+      }
+    }
+  };
+
+  const speakText = (text: string) => {
+    if (!synthRef.current) return;
+    
+    // Cancel any ongoing speech
+    synthRef.current.cancel();
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
+    
+    synthRef.current.speak(utterance);
   };
 
   const handleSend = async () => {
@@ -247,6 +410,11 @@ What would you like to know?`,
 
         setMessages(prev => [...prev, assistantMessage]);
         
+        // Speak the AI response if voice chat is enabled
+        if (voiceChatEnabled && data.response && synthRef.current) {
+          speakText(data.response);
+        }
+        
         // Clear pending actions after showing
         setTimeout(() => setPendingActions([]), 5000);
       } else {
@@ -258,6 +426,11 @@ What would you like to know?`,
         };
 
         setMessages(prev => [...prev, assistantMessage]);
+        
+        // Speak the AI response if voice chat is enabled
+        if (voiceChatEnabled && data.response && synthRef.current) {
+          speakText(data.response);
+        }
       }
     } catch (err: any) {
       console.error('Error sending message:', err);
@@ -449,6 +622,21 @@ What would you like to know?`,
               </div>
             )}
 
+            {/* Voice Recording Indicator */}
+            {isRecording && (
+              <div className="mb-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center space-x-2">
+                <div className="w-3 h-3 bg-red-600 rounded-full animate-pulse"></div>
+                <span className="text-sm text-red-700 dark:text-red-400 font-medium">
+                  Recording... Speak now
+                </span>
+                {transcript && (
+                  <span className="text-xs text-red-600 dark:text-red-500 italic">
+                    "{transcript}"
+                  </span>
+                )}
+              </div>
+            )}
+
             <div className="flex space-x-2">
               <div className="flex-1 flex flex-col">
                 <textarea
@@ -483,17 +671,14 @@ What would you like to know?`,
                   />
                   {voiceChatEnabled && (
                     <button
-                      onClick={() => {
-                        // TODO: Implement voice chat
-                        alert('Voice chat feature coming soon!');
-                      }}
-                      disabled={loading || !apiConfigured || isRecording}
+                      onClick={toggleVoiceRecording}
+                      disabled={loading || !apiConfigured}
                       className={`p-2 rounded-lg transition-colors disabled:opacity-50 ${
                         isRecording
                           ? 'text-red-600 bg-red-50 dark:bg-red-900/20'
                           : 'text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-700'
                       }`}
-                      title={isRecording ? 'Recording...' : 'Voice Chat'}
+                      title={isRecording ? 'Stop Recording (Click again or it will auto-stop)' : 'Start Voice Chat'}
                       type="button"
                     >
                       <i className={`ri-mic-line text-lg ${isRecording ? 'animate-pulse' : ''}`}></i>
