@@ -495,7 +495,7 @@ export default function FunnelManager() {
                             <span className={`px-2 py-1 rounded text-xs ${
                               page.is_active
                                 ? 'bg-green-500/20 text-green-400'
-                                : 'bg-gray-500/20 text-gray-300'
+                                : 'bg-gray-500/30 text-gray-300'
                             }`}>
                               {page.is_active ? 'Active' : 'Inactive'}
                             </span>
