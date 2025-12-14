@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase, API_ENDPOINTS, apiCall } from '../../lib/supabase';
 import Card from '../base/Card';
 import Button from '../base/Button';
+import PerformancePairShareCard from '../bot/PerformancePairShareCard';
 
 interface PaperPosition {
   id: string;
@@ -70,6 +71,7 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [expandedLogs, setExpandedLogs] = useState(false);
   const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [sharingPairSymbol, setSharingPairSymbol] = useState<string | null>(null);
 
   const ensureAccountExists = async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -1136,7 +1138,7 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
                   </div>
                   
                   <div className="pt-3 border-t border-gray-200">
-                    <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="grid grid-cols-2 gap-2 text-xs mb-3">
                       <div>
                         <span className="text-gray-500">Avg Win:</span>
                         <span className="ml-1 font-medium text-green-600">
@@ -1171,6 +1173,15 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
                         </span>
                       </div>
                     </div>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setSharingPairSymbol(pair.symbol)}
+                      className="w-full"
+                    >
+                      <i className="ri-share-line mr-1"></i>
+                      Share
+                    </Button>
                   </div>
                 </div>
               );
@@ -1310,6 +1321,20 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
           </div>
         )}
       </Card>
+
+      {/* Performance Pair Share Card Modal */}
+      {sharingPairSymbol && (() => {
+        const pairToShare = displayPerformance.pairsPerformance?.find(p => p.symbol === sharingPairSymbol);
+        if (!pairToShare) return null;
+        
+        return (
+          <PerformancePairShareCard
+            pair={pairToShare}
+            isOpen={true}
+            onClose={() => setSharingPairSymbol(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
