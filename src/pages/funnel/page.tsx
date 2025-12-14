@@ -211,7 +211,11 @@ export default function FunnelPageViewer() {
   }
 
   return (
-    <div onClick={handleClick}>
+    <div onClick={handleClick} style={{ minHeight: '100vh', width: '100%' }}>
+      <style>{`
+        body { margin: 0; padding: 0; }
+        * { box-sizing: border-box; }
+      `}</style>
       {page.custom_css && (
         <style dangerouslySetInnerHTML={{ __html: page.custom_css }} />
       )}

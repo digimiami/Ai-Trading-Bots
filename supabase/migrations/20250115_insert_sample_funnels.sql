@@ -23,33 +23,33 @@ VALUES (
   'Crypto Trading Course Landing',
   'landing',
   'landing',
-  '<div class="min-h-screen bg-gradient-to-br from-blue-900 via-blue-800 to-purple-900 text-white">
-    <div class="container mx-auto px-4 py-16">
-      <div class="max-w-4xl mx-auto text-center">
-        <h1 class="text-5xl font-bold mb-6">Master Crypto Trading in 30 Days</h1>
-        <p class="text-xl mb-8 text-blue-200">Learn proven strategies from professional traders. Start making consistent profits in the crypto market.</p>
+  '<div style="min-height: 100vh; background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 50%, #7c3aed 100%); color: #ffffff;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 4rem 1rem;">
+      <div style="max-width: 56rem; margin: 0 auto; text-align: center;">
+        <h1 style="font-size: 3rem; font-weight: 700; margin-bottom: 1.5rem; color: #ffffff;">Master Crypto Trading in 30 Days</h1>
+        <p style="font-size: 1.25rem; margin-bottom: 2rem; color: #bfdbfe;">Learn proven strategies from professional traders. Start making consistent profits in the crypto market.</p>
         
-        <div class="bg-white/20 backdrop-blur-lg rounded-2xl p-8 mb-8 border border-white/30">
-          <h2 class="text-2xl font-semibold mb-4 text-white">What You''ll Learn:</h2>
-          <ul class="text-left space-y-3 max-w-2xl mx-auto">
-            <li class="flex items-center text-white"><span class="text-green-300 mr-3 font-bold">✓</span> Advanced technical analysis techniques</li>
-            <li class="flex items-center text-white"><span class="text-green-300 mr-3 font-bold">✓</span> Risk management strategies</li>
-            <li class="flex items-center text-white"><span class="text-green-300 mr-3 font-bold">✓</span> Automated trading bot setup</li>
-            <li class="flex items-center text-white"><span class="text-green-300 mr-3 font-bold">✓</span> Live trading sessions with experts</li>
-            <li class="flex items-center text-white"><span class="text-green-300 mr-3 font-bold">✓</span> Lifetime access to course materials</li>
+        <div style="background: rgba(255, 255, 255, 0.15); backdrop-filter: blur(10px); border-radius: 1rem; padding: 2rem; margin-bottom: 2rem; border: 1px solid rgba(255, 255, 255, 0.3);">
+          <h2 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 1rem; color: #ffffff;">What You''ll Learn:</h2>
+          <ul style="text-align: left; list-style: none; padding: 0; max-width: 32rem; margin: 0 auto;">
+            <li style="display: flex; align-items: center; margin-bottom: 0.75rem; color: #ffffff;"><span style="color: #86efac; margin-right: 0.75rem; font-weight: 700;">✓</span> Advanced technical analysis techniques</li>
+            <li style="display: flex; align-items: center; margin-bottom: 0.75rem; color: #ffffff;"><span style="color: #86efac; margin-right: 0.75rem; font-weight: 700;">✓</span> Risk management strategies</li>
+            <li style="display: flex; align-items: center; margin-bottom: 0.75rem; color: #ffffff;"><span style="color: #86efac; margin-right: 0.75rem; font-weight: 700;">✓</span> Automated trading bot setup</li>
+            <li style="display: flex; align-items: center; margin-bottom: 0.75rem; color: #ffffff;"><span style="color: #86efac; margin-right: 0.75rem; font-weight: 700;">✓</span> Live trading sessions with experts</li>
+            <li style="display: flex; align-items: center; margin-bottom: 0.75rem; color: #ffffff;"><span style="color: #86efac; margin-right: 0.75rem; font-weight: 700;">✓</span> Lifetime access to course materials</li>
           </ul>
         </div>
 
-        <div class="bg-yellow-400 text-gray-900 rounded-lg p-4 mb-8">
-          <p class="text-2xl font-bold">Limited Time: 50% OFF</p>
-          <p class="text-lg">Regular Price: $997 | Today: $497</p>
+        <div style="background: #facc15; color: #111827; border-radius: 0.5rem; padding: 1rem; margin-bottom: 2rem;">
+          <p style="font-size: 1.5rem; font-weight: 700; color: #111827;">Limited Time: 50% OFF</p>
+          <p style="font-size: 1.125rem; color: #111827;">Regular Price: $997 | Today: $497</p>
         </div>
 
-        <button onclick="window.location.href=''#signup''" class="bg-green-500 hover:bg-green-600 text-white font-bold py-4 px-12 rounded-lg text-xl transition-all transform hover:scale-105 shadow-2xl">
+        <button onclick="window.location.href=''#signup''" style="background: #22c55e; color: #ffffff; font-weight: 700; padding: 1rem 3rem; border-radius: 0.5rem; font-size: 1.25rem; border: none; cursor: pointer; transition: all 0.3s; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);" onmouseover="this.style.background=''#16a34a''" onmouseout="this.style.background=''#22c55e''">
           Get Started Now
         </button>
         
-        <p class="mt-6 text-blue-100 font-medium">Join 10,000+ successful traders</p>
+        <p style="margin-top: 1.5rem; color: #dbeafe; font-weight: 500;">Join 10,000+ successful traders</p>
       </div>
     </div>
   </div>',
@@ -70,36 +70,36 @@ VALUES (
   'Crypto Trading Course Sale',
   'sale',
   'sale',
-  '<div class="min-h-screen bg-gray-900 text-white">
-    <div class="container mx-auto px-4 py-16">
-      <div class="max-w-3xl mx-auto">
-        <h1 class="text-4xl font-bold mb-6 text-center">Complete Your Purchase</h1>
+  '<div style="min-height: 100vh; background: #111827; color: #ffffff;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 4rem 1rem;">
+      <div style="max-width: 48rem; margin: 0 auto;">
+        <h1 style="font-size: 2.25rem; font-weight: 700; margin-bottom: 1.5rem; text-align: center; color: #ffffff;">Complete Your Purchase</h1>
         
-        <div class="bg-gray-800 rounded-lg p-8 mb-6">
-          <h2 class="text-2xl font-semibold mb-4">Crypto Trading Mastery Course</h2>
-          <div class="flex justify-between items-center mb-4">
-            <span class="text-gray-400 line-through">$997</span>
-            <span class="text-3xl font-bold text-green-400">$497</span>
+        <div style="background: #1f2937; border-radius: 0.5rem; padding: 2rem; margin-bottom: 1.5rem;">
+          <h2 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 1rem; color: #ffffff;">Crypto Trading Mastery Course</h2>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <span style="color: #9ca3af; text-decoration: line-through;">$997</span>
+            <span style="font-size: 1.875rem; font-weight: 700; color: #4ade80;">$497</span>
           </div>
-          <p class="text-gray-200 mb-6 font-medium">One-time payment. Lifetime access.</p>
+          <p style="color: #e5e7eb; margin-bottom: 1.5rem; font-weight: 500;">One-time payment. Lifetime access.</p>
           
-          <div class="border-t border-gray-600 pt-6">
-            <h3 class="font-semibold mb-3 text-white">What''s Included:</h3>
-            <ul class="space-y-2 text-gray-200">
-              <li class="flex items-center"><span class="text-green-400 mr-2 font-bold">✓</span> 30+ hours of video content</li>
-              <li class="flex items-center"><span class="text-green-400 mr-2 font-bold">✓</span> Trading bot templates</li>
-              <li class="flex items-center"><span class="text-green-400 mr-2 font-bold">✓</span> Private community access</li>
-              <li class="flex items-center"><span class="text-green-400 mr-2 font-bold">✓</span> Weekly live Q&A sessions</li>
-              <li class="flex items-center"><span class="text-green-400 mr-2 font-bold">✓</span> Money-back guarantee</li>
+          <div style="border-top: 1px solid #4b5563; padding-top: 1.5rem;">
+            <h3 style="font-weight: 600; margin-bottom: 0.75rem; color: #ffffff;">What''s Included:</h3>
+            <ul style="list-style: none; padding: 0; margin: 0;">
+              <li style="display: flex; align-items: center; margin-bottom: 0.5rem; color: #e5e7eb;"><span style="color: #4ade80; margin-right: 0.5rem; font-weight: 700;">✓</span> 30+ hours of video content</li>
+              <li style="display: flex; align-items: center; margin-bottom: 0.5rem; color: #e5e7eb;"><span style="color: #4ade80; margin-right: 0.5rem; font-weight: 700;">✓</span> Trading bot templates</li>
+              <li style="display: flex; align-items: center; margin-bottom: 0.5rem; color: #e5e7eb;"><span style="color: #4ade80; margin-right: 0.5rem; font-weight: 700;">✓</span> Private community access</li>
+              <li style="display: flex; align-items: center; margin-bottom: 0.5rem; color: #e5e7eb;"><span style="color: #4ade80; margin-right: 0.5rem; font-weight: 700;">✓</span> Weekly live Q&A sessions</li>
+              <li style="display: flex; align-items: center; margin-bottom: 0.5rem; color: #e5e7eb;"><span style="color: #4ade80; margin-right: 0.5rem; font-weight: 700;">✓</span> Money-back guarantee</li>
             </ul>
           </div>
         </div>
 
-        <button onclick="window.location.href=''#checkout''" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-4 px-8 rounded-lg text-xl transition-all">
+        <button onclick="window.location.href=''#checkout''" style="width: 100%; background: #22c55e; color: #ffffff; font-weight: 700; padding: 1rem 2rem; border-radius: 0.5rem; font-size: 1.25rem; border: none; cursor: pointer; transition: all 0.3s;" onmouseover="this.style.background=''#16a34a''" onmouseout="this.style.background=''#22c55e''">
           Secure Checkout - $497
         </button>
         
-        <p class="text-center text-gray-300 mt-4 text-sm font-medium">🔒 Secure payment • 30-day money-back guarantee</p>
+        <p style="text-align: center; color: #d1d5db; margin-top: 1rem; font-size: 0.875rem; font-weight: 500;">🔒 Secure payment • 30-day money-back guarantee</p>
       </div>
     </div>
   </div>',
@@ -120,20 +120,20 @@ VALUES (
   'Thank You Page',
   'thank-you',
   'thank_you',
-  '<div class="min-h-screen bg-gradient-to-br from-green-500 to-blue-600 text-white flex items-center justify-center">
-    <div class="text-center max-w-2xl mx-auto px-4">
-      <div class="text-6xl mb-6">🎉</div>
-      <h1 class="text-5xl font-bold mb-4">Welcome to the Course!</h1>
-      <p class="text-xl mb-8">Check your email for access instructions and course materials.</p>
-      <div class="bg-white/30 backdrop-blur-lg rounded-lg p-6 mb-6 border border-white/40">
-        <h2 class="text-2xl font-semibold mb-4 text-white">Next Steps:</h2>
-        <ol class="text-left space-y-3 max-w-md mx-auto text-white">
-          <li class="font-medium">1. Check your email for login credentials</li>
-          <li class="font-medium">2. Join our private Discord community</li>
-          <li class="font-medium">3. Start with Module 1: Basics of Trading</li>
+  '<div style="min-height: 100vh; background: linear-gradient(135deg, #22c55e 0%, #3b82f6 100%); color: #ffffff; display: flex; align-items: center; justify-content: center;">
+    <div style="text-align: center; max-width: 42rem; margin: 0 auto; padding: 0 1rem;">
+      <div style="font-size: 4rem; margin-bottom: 1.5rem;">🎉</div>
+      <h1 style="font-size: 3rem; font-weight: 700; margin-bottom: 1rem; color: #ffffff;">Welcome to the Course!</h1>
+      <p style="font-size: 1.25rem; margin-bottom: 2rem; color: #ffffff;">Check your email for access instructions and course materials.</p>
+      <div style="background: rgba(255, 255, 255, 0.3); backdrop-filter: blur(10px); border-radius: 0.5rem; padding: 1.5rem; margin-bottom: 1.5rem; border: 1px solid rgba(255, 255, 255, 0.4);">
+        <h2 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 1rem; color: #ffffff;">Next Steps:</h2>
+        <ol style="text-align: left; list-style: decimal; padding-left: 1.5rem; max-width: 28rem; margin: 0 auto; color: #ffffff;">
+          <li style="margin-bottom: 0.75rem; font-weight: 500; color: #ffffff;">Check your email for login credentials</li>
+          <li style="margin-bottom: 0.75rem; font-weight: 500; color: #ffffff;">Join our private Discord community</li>
+          <li style="margin-bottom: 0.75rem; font-weight: 500; color: #ffffff;">Start with Module 1: Basics of Trading</li>
         </ol>
       </div>
-      <button onclick="window.location.href=''/dashboard''" class="bg-white text-green-600 font-bold py-3 px-8 rounded-lg hover:bg-gray-100 transition-all">
+      <button onclick="window.location.href=''/dashboard''" style="background: #ffffff; color: #16a34a; font-weight: 700; padding: 0.75rem 2rem; border-radius: 0.5rem; border: none; cursor: pointer; transition: all 0.3s;" onmouseover="this.style.background=''#f3f4f6''" onmouseout="this.style.background=''#ffffff''">
         Go to Dashboard
       </button>
     </div>
@@ -168,77 +168,77 @@ VALUES (
   'Trading Bot Landing',
   'landing',
   'landing',
-  '<div class="min-h-screen bg-black text-white">
-    <div class="container mx-auto px-4 py-20">
-      <div class="max-w-5xl mx-auto">
-        <div class="text-center mb-12">
-          <h1 class="text-6xl font-bold mb-6 bg-gradient-to-r from-blue-400 to-purple-600 bg-clip-text text-transparent">
+  '<div style="min-height: 100vh; background: #000000; color: #ffffff;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 5rem 1rem;">
+      <div style="max-width: 80rem; margin: 0 auto;">
+        <div style="text-align: center; margin-bottom: 3rem;">
+          <h1 style="font-size: 3.75rem; font-weight: 700; margin-bottom: 1.5rem; background: linear-gradient(to right, #60a5fa, #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">
             Pablo AI Trading Bot
           </h1>
-          <p class="text-2xl text-gray-200 mb-4 font-medium">Trade 24/7 with AI-Powered Automation</p>
-          <p class="text-lg text-gray-300">Let our advanced AI handle your trades while you sleep</p>
+          <p style="font-size: 1.5rem; color: #e5e7eb; margin-bottom: 1rem; font-weight: 500;">Trade 24/7 with AI-Powered Automation</p>
+          <p style="font-size: 1.125rem; color: #d1d5db;">Let our advanced AI handle your trades while you sleep</p>
         </div>
 
-        <div class="grid md:grid-cols-3 gap-6 mb-12">
-          <div class="bg-gray-900 rounded-lg p-6 border border-gray-800">
-            <div class="text-4xl mb-4">🤖</div>
-            <h3 class="text-xl font-semibold mb-2 text-white">AI-Powered</h3>
-            <p class="text-gray-300">Advanced machine learning algorithms analyze market patterns</p>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin-bottom: 3rem;">
+          <div style="background: #111827; border-radius: 0.5rem; padding: 1.5rem; border: 1px solid #1f2937;">
+            <div style="font-size: 2.5rem; margin-bottom: 1rem;">🤖</div>
+            <h3 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; color: #ffffff;">AI-Powered</h3>
+            <p style="color: #d1d5db;">Advanced machine learning algorithms analyze market patterns</p>
           </div>
-          <div class="bg-gray-900 rounded-lg p-6 border border-gray-800">
-            <div class="text-4xl mb-4">⚡</div>
-            <h3 class="text-xl font-semibold mb-2 text-white">Lightning Fast</h3>
-            <p class="text-gray-300">Execute trades in milliseconds with low latency</p>
+          <div style="background: #111827; border-radius: 0.5rem; padding: 1.5rem; border: 1px solid #1f2937;">
+            <div style="font-size: 2.5rem; margin-bottom: 1rem;">⚡</div>
+            <h3 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; color: #ffffff;">Lightning Fast</h3>
+            <p style="color: #d1d5db;">Execute trades in milliseconds with low latency</p>
           </div>
-          <div class="bg-gray-900 rounded-lg p-6 border border-gray-800">
-            <div class="text-4xl mb-4">📈</div>
-            <h3 class="text-xl font-semibold mb-2 text-white">Proven Results</h3>
-            <p class="text-gray-300">Average 15-25% monthly returns with proper risk management</p>
+          <div style="background: #111827; border-radius: 0.5rem; padding: 1.5rem; border: 1px solid #1f2937;">
+            <div style="font-size: 2.5rem; margin-bottom: 1rem;">📈</div>
+            <h3 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.5rem; color: #ffffff;">Proven Results</h3>
+            <p style="color: #d1d5db;">Average 15-25% monthly returns with proper risk management</p>
           </div>
         </div>
 
-        <div class="bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl p-8 text-center mb-8">
-          <h2 class="text-3xl font-bold mb-4">Start Trading Today</h2>
-          <p class="text-xl mb-6">Join 5,000+ traders using Pablo AI</p>
-          <div class="flex items-center justify-center gap-4 mb-6">
-            <span class="text-3xl font-bold text-white">$99</span>
-            <span class="text-white/90">/month</span>
+        <div style="background: linear-gradient(to right, #2563eb, #9333ea); border-radius: 1rem; padding: 2rem; text-align: center; margin-bottom: 2rem;">
+          <h2 style="font-size: 1.875rem; font-weight: 700; margin-bottom: 1rem; color: #ffffff;">Start Trading Today</h2>
+          <p style="font-size: 1.25rem; margin-bottom: 1.5rem; color: #ffffff;">Join 5,000+ traders using Pablo AI</p>
+          <div style="display: flex; align-items: center; justify-content: center; gap: 1rem; margin-bottom: 1.5rem;">
+            <span style="font-size: 1.875rem; font-weight: 700; color: #ffffff;">$99</span>
+            <span style="color: rgba(255, 255, 255, 0.9);">/month</span>
           </div>
-          <button onclick="window.location.href=''#signup''" class="bg-white text-blue-600 font-bold py-4 px-12 rounded-lg text-xl hover:bg-gray-100 transition-all transform hover:scale-105 shadow-lg">
+          <button onclick="window.location.href=''#signup''" style="background: #ffffff; color: #2563eb; font-weight: 700; padding: 1rem 3rem; border-radius: 0.5rem; font-size: 1.25rem; border: none; cursor: pointer; transition: all 0.3s; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);" onmouseover="this.style.background=''#f3f4f6''" onmouseout="this.style.background=''#ffffff''">
             Start Free Trial
           </button>
-          <p class="text-sm mt-4 text-white font-medium">7-day free trial • Cancel anytime</p>
+          <p style="font-size: 0.875rem; margin-top: 1rem; color: #ffffff; font-weight: 500;">7-day free trial • Cancel anytime</p>
         </div>
 
-        <div class="bg-gray-900 rounded-lg p-6">
-          <h3 class="text-2xl font-semibold mb-4 text-center">What''s Included:</h3>
-          <div class="grid md:grid-cols-2 gap-4">
-            <div class="flex items-start">
-              <span class="text-green-400 mr-3 text-xl">✓</span>
+        <div style="background: #111827; border-radius: 0.5rem; padding: 1.5rem;">
+          <h3 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 1rem; text-align: center; color: #ffffff;">What''s Included:</h3>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
+            <div style="display: flex; align-items: flex-start;">
+              <span style="color: #86efac; margin-right: 0.75rem; font-size: 1.25rem; font-weight: 700;">✓</span>
               <div>
-                <strong class="text-white">Unlimited Trading Bots</strong>
-                <p class="text-gray-300 text-sm">Create as many bots as you need</p>
+                <strong style="color: #ffffff;">Unlimited Trading Bots</strong>
+                <p style="color: #d1d5db; font-size: 0.875rem; margin: 0;">Create as many bots as you need</p>
               </div>
             </div>
-            <div class="flex items-start">
-              <span class="text-green-300 mr-3 text-xl font-bold">✓</span>
+            <div style="display: flex; align-items: flex-start;">
+              <span style="color: #86efac; margin-right: 0.75rem; font-size: 1.25rem; font-weight: 700;">✓</span>
               <div>
-                <strong class="text-white">Real-time Analytics</strong>
-                <p class="text-gray-300 text-sm">Track performance with detailed reports</p>
+                <strong style="color: #ffffff;">Real-time Analytics</strong>
+                <p style="color: #d1d5db; font-size: 0.875rem; margin: 0;">Track performance with detailed reports</p>
               </div>
             </div>
-            <div class="flex items-start">
-              <span class="text-green-300 mr-3 text-xl font-bold">✓</span>
+            <div style="display: flex; align-items: flex-start;">
+              <span style="color: #86efac; margin-right: 0.75rem; font-size: 1.25rem; font-weight: 700;">✓</span>
               <div>
-                <strong class="text-white">24/7 Support</strong>
-                <p class="text-gray-300 text-sm">Get help whenever you need it</p>
+                <strong style="color: #ffffff;">24/7 Support</strong>
+                <p style="color: #d1d5db; font-size: 0.875rem; margin: 0;">Get help whenever you need it</p>
               </div>
             </div>
-            <div class="flex items-start">
-              <span class="text-green-300 mr-3 text-xl font-bold">✓</span>
+            <div style="display: flex; align-items: flex-start;">
+              <span style="color: #86efac; margin-right: 0.75rem; font-size: 1.25rem; font-weight: 700;">✓</span>
               <div>
-                <strong class="text-white">Advanced Strategies</strong>
-                <p class="text-gray-300 text-sm">Access to premium trading strategies</p>
+                <strong style="color: #ffffff;">Advanced Strategies</strong>
+                <p style="color: #d1d5db; font-size: 0.875rem; margin: 0;">Access to premium trading strategies</p>
               </div>
             </div>
           </div>
@@ -277,64 +277,64 @@ VALUES (
   'Free Guide Landing',
   'landing',
   'landing',
-  '<div class="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 text-white">
-    <div class="container mx-auto px-4 py-16">
-      <div class="max-w-4xl mx-auto">
-        <div class="text-center mb-12">
-          <div class="text-6xl mb-6">📚</div>
-          <h1 class="text-5xl font-bold mb-4">Get Your Free Trading Guide</h1>
-          <p class="text-2xl text-purple-100 mb-2 font-medium">"10 Strategies That Made Me $100K in Crypto Trading"</p>
-          <p class="text-lg text-purple-200">Download instantly - No credit card required</p>
+  '<div style="min-height: 100vh; background: linear-gradient(135deg, #312e81 0%, #6b21a8 50%, #9f1239 100%); color: #ffffff;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 4rem 1rem;">
+      <div style="max-width: 56rem; margin: 0 auto;">
+        <div style="text-align: center; margin-bottom: 3rem;">
+          <div style="font-size: 4rem; margin-bottom: 1.5rem;">📚</div>
+          <h1 style="font-size: 3rem; font-weight: 700; margin-bottom: 1rem; color: #ffffff;">Get Your Free Trading Guide</h1>
+          <p style="font-size: 1.5rem; color: #e9d5ff; margin-bottom: 0.5rem; font-weight: 500;">"10 Strategies That Made Me $100K in Crypto Trading"</p>
+          <p style="font-size: 1.125rem; color: #ddd6fe;">Download instantly - No credit card required</p>
         </div>
 
-        <div class="bg-white/20 backdrop-blur-lg rounded-2xl p-8 mb-8 border border-white/30">
-          <h2 class="text-2xl font-semibold mb-6 text-center text-white">What''s Inside:</h2>
-          <div class="grid md:grid-cols-2 gap-4">
-            <div class="flex items-start">
-              <span class="text-yellow-300 mr-3 text-2xl">📖</span>
+        <div style="background: rgba(255, 255, 255, 0.2); backdrop-filter: blur(10px); border-radius: 1rem; padding: 2rem; margin-bottom: 2rem; border: 1px solid rgba(255, 255, 255, 0.3);">
+          <h2 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 1.5rem; text-align: center; color: #ffffff;">What''s Inside:</h2>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
+            <div style="display: flex; align-items: flex-start;">
+              <span style="color: #fde047; margin-right: 0.75rem; font-size: 1.5rem;">📖</span>
               <div>
-                <strong class="text-white">10 Proven Strategies</strong>
-                <p class="text-sm text-purple-100">Step-by-step trading methods</p>
+                <strong style="color: #ffffff;">10 Proven Strategies</strong>
+                <p style="font-size: 0.875rem; color: #e9d5ff; margin: 0;">Step-by-step trading methods</p>
               </div>
             </div>
-            <div class="flex items-start">
-              <span class="text-yellow-300 mr-3 text-2xl">💡</span>
+            <div style="display: flex; align-items: flex-start;">
+              <span style="color: #fde047; margin-right: 0.75rem; font-size: 1.5rem;">💡</span>
               <div>
-                <strong class="text-white">Risk Management Tips</strong>
-                <p class="text-sm text-purple-100">Protect your capital</p>
+                <strong style="color: #ffffff;">Risk Management Tips</strong>
+                <p style="font-size: 0.875rem; color: #e9d5ff; margin: 0;">Protect your capital</p>
               </div>
             </div>
-            <div class="flex items-start">
-              <span class="text-yellow-300 mr-3 text-2xl">📊</span>
+            <div style="display: flex; align-items: flex-start;">
+              <span style="color: #fde047; margin-right: 0.75rem; font-size: 1.5rem;">📊</span>
               <div>
-                <strong class="text-white">Market Analysis Tools</strong>
-                <p class="text-sm text-purple-100">Identify opportunities</p>
+                <strong style="color: #ffffff;">Market Analysis Tools</strong>
+                <p style="font-size: 0.875rem; color: #e9d5ff; margin: 0;">Identify opportunities</p>
               </div>
             </div>
-            <div class="flex items-start">
-              <span class="text-yellow-300 mr-3 text-2xl">🎯</span>
+            <div style="display: flex; align-items: flex-start;">
+              <span style="color: #fde047; margin-right: 0.75rem; font-size: 1.5rem;">🎯</span>
               <div>
-                <strong class="text-white">Entry & Exit Points</strong>
-                <p class="text-sm text-purple-100">Perfect timing strategies</p>
+                <strong style="color: #ffffff;">Entry & Exit Points</strong>
+                <p style="font-size: 0.875rem; color: #e9d5ff; margin: 0;">Perfect timing strategies</p>
               </div>
             </div>
           </div>
         </div>
 
-        <div class="bg-white rounded-2xl p-8 text-gray-900">
-          <h3 class="text-2xl font-bold mb-6 text-center">Get Instant Access</h3>
-          <form class="space-y-4">
-            <input type="text" placeholder="Your Name" class="w-full px-4 py-3 border-2 border-gray-400 rounded-lg text-gray-900 focus:ring-2 focus:ring-purple-500 focus:border-purple-500">
-            <input type="email" placeholder="Your Email" class="w-full px-4 py-3 border-2 border-gray-400 rounded-lg text-gray-900 focus:ring-2 focus:ring-purple-500 focus:border-purple-500">
-            <button type="submit" onclick="event.preventDefault(); window.location.href=''#download''" class="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-4 px-8 rounded-lg text-xl hover:from-purple-700 hover:to-pink-700 transition-all transform hover:scale-105">
+        <div style="background: #ffffff; border-radius: 1rem; padding: 2rem; color: #111827;">
+          <h3 style="font-size: 1.5rem; font-weight: 700; margin-bottom: 1.5rem; text-align: center; color: #111827;">Get Instant Access</h3>
+          <form style="display: flex; flex-direction: column; gap: 1rem;">
+            <input type="text" placeholder="Your Name" style="width: 100%; padding: 0.75rem 1rem; border: 2px solid #9ca3af; border-radius: 0.5rem; color: #111827; font-size: 1rem;" onfocus="this.style.borderColor=''#9333ea''; this.style.outline=''none''" onblur="this.style.borderColor=''#9ca3af''">
+            <input type="email" placeholder="Your Email" style="width: 100%; padding: 0.75rem 1rem; border: 2px solid #9ca3af; border-radius: 0.5rem; color: #111827; font-size: 1rem;" onfocus="this.style.borderColor=''#9333ea''; this.style.outline=''none''" onblur="this.style.borderColor=''#9ca3af''">
+            <button type="submit" onclick="event.preventDefault(); window.location.href=''#download''" style="width: 100%; background: linear-gradient(to right, #9333ea, #db2777); color: #ffffff; font-weight: 700; padding: 1rem 2rem; border-radius: 0.5rem; font-size: 1.25rem; border: none; cursor: pointer; transition: all 0.3s;" onmouseover="this.style.opacity=''0.9''" onmouseout="this.style.opacity=''1''">
               Download Free Guide Now
             </button>
           </form>
-          <p class="text-center text-gray-500 text-sm mt-4">🔒 We respect your privacy. Unsubscribe at any time.</p>
+          <p style="text-align: center; color: #6b7280; font-size: 0.875rem; margin-top: 1rem;">🔒 We respect your privacy. Unsubscribe at any time.</p>
         </div>
 
-        <div class="mt-8 text-center">
-          <p class="text-purple-100 font-medium">⭐ Join 25,000+ traders who downloaded this guide</p>
+        <div style="margin-top: 2rem; text-align: center;">
+          <p style="color: #e9d5ff; font-weight: 500;">⭐ Join 25,000+ traders who downloaded this guide</p>
         </div>
       </div>
     </div>
@@ -356,16 +356,16 @@ VALUES (
   'Download Thank You',
   'thank-you',
   'thank_you',
-  '<div class="min-h-screen bg-gradient-to-br from-green-400 to-blue-500 text-white flex items-center justify-center">
-    <div class="text-center max-w-2xl mx-auto px-4">
-      <div class="text-6xl mb-6">✅</div>
-      <h1 class="text-4xl font-bold mb-4">Check Your Email!</h1>
-      <p class="text-xl mb-8">Your free trading guide has been sent to your inbox.</p>
-      <div class="bg-white/30 backdrop-blur-lg rounded-lg p-6 mb-6 border border-white/40">
-        <p class="mb-4 text-white font-medium">Can''t find it? Check your spam folder.</p>
-        <p class="text-sm text-white">The email should arrive within 2 minutes.</p>
+  '<div style="min-height: 100vh; background: linear-gradient(135deg, #4ade80 0%, #3b82f6 100%); color: #ffffff; display: flex; align-items: center; justify-content: center;">
+    <div style="text-align: center; max-width: 42rem; margin: 0 auto; padding: 0 1rem;">
+      <div style="font-size: 4rem; margin-bottom: 1.5rem;">✅</div>
+      <h1 style="font-size: 2.25rem; font-weight: 700; margin-bottom: 1rem; color: #ffffff;">Check Your Email!</h1>
+      <p style="font-size: 1.25rem; margin-bottom: 2rem; color: #ffffff;">Your free trading guide has been sent to your inbox.</p>
+      <div style="background: rgba(255, 255, 255, 0.3); backdrop-filter: blur(10px); border-radius: 0.5rem; padding: 1.5rem; margin-bottom: 1.5rem; border: 1px solid rgba(255, 255, 255, 0.4);">
+        <p style="margin-bottom: 1rem; color: #ffffff; font-weight: 500;">Can''t find it? Check your spam folder.</p>
+        <p style="font-size: 0.875rem; color: #ffffff;">The email should arrive within 2 minutes.</p>
       </div>
-      <button onclick="window.location.href=''/dashboard''" class="bg-white text-green-600 font-bold py-3 px-8 rounded-lg hover:bg-gray-100 transition-all">
+      <button onclick="window.location.href=''/dashboard''" style="background: #ffffff; color: #16a34a; font-weight: 700; padding: 0.75rem 2rem; border-radius: 0.5rem; border: none; cursor: pointer; transition: all 0.3s;" onmouseover="this.style.background=''#f3f4f6''" onmouseout="this.style.background=''#ffffff''">
         Go to Dashboard
       </button>
     </div>
@@ -400,68 +400,68 @@ VALUES (
   'Webinar Landing',
   'landing',
   'landing',
-  '<div class="min-h-screen bg-gradient-to-r from-red-600 via-orange-500 to-yellow-500 text-white">
-    <div class="container mx-auto px-4 py-16">
-      <div class="max-w-3xl mx-auto text-center">
-        <div class="bg-white/30 backdrop-blur-lg rounded-2xl p-8 mb-8 border border-white/40">
-          <div class="text-5xl mb-4">🎥</div>
-          <h1 class="text-5xl font-bold mb-4 text-white">Free Live Trading Webinar</h1>
-          <p class="text-2xl mb-6 text-white font-medium">"How to Make $10K/Month with Crypto Trading Bots"</p>
-          <div class="bg-white/40 rounded-lg p-4 mb-6 border border-white/50">
-            <p class="text-3xl font-bold mb-2 text-white">📅 January 20, 2025</p>
-            <p class="text-xl text-white font-medium">⏰ 7:00 PM EST</p>
+  '<div style="min-height: 100vh; background: linear-gradient(to right, #dc2626, #f97316, #eab308); color: #ffffff;">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 4rem 1rem;">
+      <div style="max-width: 48rem; margin: 0 auto; text-align: center;">
+        <div style="background: rgba(255, 255, 255, 0.3); backdrop-filter: blur(10px); border-radius: 1rem; padding: 2rem; margin-bottom: 2rem; border: 1px solid rgba(255, 255, 255, 0.4);">
+          <div style="font-size: 3rem; margin-bottom: 1rem;">🎥</div>
+          <h1 style="font-size: 3rem; font-weight: 700; margin-bottom: 1rem; color: #ffffff;">Free Live Trading Webinar</h1>
+          <p style="font-size: 1.5rem; margin-bottom: 1.5rem; color: #ffffff; font-weight: 500;">"How to Make $10K/Month with Crypto Trading Bots"</p>
+          <div style="background: rgba(255, 255, 255, 0.4); border-radius: 0.5rem; padding: 1rem; margin-bottom: 1.5rem; border: 1px solid rgba(255, 255, 255, 0.5);">
+            <p style="font-size: 1.875rem; font-weight: 700; margin-bottom: 0.5rem; color: #ffffff;">📅 January 20, 2025</p>
+            <p style="font-size: 1.25rem; color: #ffffff; font-weight: 500;">⏰ 7:00 PM EST</p>
           </div>
         </div>
 
-        <div class="bg-white text-gray-900 rounded-2xl p-8 mb-8">
-          <h2 class="text-3xl font-bold mb-6">What You''ll Learn:</h2>
-          <ul class="text-left space-y-4 max-w-xl mx-auto">
-            <li class="flex items-start">
-              <span class="text-orange-500 mr-3 text-2xl">✓</span>
+        <div style="background: #ffffff; color: #111827; border-radius: 1rem; padding: 2rem; margin-bottom: 2rem;">
+          <h2 style="font-size: 1.875rem; font-weight: 700; margin-bottom: 1.5rem; color: #111827;">What You''ll Learn:</h2>
+          <ul style="text-align: left; list-style: none; padding: 0; max-width: 36rem; margin: 0 auto;">
+            <li style="display: flex; align-items: flex-start; margin-bottom: 1rem;">
+              <span style="color: #f97316; margin-right: 0.75rem; font-size: 1.5rem; font-weight: 700;">✓</span>
               <div>
-                <strong>How to set up profitable trading bots</strong>
-                <p class="text-sm text-gray-600">Step-by-step live demonstration</p>
+                <strong style="color: #111827;">How to set up profitable trading bots</strong>
+                <p style="font-size: 0.875rem; color: #4b5563; margin: 0;">Step-by-step live demonstration</p>
               </div>
             </li>
-            <li class="flex items-start">
-              <span class="text-orange-500 mr-3 text-2xl">✓</span>
+            <li style="display: flex; align-items: flex-start; margin-bottom: 1rem;">
+              <span style="color: #f97316; margin-right: 0.75rem; font-size: 1.5rem; font-weight: 700;">✓</span>
               <div>
-                <strong>Best strategies for 2025</strong>
-                <p class="text-sm text-gray-600">What''s working right now</p>
+                <strong style="color: #111827;">Best strategies for 2025</strong>
+                <p style="font-size: 0.875rem; color: #4b5563; margin: 0;">What''s working right now</p>
               </div>
             </li>
-            <li class="flex items-start">
-              <span class="text-orange-500 mr-3 text-2xl">✓</span>
+            <li style="display: flex; align-items: flex-start; margin-bottom: 1rem;">
+              <span style="color: #f97316; margin-right: 0.75rem; font-size: 1.5rem; font-weight: 700;">✓</span>
               <div>
-                <strong>Live Q&A with experts</strong>
-                <p class="text-sm text-gray-600">Get your questions answered</p>
+                <strong style="color: #111827;">Live Q&A with experts</strong>
+                <p style="font-size: 0.875rem; color: #4b5563; margin: 0;">Get your questions answered</p>
               </div>
             </li>
-            <li class="flex items-start">
-              <span class="text-orange-500 mr-3 text-2xl">✓</span>
+            <li style="display: flex; align-items: flex-start; margin-bottom: 1rem;">
+              <span style="color: #f97316; margin-right: 0.75rem; font-size: 1.5rem; font-weight: 700;">✓</span>
               <div>
-                <strong>Exclusive bonuses</strong>
-                <p class="text-sm text-gray-600">Free tools and resources</p>
+                <strong style="color: #111827;">Exclusive bonuses</strong>
+                <p style="font-size: 0.875rem; color: #4b5563; margin: 0;">Free tools and resources</p>
               </div>
             </li>
           </ul>
         </div>
 
-        <div class="bg-white text-gray-900 rounded-2xl p-8">
-          <h3 class="text-2xl font-bold mb-6">Reserve Your Spot</h3>
-          <form class="space-y-4">
-            <input type="text" placeholder="First Name" class="w-full px-4 py-3 border-2 border-gray-400 rounded-lg text-gray-900 focus:border-orange-500 focus:ring-2 focus:ring-orange-500">
-            <input type="text" placeholder="Last Name" class="w-full px-4 py-3 border-2 border-gray-400 rounded-lg text-gray-900 focus:border-orange-500 focus:ring-2 focus:ring-orange-500">
-            <input type="email" placeholder="Email Address" class="w-full px-4 py-3 border-2 border-gray-400 rounded-lg text-gray-900 focus:border-orange-500 focus:ring-2 focus:ring-orange-500">
-            <button type="submit" onclick="event.preventDefault(); window.location.href=''#registered''" class="w-full bg-gradient-to-r from-red-600 to-orange-500 text-white font-bold py-4 px-8 rounded-lg text-xl hover:from-red-700 hover:to-orange-600 transition-all transform hover:scale-105">
+        <div style="background: #ffffff; color: #111827; border-radius: 1rem; padding: 2rem;">
+          <h3 style="font-size: 1.5rem; font-weight: 700; margin-bottom: 1.5rem; color: #111827;">Reserve Your Spot</h3>
+          <form style="display: flex; flex-direction: column; gap: 1rem;">
+            <input type="text" placeholder="First Name" style="width: 100%; padding: 0.75rem 1rem; border: 2px solid #9ca3af; border-radius: 0.5rem; color: #111827; font-size: 1rem;" onfocus="this.style.borderColor=''#f97316''; this.style.outline=''none''" onblur="this.style.borderColor=''#9ca3af''">
+            <input type="text" placeholder="Last Name" style="width: 100%; padding: 0.75rem 1rem; border: 2px solid #9ca3af; border-radius: 0.5rem; color: #111827; font-size: 1rem;" onfocus="this.style.borderColor=''#f97316''; this.style.outline=''none''" onblur="this.style.borderColor=''#9ca3af''">
+            <input type="email" placeholder="Email Address" style="width: 100%; padding: 0.75rem 1rem; border: 2px solid #9ca3af; border-radius: 0.5rem; color: #111827; font-size: 1rem;" onfocus="this.style.borderColor=''#f97316''; this.style.outline=''none''" onblur="this.style.borderColor=''#9ca3af''">
+            <button type="submit" onclick="event.preventDefault(); window.location.href=''#registered''" style="width: 100%; background: linear-gradient(to right, #dc2626, #f97316); color: #ffffff; font-weight: 700; padding: 1rem 2rem; border-radius: 0.5rem; font-size: 1.25rem; border: none; cursor: pointer; transition: all 0.3s;" onmouseover="this.style.opacity=''0.9''" onmouseout="this.style.opacity=''1''">
               Register for Free Webinar
             </button>
           </form>
-          <p class="text-center text-gray-500 text-sm mt-4">🔒 Limited to 500 spots • We''ll send you the link via email</p>
+          <p style="text-align: center; color: #6b7280; font-size: 0.875rem; margin-top: 1rem;">🔒 Limited to 500 spots • We''ll send you the link via email</p>
         </div>
 
-        <div class="mt-8">
-          <p class="text-xl text-white font-medium">🔥 <strong class="text-white">487 spots remaining</strong></p>
+        <div style="margin-top: 2rem;">
+          <p style="font-size: 1.25rem; color: #ffffff; font-weight: 500;">🔥 <strong style="color: #ffffff;">487 spots remaining</strong></p>
         </div>
       </div>
     </div>
@@ -483,21 +483,21 @@ VALUES (
   'Webinar Thank You',
   'thank-you',
   'thank_you',
-  '<div class="min-h-screen bg-gradient-to-br from-orange-500 to-red-600 text-white flex items-center justify-center">
-    <div class="text-center max-w-2xl mx-auto px-4">
-      <div class="text-6xl mb-6">🎉</div>
-      <h1 class="text-4xl font-bold mb-4">You''re Registered!</h1>
-      <p class="text-xl mb-8">Check your email for the webinar link and calendar reminder.</p>
-      <div class="bg-white/30 backdrop-blur-lg rounded-lg p-6 mb-6 border border-white/40">
-        <h2 class="text-2xl font-semibold mb-4 text-white">What Happens Next:</h2>
-        <ol class="text-left space-y-3 max-w-md mx-auto text-white">
-          <li class="font-medium">1. Check your email for confirmation</li>
-          <li class="font-medium">2. Add the event to your calendar</li>
-          <li class="font-medium">3. We''ll send a reminder 1 hour before</li>
-          <li class="font-medium">4. Join us live on January 20 at 7 PM EST</li>
+  '<div style="min-height: 100vh; background: linear-gradient(135deg, #f97316 0%, #dc2626 100%); color: #ffffff; display: flex; align-items: center; justify-content: center;">
+    <div style="text-align: center; max-width: 42rem; margin: 0 auto; padding: 0 1rem;">
+      <div style="font-size: 4rem; margin-bottom: 1.5rem;">🎉</div>
+      <h1 style="font-size: 2.25rem; font-weight: 700; margin-bottom: 1rem; color: #ffffff;">You''re Registered!</h1>
+      <p style="font-size: 1.25rem; margin-bottom: 2rem; color: #ffffff;">Check your email for the webinar link and calendar reminder.</p>
+      <div style="background: rgba(255, 255, 255, 0.3); backdrop-filter: blur(10px); border-radius: 0.5rem; padding: 1.5rem; margin-bottom: 1.5rem; border: 1px solid rgba(255, 255, 255, 0.4);">
+        <h2 style="font-size: 1.5rem; font-weight: 600; margin-bottom: 1rem; color: #ffffff;">What Happens Next:</h2>
+        <ol style="text-align: left; list-style: decimal; padding-left: 1.5rem; max-width: 28rem; margin: 0 auto; color: #ffffff;">
+          <li style="margin-bottom: 0.75rem; font-weight: 500; color: #ffffff;">Check your email for confirmation</li>
+          <li style="margin-bottom: 0.75rem; font-weight: 500; color: #ffffff;">Add the event to your calendar</li>
+          <li style="margin-bottom: 0.75rem; font-weight: 500; color: #ffffff;">We''ll send a reminder 1 hour before</li>
+          <li style="margin-bottom: 0.75rem; font-weight: 500; color: #ffffff;">Join us live on January 20 at 7 PM EST</li>
         </ol>
       </div>
-      <button onclick="window.location.href=''/dashboard''" class="bg-white text-orange-600 font-bold py-3 px-8 rounded-lg hover:bg-gray-100 transition-all">
+      <button onclick="window.location.href=''/dashboard''" style="background: #ffffff; color: #f97316; font-weight: 700; padding: 0.75rem 2rem; border-radius: 0.5rem; border: none; cursor: pointer; transition: all 0.3s;" onmouseover="this.style.background=''#f3f4f6''" onmouseout="this.style.background=''#ffffff''">
         Go to Dashboard
       </button>
     </div>
