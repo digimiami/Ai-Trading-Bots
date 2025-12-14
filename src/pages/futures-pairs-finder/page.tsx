@@ -5,6 +5,7 @@ import Navigation from '../../components/feature/Navigation';
 import Card from '../../components/base/Card';
 import Button from '../../components/base/Button';
 import { API_ENDPOINTS, apiCall } from '../../lib/supabase';
+import FuturesPairShareCard from '../../components/bot/FuturesPairShareCard';
 
 interface FuturesPair {
   symbol: string;
@@ -51,6 +52,7 @@ export default function FuturesPairsFinderPage() {
   const [sortBy, setSortBy] = useState<'performance' | 'volume' | 'change24h' | 'change30d'>('performance');
   const [minVolume, setMinVolume] = useState<number>(1000000); // Minimum 24h volume filter
   const [expandedPair, setExpandedPair] = useState<string | null>(null);
+  const [sharingPairKey, setSharingPairKey] = useState<string | null>(null);
 
   const fetchFuturesPairs = async () => {
     setLoading(true);
@@ -806,6 +808,15 @@ export default function FuturesPairsFinderPage() {
                           <i className="ri-magic-line mr-1"></i>
                           Smart Create
                         </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setSharingPairKey(pairKey)}
+                          title="Share Pair Card"
+                        >
+                          <i className="ri-share-line mr-1"></i>
+                          Share
+                        </Button>
                       </div>
                     </div>
                   </Card>
@@ -815,6 +826,25 @@ export default function FuturesPairsFinderPage() {
           )}
         </div>
       </div>
+
+      {/* Futures Pair Share Card Modal */}
+      {sharingPairKey && (() => {
+        const pairToShare = pairs.find(p => `${p.exchange}-${p.symbol}` === sharingPairKey);
+        if (!pairToShare) return null;
+        
+        const pairSettings = expandedPair === sharingPairKey 
+          ? calculateSuggestedSettings(pairToShare)
+          : undefined;
+        
+        return (
+          <FuturesPairShareCard
+            pair={pairToShare}
+            suggestedSettings={pairSettings}
+            isOpen={true}
+            onClose={() => setSharingPairKey(null)}
+          />
+        );
+      })()}
 
       <Navigation />
     </div>
