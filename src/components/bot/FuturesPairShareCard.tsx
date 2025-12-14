@@ -159,7 +159,7 @@ export default function FuturesPairShareCard({ pair, suggestedSettings, isOpen, 
           <div className="text-center mb-4 relative z-10">
             <div className="flex items-center justify-center gap-2 mb-2">
               <i className="ri-rocket-2-fill text-2xl text-blue-400"></i>
-              <p className="text-lg font-bold">Add to Active this Bot on PabloBots.com</p>
+              <p className="text-lg font-bold">Active this Bot on PabloBots.com</p>
             </div>
             <p className="text-gray-300 text-xs">Automated Trading Made Simple</p>
           </div>
