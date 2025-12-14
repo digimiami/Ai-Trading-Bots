@@ -370,7 +370,7 @@ export default function FunnelManager() {
       <Card>
         <div className="text-center py-8">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-          <p className="mt-4 text-gray-400">Loading funnels...</p>
+          <p className="mt-4 text-gray-300">Loading funnels...</p>
         </div>
       </Card>
     )
@@ -398,8 +398,8 @@ export default function FunnelManager() {
           {funnels.length === 0 ? (
             <div className="text-center py-12">
               <i className="ri-stack-line text-6xl text-gray-600 mb-4"></i>
-              <p className="text-gray-400 text-lg mb-2">No funnels created yet</p>
-              <p className="text-gray-500 text-sm">Create your first funnel to get started.</p>
+              <p className="text-gray-300 text-lg mb-2">No funnels created yet</p>
+              <p className="text-gray-400 text-sm">Create your first funnel to get started.</p>
             </div>
           ) : (
             funnels.map((funnel) => (
@@ -419,16 +419,16 @@ export default function FunnelManager() {
                       <span className={`px-2 py-1 rounded text-xs ${
                         funnel.is_active
                           ? 'bg-green-500/20 text-green-400'
-                          : 'bg-gray-500/20 text-gray-400'
+                          : 'bg-gray-500/30 text-gray-300'
                       }`}>
                         {funnel.is_active ? 'Active' : 'Inactive'}
                       </span>
                     </div>
                     {funnel.description && (
-                      <p className="text-sm text-gray-400 mb-2">{funnel.description}</p>
+                      <p className="text-sm text-gray-300 mb-2">{funnel.description}</p>
                     )}
-                    <p className="text-xs text-gray-500">
-                      Slug: <code className="bg-gray-700 px-1 rounded">/{funnel.slug}</code>
+                    <p className="text-xs text-gray-400">
+                      Slug: <code className="bg-gray-700 px-1 rounded text-gray-300">/{funnel.slug}</code>
                     </p>
                   </div>
                   <div className="flex gap-2">
@@ -473,7 +473,7 @@ export default function FunnelManager() {
             </div>
 
             {pages.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 text-gray-400">
                 <p>No pages in this funnel yet. Create your first page.</p>
               </div>
             ) : (
@@ -495,15 +495,15 @@ export default function FunnelManager() {
                             <span className={`px-2 py-1 rounded text-xs ${
                               page.is_active
                                 ? 'bg-green-500/20 text-green-400'
-                                : 'bg-gray-500/20 text-gray-400'
+                                : 'bg-gray-500/20 text-gray-300'
                             }`}>
                               {page.is_active ? 'Active' : 'Inactive'}
                             </span>
                           </div>
-                          <p className="text-xs text-gray-500 mb-2">
-                            URL: <code className="bg-gray-700 px-1 rounded">/funnel/{selectedFunnel.slug}/{page.slug}</code>
+                          <p className="text-xs text-gray-400 mb-2">
+                            URL: <code className="bg-gray-700 px-1 rounded text-gray-300">/funnel/{selectedFunnel.slug}/{page.slug}</code>
                           </p>
-                          <div className="flex gap-4 text-xs text-gray-400">
+                          <div className="flex gap-4 text-xs text-gray-300">
                             <span>👁️ {stats.views} views</span>
                             <span>🖱️ {stats.clicks} clicks</span>
                             <span>✅ {stats.conversions} conversions</span>
@@ -562,7 +562,7 @@ export default function FunnelManager() {
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Name</label>
+                  <label className="block text-sm font-medium text-gray-200 mb-2">Name</label>
                   <input
                     type="text"
                     value={funnelForm.name}
@@ -573,7 +573,7 @@ export default function FunnelManager() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Description</label>
+                  <label className="block text-sm font-medium text-gray-200 mb-2">Description</label>
                   <textarea
                     value={funnelForm.description}
                     onChange={(e) => setFunnelForm({ ...funnelForm, description: e.target.value })}
@@ -583,7 +583,7 @@ export default function FunnelManager() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Slug (URL)</label>
+                  <label className="block text-sm font-medium text-gray-200 mb-2">Slug (URL)</label>
                   <input
                     type="text"
                     value={funnelForm.slug}
@@ -601,7 +601,7 @@ export default function FunnelManager() {
                     onChange={(e) => setFunnelForm({ ...funnelForm, is_active: e.target.checked })}
                     className="w-4 h-4"
                   />
-                  <label className="text-gray-300">Active</label>
+                  <label className="text-gray-200">Active</label>
                 </div>
 
                 <div className="flex gap-2 pt-4">
@@ -638,7 +638,7 @@ export default function FunnelManager() {
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">Page Name</label>
+                    <label className="block text-sm font-medium text-gray-200 mb-2">Page Name</label>
                     <input
                       type="text"
                       value={pageForm.name}
@@ -649,7 +649,7 @@ export default function FunnelManager() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">Page Type</label>
+                    <label className="block text-sm font-medium text-gray-200 mb-2">Page Type</label>
                     <select
                       value={pageForm.page_type}
                       onChange={(e) => setPageForm({ ...pageForm, page_type: e.target.value as any })}
@@ -665,7 +665,7 @@ export default function FunnelManager() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Slug (URL)</label>
+                  <label className="block text-sm font-medium text-gray-200 mb-2">Slug (URL)</label>
                   <input
                     type="text"
                     value={pageForm.slug}
@@ -678,7 +678,7 @@ export default function FunnelManager() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">Meta Title</label>
+                    <label className="block text-sm font-medium text-gray-200 mb-2">Meta Title</label>
                     <input
                       type="text"
                       value={pageForm.meta_title}
@@ -689,7 +689,7 @@ export default function FunnelManager() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">Order Index</label>
+                    <label className="block text-sm font-medium text-gray-200 mb-2">Order Index</label>
                     <input
                       type="number"
                       value={pageForm.order_index}
@@ -700,7 +700,7 @@ export default function FunnelManager() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Meta Description</label>
+                  <label className="block text-sm font-medium text-gray-200 mb-2">Meta Description</label>
                   <textarea
                     value={pageForm.meta_description}
                     onChange={(e) => setPageForm({ ...pageForm, meta_description: e.target.value })}
@@ -710,7 +710,7 @@ export default function FunnelManager() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">HTML Content</label>
+                  <label className="block text-sm font-medium text-gray-200 mb-2">HTML Content</label>
                   <textarea
                     value={pageForm.html_content}
                     onChange={(e) => setPageForm({ ...pageForm, html_content: e.target.value })}
@@ -720,7 +720,7 @@ export default function FunnelManager() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Custom CSS (Optional)</label>
+                  <label className="block text-sm font-medium text-gray-200 mb-2">Custom CSS (Optional)</label>
                   <textarea
                     value={pageForm.custom_css}
                     onChange={(e) => setPageForm({ ...pageForm, custom_css: e.target.value })}
@@ -730,7 +730,7 @@ export default function FunnelManager() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Custom JavaScript (Optional)</label>
+                  <label className="block text-sm font-medium text-gray-200 mb-2">Custom JavaScript (Optional)</label>
                   <textarea
                     value={pageForm.custom_js}
                     onChange={(e) => setPageForm({ ...pageForm, custom_js: e.target.value })}
@@ -740,7 +740,7 @@ export default function FunnelManager() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Redirect URL (Optional)</label>
+                  <label className="block text-sm font-medium text-gray-200 mb-2">Redirect URL (Optional)</label>
                   <input
                     type="url"
                     value={pageForm.redirect_url}
@@ -757,7 +757,7 @@ export default function FunnelManager() {
                     onChange={(e) => setPageForm({ ...pageForm, is_active: e.target.checked })}
                     className="w-4 h-4"
                   />
-                  <label className="text-gray-300">Active</label>
+                  <label className="text-gray-200">Active</label>
                 </div>
 
                 <div className="flex gap-2 pt-4">
