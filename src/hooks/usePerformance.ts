@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from './useAuth';
 
 export interface PerformanceData {
   totalPnL: number;
@@ -44,6 +45,7 @@ export function usePerformance(
   endDate?: Date,
   assetType?: 'all' | 'perpetuals' | 'spot'
 ) {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<PerformanceMetrics | null>(null);
@@ -63,21 +65,51 @@ export function usePerformance(
       setLoading(true);
       setError(null);
 
+      // Get current user if not available from hook
+      let currentUser = user;
+      if (!currentUser) {
+        const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
+        if (authError || !authUser) {
+          // Set empty metrics if no user
+          setMetrics({
+            overview: {
+              totalPnL: 0,
+              tradingVolume: 0,
+              totalTrades: 0,
+              winRate: 0,
+              avgWin: 0,
+              avgLoss: 0,
+              profitableDays: 0,
+              totalDays: 0,
+              totalFees: 0,
+              maxDrawdown: 0,
+              winningTrades: 0,
+              losingTrades: 0,
+            },
+            dailyPnL: [],
+            symbolRanking: [],
+          });
+          setLoading(false);
+          return;
+        }
+        currentUser = authUser;
+      }
+
       // Default to last 7 days if no dates provided
       const end = endDate || new Date();
       const start = startDate || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-      // Fetch all trades within date range
-      // Use executed_at, created_at, or timestamp - whichever is available
+      // Fetch all trades for the current user first (with user_id filter)
+      // Then filter by date range in JavaScript to handle both executed_at and created_at
       let query = supabase
         .from('trades')
-        .select('*, trading_bots(symbol, trading_type)')
-        .gte('created_at', start.toISOString())
-        .lte('created_at', end.toISOString())
+        .select('*, trading_bots(symbol, trading_type, user_id)')
+        .eq('user_id', currentUser.id) // CRITICAL: Filter by user_id
+        .order('executed_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })
         .limit(10000); // Limit to prevent excessive data
 
-      const { data: trades, error: tradesError } = await query;
+      const { data: allTrades, error: tradesError } = await query;
 
       // Check if request was aborted
       if (controller.signal.aborted) {
@@ -86,8 +118,18 @@ export function usePerformance(
       
       if (tradesError) throw tradesError;
 
+      // Filter trades by date range (check both executed_at and created_at)
+      let filteredTrades = (allTrades || []).filter((t: any) => {
+        const tradeDate = t.executed_at || t.created_at;
+        if (!tradeDate) return false;
+        const date = new Date(tradeDate);
+        return date >= start && date <= end;
+      });
+
+      // Debug: Log trade counts to help diagnose issues
+      console.log(`📊 usePerformance: Found ${allTrades?.length || 0} total trades for user ${currentUser.id?.substring(0, 8)}, ${filteredTrades.length} in date range ${start.toISOString().split('T')[0]} to ${end.toISOString().split('T')[0]}`);
+
       // Filter by asset type if specified
-      let filteredTrades = trades || [];
       if (assetType && assetType !== 'all') {
         const tradingType = assetType === 'perpetuals' ? 'futures' : 'spot';
         filteredTrades = filteredTrades.filter(
@@ -511,6 +553,12 @@ export function usePerformance(
   };
 
   useEffect(() => {
+    // Don't fetch if user is not available yet (wait for auth to load)
+    if (!user) {
+      setLoading(true);
+      return;
+    }
+
     // Only fetch if dates are valid
     if (!startDate || !endDate || isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
       return;
@@ -525,7 +573,7 @@ export function usePerformance(
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [startDate?.getTime(), endDate?.getTime(), assetType]);
+  }, [user?.id, startDate?.getTime(), endDate?.getTime(), assetType]);
 
   return {
     metrics,
