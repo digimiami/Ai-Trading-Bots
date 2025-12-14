@@ -15,6 +15,7 @@ import { useSoundNotifications } from '../../hooks/useSoundNotifications';
 import { supabase } from '../../lib/supabase';
 import DropdownMenu, { DropdownMenuItem } from '../../components/ui/DropdownMenu';
 import HelpTooltip from '../../components/ui/HelpTooltip';
+import BotShareCard from '../../components/bot/BotShareCard';
 
 export default function BotsPage() {
   const navigate = useNavigate();
@@ -41,6 +42,7 @@ export default function BotsPage() {
   const [showCloneModal, setShowCloneModal] = useState(false);
   const [cloneBotId, setCloneBotId] = useState('');
   const [cloning, setCloning] = useState(false);
+  const [sharingBotId, setSharingBotId] = useState<string | null>(null);
   const isWebhookView = viewMode === 'webhook';
   
   // Get trade limits for all bots
@@ -1827,15 +1829,23 @@ export default function BotsPage() {
                         Start
                       </Button>
                     )}
-                    <Button 
-                      variant="danger" 
+                    <Button
+                      variant="danger"
                       size="sm"
                       onClick={() => handleBotAction(bot.id, 'stop')}
                     >
                       <i className="ri-stop-line"></i>
                     </Button>
-                    <Button 
-                      variant="secondary" 
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setSharingBotId(bot.id)}
+                      title="Share Bot Card"
+                    >
+                      <i className="ri-share-line"></i>
+                    </Button>
+                    <Button
+                      variant="secondary"
                       size="sm"
                       onClick={() => navigate('/bot-activity')}
                     >
@@ -2093,6 +2103,30 @@ export default function BotsPage() {
           </Card>
         </div>
       )}
+
+      {/* Bot Share Card Modal */}
+      {sharingBotId && (() => {
+        const botToShare = bots.find(b => b.id === sharingBotId);
+        if (!botToShare) return null;
+        
+        return (
+          <BotShareCard
+            bot={{
+              id: botToShare.id,
+              name: botToShare.name,
+              symbol: botToShare.symbol,
+              exchange: botToShare.exchange,
+              pnl: botToShare.pnl,
+              pnlPercentage: botToShare.pnlPercentage,
+              winRate: botToShare.winRate,
+              totalTrades: botToShare.totalTrades,
+              status: botToShare.status,
+            }}
+            isOpen={true}
+            onClose={() => setSharingBotId(null)}
+          />
+        );
+      })()}
 
       <Navigation />
     </div>
