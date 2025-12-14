@@ -32,7 +32,7 @@ export default function BotShareCard({ bot, isOpen, onClose }: BotShareCardProps
       
       // Generate canvas from the card
       const canvas = await html2canvas(cardRef.current, {
-        backgroundColor: '#ffffff',
+        backgroundColor: '#111827', // Dark background
         scale: 2, // Higher quality
         logging: false,
       });
@@ -66,7 +66,7 @@ export default function BotShareCard({ bot, isOpen, onClose }: BotShareCardProps
       
       // Generate canvas from the card
       const canvas = await html2canvas(cardRef.current, {
-        backgroundColor: '#ffffff',
+        backgroundColor: '#111827', // Dark background
         scale: 2,
         logging: false,
       });
@@ -112,97 +112,101 @@ export default function BotShareCard({ bot, isOpen, onClose }: BotShareCardProps
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={onClose}>
       <div className="bg-white rounded-lg max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-gray-900">Share Bot Card</h2>
+          <h2 className="text-xl font-bold text-white">Share Bot Card</h2>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
           >
-            <i className="ri-close-line text-xl text-gray-600"></i>
+            <i className="ri-close-line text-xl text-gray-300"></i>
           </button>
         </div>
 
         {/* Shareable Card Preview */}
-        <div ref={cardRef} className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-xl p-8 text-white shadow-2xl">
-          {/* Header with Logo and Quote */}
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center space-x-3">
-              <img 
-                src={logoUrl}
-                alt="PabloBots Logo"
-                className="h-12 w-12 object-contain bg-white rounded-lg p-1"
-              />
-              <div>
-                <h3 className="text-lg font-bold">PabloBots</h3>
-                <p className="text-blue-100 text-sm">AI Trading Platform</p>
-              </div>
+        <div ref={cardRef} className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-xl p-5 text-white shadow-2xl relative overflow-hidden" style={{ width: '400px' }}>
+          {/* Rocket Graphic */}
+          <div className="absolute top-2 right-2 opacity-20">
+            <i className="ri-rocket-2-line text-6xl text-blue-400 transform rotate-45"></i>
+          </div>
+          
+          {/* Decorative Elements */}
+          <div className="absolute bottom-0 left-0 w-full h-20 bg-gradient-to-t from-blue-900/20 to-transparent"></div>
+          <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-full blur-3xl"></div>
+
+          {/* Header with Logo */}
+          <div className="flex items-center space-x-2 mb-4 relative z-10">
+            <img 
+              src={logoUrl}
+              alt="PabloBots Logo"
+              className="h-8 w-8 object-contain bg-white rounded p-0.5"
+            />
+            <div>
+              <h3 className="text-sm font-bold text-white">PabloBots</h3>
             </div>
           </div>
 
-          {/* Quote */}
-          <div className="text-center mb-6 py-4 border-t border-blue-400/30 border-b border-blue-400/30">
-            <p className="text-2xl font-bold italic">Join PabloBots.com</p>
-            <p className="text-blue-100 text-sm mt-1">Automated Trading Made Simple</p>
+          {/* Quote with Rocket */}
+          <div className="text-center mb-4 relative z-10">
+            <div className="flex items-center justify-center gap-2 mb-2">
+              <i className="ri-rocket-2-fill text-2xl text-blue-400"></i>
+              <p className="text-lg font-bold">Join PabloBots.com</p>
+            </div>
+            <p className="text-gray-300 text-xs">Automated Trading Made Simple</p>
           </div>
 
-          {/* Bot Information */}
-          <div className="bg-white/10 backdrop-blur-sm rounded-lg p-6 mb-6">
-            <h4 className="text-xl font-bold mb-4">{bot.name}</h4>
+          {/* Bot Information - Compact */}
+          <div className="bg-gray-800/50 backdrop-blur-sm rounded-lg p-3 mb-4 relative z-10 border border-gray-700/50">
+            <h4 className="text-sm font-bold mb-2 truncate">{bot.name}</h4>
             
-            <div className="grid grid-cols-2 gap-4 text-sm">
+            <div className="grid grid-cols-2 gap-2 text-xs">
               {bot.symbol && (
                 <div>
-                  <p className="text-blue-200 text-xs mb-1">Symbol</p>
-                  <p className="font-semibold">{bot.symbol}</p>
-                </div>
-              )}
-              {bot.exchange && (
-                <div>
-                  <p className="text-blue-200 text-xs mb-1">Exchange</p>
-                  <p className="font-semibold uppercase">{bot.exchange}</p>
+                  <p className="text-gray-400 text-[10px] mb-0.5">Symbol</p>
+                  <p className="font-semibold text-white">{bot.symbol}</p>
                 </div>
               )}
               {bot.pnl !== undefined && (
                 <div>
-                  <p className="text-blue-200 text-xs mb-1">PnL</p>
-                  <p className={`font-semibold ${bot.pnl >= 0 ? 'text-green-300' : 'text-red-300'}`}>
+                  <p className="text-gray-400 text-[10px] mb-0.5">PnL</p>
+                  <p className={`font-semibold ${bot.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                     {bot.pnl >= 0 ? '+' : ''}${bot.pnl.toFixed(2)}
                   </p>
                 </div>
               )}
-              {bot.winRate !== undefined && (
-                <div>
-                  <p className="text-blue-200 text-xs mb-1">Win Rate</p>
-                  <p className="font-semibold">{bot.winRate.toFixed(1)}%</p>
-                </div>
-              )}
             </div>
 
-            {bot.totalTrades !== undefined && (
-              <div className="mt-4 pt-4 border-t border-white/20">
-                <p className="text-blue-200 text-xs mb-1">Total Trades</p>
-                <p className="font-semibold text-lg">{bot.totalTrades}</p>
+            {(bot.winRate !== undefined || bot.totalTrades !== undefined) && (
+              <div className="flex gap-3 mt-2 pt-2 border-t border-gray-700/50">
+                {bot.winRate !== undefined && (
+                  <div>
+                    <p className="text-gray-400 text-[10px] mb-0.5">Win Rate</p>
+                    <p className="font-semibold text-xs text-white">{bot.winRate.toFixed(1)}%</p>
+                  </div>
+                )}
+                {bot.totalTrades !== undefined && (
+                  <div>
+                    <p className="text-gray-400 text-[10px] mb-0.5">Trades</p>
+                    <p className="font-semibold text-xs text-white">{bot.totalTrades}</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          {/* QR Code */}
-          <div className="flex flex-col items-center">
-            <div className="bg-white p-4 rounded-lg">
+          {/* QR Code - Smaller */}
+          <div className="flex flex-col items-center relative z-10">
+            <div className="bg-white p-2 rounded-lg">
               <QRCodeSVG
                 value={shareUrl}
-                size={120}
+                size={80}
                 level="H"
                 includeMargin={false}
+                bgColor="#ffffff"
+                fgColor="#000000"
               />
             </div>
-            <p className="text-blue-100 text-xs mt-3 text-center">
+            <p className="text-gray-400 text-[10px] mt-2 text-center">
               Scan to visit PabloBots.com
             </p>
-          </div>
-
-          {/* Footer */}
-          <div className="mt-6 text-center text-blue-100 text-xs">
-            <p>Start your automated trading journey today!</p>
           </div>
         </div>
 
@@ -228,7 +232,7 @@ export default function BotShareCard({ bot, isOpen, onClose }: BotShareCardProps
           <button
             onClick={handleDownload}
             disabled={downloading}
-            className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-800 py-3 px-4 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+            className="flex-1 bg-gray-700 hover:bg-gray-600 text-white py-3 px-4 rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
           >
             <i className="ri-download-line"></i>
             Download
