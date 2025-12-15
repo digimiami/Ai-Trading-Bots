@@ -214,6 +214,41 @@ export default function EmailCenter() {
     setShowCompose(true);
   };
 
+  const handleForward = (email: Email) => {
+    // Create forwarded email content
+    const forwardHeader = `
+<div style="border-left: 3px solid #ccc; padding-left: 10px; margin: 20px 0; color: #666; font-size: 12px;">
+  <div><strong>From:</strong> ${email.from_address}</div>
+  <div><strong>To:</strong> ${email.to_address}</div>
+  <div><strong>Date:</strong> ${new Date(email.received_at || email.sent_at || email.created_at).toLocaleString()}</div>
+  <div><strong>Subject:</strong> ${email.subject || '(No subject)'}</div>
+</div>
+`;
+    
+    const forwardedHtml = forwardHeader + (email.html_body || `<pre>${email.text_body || ''}</pre>`);
+    const forwardedText = `
+---------- Forwarded message ----------
+From: ${email.from_address}
+To: ${email.to_address}
+Date: ${new Date(email.received_at || email.sent_at || email.created_at).toLocaleString()}
+Subject: ${email.subject || '(No subject)'}
+
+${email.text_body || email.html_body?.replace(/<[^>]*>/g, '') || ''}
+`;
+
+    setComposeForm({
+      from: email.mailboxes?.email_address || mailboxes[0]?.email_address || '',
+      to: '',
+      cc: '',
+      bcc: '',
+      subject: email.subject?.startsWith('Fwd:') ? email.subject : `Fwd: ${email.subject || ''}`,
+      html: forwardedHtml,
+      text: forwardedText,
+      replyTo: ''
+    });
+    setShowCompose(true);
+  };
+
   const handleCreateMailbox = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -879,17 +914,28 @@ export default function EmailCenter() {
                     </div>
                   </div>
                   {email.direction === 'inbound' && (
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleReply(email);
-                      }}
-                      className="ml-2"
-                    >
-                      <i className="ri-reply-line"></i> Reply
-                    </Button>
+                    <div className="flex gap-2 ml-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleReply(email);
+                        }}
+                      >
+                        <i className="ri-reply-line"></i> Reply
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleForward(email);
+                        }}
+                      >
+                        <i className="ri-forward-line"></i> Forward
+                      </Button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -917,13 +963,22 @@ export default function EmailCenter() {
             </div>
             <div className="flex gap-2">
               {selectedEmail.direction === 'inbound' && (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => handleReply(selectedEmail)}
-                >
-                  <i className="ri-reply-line"></i> Reply
-                </Button>
+                <>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => handleReply(selectedEmail)}
+                  >
+                    <i className="ri-reply-line"></i> Reply
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => handleForward(selectedEmail)}
+                  >
+                    <i className="ri-forward-line"></i> Forward
+                  </Button>
+                </>
               )}
               <button
                 onClick={() => setSelectedEmail(null)}
