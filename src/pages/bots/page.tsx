@@ -34,6 +34,7 @@ export default function BotsPage() {
   const [editingTradeAmountValue, setEditingTradeAmountValue] = useState<number | null>(null);
   const [webhookExpandedBot, setWebhookExpandedBot] = useState<string | null>(null);
   const [webhookSignals, setWebhookSignals] = useState<Record<string, ManualTradeSignal[]>>({});
+  const [manualTrades, setManualTrades] = useState<Record<string, ManualTradeSignal[]>>({});
   const [webhookSignalsLoading, setWebhookSignalsLoading] = useState<Record<string, boolean>>({});
   const [webhookSecretVisible, setWebhookSecretVisible] = useState<Record<string, boolean>>({});
   const [webhookActionLoading, setWebhookActionLoading] = useState<Record<string, boolean>>({});
@@ -94,6 +95,22 @@ export default function BotsPage() {
       alert(`Failed to load webhook signals: ${error?.message || 'Unknown error'}`);
     } finally {
       setWebhookSignalsLoading(prev => ({ ...prev, [botId]: false }));
+    }
+  };
+
+  const loadManualTrades = async (botId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('manual_trade_signals')
+        .select('*')
+        .eq('bot_id', botId)
+        .order('created_at', { ascending: false })
+        .limit(10);
+      if (error) throw error;
+      setManualTrades(prev => ({ ...prev, [botId]: data || [] }));
+    } catch (error: any) {
+      console.error('Failed to load manual trades:', error);
+      setManualTrades(prev => ({ ...prev, [botId]: [] }));
     }
   };
 
@@ -1507,83 +1524,129 @@ export default function BotsPage() {
                 </div>
                 )}
 
-                {/* Bot Activity Logs */}
+                {/* Recent Manual Trades */}
                 {!isWebhookView && (() => {
-                  const activity = getBotActivity(bot.id);
-                  const recentLogs = activity?.logs.slice(0, 3) || [];
+                  // Load manual trades when section is visible
+                  if (!manualTrades[bot.id] && expandedBot !== bot.id) {
+                    loadManualTrades(bot.id);
+                  }
+                  
+                  const botManualTrades = manualTrades[bot.id] || [];
+                  const recentManualTrades = botManualTrades.slice(0, 3);
                   
                   return (
                     <div className="pt-4 border-t border-gray-100">
                       <div className="flex items-center justify-between mb-3">
-                        <h4 className="text-sm font-medium text-gray-700">Recent Activity</h4>
+                        <h4 className="text-sm font-medium text-gray-700">Recent Manual Trades</h4>
                         <button
-                          onClick={() => setExpandedBot(expandedBot === bot.id ? null : bot.id)}
+                          onClick={() => {
+                            const newExpanded = expandedBot === bot.id ? null : bot.id;
+                            setExpandedBot(newExpanded);
+                            if (newExpanded) {
+                              loadManualTrades(bot.id);
+                            }
+                          }}
                           className="text-xs text-blue-600 hover:text-blue-800"
                         >
                           {expandedBot === bot.id ? 'Hide' : 'Show All'}
                         </button>
                       </div>
                       
-                      {/* Activity Stats */}
-                      {activity && (
-                        <div className="flex space-x-4 mb-3 text-xs">
-                          <span className="text-green-600">✓ {activity.successCount}</span>
-                          <span className="text-yellow-600">⚠ {activity.logs.filter(l => l.level === 'warning').length}</span>
-                          <span className="text-red-600">✗ {activity.errorCount}</span>
-                          <span className="text-gray-500">📊 {activity.logs.length} total</span>
-                        </div>
-                      )}
-
-                      {/* Recent Logs */}
+                      {/* Manual Trades List */}
                       <div className="space-y-2">
-                        {recentLogs.length === 0 ? (
+                        {recentManualTrades.length === 0 ? (
                           <div className="text-center py-4 text-gray-500 text-sm">
-                            <i className="ri-file-list-line text-lg mb-1"></i>
-                            <p>No activity logs yet</p>
+                            <i className="ri-exchange-line text-lg mb-1"></i>
+                            <p>No recent manual trades</p>
                           </div>
                         ) : (
-                          recentLogs.map((log) => (
-                            <div key={log.id} className="flex items-start space-x-2 p-2 bg-gray-50 rounded text-xs">
-                              <div className={`w-5 h-5 rounded-full flex items-center justify-center ${getLogLevelColor(log.level)}`}>
-                                <i className={`${getCategoryIcon(log.category)} text-xs`}></i>
+                          recentManualTrades.map((trade) => (
+                            <div key={trade.id} className="flex items-start space-x-2 p-2 bg-gray-50 rounded text-xs">
+                              <div className={`w-5 h-5 rounded-full flex items-center justify-center ${
+                                trade.status === 'completed' ? 'bg-green-100 text-green-600' :
+                                trade.status === 'failed' ? 'bg-red-100 text-red-600' :
+                                trade.status === 'processing' ? 'bg-blue-100 text-blue-600' :
+                                'bg-yellow-100 text-yellow-600'
+                              }`}>
+                                <i className={`ri-${trade.side === 'buy' || trade.side === 'long' ? 'arrow-up' : 'arrow-down'}-line text-xs`}></i>
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center justify-between">
-                                  <span className={`px-1 py-0.5 rounded text-xs font-medium ${getLogLevelColor(log.level)}`}>
-                                    {log.level}
+                                  <span className={`px-1 py-0.5 rounded text-xs font-medium ${
+                                    trade.status === 'completed' ? 'bg-green-100 text-green-700' :
+                                    trade.status === 'failed' ? 'bg-red-100 text-red-700' :
+                                    trade.status === 'processing' ? 'bg-blue-100 text-blue-700' :
+                                    'bg-yellow-100 text-yellow-700'
+                                  }`}>
+                                    {trade.status}
                                   </span>
-                                  <span className="text-gray-500">{formatTime(log.timestamp)}</span>
+                                  <span className="text-gray-500">{formatTime(trade.created_at)}</span>
                                 </div>
-                                <p className="text-gray-700 mt-1 truncate">{log.message}</p>
+                                <p className="text-gray-700 mt-1">
+                                  <span className="font-medium">{trade.side.toUpperCase()}</span>
+                                  {trade.size_multiplier && trade.size_multiplier !== 1 && (
+                                    <span className="text-gray-500 ml-1">({trade.size_multiplier}x)</span>
+                                  )}
+                                  {' '}
+                                  {trade.mode === 'real' ? '💰 Real' : '📄 Paper'}
+                                </p>
+                                {trade.reason && (
+                                  <p className="text-gray-600 mt-1 text-xs truncate" title={trade.reason}>
+                                    {trade.reason}
+                                  </p>
+                                )}
+                                {trade.error && (
+                                  <p className="text-red-600 mt-1 text-xs">{trade.error}</p>
+                                )}
                               </div>
                             </div>
                           ))
                         )}
                       </div>
 
-                      {/* Expanded Logs */}
-                      {expandedBot === bot.id && activity && activity.logs.length > 3 && (
+                      {/* Expanded Manual Trades */}
+                      {expandedBot === bot.id && botManualTrades.length > 3 && (
                         <div className="mt-3 space-y-2 max-h-48 overflow-y-auto">
-                          {activity.logs.slice(3).map((log) => (
-                            <div key={log.id} className="flex items-start space-x-2 p-2 bg-gray-50 rounded text-xs">
-                              <div className={`w-5 h-5 rounded-full flex items-center justify-center ${getLogLevelColor(log.level)}`}>
-                                <i className={`${getCategoryIcon(log.category)} text-xs`}></i>
+                          {botManualTrades.slice(3).map((trade) => (
+                            <div key={trade.id} className="flex items-start space-x-2 p-2 bg-gray-50 rounded text-xs">
+                              <div className={`w-5 h-5 rounded-full flex items-center justify-center ${
+                                trade.status === 'completed' ? 'bg-green-100 text-green-600' :
+                                trade.status === 'failed' ? 'bg-red-100 text-red-600' :
+                                trade.status === 'processing' ? 'bg-blue-100 text-blue-600' :
+                                'bg-yellow-100 text-yellow-600'
+                              }`}>
+                                <i className={`ri-${trade.side === 'buy' || trade.side === 'long' ? 'arrow-up' : 'arrow-down'}-line text-xs`}></i>
                               </div>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center justify-between">
-                                  <span className={`px-1 py-0.5 rounded text-xs font-medium ${getLogLevelColor(log.level)}`}>
-                                    {log.level}
+                                  <span className={`px-1 py-0.5 rounded text-xs font-medium ${
+                                    trade.status === 'completed' ? 'bg-green-100 text-green-700' :
+                                    trade.status === 'failed' ? 'bg-red-100 text-red-700' :
+                                    trade.status === 'processing' ? 'bg-blue-100 text-blue-700' :
+                                    'bg-yellow-100 text-yellow-700'
+                                  }`}>
+                                    {trade.status}
                                   </span>
-                                  <span className="text-gray-500">{formatTime(log.timestamp)}</span>
+                                  <span className="text-gray-500">{formatTime(trade.created_at)}</span>
                                 </div>
-                                <p className="text-gray-700 mt-1">{log.message}</p>
-                                {log.details && (
-                                  <details className="mt-1">
-                                    <summary className="cursor-pointer text-gray-500 hover:text-gray-700">Details</summary>
-                                    <pre className="mt-1 p-1 bg-white rounded border text-xs overflow-x-auto">
-                                      {JSON.stringify(log.details, null, 2)}
-                                    </pre>
-                                  </details>
+                                <p className="text-gray-700 mt-1">
+                                  <span className="font-medium">{trade.side.toUpperCase()}</span>
+                                  {trade.size_multiplier && trade.size_multiplier !== 1 && (
+                                    <span className="text-gray-500 ml-1">({trade.size_multiplier}x)</span>
+                                  )}
+                                  {' '}
+                                  {trade.mode === 'real' ? '💰 Real' : '📄 Paper'}
+                                </p>
+                                {trade.reason && (
+                                  <p className="text-gray-600 mt-1 text-xs">{trade.reason}</p>
+                                )}
+                                {trade.error && (
+                                  <p className="text-red-600 mt-1 text-xs">{trade.error}</p>
+                                )}
+                                {trade.processed_at && (
+                                  <p className="text-gray-500 mt-1 text-xs">
+                                    Processed: {formatTime(trade.processed_at)}
+                                  </p>
                                 )}
                               </div>
                             </div>
