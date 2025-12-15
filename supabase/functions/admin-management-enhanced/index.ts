@@ -221,7 +221,7 @@ serve(async (req) => {
         }
 
       case 'createUser':
-        const { email, password, role } = params
+        const { email, password, role, planId } = params
         
         if (!email || !password) {
           return new Response(JSON.stringify({ 
@@ -286,9 +286,52 @@ serve(async (req) => {
           })
         }
 
+        // Create subscription if planId is provided
+        if (planId) {
+          try {
+            // Verify plan exists
+            const { data: plan, error: planError } = await supabaseClient
+              .from('subscription_plans')
+              .select('id, name')
+              .eq('id', planId)
+              .single()
+
+            if (planError || !plan) {
+              console.warn(`Plan ${planId} not found, skipping subscription creation`)
+            } else {
+              // Calculate expiration (30 days from now)
+              const expiresAt = new Date()
+              expiresAt.setDate(expiresAt.getDate() + 30)
+
+              // Create subscription
+              const { error: subError } = await supabaseClient
+                .from('user_subscriptions')
+                .insert({
+                  user_id: newUser.user.id,
+                  plan_id: planId,
+                  status: 'active',
+                  expires_at: expiresAt.toISOString(),
+                  started_at: new Date().toISOString(),
+                  trial_started_at: null,
+                  trial_period_days: null
+                })
+
+              if (subError) {
+                console.error('Error creating subscription:', subError)
+                // Don't fail user creation if subscription fails, just log it
+              } else {
+                console.log(`✅ Subscription created for user ${newUser.user.id} with plan ${plan.name}`)
+              }
+            }
+          } catch (subError) {
+            console.error('Error creating subscription:', subError)
+            // Don't fail user creation if subscription fails
+          }
+        }
+
         return new Response(JSON.stringify({ 
           success: true, 
-          message: 'User created successfully',
+          message: planId ? 'User created successfully with subscription' : 'User created successfully',
           user: newUser.user 
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }

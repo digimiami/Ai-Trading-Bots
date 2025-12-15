@@ -166,8 +166,11 @@ export default function AdminPage() {
   const [newUser, setNewUser] = useState({
     email: '',
     password: '',
-    role: 'user'
+    role: 'user',
+    planId: '' as string | null
   });
+  
+  const [availablePlans, setAvailablePlans] = useState<any[]>([]);
   
   const [newInvitation, setNewInvitation] = useState({
     email: '',
@@ -2602,6 +2605,23 @@ export default function AdminPage() {
                     <option value="admin">Admin</option>
                   </select>
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Subscription Plan <span className="text-gray-500 text-xs">(Optional)</span>
+                  </label>
+                  <select
+                    value={newUser.planId || ''}
+                    onChange={(e) => setNewUser({...newUser, planId: e.target.value || null})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">No Subscription</option>
+                    {availablePlans.map((plan) => (
+                      <option key={plan.id} value={plan.id}>
+                        {plan.display_name} (${plan.price_monthly_usd}/mo - {plan.max_bots === null ? 'Unlimited' : plan.max_bots} bots)
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <div className="flex space-x-3">
                   <Button
                     type="button"
@@ -2610,6 +2630,7 @@ export default function AdminPage() {
                       setShowCreateUser(false);
                       setError(null);
                       setSuccessMessage(null);
+                      setNewUser({ email: '', password: '', role: 'user', planId: '' });
                     }}
                     className="flex-1"
                   >

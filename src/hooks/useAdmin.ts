@@ -119,8 +119,8 @@ export function useAdmin() {
     return data.users || [];
   };
 
-  const createUser = async (email: string, password: string, role: string = 'user') => {
-    return await callAdminFunction('createUser', { email, password, role });
+  const createUser = async (email: string, password: string, role: string = 'user', planId?: string) => {
+    return await callAdminFunction('createUser', { email, password, role, planId });
   };
 
   const deleteUser = async (userId?: string, userEmail?: string) => {
