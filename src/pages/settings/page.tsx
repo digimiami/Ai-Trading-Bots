@@ -1618,14 +1618,29 @@ export default function Settings() {
           </div>
         </Card>
 
-        {/* Email Notifications */}
+        {/* Email Settings */}
         <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Email Notifications</h3>
+            <div className="flex items-center gap-2">
+              <i className="ri-mail-line text-blue-600 text-xl"></i>
+              <h3 className="text-lg font-semibold text-gray-900">Email Settings</h3>
+            </div>
             {emailSettingsLoading && (
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
             )}
           </div>
+          
+          {/* Email Address Display */}
+          <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-gray-600 mb-1">Current Email Address</p>
+                <p className="text-sm font-medium text-gray-900">{user?.email || 'Not set'}</p>
+              </div>
+              <i className="ri-mail-check-line text-blue-600 text-2xl"></i>
+            </div>
+          </div>
+
           <p className="text-gray-500 text-sm mb-4">Configure email notifications for trading events</p>
           
           {emailPreferences ? (
@@ -1702,6 +1717,46 @@ export default function Settings() {
                     <i className="ri-information-line mr-1"></i>
                     Email notifications are currently disabled. Toggle the switch above to enable them.
                   </p>
+                </div>
+              )}
+
+              {/* Email Frequency Settings */}
+              {emailPreferences.enabled && (
+                <div className="pt-4 border-t">
+                  <h4 className="text-sm font-medium text-gray-700 mb-3">Email Preferences</h4>
+                  <div className="space-y-3">
+                    <div className="p-3 bg-gray-50 rounded-lg">
+                      <p className="text-xs text-gray-600 mb-1">Email Format</p>
+                      <div className="flex items-center gap-4">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="radio" name="emailFormat" value="html" defaultChecked className="text-blue-600" />
+                          <span className="text-sm text-gray-700">HTML (Recommended)</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="radio" name="emailFormat" value="text" className="text-blue-600" />
+                          <span className="text-sm text-gray-700">Plain Text</span>
+                        </label>
+                      </div>
+                    </div>
+                    
+                    <div className="p-3 bg-gray-50 rounded-lg">
+                      <p className="text-xs text-gray-600 mb-1">Delivery Frequency</p>
+                      <div className="flex items-center gap-4">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="radio" name="emailFrequency" value="instant" defaultChecked className="text-blue-600" />
+                          <span className="text-sm text-gray-700">Instant</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="radio" name="emailFrequency" value="daily" className="text-blue-600" />
+                          <span className="text-sm text-gray-700">Daily Digest</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="radio" name="emailFrequency" value="weekly" className="text-blue-600" />
+                          <span className="text-sm text-gray-700">Weekly Summary</span>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 
