@@ -36,6 +36,7 @@ const AiAssistant = lazy(() => import('../pages/ai-assistant/page'));
 const Pricing = lazy(() => import('../pages/pricing/page'));
 const Subscription = lazy(() => import('../pages/subscription/page'));
 const SubscriptionSuccess = lazy(() => import('../pages/subscription/success'));
+const Wallet = lazy(() => import('../pages/wallet/page'));
 const NotFound = lazy(() => import('../pages/NotFound'));
 const Privacy = lazy(() => import('../pages/legal/privacy'));
 const Terms = lazy(() => import('../pages/legal/terms'));
@@ -177,6 +178,10 @@ const routes: RouteObject[] = [
   {
     path: '/subscription/success',
     element: <SubscriptionSuccess />
+  },
+  {
+    path: '/wallet',
+    element: <Wallet />
   },
   {
     path: '/privacy',

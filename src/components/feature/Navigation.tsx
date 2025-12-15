@@ -136,6 +136,7 @@ export default function Navigation() {
     { path: '/transaction-log', icon: 'ri-bar-chart-2-line', label: 'Log' },
     { path: '/paper-trading', icon: 'ri-edit-box-line', label: t('nav.paperTrading') },
     { path: '/futures-pairs-finder', icon: 'ri-search-line', label: 'Futures' },
+    { path: '/wallet', icon: 'ri-wallet-3-line', label: 'Wallet' },
     { path: '/contact', icon: 'ri-customer-service-line', label: 'Contact' },
     { path: '/messages', icon: 'ri-message-3-line', label: 'Messages' },
     { path: '/pricing', icon: 'ri-vip-crown-line', label: 'Pricing' },
