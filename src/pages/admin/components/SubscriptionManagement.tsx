@@ -29,6 +29,7 @@ interface SubscriptionPlan {
   display_name: string
   price_monthly_usd: number
   max_bots: number | null
+  is_active?: boolean
 }
 
 export default function SubscriptionManagement() {
@@ -184,11 +185,12 @@ export default function SubscriptionManagement() {
 
   const fetchPlans = async () => {
     try {
+      // Admin should see ALL plans, not just active ones
       const { data, error } = await supabase
         .from('subscription_plans')
-        .select('id, name, display_name, price_monthly_usd, max_bots')
-        .eq('is_active', true)
+        .select('id, name, display_name, price_monthly_usd, max_bots, is_active')
         .order('sort_order', { ascending: true })
+        .order('price_monthly_usd', { ascending: false })
 
       if (error) throw error
       setPlans(data || [])
@@ -534,6 +536,7 @@ export default function SubscriptionManagement() {
                               const currentPlan = plans.find(p => p.id === sub.plan_id)
                               const isUpgrade = (plan.price_monthly_usd || 0) > (currentPlan?.price_monthly_usd || 0)
                               const isDowngrade = (plan.price_monthly_usd || 0) < (currentPlan?.price_monthly_usd || 0)
+                              const isInactive = plan.is_active === false
                               
                               return (
                                 <Button
@@ -542,10 +545,11 @@ export default function SubscriptionManagement() {
                                   size="sm"
                                   onClick={() => handlePlanChangeClick(sub, plan.id)}
                                   disabled={changingPlanSubscriptionId === sub.id}
-                                  className="text-xs whitespace-nowrap"
-                                  title={`${isUpgrade ? 'Upgrade' : isDowngrade ? 'Downgrade' : 'Change'} to ${plan.display_name} ($${plan.price_monthly_usd}/mo)`}
+                                  className={`text-xs whitespace-nowrap ${isInactive ? 'opacity-60' : ''}`}
+                                  title={`${isUpgrade ? 'Upgrade' : isDowngrade ? 'Downgrade' : 'Change'} to ${plan.display_name} ($${plan.price_monthly_usd}/mo)${isInactive ? ' [Inactive]' : ''}`}
                                 >
                                   {isUpgrade ? '⬆️' : isDowngrade ? '⬇️' : '↔️'} {plan.display_name}
+                                  {isInactive && <span className="ml-1 text-xs">(Inactive)</span>}
                                 </Button>
                               )
                             })}
@@ -566,9 +570,10 @@ export default function SubscriptionManagement() {
                             <option value="">Change Plan...</option>
                             {plans
                               .filter(plan => plan.id !== sub.plan_id)
+                              .sort((a, b) => (b.price_monthly_usd || 0) - (a.price_monthly_usd || 0))
                               .map((plan) => (
                                 <option key={plan.id} value={plan.id}>
-                                  {plan.display_name} (${plan.price_monthly_usd}/mo)
+                                  {plan.display_name} (${plan.price_monthly_usd}/mo){plan.is_active === false ? ' [Inactive]' : ''}
                                 </option>
                               ))}
                           </select>
