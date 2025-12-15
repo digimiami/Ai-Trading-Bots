@@ -8,6 +8,7 @@ interface Mailbox {
   email_address: string;
   display_name: string | null;
   is_active: boolean;
+  forward_to: string | null;
   created_at: string;
 }
 
@@ -52,7 +53,8 @@ export default function EmailCenter() {
   const [mailboxForm, setMailboxForm] = useState({
     email_address: '',
     display_name: '',
-    is_active: true
+    is_active: true,
+    forward_to: ''
   });
   const [composeForm, setComposeForm] = useState({
     from: '',
@@ -252,10 +254,15 @@ ${email.text_body || email.html_body?.replace(/<[^>]*>/g, '') || ''}
   const handleCreateMailbox = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await createMailbox(mailboxForm.email_address, mailboxForm.display_name || undefined, mailboxForm.is_active);
+      await createMailbox(
+        mailboxForm.email_address, 
+        mailboxForm.display_name || undefined, 
+        mailboxForm.is_active,
+        mailboxForm.forward_to || undefined
+      );
       alert('✅ Mailbox created successfully!');
       setShowMailboxManager(false);
-      setMailboxForm({ email_address: '', display_name: '', is_active: true });
+      setMailboxForm({ email_address: '', display_name: '', is_active: true, forward_to: '' });
       loadMailboxes();
     } catch (err: any) {
       alert(`❌ Failed to create mailbox: ${err.message}`);
@@ -269,12 +276,13 @@ ${email.text_body || email.html_body?.replace(/<[^>]*>/g, '') || ''}
       await updateMailbox(editingMailbox.id, {
         email_address: mailboxForm.email_address,
         display_name: mailboxForm.display_name || undefined,
-        is_active: mailboxForm.is_active
+        is_active: mailboxForm.is_active,
+        forward_to: mailboxForm.forward_to || undefined
       });
       alert('✅ Mailbox updated successfully!');
       setShowMailboxManager(false);
       setEditingMailbox(null);
-      setMailboxForm({ email_address: '', display_name: '', is_active: true });
+      setMailboxForm({ email_address: '', display_name: '', is_active: true, forward_to: '' });
       loadMailboxes();
     } catch (err: any) {
       alert(`❌ Failed to update mailbox: ${err.message}`);
@@ -302,7 +310,8 @@ ${email.text_body || email.html_body?.replace(/<[^>]*>/g, '') || ''}
     setMailboxForm({
       email_address: mailbox.email_address,
       display_name: mailbox.display_name || '',
-      is_active: mailbox.is_active
+      is_active: mailbox.is_active,
+      forward_to: mailbox.forward_to || ''
     });
     setShowMailboxManager(true);
   };
@@ -482,6 +491,19 @@ ${email.text_body || email.html_body?.replace(/<[^>]*>/g, '') || ''}
                   Active (can send/receive emails)
                 </label>
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Forward To (optional)</label>
+                <input
+                  type="email"
+                  value={mailboxForm.forward_to}
+                  onChange={(e) => setMailboxForm({ ...mailboxForm, forward_to: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                  placeholder="forward@example.com (leave empty to disable forwarding)"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  All inbound emails to this mailbox will be automatically forwarded to this address
+                </p>
+              </div>
               <div className="flex gap-2">
                 <Button
                   type="submit"
@@ -496,7 +518,7 @@ ${email.text_body || email.html_body?.replace(/<[^>]*>/g, '') || ''}
                     variant="secondary"
                     onClick={() => {
                       setEditingMailbox(null);
-                      setMailboxForm({ email_address: '', display_name: '', is_active: true });
+                      setMailboxForm({ email_address: '', display_name: '', is_active: true, forward_to: '' });
                     }}
                   >
                     Cancel Edit
@@ -526,6 +548,12 @@ ${email.text_body || email.html_body?.replace(/<[^>]*>/g, '') || ''}
                           }`}>
                             {mb.is_active ? 'Active' : 'Inactive'}
                           </span>
+                          {mb.forward_to && (
+                            <span className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-800">
+                              <i className="ri-forward-line mr-1"></i>
+                              Forwarding to {mb.forward_to}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="flex gap-2">

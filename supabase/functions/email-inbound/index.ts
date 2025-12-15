@@ -339,6 +339,65 @@ serve(async (req) => {
       } else {
         savedEmails.push(savedEmail)
         console.log(`✅ Email saved to mailbox ${mailbox.email_address}`)
+        
+        // Auto-forward if mailbox has forward_to configured
+        if (mailbox.forward_to) {
+          try {
+            console.log(`📤 [email-inbound] Forwarding email from ${mailbox.email_address} to ${mailbox.forward_to}`)
+            
+            // Create forwarded email content
+            const forwardHeader = `
+<div style="border-left: 3px solid #ccc; padding-left: 10px; margin: 20px 0; color: #666; font-size: 12px;">
+  <div><strong>From:</strong> ${fromAddress}</div>
+  <div><strong>To:</strong> ${toAddressString}</div>
+  <div><strong>Date:</strong> ${new Date().toLocaleString()}</div>
+  <div><strong>Subject:</strong> ${subject || '(No subject)'}</div>
+</div>
+`
+            
+            const forwardedHtml = forwardHeader + (htmlBody || `<pre>${textBody || ''}</pre>`)
+            const forwardedText = `
+---------- Forwarded message ----------
+From: ${fromAddress}
+To: ${toAddressString}
+Date: ${new Date().toLocaleString()}
+Subject: ${subject || '(No subject)'}
+
+${textBody || htmlBody?.replace(/<[^>]*>/g, '') || ''}
+`
+
+            // Send forwarded email using admin-email function
+            const forwardSubject = subject?.startsWith('Fwd:') ? subject : `Fwd: ${subject || '(No subject)'}`
+            
+            // Call admin-email function to send the forwarded email
+            // Use service role to bypass admin check for internal forwarding
+            const supabaseUrl = Deno.env.get('SUPABASE_URL') || ''
+            const forwardResponse = await fetch(`${supabaseUrl}/functions/v1/admin-email?action=send`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                from: mailbox.email_address,
+                to: mailbox.forward_to,
+                subject: forwardSubject,
+                html: forwardedHtml,
+                text: forwardedText,
+              }),
+            })
+
+            if (forwardResponse.ok) {
+              console.log(`✅ [email-inbound] Email forwarded successfully to ${mailbox.forward_to}`)
+            } else {
+              const errorData = await forwardResponse.json().catch(() => ({}))
+              console.error(`❌ [email-inbound] Failed to forward email to ${mailbox.forward_to}:`, errorData)
+            }
+          } catch (forwardError) {
+            console.error(`❌ [email-inbound] Error forwarding email:`, forwardError)
+            // Don't fail the whole process if forwarding fails
+          }
+        }
       }
     }
 

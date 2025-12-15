@@ -350,7 +350,7 @@ export function useAdmin() {
     }
   };
 
-  const createMailbox = async (email_address: string, display_name?: string, is_active: boolean = true) => {
+  const createMailbox = async (email_address: string, display_name?: string, is_active: boolean = true, forward_to?: string) => {
     try {
       setLoading(true);
       setError(null);
@@ -368,7 +368,7 @@ export function useAdmin() {
           'Authorization': `Bearer ${session.access_token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email_address, display_name, is_active }),
+        body: JSON.stringify({ email_address, display_name, is_active, forward_to }),
       });
 
       if (!response.ok) {
@@ -387,7 +387,7 @@ export function useAdmin() {
     }
   };
 
-  const updateMailbox = async (id: string, updates: { email_address?: string; display_name?: string; is_active?: boolean }) => {
+  const updateMailbox = async (id: string, updates: { email_address?: string; display_name?: string; is_active?: boolean; forward_to?: string }) => {
     try {
       setLoading(true);
       setError(null);

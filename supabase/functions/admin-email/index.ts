@@ -45,40 +45,48 @@ serve(async (req) => {
 
     // Get authenticated user
     const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      console.error(`❌ [${requestId}] Unauthorized: Missing Authorization header`)
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized', requestId: requestId }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(
-      authHeader.replace('Bearer ', '')
-    )
-
-    if (authError || !user) {
-      console.error(`❌ [${requestId}] Unauthorized: ${authError?.message || 'User not found'}`)
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized', requestId: requestId }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    const isServiceRole = authHeader && authHeader.replace('Bearer ', '') === serviceRoleKey
     
-    console.log(`👤 [${requestId}] Authenticated user: ${user.id}`)
+    // Allow service role to bypass admin check (for internal forwarding)
+    if (!isServiceRole) {
+      if (!authHeader) {
+        console.error(`❌ [${requestId}] Unauthorized: Missing Authorization header`)
+        return new Response(
+          JSON.stringify({ error: 'Unauthorized', requestId: requestId }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
 
-    // Check if user is admin
-    const { data: userData } = await supabaseClient
-      .from('users')
-      .select('role')
-      .eq('id', user.id)
-      .single()
-
-    if (userData?.role !== 'admin') {
-      return new Response(
-        JSON.stringify({ error: 'Forbidden - Admin access required' }),
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      const { data: { user }, error: authError } = await supabaseClient.auth.getUser(
+        authHeader.replace('Bearer ', '')
       )
+
+      if (authError || !user) {
+        console.error(`❌ [${requestId}] Unauthorized: ${authError?.message || 'User not found'}`)
+        return new Response(
+          JSON.stringify({ error: 'Unauthorized', requestId: requestId }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      
+      console.log(`👤 [${requestId}] Authenticated user: ${user.id}`)
+
+      // Check if user is admin
+      const { data: userData } = await supabaseClient
+        .from('users')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+
+      if (userData?.role !== 'admin') {
+        return new Response(
+          JSON.stringify({ error: 'Forbidden - Admin access required' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+    } else {
+      console.log(`🔑 [${requestId}] Service role authentication (internal call)`)
     }
 
     const url = new URL(req.url)
@@ -121,7 +129,7 @@ serve(async (req) => {
     // Create mailbox
     if (action === 'create-mailbox' && req.method === 'POST') {
       const body = await req.json()
-      const { email_address, display_name, is_active } = body
+      const { email_address, display_name, is_active, forward_to } = body
 
       if (!email_address) {
         return new Response(
@@ -139,12 +147,24 @@ serve(async (req) => {
         )
       }
 
+      // Validate forward_to if provided
+      if (forward_to) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+        if (!emailRegex.test(forward_to)) {
+          return new Response(
+            JSON.stringify({ error: 'Invalid forward_to email address format' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+      }
+
       const { data: mailbox, error } = await supabaseClient
         .from('mailboxes')
         .insert({
           email_address,
           display_name: display_name || email_address.split('@')[0],
           is_active: is_active !== undefined ? is_active : true,
+          forward_to: forward_to || null,
         })
         .select()
         .single()
@@ -165,7 +185,7 @@ serve(async (req) => {
     // Update mailbox
     if (action === 'update-mailbox' && req.method === 'POST') {
       const body = await req.json()
-      const { id, email_address, display_name, is_active } = body
+      const { id, email_address, display_name, is_active, forward_to } = body
 
       if (!id) {
         return new Response(
@@ -187,6 +207,20 @@ serve(async (req) => {
       }
       if (display_name !== undefined) updateData.display_name = display_name
       if (is_active !== undefined) updateData.is_active = is_active
+      if (forward_to !== undefined) {
+        if (forward_to === '' || forward_to === null) {
+          updateData.forward_to = null
+        } else {
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+          if (!emailRegex.test(forward_to)) {
+            return new Response(
+              JSON.stringify({ error: 'Invalid forward_to email address format' }),
+              { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
+          updateData.forward_to = forward_to
+        }
+      }
       updateData.updated_at = new Date().toISOString()
 
       const { data: mailbox, error } = await supabaseClient
