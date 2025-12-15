@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '../../../lib/supabase'
+import { useAuth } from '../../../hooks/useAuth'
 import Card from '../../../components/base/Card'
 import Button from '../../../components/base/Button'
 
@@ -31,10 +32,12 @@ interface SubscriptionPlan {
 }
 
 export default function SubscriptionManagement() {
+  const { user } = useAuth()
   const [subscriptions, setSubscriptions] = useState<UserSubscription[]>([])
   const [plans, setPlans] = useState<SubscriptionPlan[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [upgradingUserId, setUpgradingUserId] = useState<string | null>(null)
   const [selectedPlanId, setSelectedPlanId] = useState<string>('')
   const [activatingSubscriptionId, setActivatingSubscriptionId] = useState<string | null>(null)
@@ -50,9 +53,34 @@ export default function SubscriptionManagement() {
   } | null>(null)
 
   useEffect(() => {
+    checkAdminStatus()
     fetchSubscriptions()
     fetchPlans()
-  }, [])
+  }, [user])
+
+  const checkAdminStatus = async () => {
+    if (!user?.id) {
+      setIsAdmin(false)
+      return
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', user.id)
+        .single()
+
+      if (!error && data?.role === 'admin') {
+        setIsAdmin(true)
+      } else {
+        setIsAdmin(false)
+      }
+    } catch (err) {
+      console.error('Error checking admin status:', err)
+      setIsAdmin(false)
+    }
+  }
 
   const fetchSubscriptions = async () => {
     try {
@@ -170,55 +198,49 @@ export default function SubscriptionManagement() {
   }
 
   const changeUserPlan = async (subscriptionId: string, userId: string, newPlanId: string) => {
+    if (!isAdmin) {
+      alert('❌ Admin access required to change subscriptions')
+      return
+    }
+
     try {
       setChangingPlanSubscriptionId(subscriptionId)
 
-      // Get plan details
-      const newPlan = plans.find(p => p.id === newPlanId)
-      if (!newPlan) throw new Error('Plan not found')
-
-      // Get current subscription
-      const { data: currentSub, error: subError } = await supabase
-        .from('user_subscriptions')
-        .select('plan_id, expires_at, started_at')
-        .eq('id', subscriptionId)
-        .single()
-
-      if (subError || !currentSub) {
-        throw new Error('Subscription not found')
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        throw new Error('Not authenticated')
       }
 
-      // Calculate expiration - preserve remaining time or set to 30 days from now
-      let expiresAt = new Date()
-      if (currentSub.expires_at && new Date(currentSub.expires_at) > new Date()) {
-        // Keep existing expiration date
-        expiresAt = new Date(currentSub.expires_at)
-      } else {
-        // Set to 30 days from now
-        expiresAt.setDate(expiresAt.getDate() + 30)
+      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co'
+      const response = await fetch(
+        `${supabaseUrl}/functions/v1/admin-subscription-management`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            subscriptionId,
+            newPlanId,
+          }),
+        }
+      )
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to change subscription plan')
       }
 
-      // Update subscription
-      const { error } = await supabase
-        .from('user_subscriptions')
-        .update({
-          plan_id: newPlanId,
-          status: 'active',
-          expires_at: expiresAt.toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', subscriptionId)
-
-      if (error) throw error
-
-      // Get current plan name for confirmation
-      const currentPlan = plans.find(p => p.id === currentSub.plan_id)
-      const currentPlanName = currentPlan?.display_name || 'Unknown'
+      const data = await response.json()
       
-      const isUpgrade = (newPlan.price_monthly_usd || 0) > (currentPlan?.price_monthly_usd || 0)
+      // Get plan names for confirmation
+      const currentPlan = plans.find(p => p.id === planChangeData?.currentPlanId)
+      const newPlan = plans.find(p => p.id === newPlanId)
+      const isUpgrade = (newPlan?.price_monthly_usd || 0) > (currentPlan?.price_monthly_usd || 0)
       const action = isUpgrade ? 'upgraded' : 'downgraded'
       
-      alert(`✅ User subscription ${action} from ${currentPlanName} to ${newPlan.display_name}`)
+      alert(`✅ User subscription ${action} from ${currentPlan?.display_name || 'Unknown'} to ${newPlan?.display_name || 'Unknown'}. Email and message sent to user.`)
       fetchSubscriptions()
       setShowPlanChangeModal(false)
       setPlanChangeData(null)
@@ -375,6 +397,18 @@ export default function SubscriptionManagement() {
       (new Date().getTime() - new Date(subscription.trial_started_at).getTime()) / (1000 * 60 * 60 * 24)
     )
     return Math.max(0, subscription.trial_period_days - daysElapsed)
+  }
+
+  if (!isAdmin) {
+    return (
+      <Card>
+        <div className="text-center py-8">
+          <i className="ri-shield-cross-line text-6xl text-red-500 mb-4"></i>
+          <p className="text-red-400 text-lg mb-2">Access Denied</p>
+          <p className="text-gray-500 text-sm">Admin access is required to manage subscriptions.</p>
+        </div>
+      </Card>
+    )
   }
 
   if (loading) {
