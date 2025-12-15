@@ -159,6 +159,29 @@ export function useBotActivity(bots?: any[]) {
     // Analyze latest log message to infer state
     const message = latestLog.message.toLowerCase();
     
+    // Check for "no signal" messages - bot is waiting for signals
+    if (message.includes('no trading signals detected') || 
+        message.includes('no manual trade signals found') ||
+        message.includes('no signal') ||
+        message.includes('no trading signals') ||
+        message.includes('all strategy parameters checked') ||
+        message.includes('returned no signal')) {
+      return {
+        currentAction: 'Waiting for trading signal',
+        waitingFor: 'Market signal or strategy condition',
+        executionState: 'waiting'
+      };
+    }
+    
+    // Check for manual signal waiting
+    if (message.includes('no manual trade signals') || message.includes('waiting for manual signal')) {
+      return {
+        currentAction: 'Waiting for manual trade signal',
+        waitingFor: 'TradingView webhook or manual signal',
+        executionState: 'waiting'
+      };
+    }
+    
     // Execution states based on log messages
     if (message.includes('executing') || message.includes('execution') || message.includes('starting execution')) {
       return {

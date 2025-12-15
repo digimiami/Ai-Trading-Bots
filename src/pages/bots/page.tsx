@@ -1533,6 +1533,64 @@ export default function BotsPage() {
                 </div>
                 )}
 
+                {/* Bot Activity Status */}
+                {!isWebhookView && (() => {
+                  const activity = getBotActivity(bot.id);
+                  const activityState = activity ? {
+                    currentAction: activity.currentAction || 'No recent activity',
+                    waitingFor: activity.waitingFor,
+                    executionState: activity.executionState || 'idle',
+                    hasError: activity.errorCount > 0
+                  } : null;
+                  
+                  return activityState ? (
+                    <div className="pt-4 border-t border-gray-100">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-sm font-medium text-gray-700">Bot Status</h4>
+                      </div>
+                      <div className={`p-3 rounded-lg ${
+                        activityState.executionState === 'error' || activityState.hasError ? 'bg-red-50 border border-red-200' :
+                        activityState.executionState === 'waiting' ? 'bg-yellow-50 border border-yellow-200' :
+                        activityState.executionState === 'executing' ? 'bg-blue-50 border border-blue-200' :
+                        activityState.executionState === 'analyzing' ? 'bg-purple-50 border border-purple-200' :
+                        'bg-gray-50 border border-gray-200'
+                      }`}>
+                        <div className="flex items-start gap-2">
+                          <i className={`mt-0.5 ${
+                            activityState.executionState === 'error' || activityState.hasError ? 'ri-error-warning-line text-red-600' :
+                            activityState.executionState === 'waiting' ? 'ri-time-line text-yellow-600' :
+                            activityState.executionState === 'executing' ? 'ri-loader-4-line text-blue-600 animate-spin' :
+                            activityState.executionState === 'analyzing' ? 'ri-search-line text-purple-600' :
+                            'ri-information-line text-gray-600'
+                          }`}></i>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-gray-900 mb-1">
+                              {activityState.executionState === 'error' || activityState.hasError ? '⚠️ Error Occurred' :
+                               activityState.executionState === 'waiting' ? '⏳ Waiting' :
+                               activityState.executionState === 'executing' ? '🔄 Executing' :
+                               activityState.executionState === 'analyzing' ? '🔍 Analyzing' :
+                               'ℹ️ Idle'}
+                            </p>
+                            <p className="text-xs text-gray-700 mb-1">
+                              {activityState.currentAction}
+                            </p>
+                            {activityState.waitingFor && (
+                              <p className="text-xs text-gray-600 italic">
+                                Waiting for: {activityState.waitingFor}
+                              </p>
+                            )}
+                            {activityState.hasError && activity.errorCount > 0 && (
+                              <p className="text-xs text-red-600 font-medium mt-1">
+                                {activity.errorCount} error{activity.errorCount !== 1 ? 's' : ''} detected
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null;
+                })()}
+
                 {/* Recent Manual Trades */}
                 {!isWebhookView && (() => {
                   // Load manual trades when section is visible
