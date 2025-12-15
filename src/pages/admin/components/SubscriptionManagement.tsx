@@ -23,6 +23,12 @@ interface UserSubscription {
   subscription_plans: { name: string; display_name: string; max_bots: number | null }
 }
 
+interface UserWithSubscription {
+  user_id: string
+  email: string
+  subscription: UserSubscription | null
+}
+
 interface SubscriptionPlan {
   id: string
   name: string
@@ -35,6 +41,7 @@ interface SubscriptionPlan {
 export default function SubscriptionManagement() {
   const { user } = useAuth()
   const [subscriptions, setSubscriptions] = useState<UserSubscription[]>([])
+  const [usersWithSubscriptions, setUsersWithSubscriptions] = useState<UserWithSubscription[]>([])
   const [plans, setPlans] = useState<SubscriptionPlan[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -55,7 +62,7 @@ export default function SubscriptionManagement() {
 
   useEffect(() => {
     checkAdminStatus()
-    fetchSubscriptions()
+    fetchAllUsersAndSubscriptions()
     fetchPlans()
   }, [user])
 
@@ -83,59 +90,54 @@ export default function SubscriptionManagement() {
     }
   }
 
-  const fetchSubscriptions = async () => {
+  const fetchAllUsersAndSubscriptions = async () => {
     try {
       setError(null)
       setLoading(true)
       
-      // Fetch subscriptions without joins (to avoid relationship errors)
+      // Fetch all users
+      const { data: allUsers, error: usersError } = await supabase
+        .from('users')
+        .select('id, email')
+        .order('created_at', { ascending: false })
+        .limit(500)
+
+      if (usersError) {
+        console.error('Users fetch error:', usersError)
+        throw usersError
+      }
+
+      // Fetch all subscriptions
       const { data: subscriptionsData, error: subscriptionsError } = await supabase
         .from('user_subscriptions')
         .select('*')
         .order('created_at', { ascending: false })
-        .limit(100)
 
       if (subscriptionsError) {
         console.error('Subscription fetch error:', subscriptionsError)
         
-        // If table doesn't exist, show empty state
+        // If table doesn't exist, just show users without subscriptions
         if (subscriptionsError.code === 'PGRST116' || subscriptionsError.message?.includes('relation')) {
           console.warn('user_subscriptions table may not exist:', subscriptionsError)
+          // Show users without subscriptions
+          const usersOnly = (allUsers || []).map((u: any) => ({
+            user_id: u.id,
+            email: u.email,
+            subscription: null
+          }))
+          setUsersWithSubscriptions(usersOnly)
           setSubscriptions([])
-          setError(null) // Don't show error if table doesn't exist, just show empty state
+          setLoading(false)
           return
         }
         
         throw subscriptionsError
       }
 
-      if (!subscriptionsData || subscriptionsData.length === 0) {
-        setSubscriptions([])
-        return
-      }
-
-      // Manually enrich subscriptions with user and plan data
-      const enrichedData = await Promise.all(
-        subscriptionsData.map(async (sub: any) => {
-          let userEmail = 'Unknown'
+      // Enrich subscriptions with plan data
+      const enrichedSubscriptions = await Promise.all(
+        (subscriptionsData || []).map(async (sub: any) => {
           let planData = null
-
-          // Fetch user email
-          if (sub.user_id) {
-            try {
-              const { data: userData, error: userError } = await supabase
-                .from('users')
-                .select('email')
-                .eq('id', sub.user_id)
-                .maybeSingle()
-              
-              if (!userError && userData) {
-                userEmail = userData.email || 'Unknown'
-              }
-            } catch (err) {
-              console.warn(`Failed to fetch user ${sub.user_id}:`, err)
-            }
-          }
 
           // Fetch plan details
           if (sub.plan_id) {
@@ -156,20 +158,38 @@ export default function SubscriptionManagement() {
 
           return {
             ...sub,
-            users: { email: userEmail },
+            users: { email: 'Loading...' }, // Will be filled from user data
             subscription_plans: planData
           }
         })
       )
 
-      setSubscriptions(enrichedData)
+      setSubscriptions(enrichedSubscriptions)
+
+      // Combine users with their subscriptions
+      const usersWithSubs = (allUsers || []).map((u: any) => {
+        const subscription = enrichedSubscriptions.find((sub: any) => sub.user_id === u.id) || null
+        
+        // If subscription exists, update the email
+        if (subscription) {
+          subscription.users = { email: u.email }
+        }
+
+        return {
+          user_id: u.id,
+          email: u.email,
+          subscription: subscription
+        }
+      })
+
+      setUsersWithSubscriptions(usersWithSubs)
     } catch (err: any) {
-      console.error('Error fetching subscriptions:', err)
+      console.error('Error fetching users and subscriptions:', err)
       
       // Provide more specific error messages
-      let errorMessage = 'Failed to load subscriptions'
+      let errorMessage = 'Failed to load users and subscriptions'
       if (err.code === 'PGRST116') {
-        errorMessage = 'Subscriptions table not found. Please ensure the database is set up correctly.'
+        errorMessage = 'Table not found. Please ensure the database is set up correctly.'
       } else if (err.message?.includes('permission') || err.message?.includes('RLS')) {
         errorMessage = 'Permission denied. Please check Row Level Security policies.'
       } else if (err.message) {
@@ -177,10 +197,16 @@ export default function SubscriptionManagement() {
       }
       
       setError(errorMessage)
-      setSubscriptions([]) // Set empty array on error to show empty state
+      setUsersWithSubscriptions([])
+      setSubscriptions([])
     } finally {
       setLoading(false)
     }
+  }
+
+  const fetchSubscriptions = async () => {
+    // Legacy function - redirects to fetchAllUsersAndSubscriptions
+    await fetchAllUsersAndSubscriptions()
   }
 
   const fetchPlans = async () => {
@@ -243,7 +269,7 @@ export default function SubscriptionManagement() {
       const action = isUpgrade ? 'upgraded' : 'downgraded'
       
       alert(`✅ User subscription ${action} from ${currentPlan?.display_name || 'Unknown'} to ${newPlan?.display_name || 'Unknown'}. Email and message sent to user.`)
-      fetchSubscriptions()
+      fetchAllUsersAndSubscriptions()
       setShowPlanChangeModal(false)
       setPlanChangeData(null)
     } catch (err) {
@@ -348,7 +374,7 @@ export default function SubscriptionManagement() {
 
       const data = await response.json()
       alert(`✅ Subscription activated successfully! Email and message sent to user.`)
-      fetchSubscriptions()
+      fetchAllUsersAndSubscriptions()
     } catch (err) {
       console.error('Error activating subscription:', err)
       alert(`❌ Error: ${err instanceof Error ? err.message : 'Failed to activate subscription'}`)
@@ -385,7 +411,7 @@ export default function SubscriptionManagement() {
       if (error) throw error
 
       alert(`✅ Trial extended by ${days} days`)
-      fetchSubscriptions()
+      fetchAllUsersAndSubscriptions()
     } catch (err) {
       console.error('Error extending trial:', err)
       alert(`❌ Error: ${err instanceof Error ? err.message : 'Failed to extend trial'}`)
@@ -446,11 +472,11 @@ export default function SubscriptionManagement() {
           </Button>
         </div>
 
-        {subscriptions.length === 0 ? (
+        {usersWithSubscriptions.length === 0 ? (
           <div className="text-center py-12">
             <i className="ri-wallet-line text-6xl text-gray-600 mb-4"></i>
-            <p className="text-gray-400 text-lg mb-2">No subscriptions found</p>
-            <p className="text-gray-500 text-sm">Subscriptions will appear here once users sign up.</p>
+            <p className="text-gray-400 text-lg mb-2">No users found</p>
+            <p className="text-gray-500 text-sm">Users will appear here once they sign up.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -466,132 +492,180 @@ export default function SubscriptionManagement() {
                 </tr>
               </thead>
               <tbody>
-                {subscriptions.map((sub) => {
-                const trialDays = getTrialDaysRemaining(sub)
-                const isExpired = sub.expires_at && new Date(sub.expires_at) < new Date()
-                const isTrialExpired = trialDays !== null && trialDays <= 0
+                {usersWithSubscriptions.map((userWithSub) => {
+                  const sub = userWithSub.subscription
+                  
+                  // If user has no subscription, show a row with "No Subscription"
+                  if (!sub) {
+                    return (
+                      <tr key={userWithSub.user_id} className="border-b border-gray-800">
+                        <td className="py-3 text-white">{userWithSub.email}</td>
+                        <td className="py-3">
+                          <span className="text-gray-500 italic">No Subscription</span>
+                        </td>
+                        <td className="py-3">
+                          <span className="px-2 py-1 rounded text-xs bg-gray-500/20 text-gray-400">
+                            None
+                          </span>
+                        </td>
+                        <td className="py-3 text-gray-300">N/A</td>
+                        <td className="py-3 text-gray-300">N/A</td>
+                        <td className="py-3">
+                          <div className="flex gap-1 flex-wrap">
+                            {plans
+                              .sort((a, b) => (b.price_monthly_usd || 0) - (a.price_monthly_usd || 0))
+                              .map((plan) => {
+                                const isInactive = plan.is_active === false
+                                
+                                return (
+                                  <Button
+                                    key={plan.id}
+                                    variant="primary"
+                                    size="sm"
+                                    onClick={() => {
+                                      // Create subscription for this user
+                                      upgradeUserSubscription(userWithSub.user_id, plan.id)
+                                    }}
+                                    className={`text-xs whitespace-nowrap ${isInactive ? 'opacity-60' : ''}`}
+                                    title={`Assign ${plan.display_name} ($${plan.price_monthly_usd}/mo)${isInactive ? ' [Inactive]' : ''}`}
+                                  >
+                                    ➕ {plan.display_name}
+                                    {isInactive && <span className="ml-1 text-xs">(Inactive)</span>}
+                                  </Button>
+                                )
+                              })}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  }
 
-                return (
-                  <tr key={sub.id} className="border-b border-gray-800">
-                    <td className="py-3 text-white">{sub.users?.email || 'Unknown'}</td>
-                    <td className="py-3">
-                      <div className="flex flex-col">
-                        <span className="text-white font-semibold">
-                          {sub.subscription_plans?.display_name || 'Unknown'}
-                        </span>
-                        {(() => {
-                          const currentPlan = plans.find(p => p.id === sub.plan_id)
-                          return currentPlan ? (
-                            <span className="text-xs text-gray-400">
-                              ${currentPlan.price_monthly_usd}/mo • {currentPlan.max_bots === null ? 'Unlimited' : `${currentPlan.max_bots} bots`}
-                            </span>
-                          ) : null
-                        })()}
-                      </div>
-                    </td>
-                    <td className="py-3">
-                      <span
-                        className={`px-2 py-1 rounded text-xs ${
-                          sub.status === 'active' && !isExpired && !isTrialExpired
-                            ? 'bg-green-500/20 text-green-400'
-                            : 'bg-red-500/20 text-red-400'
-                        }`}
-                      >
-                        {isTrialExpired ? 'Trial Expired' : isExpired ? 'Expired' : sub.status}
-                      </span>
-                    </td>
-                    <td className="py-3 text-gray-300">
-                      {trialDays !== null ? (
-                        <span className={trialDays <= 0 ? 'text-red-400' : 'text-yellow-400'}>
-                          {trialDays} days left
-                        </span>
-                      ) : (
-                        'N/A'
-                      )}
-                    </td>
-                    <td className="py-3 text-gray-300">
-                      {sub.expires_at
-                        ? new Date(sub.expires_at).toLocaleDateString()
-                        : 'Never'}
-                    </td>
-                    <td className="py-3">
-                      <div className="flex gap-2 flex-wrap items-center">
-                        {sub.status === 'pending' && (
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            onClick={() => manuallyActivateSubscription(sub.id, sub.invoice_id || undefined)}
-                            disabled={activatingSubscriptionId === sub.id}
-                          >
-                            {activatingSubscriptionId === sub.id ? 'Activating...' : 'Activate'}
-                          </Button>
-                        )}
-                        
-                        {/* Quick Plan Change Buttons */}
-                        <div className="flex gap-1 flex-wrap">
-                          {plans
-                            .filter(plan => plan.id !== sub.plan_id)
-                            .sort((a, b) => (b.price_monthly_usd || 0) - (a.price_monthly_usd || 0))
-                            .map((plan) => {
-                              const currentPlan = plans.find(p => p.id === sub.plan_id)
-                              const isUpgrade = (plan.price_monthly_usd || 0) > (currentPlan?.price_monthly_usd || 0)
-                              const isDowngrade = (plan.price_monthly_usd || 0) < (currentPlan?.price_monthly_usd || 0)
-                              const isInactive = plan.is_active === false
-                              
-                              return (
-                                <Button
-                                  key={plan.id}
-                                  variant={isUpgrade ? "primary" : isDowngrade ? "secondary" : "outline"}
-                                  size="sm"
-                                  onClick={() => handlePlanChangeClick(sub, plan.id)}
-                                  disabled={changingPlanSubscriptionId === sub.id}
-                                  className={`text-xs whitespace-nowrap ${isInactive ? 'opacity-60' : ''}`}
-                                  title={`${isUpgrade ? 'Upgrade' : isDowngrade ? 'Downgrade' : 'Change'} to ${plan.display_name} ($${plan.price_monthly_usd}/mo)${isInactive ? ' [Inactive]' : ''}`}
-                                >
-                                  {isUpgrade ? '⬆️' : isDowngrade ? '⬇️' : '↔️'} {plan.display_name}
-                                  {isInactive && <span className="ml-1 text-xs">(Inactive)</span>}
-                                </Button>
-                              )
-                            })}
+                  // User has subscription - show subscription details
+                  const trialDays = getTrialDaysRemaining(sub)
+                  const isExpired = sub.expires_at && new Date(sub.expires_at) < new Date()
+                  const isTrialExpired = trialDays !== null && trialDays <= 0
+
+                  return (
+                    <tr key={sub.id} className="border-b border-gray-800">
+                      <td className="py-3 text-white">{userWithSub.email}</td>
+                      <td className="py-3">
+                        <div className="flex flex-col">
+                          <span className="text-white font-semibold">
+                            {sub.subscription_plans?.display_name || 'Unknown'}
+                          </span>
+                          {(() => {
+                            const currentPlan = plans.find(p => p.id === sub.plan_id)
+                            return currentPlan ? (
+                              <span className="text-xs text-gray-400">
+                                ${currentPlan.price_monthly_usd}/mo • {currentPlan.max_bots === null ? 'Unlimited' : `${currentPlan.max_bots} bots`}
+                              </span>
+                            ) : null
+                          })()}
                         </div>
-
-                        {/* Legacy dropdown (keep for compatibility) */}
-                        {plans.length > 3 && (
-                          <select
-                            value={upgradingUserId === sub.user_id ? selectedPlanId : ''}
-                            onChange={(e) => {
-                              if (e.target.value) {
-                                handlePlanChangeClick(sub, e.target.value)
-                              }
-                            }}
-                            className="px-2 py-1 bg-gray-800 text-white border border-gray-700 rounded text-sm"
-                            disabled={changingPlanSubscriptionId === sub.id}
-                          >
-                            <option value="">Change Plan...</option>
+                      </td>
+                      <td className="py-3">
+                        <span
+                          className={`px-2 py-1 rounded text-xs ${
+                            sub.status === 'active' && !isExpired && !isTrialExpired
+                              ? 'bg-green-500/20 text-green-400'
+                              : 'bg-red-500/20 text-red-400'
+                          }`}
+                        >
+                          {isTrialExpired ? 'Trial Expired' : isExpired ? 'Expired' : sub.status}
+                        </span>
+                      </td>
+                      <td className="py-3 text-gray-300">
+                        {trialDays !== null ? (
+                          <span className={trialDays <= 0 ? 'text-red-400' : 'text-yellow-400'}>
+                            {trialDays} days left
+                          </span>
+                        ) : (
+                          'N/A'
+                        )}
+                      </td>
+                      <td className="py-3 text-gray-300">
+                        {sub.expires_at
+                          ? new Date(sub.expires_at).toLocaleDateString()
+                          : 'Never'}
+                      </td>
+                      <td className="py-3">
+                        <div className="flex gap-2 flex-wrap items-center">
+                          {sub.status === 'pending' && (
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={() => manuallyActivateSubscription(sub.id, sub.invoice_id || undefined)}
+                              disabled={activatingSubscriptionId === sub.id}
+                            >
+                              {activatingSubscriptionId === sub.id ? 'Activating...' : 'Activate'}
+                            </Button>
+                          )}
+                          
+                          {/* Quick Plan Change Buttons */}
+                          <div className="flex gap-1 flex-wrap">
                             {plans
                               .filter(plan => plan.id !== sub.plan_id)
                               .sort((a, b) => (b.price_monthly_usd || 0) - (a.price_monthly_usd || 0))
-                              .map((plan) => (
-                                <option key={plan.id} value={plan.id}>
-                                  {plan.display_name} (${plan.price_monthly_usd}/mo){plan.is_active === false ? ' [Inactive]' : ''}
-                                </option>
-                              ))}
-                          </select>
-                        )}
+                              .map((plan) => {
+                                const currentPlan = plans.find(p => p.id === sub.plan_id)
+                                const isUpgrade = (plan.price_monthly_usd || 0) > (currentPlan?.price_monthly_usd || 0)
+                                const isDowngrade = (plan.price_monthly_usd || 0) < (currentPlan?.price_monthly_usd || 0)
+                                const isInactive = plan.is_active === false
+                                
+                                return (
+                                  <Button
+                                    key={plan.id}
+                                    variant={isUpgrade ? "primary" : isDowngrade ? "secondary" : "outline"}
+                                    size="sm"
+                                    onClick={() => handlePlanChangeClick(sub, plan.id)}
+                                    disabled={changingPlanSubscriptionId === sub.id}
+                                    className={`text-xs whitespace-nowrap ${isInactive ? 'opacity-60' : ''}`}
+                                    title={`${isUpgrade ? 'Upgrade' : isDowngrade ? 'Downgrade' : 'Change'} to ${plan.display_name} ($${plan.price_monthly_usd}/mo)${isInactive ? ' [Inactive]' : ''}`}
+                                  >
+                                    {isUpgrade ? '⬆️' : isDowngrade ? '⬇️' : '↔️'} {plan.display_name}
+                                    {isInactive && <span className="ml-1 text-xs">(Inactive)</span>}
+                                  </Button>
+                                )
+                              })}
+                          </div>
 
-                        {trialDays !== null && trialDays > 0 && (
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => extendTrial(sub.id, 7)}
-                          >
-                            +7 Days
-                          </Button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                )
+                          {/* Legacy dropdown (keep for compatibility) */}
+                          {plans.length > 3 && (
+                            <select
+                              value={upgradingUserId === sub.user_id ? selectedPlanId : ''}
+                              onChange={(e) => {
+                                if (e.target.value) {
+                                  handlePlanChangeClick(sub, e.target.value)
+                                }
+                              }}
+                              className="px-2 py-1 bg-gray-800 text-white border border-gray-700 rounded text-sm"
+                              disabled={changingPlanSubscriptionId === sub.id}
+                            >
+                              <option value="">Change Plan...</option>
+                              {plans
+                                .filter(plan => plan.id !== sub.plan_id)
+                                .sort((a, b) => (b.price_monthly_usd || 0) - (a.price_monthly_usd || 0))
+                                .map((plan) => (
+                                  <option key={plan.id} value={plan.id}>
+                                    {plan.display_name} (${plan.price_monthly_usd}/mo){plan.is_active === false ? ' [Inactive]' : ''}
+                                  </option>
+                                ))}
+                            </select>
+                          )}
+
+                          {trialDays !== null && trialDays > 0 && (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => extendTrial(sub.id, 7)}
+                            >
+                              +7 Days
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
                 })}
               </tbody>
             </table>

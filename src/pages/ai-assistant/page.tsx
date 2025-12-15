@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../../components/feature/Header';
+import Navigation from '../../components/feature/Navigation';
 import Card from '../../components/base/Card';
 import Button from '../../components/base/Button';
 import { useAuth } from '../../hooks/useAuth';
@@ -127,11 +128,14 @@ export default function AiAssistantPage() {
 • **Platform Features**: Guide you through creating bots, managing trades, and more
 • **Trading Questions**: Answer questions about cryptocurrency trading, technical analysis, and market behavior
 • **Create & Edit Bots**: I can create new bots or modify existing ones based on your requests!
+• **Edit User Settings**: I can update your notification preferences, alert settings, and risk management settings!
 
 **Try saying:**
 - "Create a BTCUSDT bot with RSI strategy, low risk"
 - "Update my bot to use tighter stop loss"
 - "Show me my bot performance"
+- "Enable email notifications for trade executed"
+- "Set my daily loss limit to 500 USDT"
 
 What would you like to know?`,
       timestamp: new Date()
@@ -456,6 +460,18 @@ What would you like to know?`,
   };
 
   const clearChat = () => {
+    // Don't actually clear chat history - just show a message
+    const confirmClear = window.confirm('Are you sure you want to clear the chat history? This action cannot be undone.');
+    if (!confirmClear) {
+      return;
+    }
+    
+    // Only clear if user confirms twice
+    const doubleConfirm = window.confirm('This will permanently delete all chat messages. Continue?');
+    if (!doubleConfirm) {
+      return;
+    }
+    
     setMessages([{
       id: 'welcome',
       role: 'assistant',
@@ -467,11 +483,14 @@ What would you like to know?`,
 • **Platform Features**: Guide you through creating bots, managing trades, and more
 • **Trading Questions**: Answer questions about cryptocurrency trading, technical analysis, and market behavior
 • **Create & Edit Bots**: I can create new bots or modify existing ones based on your requests!
+• **Edit User Settings**: I can update your notification preferences, alert settings, and risk management settings!
 
 **Try saying:**
 - "Create a BTCUSDT bot with RSI strategy, low risk"
 - "Update my bot to use tighter stop loss"
 - "Show me my bot performance"
+- "Enable email notifications for trade executed"
+- "Set my daily loss limit to 500 USDT"
 
 What would you like to know?`,
       timestamp: new Date()
@@ -485,8 +504,9 @@ What would you like to know?`,
         subtitle="Get help with bot settings and trading questions"
         showBack
       />
+      <Navigation />
       
-      <div className="container mx-auto px-4 py-6 max-w-4xl">
+      <div className="container mx-auto px-4 py-6 max-w-4xl pb-24">
         {!apiConfigured && (
           <Card className="p-4 mb-4 bg-yellow-50 border-yellow-200 border-2">
             <div className="flex items-start">

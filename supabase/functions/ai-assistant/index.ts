@@ -122,6 +122,15 @@ serve(async (req) => {
 
     const botsContext = botsError ? [] : (userBots || []);
 
+    // Fetch user's settings for context
+    const { data: userSettings, error: settingsError } = await supabaseServiceClient
+      .from('user_settings')
+      .select('notification_preferences, alert_settings, risk_settings')
+      .eq('user_id', user.id)
+      .single();
+
+    const settingsContext = settingsError ? null : userSettings;
+
     // Build comprehensive knowledge base prompt
     const knowledgeBase = buildKnowledgeBase();
 
@@ -143,6 +152,14 @@ serve(async (req) => {
    - Paper Trading: ${bot.paper_trading ? 'Yes' : 'No'}`;
         }).join('\n\n')
       : `\n\n## USER'S CURRENT BOTS: None (user has no bots yet)`;
+
+    // Build user's settings context
+    const settingsContextText = settingsContext
+      ? `\n\n## USER'S CURRENT SETTINGS:\n` +
+        `Notification Preferences: ${JSON.stringify(settingsContext.notification_preferences || {})}\n` +
+        `Alert Settings: ${JSON.stringify(settingsContext.alert_settings || {})}\n` +
+        `Risk Settings: ${JSON.stringify(settingsContext.risk_settings || {})}`
+      : `\n\n## USER'S CURRENT SETTINGS: None (default settings will be used)`;
 
     // Define functions/tools for OpenAI function calling
     const functions = [
@@ -276,6 +293,58 @@ serve(async (req) => {
           },
           required: ['botId']
         }
+      },
+      {
+        name: 'update_user_settings',
+        description: 'Update user settings including notification preferences, alert settings, or risk settings. Use this when user asks to change settings, enable/disable notifications, or modify preferences.',
+        parameters: {
+          type: 'object',
+          properties: {
+            notificationPreferences: {
+              type: 'object',
+              description: 'Notification preferences (email, push notifications)',
+              properties: {
+                email: {
+                  type: 'object',
+                  description: 'Email notification preferences',
+                  properties: {
+                    enabled: { type: 'boolean' },
+                    trade_executed: { type: 'boolean' },
+                    bot_started: { type: 'boolean' },
+                    bot_stopped: { type: 'boolean' },
+                    error_occurred: { type: 'boolean' },
+                    daily_summary: { type: 'boolean' },
+                    profit_alert: { type: 'boolean' },
+                    loss_alert: { type: 'boolean' },
+                    position_opened: { type: 'boolean' },
+                    position_closed: { type: 'boolean' },
+                    stop_loss_triggered: { type: 'boolean' },
+                    take_profit_triggered: { type: 'boolean' }
+                  }
+                },
+                push: {
+                  type: 'object',
+                  description: 'Push notification preferences',
+                  properties: {
+                    enabled: { type: 'boolean' },
+                    trade_executed: { type: 'boolean' },
+                    bot_started: { type: 'boolean' },
+                    bot_stopped: { type: 'boolean' },
+                    error_occurred: { type: 'boolean' }
+                  }
+                }
+              }
+            },
+            alertSettings: {
+              type: 'object',
+              description: 'Alert settings (profit thresholds, loss thresholds, etc.)'
+            },
+            riskSettings: {
+              type: 'object',
+              description: 'Risk management settings (max daily loss, position size, etc.)'
+            }
+          }
+        }
       }
     ];
 
@@ -300,7 +369,9 @@ IMPORTANT GUIDELINES:
 9. When user asks to create or modify bots, use the available functions to perform the actions
 10. Always suggest paper trading mode for new bots unless user explicitly requests live trading
 11. When creating bots, use sensible defaults based on risk level (low risk = conservative, high risk = aggressive)
-12. Reference user's existing bots when making recommendations to avoid duplicates or conflicts`
+12. Reference user's existing bots when making recommendations to avoid duplicates or conflicts
+13. When user asks to change settings, enable/disable notifications, or modify preferences, use the update_user_settings function
+14. Always preserve existing settings when updating - only modify the specific fields the user requests`
       },
       ...conversationHistory.map((msg: any) => ({
         role: msg.role,
@@ -833,6 +904,95 @@ async function executeGetBotPerformance(supabaseClient: any, userId: string, bot
   } catch (error: any) {
     console.error('Error in executeGetBotPerformance:', error);
     return { success: false, error: error.message || 'Failed to get bot performance' };
+  }
+}
+
+// Update user settings
+async function executeUpdateUserSettings(supabaseClient: any, userId: string, params: any) {
+  try {
+    // Get current settings
+    const { data: currentSettings, error: fetchError } = await supabaseClient
+      .from('user_settings')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+
+    if (fetchError && fetchError.code !== 'PGRST116') {
+      return { success: false, error: 'Failed to fetch current settings' };
+    }
+
+    // Build update object
+    const updates: any = {
+      updated_at: new Date().toISOString()
+    };
+
+    if (params.notificationPreferences) {
+      if (currentSettings) {
+        updates.notification_preferences = {
+          ...currentSettings.notification_preferences,
+          ...params.notificationPreferences
+        };
+      } else {
+        updates.notification_preferences = params.notificationPreferences;
+      }
+    }
+
+    if (params.alertSettings) {
+      if (currentSettings) {
+        updates.alert_settings = {
+          ...currentSettings.alert_settings,
+          ...params.alertSettings
+        };
+      } else {
+        updates.alert_settings = params.alertSettings;
+      }
+    }
+
+    if (params.riskSettings) {
+      if (currentSettings) {
+        updates.risk_settings = {
+          ...currentSettings.risk_settings,
+          ...params.riskSettings
+        };
+      } else {
+        updates.risk_settings = params.riskSettings;
+      }
+    }
+
+    // Create or update settings
+    let result;
+    if (currentSettings) {
+      const { data, error } = await supabaseClient
+        .from('user_settings')
+        .update(updates)
+        .eq('user_id', userId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      result = data;
+    } else {
+      const { data, error } = await supabaseClient
+        .from('user_settings')
+        .insert({
+          user_id: userId,
+          ...updates
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      result = data;
+    }
+
+    return {
+      success: true,
+      message: 'User settings updated successfully',
+      updatedFields: Object.keys(updates).filter(k => k !== 'updated_at')
+    };
+  } catch (error: any) {
+    console.error('Error in executeUpdateUserSettings:', error);
+    return { success: false, error: error.message || 'Failed to update user settings' };
   }
 }
 
