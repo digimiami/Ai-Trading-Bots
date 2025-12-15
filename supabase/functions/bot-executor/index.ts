@@ -10192,13 +10192,11 @@ class PaperTradingExecutor {
       // Fetch account balance for notification
       let accountBalance: number | null = null;
       try {
-        if (bot.paper_trading) {
-          // Get paper trading account balance (available balance)
-          const paperAccount = await this.getPaperAccount();
-          if (paperAccount && paperAccount.balance !== undefined && paperAccount.balance !== null) {
-            accountBalance = parseFloat(paperAccount.balance || '0');
-            console.log(`📊 Paper trading available balance for notification: $${accountBalance.toFixed(2)}`);
-          }
+        // Get paper trading account balance (available balance)
+        const paperAccount = await this.getPaperAccount();
+        if (paperAccount && paperAccount.balance !== undefined && paperAccount.balance !== null) {
+          accountBalance = parseFloat(paperAccount.balance || '0');
+          console.log(`📊 Paper trading available balance for notification: $${accountBalance.toFixed(2)}`);
         }
       } catch (balanceError) {
         console.warn('⚠️ Failed to fetch account balance for notification:', balanceError);
@@ -10220,8 +10218,8 @@ class PaperTradingExecutor {
           data: {
             bot_name: bot.name,
             symbol: bot.symbol || trade.symbol,
-            side: trade.side || position?.side,
-            entry_price: trade.entry_price || position?.entry_price,
+            side: trade.side,
+            entry_price: trade.entry_price || trade.price,
             exit_price: exitPrice,
             pnl: pnl,
             pnl_percentage: trade.entry_price ? ((pnl / (trade.entry_price * (trade.amount || trade.size || 1))) * 100).toFixed(2) : '0',
