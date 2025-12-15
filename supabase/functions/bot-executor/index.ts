@@ -2545,7 +2545,49 @@ class BotExecutor {
         // PAPER TRADING MODE - Use real market data but simulate trades
         console.log(`📝 [PAPER TRADING MODE] Bot: ${bot.name}`);
         
-        const paperExecutor = new PaperTradingExecutor(this.supabaseClient, this.user);
+        // Early validation: Check if user exists before creating PaperTradingExecutor
+        // This prevents foreign key constraint violations
+        try {
+          const { data: userExists, error: userCheckError } = await this.supabaseClient
+            .from('users')
+            .select('id')
+            .eq('id', bot.user_id)
+            .maybeSingle();
+          
+          if (userCheckError || !userExists) {
+            const errorMsg = `User ${bot.user_id} does not exist in users table. Bot may belong to deleted user. Skipping execution.`;
+            console.error(`❌ [PAPER] ${errorMsg}`);
+            await this.addBotLog(bot.id, {
+              level: 'error',
+              category: 'error',
+              message: errorMsg,
+              details: { 
+                bot_id: bot.id,
+                bot_name: bot.name,
+                user_id: bot.user_id,
+                error: userCheckError?.message || 'User not found'
+              }
+            });
+            return; // Skip execution for bots with invalid user_id
+          }
+        } catch (userValidationError: any) {
+          console.error(`❌ [PAPER] Error validating user existence:`, userValidationError);
+          await this.addBotLog(bot.id, {
+            level: 'error',
+            category: 'error',
+            message: `Failed to validate user existence: ${userValidationError.message}`,
+            details: { 
+              bot_id: bot.id,
+              bot_name: bot.name,
+              user_id: bot.user_id,
+              error: userValidationError.message
+            }
+          });
+          return; // Skip execution if validation fails
+        }
+        
+        // Create PaperTradingExecutor with bot's user_id (not executor's user)
+        const paperExecutor = new PaperTradingExecutor(this.supabaseClient, { id: bot.user_id });
         
         // Get REAL market data from MAINNET (same functions as real trading)
         const tradingType = bot.tradingType || bot.trading_type || 'futures';
@@ -2726,49 +2768,6 @@ class BotExecutor {
           // Update paper positions but don't trade
           await paperExecutor.updatePaperPositions(bot.id);
           return; // Stop execution - wait for cooldown
-        }
-        
-        // Early validation: Check if user exists before attempting paper trading
-        // This prevents foreign key constraint violations
-        if (bot.paper_trading) {
-          try {
-            const { data: userExists, error: userCheckError } = await this.supabaseClient
-              .from('users')
-              .select('id')
-              .eq('id', bot.user_id)
-              .maybeSingle();
-            
-            if (userCheckError || !userExists) {
-              const errorMsg = `User ${bot.user_id} does not exist in users table. Bot may belong to deleted user. Skipping execution.`;
-              console.error(`❌ [PAPER] ${errorMsg}`);
-              await this.addBotLog(bot.id, {
-                level: 'error',
-                category: 'error',
-                message: errorMsg,
-                details: { 
-                  bot_id: bot.id,
-                  bot_name: bot.name,
-                  user_id: bot.user_id,
-                  error: userCheckError?.message || 'User not found'
-                }
-              });
-              return; // Skip execution for bots with invalid user_id
-            }
-          } catch (userValidationError: any) {
-            console.error(`❌ [PAPER] Error validating user existence:`, userValidationError);
-            await this.addBotLog(bot.id, {
-              level: 'error',
-              category: 'error',
-              message: `Failed to validate user existence: ${userValidationError.message}`,
-              details: { 
-                bot_id: bot.id,
-                bot_name: bot.name,
-                user_id: bot.user_id,
-                error: userValidationError.message
-              }
-            });
-            return; // Skip execution if validation fails
-          }
         }
         
         // 🕐 TRADING HOURS CHECK - Check if current hour is in allowed trading hours (for paper trading too)
@@ -5661,11 +5660,24 @@ class BotExecutor {
         if (userCheckError || !userExists) {
           const errorMsg = `User ${bot.user_id} does not exist in users table. Bot may belong to deleted user. Cannot execute paper trade.`;
           console.error(`❌ [PAPER] ${errorMsg}`);
+          // Log error but don't throw - let Promise.allSettled handle it gracefully
+          await this.addBotLog(bot.id, {
+            level: 'error',
+            category: 'error',
+            message: errorMsg,
+            details: { 
+              bot_id: bot.id,
+              bot_name: bot.name,
+              user_id: bot.user_id,
+              error: userCheckError?.message || 'User not found'
+            }
+          });
           throw new Error(errorMsg);
         }
         
         console.log(`📝 Executing PAPER trade for ${bot.symbol}...`);
-        const paperExecutor = new PaperTradingExecutor(this.supabaseClient, this.user);
+        // Create PaperTradingExecutor with bot's user_id (not executor's user)
+        const paperExecutor = new PaperTradingExecutor(this.supabaseClient, { id: bot.user_id });
         await paperExecutor.executePaperTrade(botSnapshot, tradeSignal);
         await paperExecutor.updatePaperPositions(bot.id);
         console.log(`✅ PAPER trade executed successfully`);
