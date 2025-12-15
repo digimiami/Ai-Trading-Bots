@@ -12,7 +12,7 @@ SELECT
     u.created_at,
     au.id as auth_user_id,
     au.email as auth_email
-FROM users u
+FROM public.users u
 LEFT JOIN auth.users au ON u.id = au.id
 WHERE u.email = 'alex.johnson@email.com'
    OR au.email = 'alex.johnson@email.com';
@@ -22,9 +22,9 @@ WHERE u.email = 'alex.johnson@email.com'
 SELECT 
     'trading_bots' as table_name,
     COUNT(*) as count
-FROM trading_bots
+FROM public.trading_bots
 WHERE user_id IN (
-    SELECT id FROM users WHERE email = 'alex.johnson@email.com'
+    SELECT id FROM public.users WHERE email = 'alex.johnson@email.com'
     UNION
     SELECT id FROM auth.users WHERE email = 'alex.johnson@email.com'
 )
@@ -32,9 +32,9 @@ UNION ALL
 SELECT 
     'trades' as table_name,
     COUNT(*) as count
-FROM trades
+FROM public.trades
 WHERE user_id IN (
-    SELECT id FROM users WHERE email = 'alex.johnson@email.com'
+    SELECT id FROM public.users WHERE email = 'alex.johnson@email.com'
     UNION
     SELECT id FROM auth.users WHERE email = 'alex.johnson@email.com'
 )
@@ -42,9 +42,9 @@ UNION ALL
 SELECT 
     'paper_positions' as table_name,
     COUNT(*) as count
-FROM paper_positions
+FROM public.paper_positions
 WHERE user_id IN (
-    SELECT id FROM users WHERE email = 'alex.johnson@email.com'
+    SELECT id FROM public.users WHERE email = 'alex.johnson@email.com'
     UNION
     SELECT id FROM auth.users WHERE email = 'alex.johnson@email.com'
 );
@@ -56,9 +56,9 @@ SELECT
     symbol,
     status,
     created_at
-FROM trading_bots
+FROM public.trading_bots
 WHERE user_id IN (
-    SELECT id FROM users WHERE email = 'alex.johnson@email.com'
+    SELECT id FROM public.users WHERE email = 'alex.johnson@email.com'
     UNION
     SELECT id FROM auth.users WHERE email = 'alex.johnson@email.com'
 )

@@ -18,10 +18,10 @@ SELECT
     u.name,
     u.role,
     u.created_at,
-    (SELECT COUNT(*) FROM trading_bots WHERE user_id = u.id) as bot_count,
-    (SELECT COUNT(*) FROM trades WHERE user_id = u.id) as trade_count,
-    (SELECT COUNT(*) FROM paper_positions WHERE user_id = u.id) as paper_position_count
-FROM users u
+    (SELECT COUNT(*) FROM public.trading_bots WHERE user_id = u.id) as bot_count,
+    (SELECT COUNT(*) FROM public.trades WHERE user_id = u.id) as trade_count,
+    (SELECT COUNT(*) FROM public.paper_positions WHERE user_id = u.id) as paper_position_count
+FROM public.users u
 WHERE u.email = 'alex.johnson@email.com';
 
 -- Step 2: Get the user ID (save this for the deletion)
@@ -29,7 +29,7 @@ WHERE u.email = 'alex.johnson@email.com';
 
 -- Step 3: Delete from users table (cascade will handle related data)
 -- Replace 'USER_ID_HERE' with the actual user ID from Step 1
-DELETE FROM users WHERE email = 'alex.johnson@email.com';
+DELETE FROM public.users WHERE email = 'alex.johnson@email.com';
 
 -- Step 4: Delete from auth.users using Admin API
 -- NOTE: Direct SQL deletion from auth.users may not work due to RLS.
@@ -50,7 +50,7 @@ SELECT
     'users table' as source,
     id,
     email
-FROM users
+FROM public.users
 WHERE email = 'alex.johnson@email.com'
 UNION ALL
 SELECT 
