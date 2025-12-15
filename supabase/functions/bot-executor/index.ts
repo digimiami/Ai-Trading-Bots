@@ -11776,53 +11776,8 @@ serve(async (req) => {
         
         console.log(`📊 Database query result: Found ${botList.length} running bots${isCron ? ' (all users)' : ` for user ${user?.id}`}`);
         
-        // Filter out bots whose users have been deleted (prevents foreign key violations)
-        const botsWithValidUsers: any[] = [];
-        const botsWithDeletedUsers: any[] = [];
-        
         if (botList.length > 0) {
-          // Check which users exist
-          const userIds = [...new Set(botList.map(b => b.user_id).filter(Boolean))];
-          if (userIds.length > 0) {
-            const { data: existingUsers, error: usersCheckError } = await supabaseClient
-              .from('users')
-              .select('id')
-              .in('id', userIds);
-            
-            const existingUserIds = new Set((existingUsers || []).map(u => u.id));
-            
-            for (const bot of botList) {
-              if (!bot.user_id || !existingUserIds.has(bot.user_id)) {
-                botsWithDeletedUsers.push(bot);
-                console.warn(`⚠️ Skipping bot ${bot.id} (${bot.name}): User ${bot.user_id} does not exist`);
-              } else {
-                botsWithValidUsers.push(bot);
-              }
-            }
-          } else {
-            botsWithValidUsers.push(...botList);
-          }
-          
-          if (botsWithDeletedUsers.length > 0) {
-            console.log(`⚠️ Filtered out ${botsWithDeletedUsers.length} bot(s) with deleted users`);
-            // Optionally mark these bots as inactive or log them for admin review
-            for (const bot of botsWithDeletedUsers) {
-              await supabaseClient
-                .from('bot_logs')
-                .insert({
-                  bot_id: bot.id,
-                  level: 'warn',
-                  category: 'system',
-                  message: `Bot skipped: User ${bot.user_id} does not exist. Bot may belong to deleted user.`,
-                  details: { bot_id: bot.id, bot_name: bot.name, user_id: bot.user_id }
-                })
-                .catch(err => console.error(`Failed to log bot skip:`, err));
-            }
-          }
-        }
-        
-        if (botsWithValidUsers.length > 0) {
-          console.log('📋 Bot details:', botsWithValidUsers.map(b => ({
+          console.log('📋 Bot details:', botList.map(b => ({
             id: b.id, 
             user_id: b.user_id,
             name: b.name, 
@@ -11833,15 +11788,14 @@ serve(async (req) => {
           })));
         }
 
-        if (!botsWithValidUsers || botsWithValidUsers.length === 0) {
-          console.log('⚠️ No running bots found (after filtering deleted users)');
+        if (!botList || botList.length === 0) {
+          console.log('⚠️ No running bots found');
           console.log('💡 Tip: Check if bots are set to "running" status in the database');
           console.log('💡 Tip: Verify bot-scheduler cron job is configured correctly');    
           return new Response(JSON.stringify({
             success: true,
             message: 'No running bots found',
             botsExecuted: 0,
-            botsFiltered: botsWithDeletedUsers.length,
             suggestion: 'Check if bots are set to "running" status and verify cron job is configured'
           }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -11852,7 +11806,7 @@ serve(async (req) => {
         const botsToExecute: any[] = [];
         const skippedBots: any[] = [];
         
-        for (const bot of botsWithValidUsers) {
+        for (const bot of botList) {
           // Skip if bot was just updated (cooldown period)
           const lastUpdate = new Date(bot.updated_at || bot.created_at);
           const cooldownMs = 60000; // 1 minute cooldown
@@ -11979,21 +11933,6 @@ serve(async (req) => {
               console.log(`   - User: ${bot.user_id}`);
               
               try {
-                // Final safety check: Verify user exists before execution (prevents foreign key violations)
-                if (bot.paper_trading) {
-                  const { data: userExists, error: userCheckError } = await supabaseClient
-                    .from('users')
-                    .select('id')
-                    .eq('id', bot.user_id)
-                    .maybeSingle();
-                  
-                  if (userCheckError || !userExists) {
-                    const errorMsg = `User ${bot.user_id} does not exist. Bot may belong to deleted user. Skipping execution.`;
-                    console.warn(`⚠️ [${bot.name}] ${errorMsg}`);
-                    throw new Error(errorMsg);
-                  }
-                }
-                
                 // Add per-bot timeout to prevent individual bots from taking too long
                 const exec = new BotExecutor(supabaseClient, { id: isCron ? bot.user_id : user.id });
                 const result = await Promise.race([
@@ -12090,12 +12029,11 @@ serve(async (req) => {
         
         return new Response(JSON.stringify({ 
           success: true, 
-          message: `Executed ${successful} bots successfully, ${failed} failed${skipped > 0 ? `, ${skipped} skipped due to timeout` : ''}${remainingBots > 0 ? `, ${remainingBots} bots will be processed in next cycle` : ''}${botsWithDeletedUsers.length > 0 ? `, ${botsWithDeletedUsers.length} filtered (deleted users)` : ''}`,
+          message: `Executed ${successful} bots successfully, ${failed} failed${skipped > 0 ? `, ${skipped} skipped due to timeout` : ''}${remainingBots > 0 ? `, ${remainingBots} bots will be processed in next cycle` : ''}`,
           botsExecuted: processedCount,
           botsTotal: filteredBotList.length,
           botsProcessedThisCycle: botsToProcess.length,
           botsRemaining: remainingBots,
-          botsFiltered: botsWithDeletedUsers.length,
           successful,
           failed,
           skipped,

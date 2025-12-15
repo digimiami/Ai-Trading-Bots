@@ -26,7 +26,6 @@ export default function BotsPage() {
   const [filter, setFilter] = useState<'all' | 'running' | 'paused' | 'stopped' | 'live'>('all');
   const [viewMode, setViewMode] = useState<'overview' | 'webhook'>('overview');
   const [bulkLoading, setBulkLoading] = useState(false);
-  const [expandedBot, setExpandedBot] = useState<string | null>(null);
   const [togglingAiMl, setTogglingAiMl] = useState<string | null>(null);
   const [editingLimitBotId, setEditingLimitBotId] = useState<string | null>(null);
   const [editingLimitValue, setEditingLimitValue] = useState<number | null>(null);
@@ -34,7 +33,6 @@ export default function BotsPage() {
   const [editingTradeAmountValue, setEditingTradeAmountValue] = useState<number | null>(null);
   const [webhookExpandedBot, setWebhookExpandedBot] = useState<string | null>(null);
   const [webhookSignals, setWebhookSignals] = useState<Record<string, ManualTradeSignal[]>>({});
-  const [manualTrades, setManualTrades] = useState<Record<string, ManualTradeSignal[]>>({});
   const [webhookSignalsLoading, setWebhookSignalsLoading] = useState<Record<string, boolean>>({});
   const [webhookSecretVisible, setWebhookSecretVisible] = useState<Record<string, boolean>>({});
   const [webhookActionLoading, setWebhookActionLoading] = useState<Record<string, boolean>>({});
@@ -1574,9 +1572,9 @@ export default function BotsPage() {
                             <p className="text-xs text-gray-700 mb-1">
                               {activityState.currentAction}
                             </p>
-                            {activityState.waitingFor && (
-                              <p className="text-xs text-gray-600 italic">
-                                Waiting for: {activityState.waitingFor}
+                            {activityState.waitingFor && activityState.executionState === 'waiting' && (
+                              <p className="text-xs text-gray-600 italic mt-1">
+                                💡 {activityState.waitingFor}
                               </p>
                             )}
                             {activityState.hasError && activity.errorCount > 0 && (
@@ -1589,139 +1587,6 @@ export default function BotsPage() {
                       </div>
                     </div>
                   ) : null;
-                })()}
-
-                {/* Recent Manual Trades */}
-                {!isWebhookView && (() => {
-                  // Load manual trades when section is visible
-                  if (!manualTrades[bot.id] && expandedBot !== bot.id) {
-                    loadManualTrades(bot.id);
-                  }
-                  
-                  const botManualTrades = manualTrades[bot.id] || [];
-                  const recentManualTrades = botManualTrades.slice(0, 3);
-                  
-                  return (
-                    <div className="pt-4 border-t border-gray-100">
-                      <div className="flex items-center justify-between mb-3">
-                        <h4 className="text-sm font-medium text-gray-700">Recent Manual Trades</h4>
-                        <button
-                          onClick={() => {
-                            const newExpanded = expandedBot === bot.id ? null : bot.id;
-                            setExpandedBot(newExpanded);
-                            if (newExpanded) {
-                              loadManualTrades(bot.id);
-                            }
-                          }}
-                          className="text-xs text-blue-600 hover:text-blue-800"
-                        >
-                          {expandedBot === bot.id ? 'Hide' : 'Show All'}
-                        </button>
-                      </div>
-                      
-                      {/* Manual Trades List */}
-                      <div className="space-y-2">
-                        {recentManualTrades.length === 0 ? (
-                          <div className="text-center py-4 text-gray-500 text-sm">
-                            <i className="ri-exchange-line text-lg mb-1"></i>
-                            <p>No recent manual trades</p>
-                          </div>
-                        ) : (
-                          recentManualTrades.map((trade) => (
-                            <div key={trade.id} className="flex items-start space-x-2 p-2 bg-gray-50 rounded text-xs">
-                              <div className={`w-5 h-5 rounded-full flex items-center justify-center ${
-                                trade.status === 'completed' ? 'bg-green-100 text-green-600' :
-                                trade.status === 'failed' ? 'bg-red-100 text-red-600' :
-                                trade.status === 'processing' ? 'bg-blue-100 text-blue-600' :
-                                'bg-yellow-100 text-yellow-600'
-                              }`}>
-                                <i className={`ri-${trade.side === 'buy' || trade.side === 'long' ? 'arrow-up' : 'arrow-down'}-line text-xs`}></i>
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between">
-                                  <span className={`px-1 py-0.5 rounded text-xs font-medium ${
-                                    trade.status === 'completed' ? 'bg-green-100 text-green-700' :
-                                    trade.status === 'failed' ? 'bg-red-100 text-red-700' :
-                                    trade.status === 'processing' ? 'bg-blue-100 text-blue-700' :
-                                    'bg-yellow-100 text-yellow-700'
-                                  }`}>
-                                    {trade.status}
-                                  </span>
-                                  <span className="text-gray-500">{formatTime(trade.created_at)}</span>
-                                </div>
-                                <p className="text-gray-700 mt-1">
-                                  <span className="font-medium">{trade.side.toUpperCase()}</span>
-                                  {trade.size_multiplier && trade.size_multiplier !== 1 && (
-                                    <span className="text-gray-500 ml-1">({trade.size_multiplier}x)</span>
-                                  )}
-                                  {' '}
-                                  {trade.mode === 'real' ? '💰 Real' : '📄 Paper'}
-                                </p>
-                                {trade.reason && (
-                                  <p className="text-gray-600 mt-1 text-xs truncate" title={trade.reason}>
-                                    {trade.reason}
-                                  </p>
-                                )}
-                                {trade.error && (
-                                  <p className="text-red-600 mt-1 text-xs">{trade.error}</p>
-                                )}
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-
-                      {/* Expanded Manual Trades */}
-                      {expandedBot === bot.id && botManualTrades.length > 3 && (
-                        <div className="mt-3 space-y-2 max-h-48 overflow-y-auto">
-                          {botManualTrades.slice(3).map((trade) => (
-                            <div key={trade.id} className="flex items-start space-x-2 p-2 bg-gray-50 rounded text-xs">
-                              <div className={`w-5 h-5 rounded-full flex items-center justify-center ${
-                                trade.status === 'completed' ? 'bg-green-100 text-green-600' :
-                                trade.status === 'failed' ? 'bg-red-100 text-red-600' :
-                                trade.status === 'processing' ? 'bg-blue-100 text-blue-600' :
-                                'bg-yellow-100 text-yellow-600'
-                              }`}>
-                                <i className={`ri-${trade.side === 'buy' || trade.side === 'long' ? 'arrow-up' : 'arrow-down'}-line text-xs`}></i>
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between">
-                                  <span className={`px-1 py-0.5 rounded text-xs font-medium ${
-                                    trade.status === 'completed' ? 'bg-green-100 text-green-700' :
-                                    trade.status === 'failed' ? 'bg-red-100 text-red-700' :
-                                    trade.status === 'processing' ? 'bg-blue-100 text-blue-700' :
-                                    'bg-yellow-100 text-yellow-700'
-                                  }`}>
-                                    {trade.status}
-                                  </span>
-                                  <span className="text-gray-500">{formatTime(trade.created_at)}</span>
-                                </div>
-                                <p className="text-gray-700 mt-1">
-                                  <span className="font-medium">{trade.side.toUpperCase()}</span>
-                                  {trade.size_multiplier && trade.size_multiplier !== 1 && (
-                                    <span className="text-gray-500 ml-1">({trade.size_multiplier}x)</span>
-                                  )}
-                                  {' '}
-                                  {trade.mode === 'real' ? '💰 Real' : '📄 Paper'}
-                                </p>
-                                {trade.reason && (
-                                  <p className="text-gray-600 mt-1 text-xs">{trade.reason}</p>
-                                )}
-                                {trade.error && (
-                                  <p className="text-red-600 mt-1 text-xs">{trade.error}</p>
-                                )}
-                                {trade.processed_at && (
-                                  <p className="text-gray-500 mt-1 text-xs">
-                                    Processed: {formatTime(trade.processed_at)}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
                 })()}
 
                 {/* TradingView Webhook Management */}

@@ -63,3 +63,4 @@ WHERE user_id IN (
     SELECT id FROM auth.users WHERE email = 'alex.johnson@email.com'
 )
 ORDER BY created_at DESC;
+

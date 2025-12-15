@@ -58,3 +58,4 @@ SELECT id, email FROM auth.users WHERE email = 'alex.johnson@email.com';
 ```
 
 Both queries should return no results.
+

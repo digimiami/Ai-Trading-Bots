@@ -68,3 +68,4 @@ BEGIN
         RAISE NOTICE 'notification_preferences column already exists in user_settings table';
     END IF;
 END $$;
+

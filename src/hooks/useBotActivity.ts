@@ -214,9 +214,22 @@ export function useBotActivity(bots?: any[]) {
 
     // Check time since last activity
     if (timeSinceLastLog > fiveMinutesAgo) {
+      // Provide more informative message based on how long it's been
+      const hours = Math.floor(timeSinceLastLog / (60 * 60 * 1000));
+      const days = Math.floor(hours / 24);
+      
+      let waitingMessage = 'Waiting for trading signal';
+      if (days > 0) {
+        waitingMessage = `No activity for ${days} day${days > 1 ? 's' : ''} - Waiting for trading signal or strategy condition`;
+      } else if (hours > 0) {
+        waitingMessage = `No activity for ${hours} hour${hours > 1 ? 's' : ''} - Waiting for trading signal or strategy condition`;
+      } else {
+        waitingMessage = `No recent activity - Waiting for trading signal or strategy condition`;
+      }
+      
       return {
-        currentAction: `Last activity: ${formatTimeAgo(timeSinceLastLog)}`,
-        waitingFor: 'Next cron execution',
+        currentAction: waitingMessage,
+        waitingFor: botStatus === 'running' ? 'Market signal or strategy condition' : 'Bot to be started',
         executionState: 'waiting'
       };
     }
