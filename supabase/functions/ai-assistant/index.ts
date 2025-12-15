@@ -445,8 +445,11 @@ IMPORTANT GUIDELINES:
           } else if (functionName === 'get_bot_performance') {
             result = await executeGetBotPerformance(supabaseServiceClient, user.id, functionArgs.botId);
             actions.push({ type: 'get_bot_performance', result });
+          } else if (functionName === 'update_user_settings') {
+            result = await executeUpdateUserSettings(supabaseServiceClient, user.id, functionArgs);
+            actions.push({ type: 'update_user_settings', result });
           } else {
-            result = { error: `Unknown function: ${functionName}` };
+            result = { success: false, error: `Unknown function: ${functionName}` };
           }
           
           toolResults.push({
@@ -457,12 +460,20 @@ IMPORTANT GUIDELINES:
           });
         } catch (error: any) {
           console.error(`❌ Error executing ${functionName}:`, error);
+          console.error(`❌ Error stack:`, error.stack);
+          const errorResult = { 
+            success: false,
+            error: error.message || 'Function execution failed',
+            details: error.stack || error.toString()
+          };
           toolResults.push({
             tool_call_id: toolCall.id,
             role: 'tool',
             name: functionName,
-            content: JSON.stringify({ error: error.message || 'Function execution failed' })
+            content: JSON.stringify(errorResult)
           });
+          // Also add to actions for frontend display
+          actions.push({ type: functionName, result: errorResult });
         }
       }
       
@@ -727,15 +738,45 @@ Pablo AI Trading is an automated cryptocurrency trading platform that allows use
 // Execute bot creation
 async function executeCreateBot(supabaseClient: any, userId: string, params: any) {
   try {
+    console.log('🔧 [executeCreateBot] Starting bot creation for user:', userId);
+    console.log('🔧 [executeCreateBot] Parameters:', JSON.stringify(params, null, 2));
+
+    // Validate required fields
+    if (!params.name) {
+      return { success: false, error: 'Bot name is required' };
+    }
+    if (!params.symbol) {
+      return { success: false, error: 'Trading symbol is required (e.g., BTCUSDT)' };
+    }
+
     // Check subscription limits
-    const { data: limitCheck } = await supabaseClient
+    console.log('🔧 [executeCreateBot] Checking subscription limits...');
+    const { data: limitCheck, error: rpcError } = await supabaseClient
       .rpc('can_user_create_bot', { p_user_id: userId });
     
-    if (limitCheck && typeof limitCheck === 'object' && limitCheck.allowed !== true) {
-      return { 
-        success: false, 
-        error: limitCheck.reason || 'Bot creation limit reached' 
-      };
+    if (rpcError) {
+      console.error('❌ [executeCreateBot] RPC error:', rpcError);
+      // Don't fail on RPC error - try to continue (might be missing function)
+      console.warn('⚠️ [executeCreateBot] RPC check failed, continuing with bot creation...');
+    }
+    
+    if (limitCheck) {
+      console.log('🔧 [executeCreateBot] Limit check result:', limitCheck);
+      
+      // Handle both boolean and object responses
+      if (typeof limitCheck === 'boolean') {
+        if (!limitCheck) {
+          return { 
+            success: false, 
+            error: 'Bot creation limit reached. Please upgrade your subscription plan.' 
+          };
+        }
+      } else if (typeof limitCheck === 'object' && limitCheck.allowed !== true) {
+        return { 
+          success: false, 
+          error: limitCheck.reason || 'Bot creation limit reached' 
+        };
+      }
     }
 
     // Set defaults based on risk level
@@ -761,13 +802,29 @@ async function executeCreateBot(supabaseClient: any, userId: string, params: any
       };
     }
 
+    // Ensure strategy is properly formatted
+    if (typeof strategy === 'string') {
+      try {
+        strategy = JSON.parse(strategy);
+      } catch (e) {
+        console.warn('⚠️ [executeCreateBot] Failed to parse strategy string, using default');
+        strategy = {
+          type: 'rsi',
+          enabled: true,
+          rsi_period: 14,
+          rsi_oversold: 30,
+          rsi_overbought: 70
+        };
+      }
+    }
+
     // Prepare bot data
     const botData: any = {
       user_id: userId,
       name: params.name,
       exchange: params.exchange || 'bybit',
       trading_type: params.tradingType || 'spot',
-      symbol: params.symbol,
+      symbol: params.symbol.toUpperCase(), // Ensure uppercase
       timeframe: params.timeframe || '1h',
       leverage: params.leverage || (params.tradingType === 'futures' ? riskDefaults.leverage : 1),
       risk_level: riskLevel,
@@ -782,7 +839,9 @@ async function executeCreateBot(supabaseClient: any, userId: string, params: any
     };
 
     // Add symbols array
-    botData.symbols = JSON.stringify([params.symbol]);
+    botData.symbols = JSON.stringify([params.symbol.toUpperCase()]);
+
+    console.log('🔧 [executeCreateBot] Inserting bot data:', JSON.stringify(botData, null, 2));
 
     const { data: bot, error } = await supabaseClient
       .from('trading_bots')
@@ -791,9 +850,28 @@ async function executeCreateBot(supabaseClient: any, userId: string, params: any
       .single();
 
     if (error) {
-      console.error('Bot creation error:', error);
-      return { success: false, error: error.message };
+      console.error('❌ [executeCreateBot] Bot creation error:', error);
+      console.error('❌ [executeCreateBot] Error details:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      });
+      
+      // Provide more helpful error messages
+      let errorMessage = error.message || 'Failed to create bot';
+      if (error.code === '23505') {
+        errorMessage = 'A bot with this name already exists. Please choose a different name.';
+      } else if (error.code === '23503') {
+        errorMessage = 'Invalid user or reference error. Please try again.';
+      } else if (error.code === '42501') {
+        errorMessage = 'Permission denied. Please check your account permissions.';
+      }
+      
+      return { success: false, error: errorMessage, details: error.details || error.hint };
     }
+
+    console.log('✅ [executeCreateBot] Bot created successfully:', bot.id);
 
     return {
       success: true,
@@ -807,8 +885,13 @@ async function executeCreateBot(supabaseClient: any, userId: string, params: any
       }
     };
   } catch (error: any) {
-    console.error('Error in executeCreateBot:', error);
-    return { success: false, error: error.message || 'Failed to create bot' };
+    console.error('❌ [executeCreateBot] Exception in bot creation:', error);
+    console.error('❌ [executeCreateBot] Stack:', error.stack);
+    return { 
+      success: false, 
+      error: error.message || 'Failed to create bot',
+      details: error.stack 
+    };
   }
 }
 

@@ -386,12 +386,28 @@ What would you like to know?`,
         
         // Show action summary in message
         const actionSummary = data.actions.map((action: any) => {
-          if (action.type === 'create_bot' && action.result?.success) {
-            return `✅ Created bot: "${action.result.bot?.name}" (${action.result.bot?.symbol})`;
-          } else if (action.type === 'update_bot' && action.result?.success) {
-            return `✅ Updated bot: "${action.result.bot?.name}"`;
+          if (action.type === 'create_bot') {
+            if (action.result?.success) {
+              return `✅ Created bot: "${action.result.bot?.name}" (${action.result.bot?.symbol})`;
+            } else {
+              const errorMsg = action.result?.error || 'Unknown error';
+              const details = action.result?.details ? `\n   Details: ${action.result.details}` : '';
+              return `❌ Bot creation failed: ${errorMsg}${details}`;
+            }
+          } else if (action.type === 'update_bot') {
+            if (action.result?.success) {
+              return `✅ Updated bot: "${action.result.bot?.name}"`;
+            } else {
+              return `❌ Bot update failed: ${action.result?.error || 'Unknown error'}`;
+            }
           } else if (action.type === 'get_bot_performance' && action.result?.success) {
             return `📊 Bot Performance: ${action.result.performance?.name} - PnL: ${action.result.performance?.pnl} USDT (${action.result.performance?.pnlPercentage}%)`;
+          } else if (action.type === 'update_user_settings') {
+            if (action.result?.success) {
+              return `✅ Settings updated successfully`;
+            } else {
+              return `❌ Settings update failed: ${action.result?.error || 'Unknown error'}`;
+            }
           } else if (action.result?.error) {
             return `❌ ${action.type} failed: ${action.result.error}`;
           }
