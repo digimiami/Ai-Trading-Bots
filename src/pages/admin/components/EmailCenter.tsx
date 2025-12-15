@@ -101,6 +101,7 @@ export default function EmailCenter() {
   const loadMailboxes = async () => {
     try {
       const data = await getMailboxes(true); // Include inactive for management
+      console.log('Loaded mailboxes:', data);
       setMailboxes(data);
       // Set default to first active mailbox
       const activeMailbox = data.find(mb => mb.is_active);
@@ -295,12 +296,25 @@ ${email.text_body || email.html_body?.replace(/<[^>]*>/g, '') || ''}
       
       console.log('Updating mailbox with:', updates);
       
-      await updateMailbox(editingMailbox.id, updates);
-      alert('✅ Mailbox updated successfully!');
-      setShowMailboxManager(false);
-      setEditingMailbox(null);
-      setMailboxForm({ email_address: '', display_name: '', is_active: true, forward_to: '' });
-      loadMailboxes();
+      const updatedMailbox = await updateMailbox(editingMailbox.id, updates);
+      console.log('Mailbox update response:', updatedMailbox);
+      
+      if (updatedMailbox) {
+        alert('✅ Mailbox updated successfully!');
+        setShowMailboxManager(false);
+        setEditingMailbox(null);
+        setMailboxForm({ email_address: '', display_name: '', is_active: true, forward_to: '' });
+        // Force reload mailboxes to ensure UI is updated
+        await loadMailboxes();
+        // Also refresh the mailbox list display
+        setMailboxes(prev => prev.map(mb => 
+          mb.id === editingMailbox.id 
+            ? { ...mb, ...updatedMailbox }
+            : mb
+        ));
+      } else {
+        throw new Error('Update returned no data');
+      }
     } catch (err: any) {
       console.error('Update mailbox error:', err);
       alert(`❌ Failed to update mailbox: ${err.message || 'Unknown error'}`);

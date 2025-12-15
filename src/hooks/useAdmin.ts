@@ -409,11 +409,13 @@ export function useAdmin() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('Update mailbox error response:', errorData);
         throw new Error(errorData.error || 'Failed to update mailbox');
       }
 
       const data = await response.json();
+      console.log('Update mailbox success response:', data);
       return data.mailbox;
     } catch (err: any) {
       const errorMessage = err.message || 'Failed to update mailbox';
