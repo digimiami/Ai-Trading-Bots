@@ -114,6 +114,15 @@ export default function BotsPage() {
     }
   };
 
+  // Load manual trades for all bots when bots are loaded
+  useEffect(() => {
+    if (bots && bots.length > 0) {
+      bots.forEach(bot => {
+        loadManualTrades(bot.id);
+      });
+    }
+  }, [bots]);
+
   const handleToggleWebhookPanel = async (botId: string) => {
     if (isWebhookView) {
       return;
