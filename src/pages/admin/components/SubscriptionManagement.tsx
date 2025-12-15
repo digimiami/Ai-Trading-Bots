@@ -38,6 +38,16 @@ export default function SubscriptionManagement() {
   const [upgradingUserId, setUpgradingUserId] = useState<string | null>(null)
   const [selectedPlanId, setSelectedPlanId] = useState<string>('')
   const [activatingSubscriptionId, setActivatingSubscriptionId] = useState<string | null>(null)
+  const [changingPlanSubscriptionId, setChangingPlanSubscriptionId] = useState<string | null>(null)
+  const [showPlanChangeModal, setShowPlanChangeModal] = useState(false)
+  const [planChangeData, setPlanChangeData] = useState<{
+    subscriptionId: string
+    userId: string
+    currentPlanId: string
+    newPlanId: string
+    currentPlanName: string
+    newPlanName: string
+  } | null>(null)
 
   useEffect(() => {
     fetchSubscriptions()
@@ -159,43 +169,81 @@ export default function SubscriptionManagement() {
     }
   }
 
-  const upgradeUserSubscription = async (userId: string, planId: string) => {
+  const changeUserPlan = async (subscriptionId: string, userId: string, newPlanId: string) => {
     try {
-      setUpgradingUserId(userId)
+      setChangingPlanSubscriptionId(subscriptionId)
 
       // Get plan details
-      const plan = plans.find(p => p.id === planId)
-      if (!plan) throw new Error('Plan not found')
+      const newPlan = plans.find(p => p.id === newPlanId)
+      if (!newPlan) throw new Error('Plan not found')
 
-      // Calculate expiration (30 days from now)
-      const expiresAt = new Date()
-      expiresAt.setDate(expiresAt.getDate() + 30)
-
-      // Create or update subscription
-      const { data: existingSub } = await supabase
+      // Get current subscription
+      const { data: currentSub, error: subError } = await supabase
         .from('user_subscriptions')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('status', 'active')
+        .select('plan_id, expires_at, started_at')
+        .eq('id', subscriptionId)
         .single()
 
-      if (existingSub) {
-        // Update existing subscription
-        const { error } = await supabase
-          .from('user_subscriptions')
-          .update({
-            plan_id: planId,
-            status: 'active',
-            expires_at: expiresAt.toISOString(),
-            trial_started_at: null,
-            trial_period_days: null,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existingSub.id)
+      if (subError || !currentSub) {
+        throw new Error('Subscription not found')
+      }
 
-        if (error) throw error
+      // Calculate expiration - preserve remaining time or set to 30 days from now
+      let expiresAt = new Date()
+      if (currentSub.expires_at && new Date(currentSub.expires_at) > new Date()) {
+        // Keep existing expiration date
+        expiresAt = new Date(currentSub.expires_at)
       } else {
-        // Create new subscription
+        // Set to 30 days from now
+        expiresAt.setDate(expiresAt.getDate() + 30)
+      }
+
+      // Update subscription
+      const { error } = await supabase
+        .from('user_subscriptions')
+        .update({
+          plan_id: newPlanId,
+          status: 'active',
+          expires_at: expiresAt.toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', subscriptionId)
+
+      if (error) throw error
+
+      // Get current plan name for confirmation
+      const currentPlan = plans.find(p => p.id === currentSub.plan_id)
+      const currentPlanName = currentPlan?.display_name || 'Unknown'
+      
+      const isUpgrade = (newPlan.price_monthly_usd || 0) > (currentPlan?.price_monthly_usd || 0)
+      const action = isUpgrade ? 'upgraded' : 'downgraded'
+      
+      alert(`✅ User subscription ${action} from ${currentPlanName} to ${newPlan.display_name}`)
+      fetchSubscriptions()
+      setShowPlanChangeModal(false)
+      setPlanChangeData(null)
+    } catch (err) {
+      console.error('Error changing subscription plan:', err)
+      alert(`❌ Error: ${err instanceof Error ? err.message : 'Failed to change subscription plan'}`)
+    } finally {
+      setChangingPlanSubscriptionId(null)
+    }
+  }
+
+  const upgradeUserSubscription = async (userId: string, planId: string) => {
+    // Legacy function - redirects to new changeUserPlan
+    const subscription = subscriptions.find(s => s.user_id === userId)
+    if (subscription) {
+      await changeUserPlan(subscription.id, userId, planId)
+    } else {
+      // Create new subscription if none exists
+      try {
+        const plan = plans.find(p => p.id === planId)
+        if (!plan) throw new Error('Plan not found')
+
+        const expiresAt = new Date()
+        expiresAt.setDate(expiresAt.getDate() + 30)
+
         const { error } = await supabase
           .from('user_subscriptions')
           .insert({
@@ -209,17 +257,39 @@ export default function SubscriptionManagement() {
           })
 
         if (error) throw error
-      }
 
-      alert(`✅ User subscription upgraded to ${plan.display_name}`)
-      fetchSubscriptions()
-    } catch (err) {
-      console.error('Error upgrading subscription:', err)
-      alert(`❌ Error: ${err instanceof Error ? err.message : 'Failed to upgrade subscription'}`)
-    } finally {
-      setUpgradingUserId(null)
-      setSelectedPlanId('')
+        alert(`✅ User subscription created: ${plan.display_name}`)
+        fetchSubscriptions()
+      } catch (err) {
+        console.error('Error creating subscription:', err)
+        alert(`❌ Error: ${err instanceof Error ? err.message : 'Failed to create subscription'}`)
+      }
     }
+  }
+
+  const handlePlanChangeClick = (subscription: UserSubscription, newPlanId: string) => {
+    const currentPlan = plans.find(p => p.id === subscription.plan_id)
+    const newPlan = plans.find(p => p.id === newPlanId)
+    
+    if (!currentPlan || !newPlan) {
+      alert('Plan not found')
+      return
+    }
+
+    if (subscription.plan_id === newPlanId) {
+      alert('User is already on this plan')
+      return
+    }
+
+    setPlanChangeData({
+      subscriptionId: subscription.id,
+      userId: subscription.user_id,
+      currentPlanId: subscription.plan_id,
+      newPlanId: newPlanId,
+      currentPlanName: currentPlan.display_name,
+      newPlanName: newPlan.display_name
+    })
+    setShowPlanChangeModal(true)
   }
 
   const manuallyActivateSubscription = async (subscriptionId: string, invoiceId?: string) => {
@@ -352,11 +422,11 @@ export default function SubscriptionManagement() {
               <thead>
                 <tr className="border-b border-gray-700">
                   <th className="pb-3 text-gray-400 font-semibold">User</th>
-                  <th className="pb-3 text-gray-400 font-semibold">Plan</th>
+                  <th className="pb-3 text-gray-400 font-semibold">Current Plan</th>
                   <th className="pb-3 text-gray-400 font-semibold">Status</th>
                   <th className="pb-3 text-gray-400 font-semibold">Trial Days</th>
                   <th className="pb-3 text-gray-400 font-semibold">Expires</th>
-                  <th className="pb-3 text-gray-400 font-semibold">Actions</th>
+                  <th className="pb-3 text-gray-400 font-semibold">Change Plan</th>
                 </tr>
               </thead>
               <tbody>
@@ -368,8 +438,20 @@ export default function SubscriptionManagement() {
                 return (
                   <tr key={sub.id} className="border-b border-gray-800">
                     <td className="py-3 text-white">{sub.users?.email || 'Unknown'}</td>
-                    <td className="py-3 text-gray-300">
-                      {sub.subscription_plans?.display_name || 'Unknown'}
+                    <td className="py-3">
+                      <div className="flex flex-col">
+                        <span className="text-white font-semibold">
+                          {sub.subscription_plans?.display_name || 'Unknown'}
+                        </span>
+                        {(() => {
+                          const currentPlan = plans.find(p => p.id === sub.plan_id)
+                          return currentPlan ? (
+                            <span className="text-xs text-gray-400">
+                              ${currentPlan.price_monthly_usd}/mo • {currentPlan.max_bots === null ? 'Unlimited' : `${currentPlan.max_bots} bots`}
+                            </span>
+                          ) : null
+                        })()}
+                      </div>
                     </td>
                     <td className="py-3">
                       <span
@@ -397,7 +479,7 @@ export default function SubscriptionManagement() {
                         : 'Never'}
                     </td>
                     <td className="py-3">
-                      <div className="flex gap-2 flex-wrap">
+                      <div className="flex gap-2 flex-wrap items-center">
                         {sub.status === 'pending' && (
                           <Button
                             variant="primary"
@@ -408,31 +490,56 @@ export default function SubscriptionManagement() {
                             {activatingSubscriptionId === sub.id ? 'Activating...' : 'Activate'}
                           </Button>
                         )}
-                        <select
-                          value={upgradingUserId === sub.user_id ? selectedPlanId : ''}
-                          onChange={(e) => {
-                            setSelectedPlanId(e.target.value)
-                            setUpgradingUserId(sub.user_id)
-                          }}
-                          className="px-2 py-1 bg-gray-800 text-white border border-gray-700 rounded text-sm"
-                          disabled={upgradingUserId === sub.user_id && upgradingUserId !== null}
-                        >
-                          <option value="">Select Plan...</option>
-                          {plans.map((plan) => (
-                            <option key={plan.id} value={plan.id}>
-                              {plan.display_name} (${plan.price_monthly_usd}/mo)
-                            </option>
-                          ))}
-                        </select>
-                        {selectedPlanId && upgradingUserId === sub.user_id && (
-                          <Button
-                            variant="primary"
-                            size="sm"
-                            onClick={() => upgradeUserSubscription(sub.user_id, selectedPlanId)}
+                        
+                        {/* Quick Plan Change Buttons */}
+                        <div className="flex gap-1 flex-wrap">
+                          {plans
+                            .filter(plan => plan.id !== sub.plan_id)
+                            .sort((a, b) => (b.price_monthly_usd || 0) - (a.price_monthly_usd || 0))
+                            .map((plan) => {
+                              const currentPlan = plans.find(p => p.id === sub.plan_id)
+                              const isUpgrade = (plan.price_monthly_usd || 0) > (currentPlan?.price_monthly_usd || 0)
+                              const isDowngrade = (plan.price_monthly_usd || 0) < (currentPlan?.price_monthly_usd || 0)
+                              
+                              return (
+                                <Button
+                                  key={plan.id}
+                                  variant={isUpgrade ? "primary" : isDowngrade ? "secondary" : "outline"}
+                                  size="sm"
+                                  onClick={() => handlePlanChangeClick(sub, plan.id)}
+                                  disabled={changingPlanSubscriptionId === sub.id}
+                                  className="text-xs whitespace-nowrap"
+                                  title={`${isUpgrade ? 'Upgrade' : isDowngrade ? 'Downgrade' : 'Change'} to ${plan.display_name} ($${plan.price_monthly_usd}/mo)`}
+                                >
+                                  {isUpgrade ? '⬆️' : isDowngrade ? '⬇️' : '↔️'} {plan.display_name}
+                                </Button>
+                              )
+                            })}
+                        </div>
+
+                        {/* Legacy dropdown (keep for compatibility) */}
+                        {plans.length > 3 && (
+                          <select
+                            value={upgradingUserId === sub.user_id ? selectedPlanId : ''}
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                handlePlanChangeClick(sub, e.target.value)
+                              }
+                            }}
+                            className="px-2 py-1 bg-gray-800 text-white border border-gray-700 rounded text-sm"
+                            disabled={changingPlanSubscriptionId === sub.id}
                           >
-                            Upgrade
-                          </Button>
+                            <option value="">Change Plan...</option>
+                            {plans
+                              .filter(plan => plan.id !== sub.plan_id)
+                              .map((plan) => (
+                                <option key={plan.id} value={plan.id}>
+                                  {plan.display_name} (${plan.price_monthly_usd}/mo)
+                                </option>
+                              ))}
+                          </select>
                         )}
+
                         {trialDays !== null && trialDays > 0 && (
                           <Button
                             variant="secondary"
@@ -452,6 +559,73 @@ export default function SubscriptionManagement() {
           </div>
         )}
       </Card>
+
+      {/* Plan Change Confirmation Modal */}
+      {showPlanChangeModal && planChangeData && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <Card className="max-w-md w-full">
+            <h3 className="text-xl font-semibold text-white mb-4">Change Subscription Plan</h3>
+            
+            <div className="space-y-4">
+              <div className="bg-gray-800 p-4 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-gray-400">Current Plan:</span>
+                  <span className="text-white font-semibold">{planChangeData.currentPlanName}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-400">New Plan:</span>
+                  <span className="text-white font-semibold">{planChangeData.newPlanName}</span>
+                </div>
+              </div>
+
+              {(() => {
+                const currentPlan = plans.find(p => p.id === planChangeData.currentPlanId)
+                const newPlan = plans.find(p => p.id === planChangeData.newPlanId)
+                const isUpgrade = (newPlan?.price_monthly_usd || 0) > (currentPlan?.price_monthly_usd || 0)
+                
+                return (
+                  <div className="bg-blue-900/20 border border-blue-500/30 p-3 rounded-lg">
+                    <p className="text-sm text-blue-300">
+                      {isUpgrade ? '⬆️ Upgrade' : '⬇️ Downgrade'}: User will be moved from{' '}
+                      <strong>{planChangeData.currentPlanName}</strong> to{' '}
+                      <strong>{planChangeData.newPlanName}</strong>
+                    </p>
+                    {newPlan && (
+                      <div className="mt-2 text-xs text-gray-400">
+                        <p>Max Bots: {newPlan.max_bots === null ? 'Unlimited' : newPlan.max_bots}</p>
+                        <p>Price: ${newPlan.price_monthly_usd}/month</p>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
+
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => changeUserPlan(
+                    planChangeData.subscriptionId,
+                    planChangeData.userId,
+                    planChangeData.newPlanId
+                  )}
+                  disabled={changingPlanSubscriptionId === planChangeData.subscriptionId}
+                  className="flex-1"
+                >
+                  {changingPlanSubscriptionId === planChangeData.subscriptionId ? 'Changing...' : 'Confirm Change'}
+                </Button>
+                <Button
+                  onClick={() => {
+                    setShowPlanChangeModal(false)
+                    setPlanChangeData(null)
+                  }}
+                  variant="outline"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }
