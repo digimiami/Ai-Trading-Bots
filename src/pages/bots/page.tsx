@@ -12,7 +12,7 @@ import { useBotActivity } from '../../hooks/useBotActivity';
 import { useBotExecutor } from '../../hooks/useBotExecutor';
 import { useBotTradeLimits } from '../../hooks/useBotTradeLimits';
 import { useSoundNotifications } from '../../hooks/useSoundNotifications';
-import { supabase } from '../../lib/supabase';
+import { supabase, getAuthTokenFast } from '../../lib/supabase';
 import DropdownMenu, { DropdownMenuItem } from '../../components/ui/DropdownMenu';
 import HelpTooltip from '../../components/ui/HelpTooltip';
 import BotShareCard from '../../components/bot/BotShareCard';
@@ -396,13 +396,41 @@ export default function BotsPage() {
   const handleRefreshStats = async () => {
     setRefreshing(true);
     try {
-      // Refresh bot data which includes all stats (Trades, Win Rate, Win/Loss, Fees, Drawdown, PnL)
+      // Call the refresh-stats action to recalculate and update stats for all active bots
+      let accessToken = await getAuthTokenFast();
+      if (!accessToken) {
+        const { data: { session } } = await supabase.auth.getSession();
+        accessToken = session?.access_token ?? null;
+      }
+      if (!accessToken) {
+        throw new Error('No active session');
+      }
+      const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management?action=refresh-stats`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to refresh stats: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ Bot statistics refreshed:', data);
+
+      // Refresh bot data to show updated stats
       await fetchBots();
+      
       // Also refresh trade limits if needed
       if (refreshLimits) {
         await refreshLimits();
       }
-      console.log('✅ Bot statistics refreshed successfully');
+      
+      alert(`Successfully refreshed statistics for ${data.updated || 0} bot(s)`);
     } catch (error) {
       console.error('Failed to refresh bot statistics:', error);
       alert('Failed to refresh bot statistics. Please try again.');

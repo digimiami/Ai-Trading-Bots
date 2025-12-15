@@ -762,6 +762,233 @@ serve(async (req) => {
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
+
+      if (action === 'refresh-stats') {
+        // Get all active/existing bots for the user
+        const { data: bots, error: botsError } = await supabaseClient
+          .from('trading_bots')
+          .select('*')
+          .eq('user_id', user.id)
+          .in('status', ['running', 'active', 'paused', 'stopped']) // Only update existing bots
+
+        if (botsError) throw botsError
+        if (!bots || bots.length === 0) {
+          return new Response(
+            JSON.stringify({ success: true, message: 'No bots to refresh', updated: 0 }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        const botIds = bots.map((bot: any) => bot.id);
+        const statsMap = new Map<string, {
+          totalTrades: number;
+          closedTrades: number;
+          winTrades: number;
+          lossTrades: number;
+          pnl: number;
+          totalFees: number;
+          maxDrawdown: number;
+          peakEquity: number;
+          hasClosed: boolean;
+        }>();
+
+        const ensureStats = (botId: string) => {
+          if (!statsMap.has(botId)) {
+            statsMap.set(botId, {
+              totalTrades: 0,
+              closedTrades: 0,
+              winTrades: 0,
+              lossTrades: 0,
+              pnl: 0,
+              totalFees: 0,
+              maxDrawdown: 0,
+              peakEquity: 0,
+              hasClosed: false
+            });
+          }
+          return statsMap.get(botId)!;
+        };
+
+        if (botIds.length > 0) {
+          const executedStatuses = new Set(['filled', 'completed', 'closed', 'stopped', 'taken_profit']);
+          const closedStatuses = new Set(['completed', 'closed', 'stopped', 'taken_profit']);
+
+          // Fetch real trades
+          const { data: realTrades, error: realTradesError } = await supabaseClient
+            .from('trades')
+            .select('bot_id, status, pnl, fee, executed_at')
+            .eq('user_id', user.id)
+            .in('bot_id', botIds)
+            .order('executed_at', { ascending: true });
+
+          if (realTradesError) {
+            console.warn('Error fetching trades for stats:', realTradesError);
+          } else if (realTrades) {
+            for (const trade of realTrades) {
+              if (!trade || !trade.bot_id) continue;
+              const stats = ensureStats(trade.bot_id);
+              const status = (trade.status || '').toString().toLowerCase();
+              const pnlValue = trade.pnl !== null && trade.pnl !== undefined ? parseFloat(trade.pnl) : NaN;
+              const feeValue = trade.fee !== null && trade.fee !== undefined ? parseFloat(trade.fee) : 0;
+
+              if (executedStatuses.has(status)) {
+                stats.totalTrades += 1;
+                stats.totalFees += feeValue;
+              }
+
+              if (closedStatuses.has(status) && !Number.isNaN(pnlValue)) {
+                stats.closedTrades += 1;
+                stats.pnl += pnlValue;
+                stats.hasClosed = true;
+                if (pnlValue > 0) {
+                  stats.winTrades += 1;
+                } else if (pnlValue < 0) {
+                  stats.lossTrades += 1;
+                }
+              }
+
+              // Calculate drawdown: track peak equity and current drawdown
+              stats.peakEquity = Math.max(stats.peakEquity, stats.pnl);
+              const currentDrawdown = stats.peakEquity - stats.pnl;
+              stats.maxDrawdown = Math.max(stats.maxDrawdown, currentDrawdown);
+            }
+          }
+
+          // Fetch paper trades
+          const { data: paperTrades, error: paperTradesError } = await supabaseClient
+            .from('paper_trading_trades')
+            .select('bot_id, status, pnl, fees, executed_at')
+            .eq('user_id', user.id)
+            .in('bot_id', botIds)
+            .order('executed_at', { ascending: true });
+
+          if (paperTradesError) {
+            console.warn('Error fetching paper trades for stats:', paperTradesError);
+          } else if (paperTrades) {
+            for (const trade of paperTrades) {
+              if (!trade || !trade.bot_id) continue;
+              const stats = ensureStats(trade.bot_id);
+              const status = (trade.status || '').toString().toLowerCase();
+              const pnlValue = trade.pnl !== null && trade.pnl !== undefined ? parseFloat(trade.pnl) : NaN;
+              const feeValue = trade.fees !== null && trade.fees !== undefined ? parseFloat(trade.fees) : 0;
+
+              if (executedStatuses.has(status)) {
+                stats.totalTrades += 1;
+                stats.totalFees += feeValue;
+              }
+
+              if (closedStatuses.has(status) && !Number.isNaN(pnlValue)) {
+                stats.closedTrades += 1;
+                stats.pnl += pnlValue;
+                stats.hasClosed = true;
+                if (pnlValue > 0) {
+                  stats.winTrades += 1;
+                } else if (pnlValue < 0) {
+                  stats.lossTrades += 1;
+                }
+              }
+
+              // Calculate drawdown: track peak equity and current drawdown
+              stats.peakEquity = Math.max(stats.peakEquity, stats.pnl);
+              const currentDrawdown = stats.peakEquity - stats.pnl;
+              stats.maxDrawdown = Math.max(stats.maxDrawdown, currentDrawdown);
+            }
+          }
+        }
+
+        // Update all bots with recalculated stats
+        let updatedCount = 0;
+        for (const bot of bots) {
+          const stats = statsMap.get(bot.id) || {
+            totalTrades: 0,
+            closedTrades: 0,
+            winTrades: 0,
+            lossTrades: 0,
+            pnl: 0,
+            totalFees: 0,
+            maxDrawdown: 0,
+            peakEquity: 0,
+            hasClosed: false
+          };
+
+          const totalTrades = Math.max(bot.total_trades ?? 0, stats.totalTrades);
+          const winRate = stats.closedTrades > 0
+            ? (stats.winTrades / stats.closedTrades) * 100
+            : (bot.win_rate ?? 0);
+          const realizedPnl = stats.hasClosed ? stats.pnl : (bot.pnl ?? 0);
+          const drawdownPercentage = stats.peakEquity > 0
+            ? (stats.maxDrawdown / stats.peakEquity) * 100
+            : (bot.drawdown_percentage ?? 0);
+          const tradeAmount = bot.trade_amount || bot.tradeAmount;
+          const pnlPercentage = stats.closedTrades > 0 && tradeAmount
+            ? (realizedPnl / (tradeAmount * stats.closedTrades)) * 100
+            : (bot.pnl_percentage ?? 0);
+
+          // Get last trade date
+          let lastTradeAt = bot.last_trade_at;
+          if (stats.closedTrades > 0 || stats.totalTrades > 0) {
+            // Try to get the most recent trade date
+            const { data: lastTrade } = await supabaseClient
+              .from('trades')
+              .select('executed_at')
+              .eq('bot_id', bot.id)
+              .eq('user_id', user.id)
+              .order('executed_at', { ascending: false })
+              .limit(1)
+              .single();
+            
+            if (!lastTrade) {
+              const { data: lastPaperTrade } = await supabaseClient
+                .from('paper_trading_trades')
+                .select('executed_at')
+                .eq('bot_id', bot.id)
+                .eq('user_id', user.id)
+                .order('executed_at', { ascending: false })
+                .limit(1)
+                .single();
+              
+              if (lastPaperTrade) {
+                lastTradeAt = lastPaperTrade.executed_at;
+              }
+            } else {
+              lastTradeAt = lastTrade.executed_at;
+            }
+          }
+
+          // Update bot with recalculated stats
+          const { error: updateError } = await supabaseClient
+            .from('trading_bots')
+            .update({
+              total_trades: totalTrades,
+              win_rate: Math.round(winRate * 100) / 100, // Round to 2 decimals
+              pnl: Math.round(realizedPnl * 100) / 100,
+              pnl_percentage: Math.round(pnlPercentage * 100) / 100,
+              total_fees: Math.round(stats.totalFees * 100) / 100,
+              max_drawdown: Math.round(stats.maxDrawdown * 100) / 100,
+              drawdown_percentage: Math.round(drawdownPercentage * 100) / 100,
+              last_trade_at: lastTradeAt,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', bot.id)
+            .eq('user_id', user.id);
+
+          if (updateError) {
+            console.warn(`Failed to update stats for bot ${bot.id}:`, updateError);
+          } else {
+            updatedCount++;
+          }
+        }
+
+        return new Response(
+          JSON.stringify({ 
+            success: true, 
+            message: `Refreshed stats for ${updatedCount} bot(s)`,
+            updated: updatedCount,
+            total: bots.length
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
     }
 
     if (req.method === 'DELETE') {
