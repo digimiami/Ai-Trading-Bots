@@ -1630,15 +1630,28 @@ export default function Settings() {
           
           {emailPreferences ? (
             <div className="space-y-4">
-              {/* Email Notifications Status (Read-only) */}
+              {/* Email Notifications Toggle */}
               <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                 <div>
                   <span className="text-sm font-medium text-gray-700">Email Notifications</span>
-                  <p className="text-xs text-gray-500">Configure which email notifications you receive</p>
+                  <p className="text-xs text-gray-500">Enable or disable email notifications</p>
                 </div>
-                <div className={`px-3 py-1 rounded-full text-xs font-medium ${emailPreferences.enabled ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-600'}`}>
-                  {emailPreferences.enabled ? 'Enabled' : 'Disabled'}
-                </div>
+                <button
+                  onClick={async () => {
+                    try {
+                      await updateEmailPreferences({
+                        enabled: !emailPreferences.enabled
+                      });
+                    } catch (error: any) {
+                      alert(`Failed to update: ${error.message}`);
+                    }
+                  }}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${emailPreferences.enabled ? 'bg-blue-600' : 'bg-gray-300'}`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${emailPreferences.enabled ? 'translate-x-6' : 'translate-x-1'}`}
+                  />
+                </button>
               </div>
 
               {emailPreferences.enabled && (
@@ -1684,10 +1697,10 @@ export default function Settings() {
               )}
 
               {!emailPreferences.enabled && (
-                <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-200">
-                  <p className="text-xs text-yellow-800">
+                <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <p className="text-xs text-blue-800">
                     <i className="ri-information-line mr-1"></i>
-                    Email notifications are currently disabled. Please contact an administrator to enable email notifications.
+                    Email notifications are currently disabled. Toggle the switch above to enable them.
                   </p>
                 </div>
               )}

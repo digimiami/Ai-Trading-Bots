@@ -67,7 +67,7 @@ export function useEmailNotifications() {
         const defaultSettings: UserSettings = {
           notification_preferences: {
             email: {
-              enabled: false,
+              enabled: true,
               trade_executed: true,
               bot_started: true,
               bot_stopped: true,
@@ -144,12 +144,6 @@ export function useEmailNotifications() {
   const updateEmailPreferences = useCallback(async (preferences: Partial<EmailNotificationPreferences>) => {
     if (!user || !settings) {
       throw new Error('User not authenticated or settings not loaded');
-    }
-
-    // Prevent users from enabling/disabling email notifications
-    // Only allow updating individual notification types
-    if (preferences.enabled !== undefined) {
-      throw new Error('You cannot enable or disable email notifications. Please contact an administrator.');
     }
 
     try {
