@@ -2021,13 +2021,32 @@ export default function Settings() {
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         API Key
                       </label>
-                      <input
-                        type="password"
-                        value={aiSettings.deepseekApiKey}
-                        onChange={(e) => handleAiSettingsChange('deepseekApiKey', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                        placeholder={openAIService.isProviderAvailable('deepseek') ? 'Enter new key to update' : 'Enter DeepSeek API Key'}
-                      />
+                      <div className="flex gap-2">
+                        <input
+                          type="password"
+                          value={aiSettings.deepseekApiKey}
+                          onChange={(e) => handleAiSettingsChange('deepseekApiKey', e.target.value)}
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                          placeholder={openAIService.isProviderAvailable('deepseek') ? 'Enter new key to update' : 'Enter DeepSeek API Key'}
+                        />
+                        {openAIService.isProviderAvailable('deepseek') && (
+                          <button
+                            onClick={() => {
+                              if (window.confirm('Are you sure you want to delete the DeepSeek API key?')) {
+                                openAIService.setDeepSeekKey('');
+                                openAIService.refreshKeys();
+                                setAiSettings(prev => ({ ...prev, deepseekApiKey: '' }));
+                                alert('DeepSeek API key deleted successfully!');
+                              }
+                            }}
+                            className="px-3 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors text-sm font-medium flex items-center gap-1"
+                            title="Delete DeepSeek API key"
+                          >
+                            <i className="ri-delete-bin-line"></i>
+                            Delete
+                          </button>
+                        )}
+                      </div>
                       {openAIService.isProviderAvailable('deepseek') && (
                         <p className="text-xs text-gray-500 mt-1">
                           Current: {openAIService.getApiKeys().deepseek}
