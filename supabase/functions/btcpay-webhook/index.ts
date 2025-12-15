@@ -34,6 +34,17 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     )
 
+    // Check if this is a manual activation request (admin only)
+    try {
+      const url = new URL(req.url)
+      if (url.searchParams.get('action') === 'manual-activate') {
+        return await handleManualActivation(supabaseClient, req)
+      }
+    } catch (urlError) {
+      // URL parsing failed, continue with normal webhook processing
+      console.log('URL parsing failed, continuing with webhook processing')
+    }
+
     // Verify webhook secret (optional but recommended)
     const webhookSecret = Deno.env.get('BTCPAY_WEBHOOK_SECRET')
     const providedSecret = req.headers.get('btcpay-sig')
@@ -422,6 +433,132 @@ async function handleInvoiceExpired(
         updated_at: new Date().toISOString()
       })
       .eq('invoice_id', event.invoiceId)
+  }
+}
+
+/**
+ * Manual activation endpoint (admin only)
+ * Allows admins to manually activate subscriptions when webhook fails
+ */
+async function handleManualActivation(supabaseClient: any, req: Request) {
+  try {
+    // Verify admin access
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const token = authHeader.replace('Bearer ', '')
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token)
+
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Check if user is admin
+    const { data: userData } = await supabaseClient
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single()
+
+    if (userData?.role !== 'admin') {
+      return new Response(
+        JSON.stringify({ error: 'Admin access required' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    const body = await req.json()
+    const { subscriptionId, invoiceId } = body
+
+    if (!subscriptionId && !invoiceId) {
+      return new Response(
+        JSON.stringify({ error: 'subscriptionId or invoiceId is required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Find subscription
+    let subscription
+    if (subscriptionId) {
+      const { data, error } = await supabaseClient
+        .from('user_subscriptions')
+        .select('*, subscription_plans(*)')
+        .eq('id', subscriptionId)
+        .single()
+      
+      if (error || !data) {
+        return new Response(
+          JSON.stringify({ error: 'Subscription not found' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      subscription = data
+    } else if (invoiceId) {
+      const { data, error } = await supabaseClient
+        .from('user_subscriptions')
+        .select('*, subscription_plans(*)')
+        .eq('invoice_id', invoiceId)
+        .single()
+      
+      if (error || !data) {
+        return new Response(
+          JSON.stringify({ error: 'Subscription not found for invoice' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      subscription = data
+    }
+
+    // Only activate if status is pending
+    if (subscription.status !== 'pending') {
+      return new Response(
+        JSON.stringify({ 
+          error: `Subscription is already ${subscription.status}`,
+          currentStatus: subscription.status
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // Create mock event for handlePaymentSettled
+    const mockEvent: BTCPayWebhookEvent = {
+      type: 'InvoicePaymentSettled',
+      invoiceId: subscription.invoice_id || invoiceId || '',
+      storeId: '',
+      deliveryId: '',
+      webhookId: '',
+      timestamp: Date.now()
+    }
+
+    // Activate subscription
+    await handlePaymentSettled(supabaseClient, mockEvent, subscription)
+
+    return new Response(
+      JSON.stringify({ 
+        success: true, 
+        message: 'Subscription activated successfully',
+        subscriptionId: subscription.id
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
+
+  } catch (error) {
+    console.error('❌ Manual activation error:', error)
+    return new Response(
+      JSON.stringify({ 
+        error: 'Failed to activate subscription',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
   }
 }
 

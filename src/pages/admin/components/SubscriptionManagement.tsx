@@ -16,6 +16,8 @@ interface UserSubscription {
   expires_at: string | null
   trial_started_at: string | null
   trial_period_days: number | null
+  invoice_id: string | null
+  invoice_url: string | null
   users: { email: string }
   subscription_plans: { name: string; display_name: string; max_bots: number | null }
 }
@@ -35,6 +37,7 @@ export default function SubscriptionManagement() {
   const [error, setError] = useState<string | null>(null)
   const [upgradingUserId, setUpgradingUserId] = useState<string | null>(null)
   const [selectedPlanId, setSelectedPlanId] = useState<string>('')
+  const [activatingSubscriptionId, setActivatingSubscriptionId] = useState<string | null>(null)
 
   useEffect(() => {
     fetchSubscriptions()
@@ -219,6 +222,47 @@ export default function SubscriptionManagement() {
     }
   }
 
+  const manuallyActivateSubscription = async (subscriptionId: string, invoiceId?: string) => {
+    try {
+      setActivatingSubscriptionId(subscriptionId)
+      
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        throw new Error('Not authenticated')
+      }
+
+      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co'
+      const response = await fetch(
+        `${supabaseUrl}/functions/v1/btcpay-webhook?action=manual-activate`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            subscriptionId,
+            invoiceId,
+          }),
+        }
+      )
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to activate subscription')
+      }
+
+      const data = await response.json()
+      alert(`✅ Subscription activated successfully! Email and message sent to user.`)
+      fetchSubscriptions()
+    } catch (err) {
+      console.error('Error activating subscription:', err)
+      alert(`❌ Error: ${err instanceof Error ? err.message : 'Failed to activate subscription'}`)
+    } finally {
+      setActivatingSubscriptionId(null)
+    }
+  }
+
   const extendTrial = async (subscriptionId: string, days: number) => {
     try {
       const { data: sub } = await supabase
@@ -353,7 +397,17 @@ export default function SubscriptionManagement() {
                         : 'Never'}
                     </td>
                     <td className="py-3">
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 flex-wrap">
+                        {sub.status === 'pending' && (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => manuallyActivateSubscription(sub.id, sub.invoice_id || undefined)}
+                            disabled={activatingSubscriptionId === sub.id}
+                          >
+                            {activatingSubscriptionId === sub.id ? 'Activating...' : 'Activate'}
+                          </Button>
+                        )}
                         <select
                           value={upgradingUserId === sub.user_id ? selectedPlanId : ''}
                           onChange={(e) => {

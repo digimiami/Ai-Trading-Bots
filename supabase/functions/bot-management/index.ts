@@ -764,12 +764,12 @@ serve(async (req) => {
       }
 
       if (action === 'refresh-stats') {
-        // Get all active/existing bots for the user
+        // Get all existing bots for the user (any status)
         const { data: bots, error: botsError } = await supabaseClient
           .from('trading_bots')
           .select('*')
           .eq('user_id', user.id)
-          .in('status', ['running', 'active', 'paused', 'stopped']) // Only update existing bots
+          // No status filter - update all existing bots
 
         if (botsError) throw botsError
         if (!bots || bots.length === 0) {
@@ -779,6 +779,7 @@ serve(async (req) => {
           )
         }
 
+        console.log(`🔄 Refreshing stats for ${bots.length} bot(s)`);
         const botIds = bots.map((bot: any) => bot.id);
         const statsMap = new Map<string, {
           totalTrades: number;
@@ -927,57 +928,106 @@ serve(async (req) => {
           // Get last trade date
           let lastTradeAt = bot.last_trade_at;
           if (stats.closedTrades > 0 || stats.totalTrades > 0) {
-            // Try to get the most recent trade date
-            const { data: lastTrade } = await supabaseClient
+            // Try to get the most recent trade date from real trades
+            const { data: realTradesList } = await supabaseClient
               .from('trades')
               .select('executed_at')
               .eq('bot_id', bot.id)
               .eq('user_id', user.id)
               .order('executed_at', { ascending: false })
-              .limit(1)
-              .single();
+              .limit(1);
             
-            if (!lastTrade) {
-              const { data: lastPaperTrade } = await supabaseClient
+            if (realTradesList && realTradesList.length > 0) {
+              lastTradeAt = realTradesList[0].executed_at;
+            } else {
+              // Try paper trades if no real trades
+              const { data: paperTradesList } = await supabaseClient
                 .from('paper_trading_trades')
                 .select('executed_at')
                 .eq('bot_id', bot.id)
                 .eq('user_id', user.id)
                 .order('executed_at', { ascending: false })
-                .limit(1)
-                .single();
+                .limit(1);
               
-              if (lastPaperTrade) {
-                lastTradeAt = lastPaperTrade.executed_at;
+              if (paperTradesList && paperTradesList.length > 0) {
+                lastTradeAt = paperTradesList[0].executed_at;
               }
-            } else {
-              lastTradeAt = lastTrade.executed_at;
             }
           }
 
           // Update bot with recalculated stats
-          const { error: updateError } = await supabaseClient
-            .from('trading_bots')
-            .update({
-              total_trades: totalTrades,
-              win_rate: Math.round(winRate * 100) / 100, // Round to 2 decimals
-              pnl: Math.round(realizedPnl * 100) / 100,
-              pnl_percentage: Math.round(pnlPercentage * 100) / 100,
-              total_fees: Math.round(stats.totalFees * 100) / 100,
-              max_drawdown: Math.round(stats.maxDrawdown * 100) / 100,
-              drawdown_percentage: Math.round(drawdownPercentage * 100) / 100,
-              last_trade_at: lastTradeAt,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', bot.id)
-            .eq('user_id', user.id);
+          // Build update object with only essential fields (some columns may not exist in all deployments)
+          const updateData: any = {
+            total_trades: totalTrades,
+            win_rate: Math.round(winRate * 100) / 100, // Round to 2 decimals
+            pnl: Math.round(realizedPnl * 100) / 100,
+            pnl_percentage: Math.round(pnlPercentage * 100) / 100,
+            last_trade_at: lastTradeAt,
+            updated_at: new Date().toISOString()
+          };
 
-          if (updateError) {
-            console.warn(`Failed to update stats for bot ${bot.id}:`, updateError);
-          } else {
-            updatedCount++;
+          // Try to update with optional columns, but fall back to essential columns only if they don't exist
+          try {
+            // First try with all columns
+            const fullUpdateData = { ...updateData };
+            if (stats.totalFees !== undefined) {
+              fullUpdateData.total_fees = Math.round(stats.totalFees * 100) / 100;
+            }
+            if (stats.maxDrawdown !== undefined) {
+              fullUpdateData.max_drawdown = Math.round(stats.maxDrawdown * 100) / 100;
+            }
+            if (drawdownPercentage !== undefined) {
+              fullUpdateData.drawdown_percentage = Math.round(drawdownPercentage * 100) / 100;
+            }
+
+            const { data: updateResult, error: updateError } = await supabaseClient
+              .from('trading_bots')
+              .update(fullUpdateData)
+              .eq('id', bot.id)
+              .eq('user_id', user.id)
+              .select();
+
+            if (updateError) {
+              // If error mentions missing columns, try again with only essential columns
+              if (updateError.message && (
+                updateError.message.includes('column') || 
+                updateError.message.includes('does not exist')
+              )) {
+                console.warn(`⚠️ Optional columns missing for bot ${bot.id}, using essential columns only`);
+                const { data: essentialResult, error: essentialError } = await supabaseClient
+                  .from('trading_bots')
+                  .update(updateData)
+                  .eq('id', bot.id)
+                  .eq('user_id', user.id)
+                  .select();
+                
+                if (essentialError) {
+                  throw essentialError;
+                }
+                
+                if (essentialResult && essentialResult.length > 0) {
+                  updatedCount++;
+                  console.log(`✅ Updated stats for bot ${bot.id} (${bot.name}): Trades=${totalTrades}, WinRate=${winRate.toFixed(2)}%, PnL=$${realizedPnl.toFixed(2)}`);
+                } else {
+                  console.warn(`⚠️ Update succeeded but no rows affected for bot ${bot.id} (${bot.name})`);
+                }
+              } else {
+                throw updateError;
+              }
+            } else {
+              if (updateResult && updateResult.length > 0) {
+                updatedCount++;
+                console.log(`✅ Updated stats for bot ${bot.id} (${bot.name}): Trades=${totalTrades}, WinRate=${winRate.toFixed(2)}%, PnL=$${realizedPnl.toFixed(2)}`);
+              } else {
+                console.warn(`⚠️ Update succeeded but no rows affected for bot ${bot.id} (${bot.name})`);
+              }
+            }
+          } catch (error: any) {
+            console.warn(`❌ Failed to update stats for bot ${bot.id} (${bot.name}):`, error?.message || error);
           }
         }
+
+        console.log(`📊 Stats refresh complete: ${updatedCount}/${bots.length} bots updated`);
 
         return new Response(
           JSON.stringify({ 
