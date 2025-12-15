@@ -466,7 +466,7 @@ export default function SubscriptionManagement() {
       <Card>
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-2xl font-bold text-white">User Subscriptions</h2>
-          <Button variant="secondary" size="sm" onClick={fetchSubscriptions}>
+          <Button variant="secondary" size="sm" onClick={fetchAllUsersAndSubscriptions}>
             <i className="ri-refresh-line mr-2"></i>
             Refresh
           </Button>
