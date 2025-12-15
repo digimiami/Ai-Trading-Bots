@@ -12090,11 +12090,12 @@ serve(async (req) => {
         
         return new Response(JSON.stringify({ 
           success: true, 
-          message: `Executed ${successful} bots successfully, ${failed} failed${skipped > 0 ? `, ${skipped} skipped due to timeout` : ''}${remainingBots > 0 ? `, ${remainingBots} bots will be processed in next cycle` : ''}`,
+          message: `Executed ${successful} bots successfully, ${failed} failed${skipped > 0 ? `, ${skipped} skipped due to timeout` : ''}${remainingBots > 0 ? `, ${remainingBots} bots will be processed in next cycle` : ''}${botsWithDeletedUsers.length > 0 ? `, ${botsWithDeletedUsers.length} filtered (deleted users)` : ''}`,
           botsExecuted: processedCount,
           botsTotal: filteredBotList.length,
           botsProcessedThisCycle: botsToProcess.length,
           botsRemaining: remainingBots,
+          botsFiltered: botsWithDeletedUsers.length,
           successful,
           failed,
           skipped,
