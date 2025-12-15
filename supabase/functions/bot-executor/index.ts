@@ -10149,6 +10149,105 @@ class PaperTradingExecutor {
     if (error) throw error;
     return data;
   }
+
+  // Calculate ATR (Average True Range) - needed for trailing stop calculations
+  private calculateATR(highs: number[], lows: number[], closes: number[], period: number): number {
+    if (highs.length < period + 1 || lows.length < period + 1 || closes.length < period + 1) {
+      return 0;
+    }
+    
+    const trueRanges: number[] = [];
+    for (let i = 1; i < highs.length; i++) {
+      const tr = Math.max(
+        highs[i] - lows[i],
+        Math.abs(highs[i] - closes[i - 1]),
+        Math.abs(lows[i] - closes[i - 1])
+      );
+      trueRanges.push(tr);
+    }
+    
+    if (trueRanges.length < period) {
+      const avg = trueRanges.reduce((a, b) => a + b, 0) / trueRanges.length;
+      return avg;
+    }
+    
+    // Calculate ATR as SMA of True Ranges
+    const recentTRs = trueRanges.slice(-period);
+    return recentTRs.reduce((a, b) => a + b, 0) / period;
+  }
+
+  // Send position close notification (for Telegram/notifications)
+  private async sendPositionCloseNotification(bot: any, trade: any, pnl: number, exitPrice: number, closeReason?: string): Promise<void> {
+    try {
+      // Get Supabase URL and keys from environment
+      const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+      const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
+      const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+      
+      if (!supabaseUrl || !supabaseAnonKey) {
+        console.warn('⚠️ Supabase URL or Anon Key not configured for Telegram notifications');
+        return;
+      }
+
+      // Fetch account balance for notification
+      let accountBalance: number | null = null;
+      try {
+        if (bot.paper_trading) {
+          // Get paper trading account balance (available balance)
+          const paperAccount = await this.getPaperAccount();
+          if (paperAccount && paperAccount.balance !== undefined && paperAccount.balance !== null) {
+            accountBalance = parseFloat(paperAccount.balance || '0');
+            console.log(`📊 Paper trading available balance for notification: $${accountBalance.toFixed(2)}`);
+          }
+        }
+      } catch (balanceError) {
+        console.warn('⚠️ Failed to fetch account balance for notification:', balanceError);
+      }
+
+      // Call telegram-notifier Edge Function
+      const notifierUrl = `${supabaseUrl}/functions/v1/telegram-notifier`;
+      const authToken = supabaseServiceKey || supabaseAnonKey;
+      
+      const response = await fetch(notifierUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+          'apikey': supabaseAnonKey
+        },
+        body: JSON.stringify({
+          notification_type: 'position_close',
+          data: {
+            bot_name: bot.name,
+            symbol: bot.symbol || trade.symbol,
+            side: trade.side || position?.side,
+            entry_price: trade.entry_price || position?.entry_price,
+            exit_price: exitPrice,
+            pnl: pnl,
+            pnl_percentage: trade.entry_price ? ((pnl / (trade.entry_price * (trade.amount || trade.size || 1))) * 100).toFixed(2) : '0',
+            close_reason: closeReason || 'unknown',
+            order_id: trade.exchange_order_id || trade.id,
+            user_id: this.user?.id || trade.user_id || bot.user_id,
+            paper_trading: bot.paper_trading || false,
+            exchange: bot.exchange || 'bybit',
+            trading_type: bot.tradingType || bot.trading_type || 'futures',
+            account_balance: accountBalance
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.warn('⚠️ Telegram notification HTTP error:', response.status, errorText);
+      } else {
+        const result = await response.json();
+        console.log('✅ Telegram notification sent for position close:', trade.id, result);
+      }
+    } catch (err) {
+      console.warn('⚠️ Failed to send position close notification:', err);
+      // Don't throw - notification failures shouldn't break trades
+    }
+  }
   
   // Execute paper trade (simulate order)
   async executePaperTrade(bot: any, tradeSignal: any): Promise<void> {
