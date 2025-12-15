@@ -82,7 +82,10 @@ export function useBotActivity(bots?: any[]) {
   const fetchBotLogs = async (botId: string) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('No active session');
+      if (!user) {
+        // Return empty array if no user session (don't throw error)
+        return [];
+      }
 
       const { data: logs, error } = await supabase
         .from('bot_activity_logs')
@@ -92,7 +95,10 @@ export function useBotActivity(bots?: any[]) {
         .limit(100);
 
       if (error) {
-        console.error('Error fetching bot logs from database:', error);
+        // Don't log AbortError as it's just a cancelled request
+        if (error.name !== 'AbortError' && error.message !== 'The user aborted a request.') {
+          console.error('Error fetching bot logs from database:', error);
+        }
         // Fallback to localStorage if database fails
         const fallbackLogs = JSON.parse(localStorage.getItem(`bot_logs_${botId}`) || '[]');
         return fallbackLogs.sort((a: BotActivityLog, b: BotActivityLog) => 
@@ -101,8 +107,11 @@ export function useBotActivity(bots?: any[]) {
       }
 
       return logs || [];
-    } catch (err) {
-      console.error('Error fetching bot logs:', err);
+    } catch (err: any) {
+      // Don't log AbortError - it's just a cancelled request (component unmounted, navigation, etc.)
+      if (err?.name !== 'AbortError' && err?.message !== 'The user aborted a request.' && err?.message !== 'No active session') {
+        console.error('Error fetching bot logs:', err);
+      }
       // Fallback to localStorage
       const fallbackLogs = JSON.parse(localStorage.getItem(`bot_logs_${botId}`) || '[]');
       return fallbackLogs.sort((a: BotActivityLog, b: BotActivityLog) => 
@@ -233,44 +242,94 @@ export function useBotActivity(bots?: any[]) {
       // Use passed bots or return empty if no bots provided
       if (!bots || bots.length === 0) {
         setActivities([]);
+        setLoading(false);
         return;
       }
 
-      // Fetch logs for each bot
+      // Check if user is authenticated before fetching
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setActivities([]);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch logs for each bot with error handling per bot
       const activities: BotActivity[] = await Promise.all(
         bots.map(async (bot: any) => {
-          const logs = await fetchBotLogs(bot.id);
-          const errorCount = logs.filter((log: BotActivityLog) => log.level === 'error').length;
-          const successCount = logs.filter((log: BotActivityLog) => log.level === 'success').length;
-          
-          // Analyze activity state
-          const activityState = analyzeActivityState(logs, bot.status);
-          
-          // Get last execution time
-          const lastTradeLog = logs.find(log => log.category === 'trade');
-          const lastExecutionTime = lastTradeLog ? lastTradeLog.timestamp : null;
-          
-          return {
-            botId: bot.id,
-            botName: bot.name,
-            status: bot.status,
-            lastActivity: logs.length > 0 ? logs[0].timestamp : bot.createdAt,
-            lastExecutionTime: lastExecutionTime,
-            logs: logs.slice(0, 50), // Keep only last 50 logs
-            isActive: bot.status === 'running',
-            currentAction: activityState.currentAction,
-            waitingFor: activityState.waitingFor,
-            executionState: activityState.executionState,
-            errorCount,
-            successCount,
-          };
+          try {
+            const logs = await fetchBotLogs(bot.id);
+            const errorCount = logs.filter((log: BotActivityLog) => log.level === 'error').length;
+            const successCount = logs.filter((log: BotActivityLog) => log.level === 'success').length;
+            
+            // Analyze activity state
+            const activityState = analyzeActivityState(logs, bot.status);
+            
+            // Get last execution time
+            const lastTradeLog = logs.find(log => log.category === 'trade');
+            const lastExecutionTime = lastTradeLog ? lastTradeLog.timestamp : null;
+            
+            return {
+              botId: bot.id,
+              botName: bot.name,
+              status: bot.status,
+              lastActivity: logs.length > 0 ? logs[0].timestamp : bot.createdAt,
+              lastExecutionTime: lastExecutionTime,
+              logs: logs.slice(0, 50), // Keep only last 50 logs
+              isActive: bot.status === 'running',
+              currentAction: activityState.currentAction,
+              waitingFor: activityState.waitingFor,
+              executionState: activityState.executionState,
+              errorCount,
+              successCount,
+            };
+          } catch (err: any) {
+            // If it's an AbortError, return empty activity (request was cancelled)
+            if (err?.name === 'AbortError' || err?.message === 'The user aborted a request.') {
+              return {
+                botId: bot.id,
+                botName: bot.name,
+                status: bot.status,
+                lastActivity: bot.createdAt,
+                lastExecutionTime: null,
+                logs: [],
+                isActive: bot.status === 'running',
+                currentAction: undefined,
+                waitingFor: undefined,
+                executionState: 'idle' as const,
+                errorCount: 0,
+                successCount: 0,
+              };
+            }
+            // For other errors, log and return empty activity
+            if (err?.message !== 'No active session') {
+              console.warn(`Error fetching logs for bot ${bot.id}:`, err);
+            }
+            return {
+              botId: bot.id,
+              botName: bot.name,
+              status: bot.status,
+              lastActivity: bot.createdAt,
+              lastExecutionTime: null,
+              logs: [],
+              isActive: bot.status === 'running',
+              currentAction: undefined,
+              waitingFor: undefined,
+              executionState: 'idle' as const,
+              errorCount: 0,
+              successCount: 0,
+            };
+          }
         })
       );
 
       setActivities(activities);
-    } catch (err) {
-      console.error('Error fetching bot activities:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch activities');
+    } catch (err: any) {
+      // Don't log AbortError - it's just a cancelled request
+      if (err?.name !== 'AbortError' && err?.message !== 'The user aborted a request.') {
+        console.error('Error fetching bot activities:', err);
+        setError(err instanceof Error ? err.message : 'Failed to fetch activities');
+      }
       // Don't set empty activities on error, keep existing ones
     } finally {
       setLoading(false);

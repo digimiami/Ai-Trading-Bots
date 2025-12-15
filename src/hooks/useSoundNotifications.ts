@@ -266,7 +266,10 @@ export function useSoundNotifications() {
           .limit(10);
 
         if (error) {
-          console.warn('Error fetching recent trades for sound notifications:', error);
+          // Don't log AbortError - it's just a cancelled request
+          if (error.name !== 'AbortError' && error.message !== 'The user aborted a request.') {
+            console.warn('Error fetching recent trades for sound notifications:', error);
+          }
           return;
         }
 

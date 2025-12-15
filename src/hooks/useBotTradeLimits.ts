@@ -92,9 +92,12 @@ export const useBotTradeLimits = (botIds: string[]) => {
       }
 
       setLimits(limitsMap);
-    } catch (err) {
-      console.error('Error fetching trade limits:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch trade limits');
+    } catch (err: any) {
+      // Don't log AbortError - it's just a cancelled request
+      if (err?.name !== 'AbortError' && err?.message !== 'The user aborted a request.') {
+        console.error('Error fetching trade limits:', err);
+        setError(err instanceof Error ? err.message : 'Failed to fetch trade limits');
+      }
     } finally {
       setLoading(false);
     }
