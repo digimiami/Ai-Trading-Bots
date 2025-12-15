@@ -574,14 +574,39 @@ export default function AdminPage() {
     }
   };
 
+  const fetchAvailablePlans = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('subscription_plans')
+        .select('id, name, display_name, price_monthly_usd, max_bots')
+        .order('sort_order', { ascending: true })
+      
+      if (error) {
+        console.error('Error fetching plans:', error)
+        return
+      }
+      console.log('Fetched plans:', data)
+      setAvailablePlans(data || [])
+    } catch (err) {
+      console.error('Error fetching plans:', err)
+    }
+  };
+
+  // Fetch plans when create user modal opens
+  useEffect(() => {
+    if (showCreateUser) {
+      fetchAvailablePlans();
+    }
+  }, [showCreateUser]);
+
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSuccessMessage(null);
     try {
-      const result = await createUser(newUser.email, newUser.password, newUser.role);
+      const result = await createUser(newUser.email, newUser.password, newUser.role, newUser.planId || undefined);
       setSuccessMessage(result?.message || 'User created successfully');
-      setNewUser({ email: '', password: '', role: 'user' });
+      setNewUser({ email: '', password: '', role: 'user', planId: '' });
       setTimeout(() => {
         setShowCreateUser(false);
         loadData();
