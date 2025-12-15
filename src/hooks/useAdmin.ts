@@ -123,8 +123,11 @@ export function useAdmin() {
     return await callAdminFunction('createUser', { email, password, role });
   };
 
-  const deleteUser = async (userId: string) => {
-    return await callAdminFunction('deleteUser', { userId });
+  const deleteUser = async (userId?: string, userEmail?: string) => {
+    if (!userId && !userEmail) {
+      throw new Error('Either userId or userEmail must be provided');
+    }
+    return await callAdminFunction('deleteUser', { userId, userEmail });
   };
 
   const updateUserRole = async (userId: string, role: string) => {

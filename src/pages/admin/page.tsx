@@ -651,7 +651,8 @@ export default function AdminPage() {
 
     setUserLoadingState(userId, true);
     try {
-      await deleteUser(userId);
+      // Try with userId first, fallback to email if needed
+      await deleteUser(userId, email);
       await loadData();
       alert('✅ User deleted successfully');
     } catch (error: any) {

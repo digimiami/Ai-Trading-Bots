@@ -480,7 +480,35 @@ serve(async (req) => {
         })
 
       case 'deleteUser':
-        const { userId } = params
+        let userId = params.userId
+        const userEmail = params.userEmail
+        
+        // If email provided instead of userId, find the user ID
+        if (!userId && userEmail) {
+          const { data: userData, error: findError } = await supabaseClient
+            .from('users')
+            .select('id')
+            .eq('email', userEmail)
+            .single()
+          
+          if (findError || !userData) {
+            // Try to find in auth.users
+            const { data: authUsers } = await supabaseClient.auth.admin.listUsers()
+            const authUser = authUsers?.users?.find(u => u.email === userEmail)
+            
+            if (!authUser) {
+              throw new Error(`User not found: ${userEmail}`)
+            }
+            
+            userId = authUser.id
+          } else {
+            userId = userData.id
+          }
+        }
+        
+        if (!userId) {
+          throw new Error('Either userId or userEmail must be provided')
+        }
         
         const { error: deleteAuthError } = await supabaseClient.auth.admin.deleteUser(userId)
         if (deleteAuthError) throw deleteAuthError
@@ -494,7 +522,8 @@ serve(async (req) => {
 
         return new Response(JSON.stringify({ 
           success: true, 
-          message: 'User deleted successfully' 
+          message: 'User deleted successfully',
+          deletedUserId: userId
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
