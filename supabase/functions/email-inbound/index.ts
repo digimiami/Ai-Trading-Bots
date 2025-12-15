@@ -341,7 +341,8 @@ serve(async (req) => {
         console.log(`✅ Email saved to mailbox ${mailbox.email_address}`)
         
         // Auto-forward if mailbox has forward_to configured
-        if (mailbox.forward_to) {
+        if (mailbox.forward_to && mailbox.forward_to.trim() !== '') {
+          console.log(`📤 [email-inbound] Mailbox ${mailbox.email_address} has forward_to: "${mailbox.forward_to}"`)
           try {
             console.log(`📤 [email-inbound] Forwarding email from ${mailbox.email_address} to ${mailbox.forward_to}`)
             

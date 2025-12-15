@@ -212,22 +212,26 @@ serve(async (req) => {
         updateData.is_active = is_active
       }
       if (forward_to !== undefined) {
-        if (forward_to === '' || forward_to === null || !forward_to) {
+        // Handle empty string, null, or undefined
+        if (!forward_to || forward_to.trim() === '') {
           updateData.forward_to = null
         } else {
+          const trimmedForwardTo = forward_to.trim()
           const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-          if (!emailRegex.test(forward_to)) {
+          if (!emailRegex.test(trimmedForwardTo)) {
             return new Response(
               JSON.stringify({ error: 'Invalid forward_to email address format' }),
               { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
             )
           }
-          updateData.forward_to = forward_to
+          updateData.forward_to = trimmedForwardTo
         }
       }
       updateData.updated_at = new Date().toISOString()
       
-      console.log(`📝 [${requestId}] Updating mailbox ${id} with data:`, updateData)
+      console.log(`📝 [${requestId}] Updating mailbox ${id}`)
+      console.log(`📝 [${requestId}] Received body:`, { id, email_address, display_name, is_active, forward_to })
+      console.log(`📝 [${requestId}] Update data:`, updateData)
 
       const { data: mailbox, error } = await supabaseClient
         .from('mailboxes')
@@ -245,6 +249,7 @@ serve(async (req) => {
       }
 
       console.log(`✅ [${requestId}] Mailbox updated successfully:`, mailbox)
+      console.log(`✅ [${requestId}] Forward_to value:`, mailbox?.forward_to)
       return new Response(
         JSON.stringify({ mailbox }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

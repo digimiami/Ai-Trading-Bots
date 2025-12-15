@@ -273,24 +273,27 @@ ${email.text_body || email.html_body?.replace(/<[^>]*>/g, '') || ''}
     e.preventDefault();
     if (!editingMailbox) return;
     try {
+      // Always include all fields in the update to ensure they're saved
       const updates: any = {
         email_address: mailboxForm.email_address,
         is_active: mailboxForm.is_active,
       };
       
-      // Only include display_name if it's not empty
-      if (mailboxForm.display_name.trim()) {
-        updates.display_name = mailboxForm.display_name;
+      // Handle display_name - set to null if empty
+      if (mailboxForm.display_name && mailboxForm.display_name.trim()) {
+        updates.display_name = mailboxForm.display_name.trim();
       } else {
         updates.display_name = null;
       }
       
-      // Only include forward_to if it's not empty
-      if (mailboxForm.forward_to.trim()) {
-        updates.forward_to = mailboxForm.forward_to;
+      // Handle forward_to - set to null if empty, otherwise validate and save
+      if (mailboxForm.forward_to && mailboxForm.forward_to.trim()) {
+        updates.forward_to = mailboxForm.forward_to.trim();
       } else {
         updates.forward_to = null;
       }
+      
+      console.log('Updating mailbox with:', updates);
       
       await updateMailbox(editingMailbox.id, updates);
       alert('✅ Mailbox updated successfully!');
