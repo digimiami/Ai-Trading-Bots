@@ -236,10 +236,17 @@ export default function WalletPage() {
       <Navigation />
       <div className="pt-16 pb-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <Header 
-            title="Crypto Wallet" 
-            subtitle="Buy, send, and manage your Bitcoin"
-          />
+          <div className="mb-6">
+            <div className="flex items-start gap-3 mb-2">
+              <Header 
+                title="Crypto Wallet" 
+                subtitle="Buy, send, and manage your Bitcoin"
+              />
+              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800 whitespace-nowrap mt-1">
+                Coming Soon
+              </span>
+            </div>
+          </div>
 
           {error && (
             <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center gap-2">

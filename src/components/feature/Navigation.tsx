@@ -136,7 +136,7 @@ export default function Navigation() {
     { path: '/transaction-log', icon: 'ri-bar-chart-2-line', label: 'Log' },
     { path: '/paper-trading', icon: 'ri-edit-box-line', label: t('nav.paperTrading') },
     { path: '/futures-pairs-finder', icon: 'ri-search-line', label: 'Futures' },
-    { path: '/wallet', icon: 'ri-wallet-3-line', label: 'Wallet' },
+    { path: '/wallet', icon: 'ri-wallet-3-line', label: 'Wallet', badge: 'Coming Soon' },
     { path: '/contact', icon: 'ri-customer-service-line', label: 'Contact' },
     { path: '/messages', icon: 'ri-message-3-line', label: 'Messages' },
     { path: '/pricing', icon: 'ri-vip-crown-line', label: 'Pricing' },
@@ -209,6 +209,11 @@ export default function Navigation() {
                   <span className="text-xs sm:text-sm font-semibold text-center leading-tight">
                     {item.label}
                   </span>
+                  {item.badge && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300 mt-1">
+                      {item.badge}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -352,8 +357,13 @@ export default function Navigation() {
                       }`}
                     >
                       <i className={`${item.icon} text-xl ${isActive ? 'text-blue-600 dark:text-blue-400' : ''}`}></i>
-                      <span className="text-sm font-medium">{item.label}</span>
-                      {isActive && (
+                      <span className="text-sm font-medium flex-1">{item.label}</span>
+                      {item.badge && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
+                          {item.badge}
+                        </span>
+                      )}
+                      {isActive && !item.badge && (
                         <i className="ri-check-line text-blue-600 dark:text-blue-400 ml-auto"></i>
                       )}
                     </button>

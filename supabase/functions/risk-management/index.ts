@@ -339,15 +339,137 @@ serve(async (req) => {
 
           if (error) throw error
 
-          // Send close position alert if enabled
-          await supabaseClient.functions.invoke('risk-management', {
-            body: {
-              action: 'send-alert',
-              type: 'closePositionAlert',
-              message: `Position closed: ${trade.symbol} - ${reason} | P&L: $${pnl.toFixed(2)}`,
-              data: trade
+          // Get bot information for notification
+          const { data: bot } = await supabaseClient
+            .from('trading_bots')
+            .select('*')
+            .eq('id', trade.bot_id)
+            .single()
+
+          // Fetch account balance for notification (simplified - will show N/A if fetch fails)
+          let accountBalance: number | null = null;
+          try {
+            // Get API keys for the bot
+            const { data: apiKeys } = await supabaseClient
+              .from('api_keys')
+              .select('*')
+              .eq('user_id', user.id)
+              .eq('exchange', trade.exchange || 'bybit')
+              .eq('is_testnet', false)
+              .eq('is_active', true)
+              .single();
+            
+            if (apiKeys) {
+              const tradingType = bot?.trading_type || 'futures';
+              const categoryMap: { [key: string]: string } = {
+                'spot': 'spot',
+                'futures': 'linear'
+              };
+              const bybitCategory = categoryMap[tradingType] || 'linear';
+              
+              // Fetch balance from Bybit API
+              const timestamp = Date.now().toString();
+              const recvWindow = '5000';
+              
+              // Create signature using Web Crypto API
+              const queryParams = bybitCategory === 'linear' 
+                ? `accountType=UNIFIED`
+                : `accountType=SPOT&coin=USDT`;
+              const signaturePayload = timestamp + apiKeys.api_key + recvWindow + queryParams;
+              
+              const encoder = new TextEncoder();
+              const keyData = encoder.encode(apiKeys.api_secret);
+              const messageData = encoder.encode(signaturePayload);
+              const cryptoKey = await crypto.subtle.importKey(
+                'raw',
+                keyData,
+                { name: 'HMAC', hash: 'SHA-256' },
+                false,
+                ['sign']
+              );
+              const signature = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+              const signatureHex = Array.from(new Uint8Array(signature))
+                .map(b => b.toString(16).padStart(2, '0'))
+                .join('');
+              
+              const response = await fetch(`https://api.bybit.com/v5/account/wallet-balance?${queryParams}`, {
+                method: 'GET',
+                headers: {
+                  'X-BAPI-API-KEY': apiKeys.api_key,
+                  'X-BAPI-TIMESTAMP': timestamp,
+                  'X-BAPI-RECV-WINDOW': recvWindow,
+                  'X-BAPI-SIGN': signatureHex,
+                },
+              });
+              
+              if (response.ok) {
+                const data = await response.json();
+                if (data.retCode === 0 && data.result?.list?.[0]) {
+                  if (bybitCategory === 'linear') {
+                    const accountInfo = data.result.list[0];
+                    accountBalance = parseFloat(
+                      accountInfo.totalAvailableBalance || 
+                      accountInfo.totalEquity || 
+                      accountInfo.totalWalletBalance || 
+                      '0'
+                    );
+                  } else {
+                    const wallet = data.result.list[0].coin?.[0];
+                    if (wallet) {
+                      accountBalance = parseFloat(
+                        wallet.availableToWithdraw || 
+                        wallet.availableBalance || 
+                        wallet.walletBalance || 
+                        '0'
+                      );
+                    }
+                  }
+                }
+              }
             }
-          })
+          } catch (balanceError) {
+            console.warn('⚠️ Failed to fetch balance for notification:', balanceError);
+            // Continue without balance - notification will show N/A
+          }
+
+          // Send Telegram notification for position close
+          try {
+            const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+            const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
+            
+            if (supabaseUrl && supabaseAnonKey && bot) {
+              await fetch(`${supabaseUrl}/functions/v1/telegram-notifier?action=send`, {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || supabaseAnonKey}`,
+                  'Content-Type': 'application/json',
+                  'apikey': supabaseAnonKey
+                },
+                body: JSON.stringify({
+                  notification_type: 'position_close',
+                  data: {
+                    bot_name: bot.name || 'Unknown Bot',
+                    symbol: trade.symbol,
+                    side: trade.side,
+                    entry_price: trade.entry_price || trade.price,
+                    exit_price: exitPrice,
+                    amount: trade.amount || trade.size,
+                    quantity: trade.amount || trade.size,
+                    pnl: pnl,
+                    close_reason: reason,
+                    user_id: user.id,
+                    paper_trading: false,
+                    exchange: trade.exchange || 'bybit',
+                    trading_type: bot.trading_type || 'futures',
+                    account_balance: accountBalance
+                  }
+                })
+              });
+            }
+          } catch (notifError) {
+            console.warn('⚠️ Failed to send position close notification:', notifError);
+            // Don't fail position closure if notification fails
+          }
 
           return new Response(JSON.stringify({ success: true, trade }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }

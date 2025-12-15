@@ -128,6 +128,7 @@ serve(async (req) => {
           const { data: realTrades, error: realTradesError } = await supabaseClient
             .from('trades')
             .select('bot_id, status, pnl, fee, executed_at')
+            .eq('user_id', user.id)
             .in('bot_id', botIds)
             .order('executed_at', { ascending: true });
 
@@ -167,6 +168,7 @@ serve(async (req) => {
           const { data: paperTrades, error: paperTradesError } = await supabaseClient
             .from('paper_trading_trades')
             .select('bot_id, status, pnl, fees, executed_at')
+            .eq('user_id', user.id)
             .in('bot_id', botIds)
             .order('executed_at', { ascending: true });
 

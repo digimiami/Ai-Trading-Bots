@@ -9774,13 +9774,16 @@ class BotExecutor {
           'apikey': supabaseAnonKey
         },
         body: JSON.stringify({
-          notification_type: 'trade_executed',
+          notification_type: 'position_open',
           data: {
             bot_name: bot.name,
             symbol: bot.symbol || trade.symbol,
             side: trade.side,
+            entry_price: trade.price || trade.entry_price,
             price: trade.price || trade.entry_price,
             amount: trade.amount || trade.size,
+            quantity: trade.amount || trade.size,
+            leverage: bot.leverage || trade.leverage,
             order_id: trade.exchange_order_id || orderResult?.orderId,
             user_id: this.user?.id || trade.user_id || bot.user_id, // Pass user_id explicitly
             paper_trading: bot.paper_trading || false,
@@ -9798,6 +9801,209 @@ class BotExecutor {
       } else {
         const result = await response.json();
         console.log('✅ Telegram notification sent for trade:', trade.id, result);
+      }
+    } catch (err) {
+      console.warn('⚠️ Failed to send Telegram notification:', err);
+      // Don't throw - notification failures shouldn't break trades
+    }
+  }
+
+  private async sendPositionCloseNotification(bot: any, trade: any, pnl: number, exitPrice: number, closeReason?: string): Promise<void> {
+    try {
+      // Get Supabase URL and keys from environment
+      const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+      const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';
+      const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+      
+      if (!supabaseUrl || !supabaseAnonKey) {
+        console.warn('⚠️ Supabase URL or Anon Key not configured for Telegram notifications');
+        return;
+      }
+
+      // Fetch account balance for notification
+      let accountBalance: number | null = null;
+      try {
+        if (bot.paper_trading) {
+          // Get paper trading account balance (available balance)
+          const paperAccount = await this.getPaperAccount();
+          if (paperAccount && paperAccount.balance !== undefined && paperAccount.balance !== null) {
+            accountBalance = parseFloat(paperAccount.balance || '0');
+            console.log(`📊 Paper trading available balance for notification: $${accountBalance.toFixed(2)}`);
+          }
+        } else {
+          // For real trading, fetch available balance directly from exchange
+          // Get API keys for the bot
+          const apiKeysResp = await this.supabaseClient
+            .from('api_keys')
+            .select('*')
+            .eq('user_id', bot.user_id)
+            .eq('exchange', bot.exchange)
+            .eq('is_testnet', false)
+            .eq('is_active', true)
+            .single();
+          
+          if (apiKeysResp.data && !apiKeysResp.error) {
+            const apiKeys = apiKeysResp.data;
+            const tradingType = bot.tradingType || bot.trading_type || 'futures';
+            
+            // Fetch available balance directly from Bybit API
+            try {
+              // Always use mainnet
+              const baseDomains = ['https://api.bybit.com'];
+              
+              const timestamp = Date.now().toString();
+              const recvWindow = '5000';
+              const categoryMap: { [key: string]: string } = {
+                'spot': 'spot',
+                'futures': 'linear'
+              };
+              const bybitCategory = categoryMap[tradingType] || 'linear';
+              
+              // For futures/linear, get total equity (available balance)
+              if (bybitCategory === 'linear') {
+                const queryParams = `accountType=UNIFIED`;
+                const signaturePayload = timestamp + apiKeys.api_key + recvWindow + queryParams;
+                const signature = await this.createBybitSignature(signaturePayload, apiKeys.api_secret);
+                
+                for (const domain of baseDomains) {
+                  try {
+                    const response = await fetch(`${domain}/v5/account/wallet-balance?${queryParams}`, {
+                      method: 'GET',
+                      headers: {
+                        'X-BAPI-API-KEY': apiKeys.api_key,
+                        'X-BAPI-TIMESTAMP': timestamp,
+                        'X-BAPI-RECV-WINDOW': recvWindow,
+                        'X-BAPI-SIGN': signature,
+                      },
+                    });
+                    
+                    if (response.ok) {
+                      const data = await response.json();
+                      if (data.retCode === 0 && data.result?.list?.[0]) {
+                        const accountInfo = data.result.list[0];
+                        // Use totalAvailableBalance or totalEquity as available balance
+                        accountBalance = parseFloat(
+                          accountInfo.totalAvailableBalance || 
+                          accountInfo.totalEquity || 
+                          accountInfo.totalWalletBalance || 
+                          '0'
+                        );
+                        console.log(`📊 Real trading available balance (futures): $${accountBalance.toFixed(2)}`);
+                        break;
+                      }
+                    }
+                  } catch (fetchError) {
+                    console.warn(`⚠️ Failed to fetch balance from ${domain}:`, fetchError);
+                  }
+                }
+              } else {
+                // For spot, get USDT available balance
+                const queryParams = `accountType=SPOT&coin=USDT`;
+                const signaturePayload = timestamp + apiKeys.api_key + recvWindow + queryParams;
+                const signature = await this.createBybitSignature(signaturePayload, apiKeys.api_secret);
+                
+                for (const domain of baseDomains) {
+                  try {
+                    const response = await fetch(`${domain}/v5/account/wallet-balance?${queryParams}`, {
+                      method: 'GET',
+                      headers: {
+                        'X-BAPI-API-KEY': apiKeys.api_key,
+                        'X-BAPI-TIMESTAMP': timestamp,
+                        'X-BAPI-RECV-WINDOW': recvWindow,
+                        'X-BAPI-SIGN': signature,
+                      },
+                    });
+                    
+                    if (response.ok) {
+                      const data = await response.json();
+                      if (data.retCode === 0 && data.result?.list?.[0]?.coin?.[0]) {
+                        const wallet = data.result.list[0].coin[0];
+                        // Use availableToWithdraw or availableBalance
+                        accountBalance = parseFloat(
+                          wallet.availableToWithdraw || 
+                          wallet.availableBalance || 
+                          wallet.walletBalance || 
+                          '0'
+                        );
+                        console.log(`📊 Real trading available balance (spot): $${accountBalance.toFixed(2)}`);
+                        break;
+                      }
+                    }
+                  } catch (fetchError) {
+                    console.warn(`⚠️ Failed to fetch balance from ${domain}:`, fetchError);
+                  }
+                }
+              }
+            } catch (balanceError: any) {
+              console.warn('⚠️ Failed to fetch available balance for Telegram notification:', balanceError?.message || balanceError);
+              // Don't fail notification if balance fetch fails
+            }
+          }
+        }
+      } catch (balanceError: any) {
+        console.warn('⚠️ Failed to fetch account balance for Telegram notification:', balanceError?.message || balanceError);
+        // Don't fail notification if balance fetch fails
+      }
+
+      // When called from cron, we don't have a user session, but we have user_id from the trade/bot
+      // Use service role key to call the function and pass user_id in body
+      // The telegram-notifier will handle user lookup internally
+      const useServiceRole = !this.user || !this.supabaseClient.auth; // Check if we have user context
+      
+      // Invoke telegram-notifier Edge Function via HTTP
+      const functionUrl = `${supabaseUrl}/functions/v1/telegram-notifier?action=send`;
+      
+      // Try to get session token first (for manual calls), fall back to service role (for cron)
+      let authToken = supabaseAnonKey;
+      try {
+        const { data: { session } } = await this.supabaseClient.auth.getSession();
+        if (session?.access_token) {
+          authToken = session.access_token;
+        } else if (useServiceRole && supabaseServiceKey) {
+          authToken = supabaseServiceKey; // Use service role for cron jobs
+        }
+      } catch (sessionError) {
+        // If getSession fails (e.g., in cron context), use service role key
+        if (supabaseServiceKey) {
+          authToken = supabaseServiceKey;
+        }
+      }
+      
+      const response = await fetch(functionUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
+          'apikey': supabaseAnonKey
+        },
+        body: JSON.stringify({
+          notification_type: 'position_close',
+          data: {
+            bot_name: bot.name,
+            symbol: bot.symbol || trade.symbol,
+            side: trade.side,
+            entry_price: trade.entry_price || trade.price,
+            exit_price: exitPrice,
+            amount: trade.amount || trade.size,
+            quantity: trade.amount || trade.size,
+            pnl: pnl,
+            close_reason: closeReason,
+            user_id: this.user?.id || trade.user_id || bot.user_id, // Pass user_id explicitly
+            paper_trading: bot.paper_trading || false,
+            exchange: bot.exchange || 'bybit', // Always include exchange
+            trading_type: bot.tradingType || bot.trading_type || 'futures', // Always include trading type
+            tradingType: bot.tradingType || bot.trading_type || 'futures', // Include both variations
+            account_balance: accountBalance // Include account balance
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.warn('⚠️ Telegram notification HTTP error:', response.status, errorText);
+      } else {
+        const result = await response.json();
+        console.log('✅ Telegram notification sent for position close:', trade.id, result);
       }
     } catch (err) {
       console.warn('⚠️ Failed to send Telegram notification:', err);
@@ -10800,6 +11006,42 @@ class PaperTradingExecutor {
             executed_at: TimeSync.getCurrentTimeISO(),
             closed_at: TimeSync.getCurrentTimeISO()
           });
+          
+          // Send Telegram notification for position close
+          try {
+            // Get bot info for notification
+            const { data: bot } = await this.supabaseClient
+              .from('trading_bots')
+              .select('*')
+              .eq('id', position.bot_id)
+              .single();
+            
+            if (bot) {
+              // Get trade record for notification
+              const { data: trade } = await this.supabaseClient
+                .from('paper_trading_trades')
+                .select('*')
+                .eq('position_id', position.id)
+                .eq('status', 'closed')
+                .order('closed_at', { ascending: false })
+                .limit(1)
+                .single();
+              
+              if (trade) {
+                const exitReason = enableAutomaticExecution ? 'automatic_execution' : newStatus;
+                await this.sendPositionCloseNotification(
+                  { ...bot, paper_trading: true },
+                  { ...trade, side: position.side, entry_price: position.entry_price },
+                  finalPnL,
+                  exitPrice,
+                  exitReason
+                );
+              }
+            }
+          } catch (notifError) {
+            console.warn('⚠️ Failed to send position close notification:', notifError);
+            // Don't fail position closure if notification fails
+          }
         }
         
         await this.supabaseClient

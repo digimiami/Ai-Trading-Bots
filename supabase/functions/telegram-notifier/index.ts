@@ -55,6 +55,8 @@ async function sendTelegramMessage(botToken: string, chatId: string, message: st
 function formatNotificationMessage(type: string, data: any): string {
   const emoji = {
     trade_executed: '💰',
+    position_open: '📈',
+    position_close: '📉',
     bot_started: '🚀',
     bot_stopped: '🛑',
     error_occurred: '❌',
@@ -86,6 +88,31 @@ function formatNotificationMessage(type: string, data: any): string {
              `Price: $${data.price}\n` +
              `Amount: ${data.amount}\n` +
              `${data.order_id ? `Order ID: ${data.order_id}\n` : ''}` +
+             balanceSection;
+
+    case 'position_open':
+      return `${icon} <b>Position Opened</b>\n\n` +
+             `Bot: ${data.bot_name}\n` +
+             `Symbol: ${data.symbol}\n` +
+             `Side: ${data.side.toUpperCase()}\n` +
+             `Entry Price: $${data.entry_price || data.price}\n` +
+             `Amount: ${data.amount || data.quantity}\n` +
+             `${data.leverage ? `Leverage: ${data.leverage}x\n` : ''}` +
+             `${data.order_id ? `Order ID: ${data.order_id}\n` : ''}` +
+             balanceSection;
+
+    case 'position_close':
+      const pnlEmoji = data.pnl >= 0 ? '✅' : '❌';
+      const pnlSign = data.pnl >= 0 ? '+' : '';
+      return `${icon} <b>Position Closed</b>\n\n` +
+             `Bot: ${data.bot_name}\n` +
+             `Symbol: ${data.symbol}\n` +
+             `Side: ${data.side.toUpperCase()}\n` +
+             `Entry Price: $${data.entry_price || data.price}\n` +
+             `Exit Price: $${data.exit_price}\n` +
+             `Amount: ${data.amount || data.quantity}\n` +
+             `${pnlEmoji} P&L: ${pnlSign}$${Math.abs(data.pnl || 0).toFixed(2)}\n` +
+             `${data.close_reason ? `Reason: ${data.close_reason}\n` : ''}` +
              balanceSection;
 
     case 'bot_started':
