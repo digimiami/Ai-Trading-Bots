@@ -165,7 +165,7 @@ serve(async (req) => {
     const functions = [
       {
         name: 'create_bot',
-        description: 'Create a new trading bot with specified configuration. Use this when user asks to create, add, or set up a new bot.',
+        description: 'MANDATORY: Create a new trading bot with specified configuration. YOU MUST CALL THIS FUNCTION whenever the user asks to create, add, set up, make, or start a new trading bot. Do not just explain how to create a bot - actually create it by calling this function. Required parameters: name (bot name), exchange (bybit/okx/bitunix), symbol (trading pair like BTCUSDT).',
         parameters: {
           type: 'object',
           properties: {
@@ -420,10 +420,18 @@ IMPORTANT GUIDELINES:
     const aiMessage = data.choices[0]?.message;
     aiResponse = aiMessage?.content || '';
     const toolCalls = supportsFunctionCalling ? (aiMessage?.tool_calls || []) : [];
+    
+    console.log('🔧 [AI Assistant] AI response:', aiResponse?.substring(0, 200));
+    console.log('🔧 [AI Assistant] Tool calls requested:', toolCalls.length);
+    if (toolCalls.length === 0 && supportsFunctionCalling) {
+      console.warn('⚠️ [AI Assistant] No tool calls made by AI despite function calling being enabled');
+      console.warn('⚠️ [AI Assistant] This may mean the AI did not recognize the request as requiring a function call');
+      console.warn('⚠️ [AI Assistant] Check if user message contains bot creation keywords');
+    }
 
     // Execute function calls if any (only for OpenAI)
     if (supportsFunctionCalling && toolCalls.length > 0) {
-      console.log(`🔧 AI requested ${toolCalls.length} function call(s)`);
+      console.log(`🔧 [AI Assistant] AI requested ${toolCalls.length} function call(s):`, toolCalls.map(tc => tc.function.name).join(', '));
       
       const toolResults: any[] = [];
       
