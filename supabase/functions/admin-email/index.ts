@@ -205,10 +205,14 @@ serve(async (req) => {
         }
         updateData.email_address = email_address
       }
-      if (display_name !== undefined) updateData.display_name = display_name
-      if (is_active !== undefined) updateData.is_active = is_active
+      if (display_name !== undefined) {
+        updateData.display_name = display_name || null
+      }
+      if (is_active !== undefined) {
+        updateData.is_active = is_active
+      }
       if (forward_to !== undefined) {
-        if (forward_to === '' || forward_to === null) {
+        if (forward_to === '' || forward_to === null || !forward_to) {
           updateData.forward_to = null
         } else {
           const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -222,6 +226,8 @@ serve(async (req) => {
         }
       }
       updateData.updated_at = new Date().toISOString()
+      
+      console.log(`📝 [${requestId}] Updating mailbox ${id} with data:`, updateData)
 
       const { data: mailbox, error } = await supabaseClient
         .from('mailboxes')
@@ -231,12 +237,14 @@ serve(async (req) => {
         .single()
 
       if (error) {
+        console.error(`❌ [${requestId}] Error updating mailbox:`, error)
         return new Response(
           JSON.stringify({ error: error.message }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
 
+      console.log(`✅ [${requestId}] Mailbox updated successfully:`, mailbox)
       return new Response(
         JSON.stringify({ mailbox }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

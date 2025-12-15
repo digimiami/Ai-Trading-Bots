@@ -273,19 +273,34 @@ ${email.text_body || email.html_body?.replace(/<[^>]*>/g, '') || ''}
     e.preventDefault();
     if (!editingMailbox) return;
     try {
-      await updateMailbox(editingMailbox.id, {
+      const updates: any = {
         email_address: mailboxForm.email_address,
-        display_name: mailboxForm.display_name || undefined,
         is_active: mailboxForm.is_active,
-        forward_to: mailboxForm.forward_to || undefined
-      });
+      };
+      
+      // Only include display_name if it's not empty
+      if (mailboxForm.display_name.trim()) {
+        updates.display_name = mailboxForm.display_name;
+      } else {
+        updates.display_name = null;
+      }
+      
+      // Only include forward_to if it's not empty
+      if (mailboxForm.forward_to.trim()) {
+        updates.forward_to = mailboxForm.forward_to;
+      } else {
+        updates.forward_to = null;
+      }
+      
+      await updateMailbox(editingMailbox.id, updates);
       alert('✅ Mailbox updated successfully!');
       setShowMailboxManager(false);
       setEditingMailbox(null);
       setMailboxForm({ email_address: '', display_name: '', is_active: true, forward_to: '' });
       loadMailboxes();
     } catch (err: any) {
-      alert(`❌ Failed to update mailbox: ${err.message}`);
+      console.error('Update mailbox error:', err);
+      alert(`❌ Failed to update mailbox: ${err.message || 'Unknown error'}`);
     }
   };
 
