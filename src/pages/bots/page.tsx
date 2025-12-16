@@ -260,6 +260,52 @@ export default function BotsPage() {
     return activities.find(activity => activity.botId === botId);
   };
 
+  // Extract cooldown information from bot logs
+  const getCooldownInfo = (bot: TradingBot) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1d699810-8c68-443d-8f9c-b629f3dcc932',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:264',message:'getCooldownInfo called',data:{botId:bot.id,botName:bot.name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    const activity = getBotActivity(bot.id);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1d699810-8c68-443d-8f9c-b629f3dcc932',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:268',message:'Activity check',data:{hasActivity:!!activity,hasLogs:!!(activity?.logs),logsCount:activity?.logs?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
+    if (!activity || !activity.logs) return null;
+
+    // Look for cooldown messages in recent logs
+    const cooldownLog = activity.logs.find(log => 
+      log.message && (
+        log.message.includes('Cooldown active:') || 
+        log.message.includes('cooldown active:')
+      )
+    );
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1d699810-8c68-443d-8f9c-b629f3dcc932',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:277',message:'Cooldown log search',data:{found:!!cooldownLog,message:cooldownLog?.message?.substring(0,100)||null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    if (!cooldownLog) return null;
+
+    // Parse cooldown message: "Cooldown active: X/Y bars passed since last trade"
+    const message = cooldownLog.message;
+    const match = message.match(/(\d+)\/(\d+)\s+bars/);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1d699810-8c68-443d-8f9c-b629f3dcc932',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:283',message:'Regex match result',data:{matched:!!match,matchResult:match,fullMessage:message.substring(0,150)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    if (!match) return null;
+
+    const barsPassed = parseInt(match[1], 10);
+    const requiredBars = parseInt(match[2], 10);
+    const progress = Math.min(100, (barsPassed / requiredBars) * 100);
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/1d699810-8c68-443d-8f9c-b629f3dcc932',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:290',message:'Cooldown calculation',data:{barsPassed,requiredBars,progress,isActive:barsPassed<requiredBars},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
+
+    return {
+      barsPassed,
+      requiredBars,
+      progress,
+      isActive: barsPassed < requiredBars
+    };
+  };
+
   const getLogLevelColor = (level: string) => {
     switch (level) {
       case 'info': return 'text-blue-600 bg-blue-50';
@@ -1517,6 +1563,11 @@ export default function BotsPage() {
                     hasError: activity.errorCount > 0
                   } : null;
                   
+                  const cooldownInfo = getCooldownInfo(bot);
+                  // #region agent log
+                  fetch('http://127.0.0.1:7242/ingest/1d699810-8c68-443d-8f9c-b629f3dcc932',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:1552',message:'Cooldown info for render',data:{hasCooldownInfo:!!cooldownInfo,isActive:cooldownInfo?.isActive,botId:bot.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                  // #endregion
+                  
                   return activityState ? (
                     <div className="pt-4 border-t border-gray-100">
                       <div className="flex items-center justify-between mb-2">
@@ -1561,6 +1612,30 @@ export default function BotsPage() {
                           </div>
                         </div>
                       </div>
+                      
+                      {/* Cooldown Progress Bar */}
+                      {cooldownInfo && cooldownInfo.isActive && (
+                        <div className="mt-3 pt-3 border-t border-gray-200">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <div className="flex items-center gap-2">
+                              <i className="ri-time-line text-yellow-600 text-sm"></i>
+                              <span className="text-xs font-medium text-gray-700">Cooldown</span>
+                            </div>
+                            <span className="text-xs text-gray-600">
+                              {cooldownInfo.barsPassed}/{cooldownInfo.requiredBars} bars
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                            <div 
+                              className="h-full bg-gradient-to-r from-yellow-400 to-yellow-600 rounded-full transition-all duration-300 ease-out"
+                              style={{ width: `${cooldownInfo.progress}%` }}
+                            ></div>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {cooldownInfo.requiredBars - cooldownInfo.barsPassed} bar{cooldownInfo.requiredBars - cooldownInfo.barsPassed !== 1 ? 's' : ''} remaining
+                          </p>
+                        </div>
+                      )}
                     </div>
                   ) : null;
                 })()}
