@@ -105,7 +105,7 @@ export default function Navigation() {
 
   // Don't render navigation until user data is loaded (for authenticated routes)
   // But be more lenient to prevent blank screens - only return null if loading is true
-  const authRequiredRoutes = ['/dashboard', '/bots', '/settings', '/admin', '/trades', '/performance', '/pablo-ready', '/ai-assistant', '/backtest', '/bot-activity', '/transaction-log', '/paper-trading', '/futures-pairs-finder', '/messages', '/pricing'];
+  const authRequiredRoutes = ['/dashboard', '/bots', '/settings', '/admin', '/trades', '/performance', '/pablo-ready', '/ai-assistant', '/backtest', '/bot-activity', '/transaction-log', '/paper-trading', '/futures-pairs-finder', '/messages', '/pricing', '/subscription'];
   const isAuthRequired = authRequiredRoutes.some(route => location.pathname.startsWith(route));
   
   // Only return null if we're actively loading - don't block on missing user/role
@@ -142,6 +142,7 @@ export default function Navigation() {
     { path: '/contact', icon: 'ri-customer-service-line', label: 'Contact' },
     { path: '/messages', icon: 'ri-message-3-line', label: 'Messages' },
     { path: '/pricing', icon: 'ri-vip-crown-line', label: 'Pricing' },
+    { path: '/subscription', icon: 'ri-vip-diamond-line', label: 'Subscription' },
     // Add AI/ML Dashboard if feature is enabled
     ...(import.meta.env.VITE_FEATURE_AI_ML === '1' ? [{ path: '/ai-ml/dashboard', icon: 'ri-brain-line', label: 'AI/ML' }] : []),
     // Add admin link if user is admin

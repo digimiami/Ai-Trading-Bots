@@ -11,6 +11,7 @@ import { supabase } from '../../lib/supabase'
 import Button from '../../components/base/Button'
 import Card from '../../components/base/Card'
 import Header from '../../components/feature/Header'
+import Navigation from '../../components/feature/Navigation'
 
 interface Invoice {
   id: string
@@ -131,10 +132,11 @@ export default function SubscriptionPage() {
 
   if (loading || subscriptionLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+      <div className="min-h-screen bg-gray-50 dark:bg-gradient-to-br dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
         <Header />
-        <div className="container mx-auto px-4 py-20">
-          <div className="text-center text-white">
+        <Navigation />
+        <div className="container mx-auto px-4 py-20 pb-20">
+          <div className="text-center text-gray-900 dark:text-white">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
             <p className="mt-4">Loading subscription information...</p>
           </div>
@@ -146,8 +148,9 @@ export default function SubscriptionPage() {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gradient-to-br dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
       <Header />
+      <Navigation />
       
-      <div className="container mx-auto px-4 py-20">
+      <div className="container mx-auto px-4 py-20 pb-20">
         <div className="max-w-6xl mx-auto">
           {/* Header */}
           <div className="mb-8">
