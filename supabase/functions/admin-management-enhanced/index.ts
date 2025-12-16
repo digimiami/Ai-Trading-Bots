@@ -523,53 +523,143 @@ serve(async (req) => {
         })
 
       case 'deleteUser':
-        let userId = params.userId
-        const userEmail = params.userEmail
-        
-        // If email provided instead of userId, find the user ID
-        if (!userId && userEmail) {
-          const { data: userData, error: findError } = await supabaseClient
+        try {
+          let userId = params.userId
+          const userEmail = params.userEmail
+          
+          // If email provided instead of userId, find the user ID
+          if (!userId && userEmail) {
+            const { data: userData, error: findError } = await supabaseClient
+              .from('users')
+              .select('id')
+              .eq('email', userEmail)
+              .single()
+            
+            if (findError || !userData) {
+              // Try to find in auth.users
+              try {
+                const { data: authUsers } = await supabaseClient.auth.admin.listUsers()
+                const authUser = authUsers?.users?.find(u => u.email === userEmail)
+                
+                if (!authUser) {
+                  return new Response(JSON.stringify({ 
+                    error: `User not found: ${userEmail}` 
+                  }), {
+                    status: 404,
+                    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                  })
+                }
+                
+                userId = authUser.id
+              } catch (listError) {
+                console.error('Error listing auth users:', listError)
+                return new Response(JSON.stringify({ 
+                  error: `User not found: ${userEmail}` 
+                }), {
+                  status: 404,
+                  headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                })
+              }
+            } else {
+              userId = userData.id
+            }
+          }
+          
+          if (!userId) {
+            return new Response(JSON.stringify({ 
+              error: 'Either userId or userEmail must be provided' 
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          }
+          
+          // Check if user exists in database
+          const { data: dbUser, error: checkDbError } = await supabaseClient
             .from('users')
-            .select('id')
-            .eq('email', userEmail)
+            .select('id, email')
+            .eq('id', userId)
             .single()
           
-          if (findError || !userData) {
-            // Try to find in auth.users
-            const { data: authUsers } = await supabaseClient.auth.admin.listUsers()
-            const authUser = authUsers?.users?.find(u => u.email === userEmail)
-            
-            if (!authUser) {
-              throw new Error(`User not found: ${userEmail}`)
-            }
-            
-            userId = authUser.id
-          } else {
-            userId = userData.id
+          // Check if user exists in auth
+          let authUserExists = false
+          try {
+            const { data: authUser, error: authCheckError } = await supabaseClient.auth.admin.getUserById(userId)
+            authUserExists = !authCheckError && !!authUser?.user
+          } catch (authCheckError) {
+            console.warn('Could not check auth user existence:', authCheckError)
+            authUserExists = false
           }
+          
+          // Delete from auth (only if exists)
+          if (authUserExists) {
+            const { error: deleteAuthError } = await supabaseClient.auth.admin.deleteUser(userId)
+            if (deleteAuthError) {
+              console.error('Error deleting auth user:', deleteAuthError)
+              // Don't throw - continue to try deleting from database
+              // Some errors (like user already deleted) are acceptable
+              if (!deleteAuthError.message?.includes('not found') && 
+                  !deleteAuthError.message?.includes('does not exist')) {
+                return new Response(JSON.stringify({ 
+                  error: `Failed to delete auth user: ${deleteAuthError.message}` 
+                }), {
+                  status: 500,
+                  headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                })
+              }
+            }
+          } else {
+            console.log(`Auth user ${userId} does not exist, skipping auth deletion`)
+          }
+
+          // Delete from database (only if exists)
+          if (dbUser) {
+            const { error: deleteDbError } = await supabaseClient
+              .from('users')
+              .delete()
+              .eq('id', userId)
+
+            if (deleteDbError) {
+              console.error('Error deleting database user:', deleteDbError)
+              // Check if it's a foreign key constraint error
+              if (deleteDbError.code === '23503' || deleteDbError.message?.includes('foreign key')) {
+                return new Response(JSON.stringify({ 
+                  error: `Cannot delete user: User has associated data (bots, trades, etc.). Please delete or reassign related data first.`,
+                  details: deleteDbError.message
+                }), {
+                  status: 400,
+                  headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                })
+              }
+              return new Response(JSON.stringify({ 
+                error: `Failed to delete database user: ${deleteDbError.message}` 
+              }), {
+                status: 500,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              })
+            }
+          } else {
+            console.log(`Database user ${userId} does not exist, skipping database deletion`)
+          }
+
+          return new Response(JSON.stringify({ 
+            success: true, 
+            message: 'User deleted successfully',
+            deletedUserId: userId,
+            note: !dbUser && !authUserExists ? 'User was already deleted' : undefined
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        } catch (error: any) {
+          console.error('Error in deleteUser:', error)
+          return new Response(JSON.stringify({ 
+            error: error?.message || 'Failed to delete user',
+            details: String(error)
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
         }
-        
-        if (!userId) {
-          throw new Error('Either userId or userEmail must be provided')
-        }
-        
-        const { error: deleteAuthError } = await supabaseClient.auth.admin.deleteUser(userId)
-        if (deleteAuthError) throw deleteAuthError
-
-        const { error: deleteDbError } = await supabaseClient
-          .from('users')
-          .delete()
-          .eq('id', userId)
-
-        if (deleteDbError) throw deleteDbError
-
-        return new Response(JSON.stringify({ 
-          success: true, 
-          message: 'User deleted successfully',
-          deletedUserId: userId
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
 
       // NEW: Trading Bot Management
       case 'getAllBots':
