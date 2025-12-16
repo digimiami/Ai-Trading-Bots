@@ -12,6 +12,11 @@ import PopupDisplay from './components/ui/PopupDisplay';
 import { supabase } from './lib/supabase';
 
 function AppRoutes() {
+  // #region agent log
+  if (typeof window !== 'undefined') {
+    fetch('http://127.0.0.1:7242/ingest/1d699810-8c68-443d-8f9c-b629f3dcc932',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:14',message:'AppRoutes function entry',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'A'})}).catch(()=>{});
+  }
+  // #endregion
   const element = useRoutes(routes);
   const { user, loading } = useAuth();
   const navigate = useNavigate();
@@ -195,6 +200,11 @@ function AppRoutes() {
     );
   }
 
+  // #region agent log
+  if (typeof window !== 'undefined') {
+    fetch('http://127.0.0.1:7242/ingest/1d699810-8c68-443d-8f9c-b629f3dcc932',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'App.tsx:198',message:'AppRoutes return - before Suspense render',data:{loading,hasUser:!!user,pathname:location.pathname},timestamp:Date.now(),sessionId:'debug-session',runId:'pre-fix',hypothesisId:'B'})}).catch(()=>{});
+  }
+  // #endregion
   return (
     <Suspense fallback={
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
