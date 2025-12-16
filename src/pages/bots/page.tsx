@@ -44,6 +44,7 @@ export default function BotsPage() {
   const [cloneBotId, setCloneBotId] = useState('');
   const [cloning, setCloning] = useState(false);
   const [sharingBotId, setSharingBotId] = useState<string | null>(null);
+  const [expandedErrorBotId, setExpandedErrorBotId] = useState<string | null>(null);
   const isWebhookView = viewMode === 'webhook';
   
   // Get trade limits for all bots
@@ -1605,9 +1606,56 @@ export default function BotsPage() {
                               </p>
                             )}
                             {activityState.hasError && activity.errorCount > 0 && (
-                              <p className="text-xs text-red-600 font-medium mt-1">
-                                {activity.errorCount} error{activity.errorCount !== 1 ? 's' : ''} detected
-                              </p>
+                              <div className="mt-2">
+                                <div className="flex items-center justify-between">
+                                  <p className="text-xs text-red-600 font-medium">
+                                    {activity.errorCount} error{activity.errorCount !== 1 ? 's' : ''} detected
+                                  </p>
+                                  <button
+                                    onClick={() => setExpandedErrorBotId(expandedErrorBotId === bot.id ? null : bot.id)}
+                                    className="text-xs text-red-600 hover:text-red-700 font-medium underline focus:outline-none"
+                                  >
+                                    {expandedErrorBotId === bot.id ? 'Show less' : 'Show more'}
+                                  </button>
+                                </div>
+                                {expandedErrorBotId === bot.id && activity.logs && (
+                                  <div className="mt-2 space-y-2 max-h-48 overflow-y-auto">
+                                    {activity.logs
+                                      .filter(log => log.level === 'error')
+                                      .slice(0, 10) // Show max 10 errors
+                                      .map((errorLog, idx) => (
+                                        <div key={errorLog.id || idx} className="bg-red-50 border border-red-200 rounded p-2 text-xs">
+                                          <div className="flex items-start justify-between gap-2 mb-1">
+                                            <span className="font-medium text-red-800">
+                                              {errorLog.category ? errorLog.category.charAt(0).toUpperCase() + errorLog.category.slice(1) : 'Error'}
+                                            </span>
+                                            <span className="text-red-600 text-[10px] whitespace-nowrap">
+                                              {new Date(errorLog.timestamp).toLocaleString()}
+                                            </span>
+                                          </div>
+                                          <p className="text-red-700 mb-1">{errorLog.message}</p>
+                                          {errorLog.details && (
+                                            <details className="mt-1">
+                                              <summary className="text-red-600 cursor-pointer hover:text-red-700 text-[10px]">
+                                                View details
+                                              </summary>
+                                              <pre className="mt-1 text-[10px] text-red-600 bg-red-100 p-2 rounded overflow-x-auto">
+                                                {typeof errorLog.details === 'string' 
+                                                  ? errorLog.details 
+                                                  : JSON.stringify(errorLog.details, null, 2)}
+                                              </pre>
+                                            </details>
+                                          )}
+                                        </div>
+                                      ))}
+                                    {activity.logs.filter(log => log.level === 'error').length > 10 && (
+                                      <p className="text-xs text-red-600 text-center italic">
+                                        Showing 10 of {activity.logs.filter(log => log.level === 'error').length} errors
+                                      </p>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                             )}
                           </div>
                         </div>
