@@ -114,7 +114,6 @@ export function useMessaging() {
 export function useUnreadMessageCount() {
   const [count, setCount] = useState(0)
   const [loading, setLoading] = useState(true)
-  const { user, loading: authLoading } = useAuth()
   const { getUnreadCount } = useMessaging()
 
   const fetchCount = useCallback(async () => {
@@ -144,43 +143,43 @@ export function useUnreadMessageCount() {
   }, [getUnreadCount])
 
   useEffect(() => {
-    // Don't do anything while auth is loading
-    if (authLoading) {
-      return
-    }
-
-    // If no user, set count to 0 and stop loading
-    if (!user) {
-      setCount(0)
-      setLoading(false)
-      return
-    }
-
     let channel: any = null
     let interval: NodeJS.Timeout | null = null
 
-    // Fetch initial count
-    fetchCount()
+    const setupSubscription = async () => {
+      // Check if authenticated before setting up real-time subscription
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        setCount(0)
+        setLoading(false)
+        return // Don't set up subscription if not authenticated
+      }
 
-    // Set up real-time subscription for messages
-    channel = supabase
-      .channel('messages')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'messages'
-        },
-        () => {
-          // Refetch count when messages change
-          fetchCount()
-        }
-      )
-      .subscribe()
+      // Fetch initial count
+      await fetchCount()
 
-    // Poll every 60 seconds as backup (reduced from 30s to 60s to save egress)
-    interval = setInterval(fetchCount, 60000)
+      // Set up real-time subscription for messages
+      channel = supabase
+        .channel('messages')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'messages'
+          },
+          () => {
+            // Refetch count when messages change
+            fetchCount()
+          }
+        )
+        .subscribe()
+
+      // Poll every 60 seconds as backup (reduced from 30s to 60s to save egress)
+      interval = setInterval(fetchCount, 60000)
+    }
+
+    setupSubscription()
 
     // Cleanup function
     return () => {
@@ -191,7 +190,7 @@ export function useUnreadMessageCount() {
         clearInterval(interval)
       }
     }
-  }, [user, authLoading, fetchCount])
+  }, [fetchCount])
 
   return { count, loading, refetch: fetchCount }
 }
