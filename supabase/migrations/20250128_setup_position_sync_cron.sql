@@ -22,34 +22,42 @@
 
 -- Check if pg_cron extension exists
 DO $$
+DECLARE
+  job_id bigint;
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
     -- Remove existing job if it exists
     BEGIN
-      PERFORM cron.unschedule('position-sync-schedule');
+      SELECT cron.unschedule('position-sync-schedule') INTO job_id;
     EXCEPTION
       WHEN OTHERS THEN
         NULL;
     END;
     
     -- Schedule position sync every 5 minutes
-    PERFORM cron.schedule(
-      'position-sync-schedule',
-      '*/5 * * * *', -- Every 5 minutes
-      $$
-      SELECT
-        net.http_post(
-          url := current_setting('app.supabase_url') || '/functions/v1/position-sync',
+    -- Note: This requires the net extension for http_post
+    -- If net extension is not available, use Supabase Dashboard instead
+    BEGIN
+      SELECT cron.schedule(
+        'position-sync-schedule',
+        '*/5 * * * *', -- Every 5 minutes
+        $$
+        SELECT net.http_post(
+          url := current_setting('app.supabase_url', true) || '/functions/v1/position-sync',
           headers := jsonb_build_object(
             'Content-Type', 'application/json',
             'x-cron-secret', current_setting('app.cron_secret', true)
           ),
           body := '{}'::jsonb
         ) AS request_id;
-      $$
-    );
-    
-    RAISE NOTICE 'Position sync cron job scheduled successfully (every 5 minutes)';
+        $$
+      ) INTO job_id;
+      
+      RAISE NOTICE 'Position sync cron job scheduled successfully (every 5 minutes). Job ID: %', job_id;
+    EXCEPTION
+      WHEN OTHERS THEN
+        RAISE NOTICE 'Could not schedule cron job (net extension may not be available): %. Use Supabase Dashboard instead.', SQLERRM;
+    END;
   ELSE
     RAISE NOTICE 'pg_cron extension not available. Use Supabase Dashboard to set up cron job instead.';
   END IF;
