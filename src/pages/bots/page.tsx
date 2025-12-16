@@ -262,13 +262,7 @@ export default function BotsPage() {
 
   // Extract cooldown information from bot logs
   const getCooldownInfo = (bot: TradingBot) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1d699810-8c68-443d-8f9c-b629f3dcc932',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:264',message:'getCooldownInfo called',data:{botId:bot.id,botName:bot.name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     const activity = getBotActivity(bot.id);
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1d699810-8c68-443d-8f9c-b629f3dcc932',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:268',message:'Activity check',data:{hasActivity:!!activity,hasLogs:!!(activity?.logs),logsCount:activity?.logs?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
     if (!activity || !activity.logs) return null;
 
     // Look for cooldown messages in recent logs
@@ -278,25 +272,17 @@ export default function BotsPage() {
         log.message.includes('cooldown active:')
       )
     );
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1d699810-8c68-443d-8f9c-b629f3dcc932',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:277',message:'Cooldown log search',data:{found:!!cooldownLog,message:cooldownLog?.message?.substring(0,100)||null},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
+
     if (!cooldownLog) return null;
 
     // Parse cooldown message: "Cooldown active: X/Y bars passed since last trade"
     const message = cooldownLog.message;
     const match = message.match(/(\d+)\/(\d+)\s+bars/);
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1d699810-8c68-443d-8f9c-b629f3dcc932',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:283',message:'Regex match result',data:{matched:!!match,matchResult:match,fullMessage:message.substring(0,150)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     if (!match) return null;
 
     const barsPassed = parseInt(match[1], 10);
     const requiredBars = parseInt(match[2], 10);
     const progress = Math.min(100, (barsPassed / requiredBars) * 100);
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/1d699810-8c68-443d-8f9c-b629f3dcc932',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:290',message:'Cooldown calculation',data:{barsPassed,requiredBars,progress,isActive:barsPassed<requiredBars},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-    // #endregion
 
     return {
       barsPassed,
