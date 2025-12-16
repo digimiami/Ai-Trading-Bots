@@ -52,3 +52,4 @@ EXCEPTION
         RAISE NOTICE 'Could not update default (this is OK if column already has a default): %', SQLERRM;
 END $$;
 
+

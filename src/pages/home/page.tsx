@@ -231,6 +231,14 @@ export default function Home() {
             </Button>
             <Button
               variant="secondary"
+              onClick={() => navigate('/crypto-bubbles')}
+              className="h-12 flex items-center justify-center"
+            >
+              <i className="ri-bubble-chart-line mr-2"></i>
+              Crypto Bubbles
+            </Button>
+            <Button
+              variant="secondary"
               onClick={() => navigate('/crypto-news')}
               className="h-12 flex items-center justify-center"
             >

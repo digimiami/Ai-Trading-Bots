@@ -254,7 +254,7 @@ async function sendSubscriptionEmail(
       ? `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <h2 style="color: #2563eb;">🎉 Subscription Activated!</h2>
-          <p>Your ${plan?.display_name || 'subscription'} has been activated successfully.</p>
+        <p>Your ${plan?.display_name || 'subscription'} has been activated successfully.</p>
           <p>Your subscription will be active once the payment has been formally settled/confirmed by our system.</p>
           
           <div style="background-color: #f3f4f6; padding: 15px; border-radius: 8px; margin: 20px 0;">
@@ -279,17 +279,17 @@ async function sendSubscriptionEmail(
       ? `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <h2 style="color: #f59e0b;">Subscription Renewal Required</h2>
-          <p>Your ${plan?.display_name || 'subscription'} is expiring soon.</p>
-          <p><strong>Expires:</strong> ${new Date(subscription.expires_at).toLocaleDateString()}</p>
-          <p>Please renew your subscription to continue using all features.</p>
+        <p>Your ${plan?.display_name || 'subscription'} is expiring soon.</p>
+        <p><strong>Expires:</strong> ${new Date(subscription.expires_at).toLocaleDateString()}</p>
+        <p>Please renew your subscription to continue using all features.</p>
           <p><a href="${subscription.metadata?.renewal_invoice_url || `${siteUrl}/pricing`}" style="color: #2563eb;">Renew Now</a></p>
         </div>
       `
       : `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <h2 style="color: #dc2626;">Subscription Expired</h2>
-          <p>Your ${plan?.display_name || 'subscription'} has expired.</p>
-          <p>Please renew to continue using premium features.</p>
+        <p>Your ${plan?.display_name || 'subscription'} has expired.</p>
+        <p>Please renew to continue using premium features.</p>
           <p><a href="${siteUrl}/pricing" style="color: #2563eb;">Renew Subscription</a></p>
         </div>
       `

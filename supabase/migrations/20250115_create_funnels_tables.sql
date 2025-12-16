@@ -160,3 +160,4 @@ CREATE TRIGGER update_funnel_pages_updated_at
   BEFORE UPDATE ON funnel_pages
   FOR EACH ROW
   EXECUTE FUNCTION update_funnel_pages_updated_at();
+

@@ -1550,9 +1550,6 @@ export default function BotsPage() {
                   } : null;
                   
                   const cooldownInfo = getCooldownInfo(bot);
-                  // #region agent log
-                  fetch('http://127.0.0.1:7242/ingest/1d699810-8c68-443d-8f9c-b629f3dcc932',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:1552',message:'Cooldown info for render',data:{hasCooldownInfo:!!cooldownInfo,isActive:cooldownInfo?.isActive,botId:bot.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-                  // #endregion
                   
                   return activityState ? (
                     <div className="pt-4 border-t border-gray-100">

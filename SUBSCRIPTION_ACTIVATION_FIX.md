@@ -188,3 +188,4 @@ Monitor these logs for issues:
 - `supabase/functions/btcpay-integration/index.ts` - Invoice creation
 - `src/pages/messages/page.tsx` - Message inbox UI
 - `src/pages/admin/components/SubscriptionManagement.tsx` - Admin subscription management
+

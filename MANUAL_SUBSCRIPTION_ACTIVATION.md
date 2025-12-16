@@ -103,3 +103,4 @@ To prevent this issue in the future:
 
 - `supabase/functions/btcpay-webhook/index.ts` - Webhook handler with manual activation
 - `src/pages/admin/components/SubscriptionManagement.tsx` - Admin UI with activate button
+

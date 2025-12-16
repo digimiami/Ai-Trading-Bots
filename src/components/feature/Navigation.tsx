@@ -129,6 +129,8 @@ export default function Navigation() {
   const dropdownItems = [
     { path: '/academy', icon: 'ri-graduation-cap-line', label: t('nav.academy') },
     { path: '/market-dashboard', icon: 'ri-line-chart-line', label: t('nav.market') },
+    { path: '/crypto-bubbles', icon: 'ri-bubble-chart-line', label: 'Crypto Bubbles' },
+    { path: '/crypto-news', icon: 'ri-newspaper-line', label: 'Crypto News' },
     { path: '/backtest', icon: 'ri-test-tube-line', label: 'Backtest' },
     { path: '/bot-activity', icon: 'ri-file-list-line', label: 'Activity' },
     { path: '/trades', icon: 'ri-exchange-line', label: t('nav.trades') },

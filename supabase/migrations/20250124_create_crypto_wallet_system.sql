@@ -229,3 +229,4 @@ COMMENT ON TABLE wallet_balances IS 'Current balances for each wallet';
 COMMENT ON TABLE wallet_transactions IS 'All wallet transactions (buy, send, receive)';
 COMMENT ON FUNCTION get_user_wallet_balance IS 'Get total balance for a user and currency';
 COMMENT ON FUNCTION update_wallet_balance_after_transaction IS 'Automatically update wallet balance when transactions are created/updated';
+

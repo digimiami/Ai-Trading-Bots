@@ -560,3 +560,4 @@ async function simulateSendTransaction(from: string, to: string, amount: number,
     '0123456789abcdef'[Math.floor(Math.random() * 16)]
   ).join('')
 }
+

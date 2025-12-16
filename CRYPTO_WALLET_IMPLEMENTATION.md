@@ -275,3 +275,4 @@ For questions or issues, refer to:
 ---
 
 **Note**: This implementation provides the foundation for a crypto wallet. For production use, you must integrate with real payment providers and Bitcoin wallet services, implement proper key management, and ensure compliance with local regulations.
+

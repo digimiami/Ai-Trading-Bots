@@ -305,3 +305,4 @@ If you have any questions about this change, please contact our support team.`
     console.error('Error sending subscription change message:', error)
   }
 }
+
