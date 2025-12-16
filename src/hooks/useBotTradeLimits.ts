@@ -106,8 +106,8 @@ export const useBotTradeLimits = (botIds: string[]) => {
   useEffect(() => {
     fetchTradeLimits();
     
-    // Refresh every 30 seconds
-    const interval = setInterval(fetchTradeLimits, 30000);
+    // Refresh every 60 seconds (reduced from 30s to 60s to save egress)
+    const interval = setInterval(fetchTradeLimits, 60000);
     return () => clearInterval(interval);
   }, [botIds.join(',')]); // Re-fetch when bot IDs change
 

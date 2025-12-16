@@ -264,11 +264,11 @@ export default function MarketDashboardPage() {
     fetchMarketData();
     fetchAlerts();
     
-    // Refresh data every 30 seconds
+    // Refresh data every 5 minutes (reduced from 120s to 300s to save egress)
     const interval = setInterval(() => {
       fetchMarketData();
       fetchAlerts();
-    }, 30000);
+    }, 300000);
     
     return () => clearInterval(interval);
   }, []);

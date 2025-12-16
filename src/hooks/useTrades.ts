@@ -52,8 +52,8 @@ export function useTrades(botId?: string) {
   useEffect(() => {
     fetchTrades()
     
-    // Set up polling for real-time updates
-    const interval = setInterval(fetchTrades, 30000) // Update every 30 seconds
+    // Set up polling for real-time updates (reduced from 30s to 60s to save egress)
+    const interval = setInterval(fetchTrades, 60000) // Update every 1 minute
     
     return () => clearInterval(interval)
   }, [botId])

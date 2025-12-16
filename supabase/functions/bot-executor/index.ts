@@ -667,7 +667,7 @@ class MarketDataFetcher {
     marketType: ''
   };
   
-  private static readonly CACHE_TTL_MS = 5000; // Cache for 5 seconds
+  private static readonly CACHE_TTL_MS = 300000; // Cache for 5 minutes (increased from 5s to reduce egress - ticker lists don't change frequently)
   
   // Helper function to get cached tickers or fetch new ones
   private static async getTickersWithCache(category: string, exchange: string): Promise<any[] | null> {
@@ -2267,8 +2267,8 @@ class MarketDataFetcher {
   // Calculate RSI (Relative Strength Index) from real market data
   static async fetchRSI(symbol: string, exchange: string, timeframe: string = '1h'): Promise<number> {
     try {
-      // Fetch historical klines (need at least 14 periods for RSI, but get more for accuracy)
-      const klines = await this.fetchKlines(symbol, exchange, timeframe, 100);
+      // Fetch historical klines (need at least 14 periods for RSI, using 60 for good accuracy while saving egress)
+      const klines = await this.fetchKlines(symbol, exchange, timeframe, 60);
       
       if (klines.length < 14) {
         console.warn(`⚠️ Insufficient klines for RSI calculation (need 14, got ${klines.length}), using fallback`);
@@ -2320,8 +2320,8 @@ class MarketDataFetcher {
   // Calculate ADX (Average Directional Index) from real market data
   static async fetchADX(symbol: string, exchange: string, timeframe: string = '1h'): Promise<number> {
     try {
-      // Fetch historical klines (need at least 14 periods for ADX)
-      const klines = await this.fetchKlines(symbol, exchange, timeframe, 100);
+      // Fetch historical klines (need at least 14 periods for ADX, using 60 for good accuracy while saving egress)
+      const klines = await this.fetchKlines(symbol, exchange, timeframe, 60);
       
       if (klines.length < 14) {
         console.warn(`⚠️ Insufficient klines for ADX calculation (need 14, got ${klines.length}), using fallback`);

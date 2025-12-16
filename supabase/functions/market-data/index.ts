@@ -30,6 +30,17 @@ function checkRateLimit(ip: string): boolean {
   return true
 }
 
+// Cache for market data responses (reduces egress by caching responses)
+const marketDataCache: {
+  data: any | null;
+  timestamp: number;
+} = {
+  data: null,
+  timestamp: 0
+}
+
+const MARKET_DATA_CACHE_TTL_MS = 180000 // Cache for 3 minutes (180 seconds)
+
 // Exponential backoff for API calls
 async function fetchWithBackoff(url: string, options: RequestInit = {}, retries = 3): Promise<Response> {
   for (let attempt = 0; attempt < retries; attempt++) {
@@ -352,14 +363,21 @@ async function fetchKlines(symbol: string, interval: string = '1h', limit: numbe
 }
 
 // Get market cap (estimated from 24h volume)
-async function getMarketCap(symbol: string, price: number): Promise<number> {
+// Optimized: Accept ticker data to avoid redundant API calls
+async function getMarketCap(symbol: string, price: number, ticker?: any): Promise<number> {
   try {
-    const tickers = await fetchTickers([symbol])
-    const ticker = tickers.find(t => t.symbol === symbol)
-    
+    // Use provided ticker data if available (avoids redundant API call)
     if (ticker && ticker.turnover24h) {
-      // Rough estimate: turnover / price * multiplier
       const turnover24h = parseFloat(ticker.turnover24h)
+      return (turnover24h / price) * 1.5 // Rough multiplier
+    }
+    
+    // Fallback: fetch ticker if not provided (should rarely happen)
+    const tickers = await fetchTickers([symbol])
+    const foundTicker = tickers.find(t => t.symbol === symbol)
+    
+    if (foundTicker && foundTicker.turnover24h) {
+      const turnover24h = parseFloat(foundTicker.turnover24h)
       return (turnover24h / price) * 1.5 // Rough multiplier
     }
     
@@ -510,8 +528,29 @@ serve(async (req) => {
     
     // Get all market data
     if (action === 'all') {
+      // Check cache first (reduces egress by serving cached responses)
+      const now = Date.now()
+      if (marketDataCache.data && (now - marketDataCache.timestamp) < MARKET_DATA_CACHE_TTL_MS) {
+        const cacheAge = Math.round((now - marketDataCache.timestamp) / 1000)
+        console.log(`📦 Serving cached market data (age: ${cacheAge}s, cache TTL: ${MARKET_DATA_CACHE_TTL_MS / 1000}s)`)
+        return new Response(
+          JSON.stringify({
+            ...marketDataCache.data,
+            cached: true,
+            cacheAge: cacheAge
+          }),
+          { 
+            headers: { 
+              ...corsHeaders, 
+              'Content-Type': 'application/json',
+              'Cache-Control': 'public, max-age=180' // 3 minutes browser cache
+            } 
+          }
+        )
+      }
+      
       const symbols = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'DOGEUSDT', 'ADAUSDT', 'AVAXUSDT', 'MATICUSDT', 'LINKUSDT']
-      console.log(`📊 Fetching market data for ${symbols.length} symbols: ${symbols.join(', ')}`)
+      console.log(`📊 Fetching fresh market data for ${symbols.length} symbols: ${symbols.join(', ')}`)
       
       const tickers = await fetchTickers(symbols)
       console.log(`📊 Received ${tickers.length} tickers from Bybit`)
@@ -538,14 +577,16 @@ serve(async (req) => {
             const symbol = ticker.symbol
             console.log(`📊 [${index + 1}/${tickers.length}] Processing ${symbol}...`)
             
-            const klines = await fetchKlines(symbol, '1h', 200)
+            // Reduced from 200 to 50 klines for UI display (saves egress, trading bots fetch their own data)
+            const klines = await fetchKlines(symbol, '1h', 50)
             const price = parseFloat(ticker.lastPrice)
             const prevPrice = parseFloat(ticker.prevPrice24h || ticker.lastPrice)
             
             const vwap = calculateVWAP(klines)
             const atr = calculateATR(klines)
             const rsi = calculateRSI(klines)
-            const marketCap = await getMarketCap(symbol, price)
+            // Pass ticker data to avoid redundant API call (optimization for egress reduction)
+            const marketCap = await getMarketCap(symbol, price, ticker)
             const flows = calculateFlows(ticker, prevPrice)
             
             console.log(`✅ [${index + 1}/${tickers.length}] ${symbol} processed: price=${price}, vwap=${vwap}, atr=${atr}, rsi=${rsi}`)
@@ -594,16 +635,32 @@ serve(async (req) => {
         fetchCryptoNews(10)
       ])
       
+      const responseData = {
+        marketData: validMarketData,
+        topGainers,
+        rapidChanges,
+        fearGreedIndex,
+        news,
+        timestamp: new Date().toISOString()
+      }
+      
+      // Cache the response
+      marketDataCache.data = responseData
+      marketDataCache.timestamp = Date.now()
+      console.log(`💾 Cached market data response (will expire in ${MARKET_DATA_CACHE_TTL_MS / 1000}s)`)
+      
       return new Response(
         JSON.stringify({
-          marketData: validMarketData,
-          topGainers,
-          rapidChanges,
-          fearGreedIndex,
-          news,
-          timestamp: new Date().toISOString()
+          ...responseData,
+          cached: false
         }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { 
+          headers: { 
+            ...corsHeaders, 
+            'Content-Type': 'application/json',
+            'Cache-Control': 'public, max-age=180' // 3 minutes browser cache
+          } 
+        }
       )
     }
     
@@ -627,7 +684,10 @@ serve(async (req) => {
       const vwap = calculateVWAP(klines)
       const atr = calculateATR(klines)
       const rsi = calculateRSI(klines)
-      const marketCap = await getMarketCap(symbol, price)
+      // Fetch ticker first, then pass to getMarketCap to avoid redundant call
+      const tickers = await fetchTickers([symbol])
+      const ticker = tickers.find(t => t.symbol === symbol)
+      const marketCap = await getMarketCap(symbol, price, ticker)
       const flows = calculateFlows(ticker, prevPrice)
       
       return new Response(

@@ -148,8 +148,8 @@ export function useUnreadMessageCount() {
       )
       .subscribe()
 
-    // Poll every 30 seconds as backup
-    const interval = setInterval(fetchCount, 30000)
+    // Poll every 60 seconds as backup (reduced from 30s to 60s to save egress)
+    const interval = setInterval(fetchCount, 60000)
 
     return () => {
       channel.unsubscribe()

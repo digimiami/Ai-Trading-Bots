@@ -43,8 +43,8 @@ export function useMarketData(symbol: string = 'BTCUSDT', exchange: string = 'by
   useEffect(() => {
     fetchMarketData()
     
-    // Set up polling for real-time updates
-    const interval = setInterval(fetchMarketData, 30000) // Update every 30 seconds
+    // Set up polling for real-time updates (reduced from 30s to 120s to save egress)
+    const interval = setInterval(fetchMarketData, 120000) // Update every 2 minutes
     
     return () => clearInterval(interval)
   }, [symbol, exchange])
