@@ -19,7 +19,8 @@ export default function TelegramSettings() {
       error_occurred: true,
       daily_summary: true,
       profit_alert: true,
-      loss_alert: true
+      loss_alert: true,
+      paper_trade_notifications: true
     }
   });
 
