@@ -5464,6 +5464,16 @@ class BotExecutor {
       
       console.log('✅ Trade recorded successfully:', trade);
       
+      // Track position opening for real trades
+      if (bot.paper_trading !== true) {
+        try {
+          await this.trackPositionOpen(bot, trade, orderResult, normalizedPrice, tradeAmount, currentPrice);
+        } catch (posError) {
+          console.warn('⚠️ Failed to track position open (non-critical):', posError);
+          // Don't fail the trade if position tracking fails
+        }
+      }
+      
       // Update bot performance
       await this.updateBotPerformance(bot.id, trade);
       
@@ -8717,6 +8727,310 @@ class BotExecutor {
     
     // Default minimum order values
     return isFutures ? 5 : 1; // $5 for futures, $1 for spot
+  }
+
+  /**
+   * Track position opening for real trades
+   */
+  private async trackPositionOpen(bot: any, trade: any, orderResult: any, entryPrice: number, quantity: number, currentPrice: number): Promise<void> {
+    try {
+      const tradingType = bot.tradingType || bot.trading_type || 'futures';
+      const side = (trade.side || '').toLowerCase();
+      const normalizedSide = side === 'buy' ? 'long' : side === 'sell' ? 'short' : side;
+      
+      // Calculate fees
+      const feeRate = resolveFeeRate(bot.exchange, tradingType);
+      const orderNotional = quantity * entryPrice;
+      const entryFees = orderNotional * feeRate;
+      
+      // Get leverage from bot or order result
+      const leverage = bot.leverage || orderResult?.leverage || 1;
+      
+      // Calculate margin used (for futures)
+      const marginUsed = tradingType === 'futures' || tradingType === 'linear' 
+        ? (orderNotional / leverage) 
+        : orderNotional;
+      
+      // Get stop loss and take profit from bot config or signal
+      const stopLossPct = bot.stop_loss_percentage || bot.stopLossPercentage || 2;
+      const takeProfitPct = bot.take_profit_percentage || bot.takeProfitPercentage || 4;
+      
+      let stopLossPrice: number | null = null;
+      let takeProfitPrice: number | null = null;
+      
+      if (normalizedSide === 'long') {
+        stopLossPrice = entryPrice * (1 - stopLossPct / 100);
+        takeProfitPrice = entryPrice * (1 + takeProfitPct / 100);
+      } else {
+        stopLossPrice = entryPrice * (1 + stopLossPct / 100);
+        takeProfitPrice = entryPrice * (1 - takeProfitPct / 100);
+      }
+      
+      // Check if position already exists (for position increases)
+      const { data: existingPosition } = await this.supabaseClient
+        .from('trading_positions')
+        .select('*')
+        .eq('bot_id', bot.id)
+        .eq('symbol', bot.symbol)
+        .eq('exchange', bot.exchange)
+        .eq('status', 'open')
+        .maybeSingle();
+      
+      if (existingPosition) {
+        // Update existing position (position size increased)
+        const newQuantity = parseFloat(existingPosition.quantity) + quantity;
+        const avgEntryPrice = ((parseFloat(existingPosition.entry_price) * parseFloat(existingPosition.quantity)) + (entryPrice * quantity)) / newQuantity;
+        
+        await this.supabaseClient
+          .from('trading_positions')
+          .update({
+            quantity: newQuantity,
+            entry_price: avgEntryPrice,
+            current_price: currentPrice,
+            margin_used: marginUsed,
+            entry_fees: parseFloat(existingPosition.entry_fees || 0) + entryFees,
+            fees: parseFloat(existingPosition.fees || 0) + entryFees,
+            updated_at: TimeSync.getCurrentTimeISO()
+          })
+          .eq('id', existingPosition.id);
+        
+        console.log(`📊 Updated existing position: ${bot.symbol} ${normalizedSide}, new size: ${newQuantity}`);
+      } else {
+        // Create new position
+        const { data: position, error: posError } = await this.supabaseClient
+          .from('trading_positions')
+          .insert({
+            bot_id: bot.id,
+            user_id: bot.user_id,
+            trade_id: trade.id,
+            symbol: bot.symbol,
+            exchange: bot.exchange,
+            trading_type: tradingType,
+            side: normalizedSide,
+            entry_price: entryPrice,
+            quantity: quantity,
+            leverage: leverage,
+            stop_loss_price: stopLossPrice,
+            take_profit_price: takeProfitPrice,
+            current_price: currentPrice,
+            margin_used: marginUsed,
+            entry_fees: entryFees,
+            fees: entryFees,
+            status: 'open',
+            exchange_position_id: orderResult?.orderId || orderResult?.positionId || null
+          })
+          .select()
+          .single();
+        
+        if (posError) {
+          console.error('❌ Failed to create position record:', posError);
+          throw posError;
+        }
+        
+        console.log(`✅ Position tracked: ${bot.symbol} ${normalizedSide} at $${entryPrice}, size: ${quantity}`);
+      }
+    } catch (error: any) {
+      console.error('❌ Error tracking position open:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Track position closing and update metrics
+   */
+  private async trackPositionClose(bot: any, trade: any, exitPrice: number, closeReason?: string): Promise<void> {
+    try {
+      const tradingType = bot.tradingType || bot.trading_type || 'futures';
+      const side = (trade.side || '').toLowerCase();
+      const normalizedSide = side === 'buy' ? 'long' : side === 'sell' ? 'short' : side;
+      
+      // Find open position for this bot/symbol
+      const { data: position, error: posError } = await this.supabaseClient
+        .from('trading_positions')
+        .select('*')
+        .eq('bot_id', bot.id)
+        .eq('symbol', bot.symbol)
+        .eq('exchange', bot.exchange)
+        .eq('status', 'open')
+        .maybeSingle();
+      
+      if (posError || !position) {
+        console.warn('⚠️ No open position found to close:', posError?.message || 'Position not found');
+        return;
+      }
+      
+      // Calculate realized PnL
+      const entryPrice = parseFloat(position.entry_price);
+      const quantity = parseFloat(position.quantity);
+      const entryFees = parseFloat(position.entry_fees || 0);
+      
+      // Calculate exit fees
+      const feeRate = resolveFeeRate(bot.exchange, tradingType);
+      const exitNotional = quantity * exitPrice;
+      const exitFees = exitNotional * feeRate;
+      const totalFees = entryFees + exitFees;
+      
+      // Calculate PnL based on side
+      let realizedPnL: number;
+      if (normalizedSide === 'long' || position.side === 'long') {
+        realizedPnL = (exitPrice - entryPrice) * quantity - totalFees;
+      } else {
+        realizedPnL = (entryPrice - exitPrice) * quantity - totalFees;
+      }
+      
+      // Update position to closed
+      await this.supabaseClient
+        .from('trading_positions')
+        .update({
+          exit_price: exitPrice,
+          realized_pnl: realizedPnL,
+          fees: totalFees,
+          exit_fees: exitFees,
+          status: 'closed',
+          close_reason: closeReason || 'trade_execution',
+          closed_at: TimeSync.getCurrentTimeISO(),
+          updated_at: TimeSync.getCurrentTimeISO()
+        })
+        .eq('id', position.id);
+      
+      // Update trade with PnL and exit price
+      await this.supabaseClient
+        .from('trades')
+        .update({
+          pnl: realizedPnL,
+          fees: totalFees,
+          exit_price: exitPrice,
+          status: 'closed',
+          updated_at: TimeSync.getCurrentTimeISO()
+        })
+        .eq('id', trade.id);
+      
+      console.log(`✅ Position closed: ${bot.symbol} ${position.side}, PnL: $${realizedPnL.toFixed(2)}, Fees: $${totalFees.toFixed(2)}`);
+      
+      // Send Telegram notification for position close
+      try {
+        await this.sendPositionCloseNotification(bot, trade, realizedPnL, exitPrice, closeReason);
+      } catch (notifError) {
+        console.warn('⚠️ Failed to send position close notification:', notifError);
+      }
+      
+      // Update bot performance metrics (trigger will also update, but this ensures immediate update)
+      await this.updateBotPerformance(bot.id, { ...trade, pnl: realizedPnL, status: 'closed' });
+      
+    } catch (error: any) {
+      console.error('❌ Error tracking position close:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Sync positions from exchange and update database
+   */
+  private async syncPositionsFromExchange(bot: any): Promise<void> {
+    try {
+      if (bot.paper_trading === true) {
+        return; // Skip for paper trading
+      }
+      
+      const tradingType = bot.tradingType || bot.trading_type || 'futures';
+      const symbol = bot.symbol;
+      const exchange = bot.exchange || 'bybit';
+      
+      // Get API keys
+      const { data: apiKeys, error: apiError } = await this.supabaseClient
+        .from('api_keys')
+        .select('*')
+        .eq('user_id', bot.user_id)
+        .eq('exchange', exchange)
+        .eq('is_testnet', false)
+        .eq('is_active', true)
+        .single();
+      
+      if (apiError || !apiKeys) {
+        console.warn(`⚠️ No API keys found for position sync: ${apiError?.message || 'Not found'}`);
+        return;
+      }
+      
+      // Fetch positions from exchange
+      const baseUrl = 'https://api.bybit.com';
+      const timestamp = Date.now().toString();
+      const recvWindow = '5000';
+      const category = tradingType === 'futures' ? 'linear' : tradingType === 'spot' ? 'spot' : 'linear';
+      
+      const queryParams = `category=${category}&symbol=${symbol}`;
+      const signaturePayload = timestamp + apiKeys.api_key + recvWindow + queryParams;
+      const signature = await this.createBybitSignature(signaturePayload, apiKeys.api_secret);
+      
+      const response = await fetch(`${baseUrl}/v5/position/list?${queryParams}`, {
+        method: 'GET',
+        headers: {
+          'X-BAPI-API-KEY': apiKeys.api_key,
+          'X-BAPI-TIMESTAMP': timestamp,
+          'X-BAPI-RECV-WINDOW': recvWindow,
+          'X-BAPI-SIGN': signature,
+        },
+      });
+      
+      if (!response.ok) {
+        console.warn(`⚠️ Failed to fetch positions from exchange: ${response.status}`);
+        return;
+      }
+      
+      const data = await response.json();
+      if (data.retCode !== 0 || !data.result?.list) {
+        console.warn(`⚠️ Exchange position fetch error: ${data.retMsg || 'Unknown error'}`);
+        return;
+      }
+      
+      const exchangePositions = data.result.list.filter((p: any) => parseFloat(p.size || 0) !== 0);
+      
+      // Get database positions
+      const { data: dbPositions } = await this.supabaseClient
+        .from('trading_positions')
+        .select('*')
+        .eq('bot_id', bot.id)
+        .eq('symbol', symbol)
+        .eq('exchange', exchange)
+        .eq('status', 'open');
+      
+      // Update or close positions based on exchange data
+      for (const dbPos of dbPositions || []) {
+        const exchangePos = exchangePositions.find((ep: any) => 
+          ep.symbol === symbol && 
+          (ep.side?.toLowerCase() === dbPos.side || 
+           (ep.side === 'Buy' && dbPos.side === 'long') ||
+           (ep.side === 'Sell' && dbPos.side === 'short'))
+        );
+        
+        if (!exchangePos || parseFloat(exchangePos.size || 0) === 0) {
+          // Position closed on exchange, close in database
+          const currentPrice = parseFloat(exchangePos?.markPrice || exchangePos?.lastPrice || dbPos.current_price || 0);
+          if (currentPrice > 0) {
+            await this.trackPositionClose(bot, { id: dbPos.trade_id, side: dbPos.side }, currentPrice, 'exchange_sync');
+          }
+        } else {
+          // Update position with current price and unrealized PnL
+          const currentPrice = parseFloat(exchangePos.markPrice || exchangePos.lastPrice || 0);
+          const unrealizedPnL = parseFloat(exchangePos.unrealisedPnl || 0);
+          
+          if (currentPrice > 0) {
+            await this.supabaseClient
+              .from('trading_positions')
+              .update({
+                current_price: currentPrice,
+                unrealized_pnl: unrealizedPnL,
+                quantity: parseFloat(exchangePos.size || dbPos.quantity),
+                updated_at: TimeSync.getCurrentTimeISO()
+              })
+              .eq('id', dbPos.id);
+          }
+        }
+      }
+      
+      console.log(`✅ Position sync completed for ${bot.symbol}`);
+    } catch (error: any) {
+      console.error('❌ Error syncing positions from exchange:', error);
+    }
   }
 
   private async updateBotPerformance(botId: string, trade: any): Promise<void> {
