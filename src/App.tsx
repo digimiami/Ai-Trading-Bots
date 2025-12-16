@@ -1,6 +1,6 @@
 
 import { BrowserRouter } from 'react-router-dom';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect } from 'react';
 import { useRoutes, useNavigate, useLocation } from 'react-router-dom';
 import routes from './router/config';
 import { useAuth } from './hooks/useAuth';
@@ -16,10 +16,6 @@ function AppRoutes() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  
-  // Use key to force remount on route change (fixes lazy loading issues)
-  // MUST be called before any conditional returns (Rules of Hooks)
-  const [key, setKey] = useState(0);
   
   // Initialize bot executor for automatic trading (only when user is logged in)
   useBotExecutor();
@@ -146,9 +142,6 @@ function AppRoutes() {
   }, [user, loading, navigate]);
 
   useEffect(() => {
-    // Force remount on route change
-    setKey(prev => prev + 1);
-    
     // Remove AI Workers widget if not on homepage
     const isHomepage = location.pathname === '/';
     if (!isHomepage) {
