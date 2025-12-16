@@ -3,6 +3,7 @@ import Header from '../../components/feature/Header';
 import Navigation from '../../components/feature/Navigation';
 import Button from '../../components/base/Button';
 import Card from '../../components/base/Card';
+import NotificationBell from '../../components/feature/NotificationBell';
 import { useBotActivity } from '../../hooks/useBotActivity';
 import { useBots } from '../../hooks/useBots';
 import BotActivityLogs from '../../components/bot/BotActivityLogs';
@@ -63,6 +64,7 @@ export default function BotActivityPage() {
         subtitle="Monitor bot operations and debug issues"
         rightAction={
           <div className="flex space-x-2">
+            <NotificationBell />
             <Button
               variant="primary"
               size="sm"

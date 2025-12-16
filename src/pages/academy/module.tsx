@@ -283,9 +283,12 @@ export default function AcademyModulePage() {
         title={module.title}
         subtitle="Deepen your mastery with immersive lessons, walkthroughs, and quick knowledge checks."
         rightAction={
-          <Button variant="secondary" size="sm" onClick={() => navigate('/academy')}>
-            Back to Academy
-          </Button>
+          <div className="flex space-x-2">
+            <NotificationBell />
+            <Button variant="secondary" size="sm" onClick={() => navigate('/academy')}>
+              Back to Academy
+            </Button>
+          </div>
         }
       />
 

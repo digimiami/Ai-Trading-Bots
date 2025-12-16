@@ -5,6 +5,7 @@ import Header from '../../components/feature/Header';
 import Navigation from '../../components/feature/Navigation';
 import Card from '../../components/base/Card';
 import Button from '../../components/base/Button';
+import NotificationBell from '../../components/feature/NotificationBell';
 import { useAuth } from '../../hooks/useAuth';
 import { useBots } from '../../hooks/useBots';
 import { useBotExecutor } from '../../hooks/useBotExecutor';
@@ -403,9 +404,12 @@ export default function PabloReadyPage() {
         title="Pablo Ready"
         subtitle="Pre-configured trading bots ready to deploy. Choose a bot and start trading instantly."
         rightAction={
-          <Button variant="secondary" size="sm" onClick={() => navigate('/bots')}>
-            My Bots
-          </Button>
+          <div className="flex space-x-2">
+            <NotificationBell />
+            <Button variant="secondary" size="sm" onClick={() => navigate('/bots')}>
+              My Bots
+            </Button>
+          </div>
         }
       />
 

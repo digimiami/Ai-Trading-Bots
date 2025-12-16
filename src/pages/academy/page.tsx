@@ -36,9 +36,12 @@ export default function AcademyPage() {
         title="Pablo Academy"
         subtitle="Master automation fundamentals with curated learning paths."
         rightAction={
-          <Button variant="secondary" size="sm" onClick={() => navigate(summary?.badge_foundation_finisher ? '/dashboard' : '/academy/orientation-setup')}>
-            {modulesCompleted > 0 ? 'Continue Learning' : 'Start Orientation'}
-          </Button>
+          <div className="flex space-x-2">
+            <NotificationBell />
+            <Button variant="secondary" size="sm" onClick={() => navigate(summary?.badge_foundation_finisher ? '/dashboard' : '/academy/orientation-setup')}>
+              {modulesCompleted > 0 ? 'Continue Learning' : 'Start Orientation'}
+            </Button>
+          </div>
         }
       />
 

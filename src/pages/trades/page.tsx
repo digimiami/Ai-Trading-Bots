@@ -3,6 +3,7 @@ import Header from '../../components/feature/Header';
 import Navigation from '../../components/feature/Navigation';
 import Card from '../../components/base/Card';
 import Button from '../../components/base/Button';
+import NotificationBell from '../../components/feature/NotificationBell';
 import { Trade } from '../../types/trading';
 import { useTrades } from '../../hooks/useTrades';
 import { useBots } from '../../hooks/useBots';
@@ -70,14 +71,17 @@ export default function Trades() {
         title="Trades" 
         subtitle="Monitor your trading activity"
         rightAction={
-          <Button
-            variant="danger"
-            size="sm"
-            onClick={handleReset}
-          >
-            <i className="ri-refresh-line mr-1"></i>
-            Reset
-          </Button>
+          <div className="flex space-x-2">
+            <NotificationBell />
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={handleReset}
+            >
+              <i className="ri-refresh-line mr-1"></i>
+              Reset
+            </Button>
+          </div>
         }
       />
       
