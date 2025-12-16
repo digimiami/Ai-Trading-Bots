@@ -114,25 +114,56 @@ export function useMessaging() {
 export function useUnreadMessageCount() {
   const [count, setCount] = useState(0)
   const [loading, setLoading] = useState(true)
+  const { user, loading: authLoading } = useAuth()
   const { getUnreadCount } = useMessaging()
 
   const fetchCount = useCallback(async () => {
     try {
+      // Check authentication before making the call
+      const session = await supabase.auth.getSession()
+      if (!session.data.session) {
+        // Not authenticated - silently return 0, don't log errors
+        setCount(0)
+        setLoading(false)
+        return
+      }
+
       setLoading(true)
       const unreadCount = await getUnreadCount()
       setCount(unreadCount)
-    } catch (err) {
-      console.error('Error fetching unread count:', err)
+    } catch (err: any) {
+      // Only log non-authentication errors
+      if (err.message !== 'Not authenticated' && err.message !== 'Unauthorized') {
+        console.error('Error fetching unread count:', err)
+      }
+      // Set count to 0 on any error (including auth errors)
+      setCount(0)
     } finally {
       setLoading(false)
     }
   }, [getUnreadCount])
 
   useEffect(() => {
+    // Don't do anything while auth is loading
+    if (authLoading) {
+      return
+    }
+
+    // If no user, set count to 0 and stop loading
+    if (!user) {
+      setCount(0)
+      setLoading(false)
+      return
+    }
+
+    let channel: any = null
+    let interval: NodeJS.Timeout | null = null
+
+    // Fetch initial count
     fetchCount()
 
     // Set up real-time subscription for messages
-    const channel = supabase
+    channel = supabase
       .channel('messages')
       .on(
         'postgres_changes',
@@ -149,13 +180,18 @@ export function useUnreadMessageCount() {
       .subscribe()
 
     // Poll every 60 seconds as backup (reduced from 30s to 60s to save egress)
-    const interval = setInterval(fetchCount, 60000)
+    interval = setInterval(fetchCount, 60000)
 
+    // Cleanup function
     return () => {
-      channel.unsubscribe()
-      clearInterval(interval)
+      if (channel) {
+        channel.unsubscribe()
+      }
+      if (interval) {
+        clearInterval(interval)
+      }
     }
-  }, [fetchCount])
+  }, [user, authLoading, fetchCount])
 
   return { count, loading, refetch: fetchCount }
 }
