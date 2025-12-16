@@ -221,6 +221,15 @@ export default function LandingPage() {
             <button onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })} className="transition hover:text-white">
               Features
             </button>
+            <button onClick={() => navigate('/market-dashboard')} className="transition hover:text-white">
+              Market Dashboard
+            </button>
+            <button onClick={() => navigate('/crypto-bubbles')} className="transition hover:text-white">
+              Crypto Bubbles
+            </button>
+            <button onClick={() => navigate('/crypto-news')} className="transition hover:text-white">
+              Crypto News
+            </button>
             <button onClick={() => document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' })} className="transition hover:text-white">
               Pricing
             </button>
@@ -541,6 +550,15 @@ export default function LandingPage() {
             </button>
             <button onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })} className="text-slate-300/80 transition hover:text-white">
               Features
+            </button>
+            <button onClick={() => navigate('/market-dashboard')} className="text-slate-300/80 transition hover:text-white">
+              Market Dashboard
+            </button>
+            <button onClick={() => navigate('/crypto-bubbles')} className="text-slate-300/80 transition hover:text-white">
+              Crypto Bubbles
+            </button>
+            <button onClick={() => navigate('/crypto-news')} className="text-slate-300/80 transition hover:text-white">
+              Crypto News
             </button>
             <button onClick={() => document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' })} className="text-slate-300/80 transition hover:text-white">
               Pricing
