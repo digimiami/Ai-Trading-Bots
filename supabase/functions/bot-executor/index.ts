@@ -10191,6 +10191,29 @@ class PaperTradingExecutor {
   // Send position close notification (for Telegram/notifications)
   private async sendPositionCloseNotification(bot: any, trade: any, pnl: number, exitPrice: number, closeReason?: string): Promise<void> {
     try {
+      // If this is a paper trade, check if paper trade notifications are enabled
+      if (bot.paper_trading) {
+        try {
+          const { data: telegramConfig, error: configError } = await this.supabaseClient
+            .from('telegram_config')
+            .select('notifications')
+            .eq('user_id', bot.user_id)
+            .maybeSingle();
+          
+          if (!configError && telegramConfig?.notifications) {
+            const paperTradeNotificationsEnabled = telegramConfig.notifications.paper_trade_notifications;
+            // If explicitly set to false, skip paper trade notifications
+            if (paperTradeNotificationsEnabled === false) {
+              console.log(`📄 Paper trade notifications disabled for user ${bot.user_id}, skipping notification`);
+              return;
+            }
+          }
+        } catch (checkError) {
+          console.warn('⚠️ Failed to check paper trade notification preference:', checkError);
+          // Continue to send notification if check fails (fail open)
+        }
+      }
+      
       // Get Supabase URL and keys from environment
       const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
       const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') || '';

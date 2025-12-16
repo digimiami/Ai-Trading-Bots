@@ -221,6 +221,19 @@ export default function TelegramSettings() {
                 />
                 <span className="text-sm text-gray-700">📊 Daily Summary</span>
               </label>
+
+              <label className="flex items-center p-2 hover:bg-gray-50 rounded">
+                <input
+                  type="checkbox"
+                  checked={settings.notifications.paper_trade_notifications ?? true}
+                  onChange={(e) => setSettings(prev => ({
+                    ...prev,
+                    notifications: { ...prev.notifications, paper_trade_notifications: e.target.checked }
+                  }))}
+                  className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <span className="text-sm text-gray-700">📄 Paper Trade Notifications</span>
+              </label>
             </div>
           </div>
 

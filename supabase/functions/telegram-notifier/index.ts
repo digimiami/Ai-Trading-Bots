@@ -24,6 +24,7 @@ interface TelegramConfig {
     daily_summary?: boolean;
     profit_alert?: boolean;
     loss_alert?: boolean;
+    paper_trade_notifications?: boolean;
   };
 }
 
