@@ -197,6 +197,17 @@ export default function AuthPage() {
         
         // Check if email confirmation is required
         if (!result.error && result.data?.user) {
+          // Track conversion event for Google Ads
+          if (typeof window !== 'undefined' && (window as any).gtag) {
+            try {
+              (window as any).gtag('event', 'conversion', {
+                'send_to': 'AW-897907512/0oilCKWT92AQuPaTrAM'
+              });
+              console.log('✅ Conversion event tracked for signup');
+            } catch (conversionError) {
+              console.warn('⚠️ Failed to track conversion event:', conversionError);
+            }
+          }
           // If plan was selected, assign it after signup
           if (selectedPlanId && result.data.user) {
             try {
