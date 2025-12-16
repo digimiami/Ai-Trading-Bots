@@ -41,16 +41,14 @@ BEGIN
       SELECT cron.schedule(
         'position-sync-schedule',
         '*/5 * * * *', -- Every 5 minutes
-        $$
-        SELECT net.http_post(
-          url := current_setting('app.supabase_url', true) || '/functions/v1/position-sync',
+        'SELECT net.http_post(
+          url := current_setting(''app.supabase_url'', true) || ''/functions/v1/position-sync'',
           headers := jsonb_build_object(
-            'Content-Type', 'application/json',
-            'x-cron-secret', current_setting('app.cron_secret', true)
+            ''Content-Type'', ''application/json'',
+            ''x-cron-secret'', current_setting(''app.cron_secret'', true)
           ),
-          body := '{}'::jsonb
-        ) AS request_id;
-        $$
+          body := ''{}''::jsonb
+        ) AS request_id;'
       ) INTO job_id;
       
       RAISE NOTICE 'Position sync cron job scheduled successfully (every 5 minutes). Job ID: %', job_id;
