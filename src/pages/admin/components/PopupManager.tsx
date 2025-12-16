@@ -40,6 +40,7 @@ export default function PopupManager() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
   const [editingPopup, setEditingPopup] = useState<Popup | null>(null)
   const [formData, setFormData] = useState({
     title: '',
@@ -566,6 +567,14 @@ export default function PopupManager() {
                 </div>
 
                 <div className="flex gap-2 pt-4">
+                  <Button 
+                    variant="secondary" 
+                    onClick={() => setShowPreview(true)}
+                    className="flex items-center gap-2"
+                  >
+                    <i className="ri-eye-line"></i>
+                    Preview
+                  </Button>
                   <Button variant="primary" onClick={handleSave} className="flex-1">
                     {editingPopup ? 'Update Popup' : 'Create Popup'}
                   </Button>
@@ -578,6 +587,162 @@ export default function PopupManager() {
           </Card>
         </div>
       )}
+
+      {/* Preview Modal */}
+      {showPreview && (
+        <PopupPreview
+          popup={{
+            id: 'preview',
+            title: formData.title || 'Preview Popup',
+            content_type: formData.content_type,
+            content: formData.content || (formData.content_type === 'html' ? '<p>Enter content to preview</p>' : ''),
+            link_url: formData.link_url || null,
+            size: formData.size,
+            dismissible: formData.dismissible,
+            target_audience: formData.target_audience,
+            target_user_id: formData.target_user_id || null,
+            is_active: formData.is_active,
+            show_on_pages: formData.show_on_pages.length > 0 ? formData.show_on_pages : null,
+            priority: formData.priority,
+            start_date: formData.start_date ? new Date(formData.start_date).toISOString() : null,
+            end_date: formData.end_date ? new Date(formData.end_date).toISOString() : null,
+            show_count: 0,
+            dismiss_count: 0,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }}
+          onClose={() => setShowPreview(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// Preview Component - Reuses PopupDisplay logic
+function PopupPreview({ popup, onClose }: { popup: Popup; onClose: () => void }) {
+  const sizeClasses = {
+    small: 'max-w-sm w-full',
+    medium: 'max-w-2xl w-full',
+    large: 'max-w-4xl w-full',
+    fullscreen: 'w-full h-full max-w-none max-h-none m-0 rounded-none'
+  }
+
+  const sizeStyles = {
+    small: { maxWidth: '400px' },
+    medium: { maxWidth: '600px' },
+    large: { maxWidth: '800px' },
+    fullscreen: { width: '100%', height: '100%' }
+  }
+
+  const renderContent = () => {
+    switch (popup.content_type) {
+      case 'image':
+        return (
+          <img
+            src={popup.content || 'https://via.placeholder.com/400x300?text=Enter+Image+URL'}
+            alt={popup.title}
+            className={`w-full h-auto ${popup.link_url ? 'cursor-pointer' : ''}`}
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = 'https://via.placeholder.com/400x300?text=Image+Not+Found'
+            }}
+          />
+        )
+      case 'video':
+        // Check if it's a YouTube/Vimeo embed URL or direct video file
+        const isEmbedUrl = popup.content.includes('youtube.com') || 
+                          popup.content.includes('youtu.be') || 
+                          popup.content.includes('vimeo.com')
+        
+        if (isEmbedUrl) {
+          // Convert YouTube URL to embed format if needed
+          let embedUrl = popup.content
+          if (popup.content.includes('youtube.com/watch')) {
+            const videoId = popup.content.split('v=')[1]?.split('&')[0]
+            embedUrl = `https://www.youtube.com/embed/${videoId}`
+          } else if (popup.content.includes('youtu.be/')) {
+            const videoId = popup.content.split('youtu.be/')[1]?.split('?')[0]
+            embedUrl = `https://www.youtube.com/embed/${videoId}`
+          } else if (popup.content.includes('vimeo.com/')) {
+            const videoId = popup.content.split('vimeo.com/')[1]?.split('?')[0]
+            embedUrl = `https://player.vimeo.com/video/${videoId}`
+          }
+          
+          return (
+            <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
+              <iframe
+                src={embedUrl}
+                className="absolute top-0 left-0 w-full h-full rounded-lg"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+                title={popup.title || 'Popup video'}
+              />
+            </div>
+          )
+        } else {
+          // Direct video file
+          return (
+            <video
+              src={popup.content || ''}
+              controls
+              className="w-full h-auto rounded-lg"
+              onError={(e) => {
+                console.error('Video load error:', e)
+              }}
+            />
+          )
+        }
+      case 'html':
+        return (
+          <div
+            className="popup-html-content"
+            dangerouslySetInnerHTML={{ __html: popup.content || '<p>Enter HTML content to preview</p>' }}
+            style={{ cursor: popup.link_url ? 'pointer' : 'default' }}
+          />
+        )
+      default:
+        return <p className="text-gray-400">Select content type and enter content to preview</p>
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[10000]">
+      <div 
+        className={`bg-white dark:bg-gray-800 rounded-lg shadow-2xl ${sizeClasses[popup.size]} relative`}
+        style={popup.size !== 'fullscreen' ? sizeStyles[popup.size] : {}}
+      >
+        {/* Preview Badge */}
+        <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 z-20">
+          <span className="bg-blue-500 text-white px-3 py-1 rounded-full text-xs font-semibold shadow-lg">
+            PREVIEW
+          </span>
+        </div>
+
+        {/* Close Button */}
+        <button
+          onClick={onClose}
+          className="absolute top-2 right-2 p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors z-10"
+          aria-label="Close preview"
+        >
+          <i className="ri-close-line text-xl text-gray-600 dark:text-gray-300"></i>
+        </button>
+        
+        <div className="p-6">
+          {popup.title && (
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
+              {popup.title}
+            </h3>
+          )}
+          {renderContent()}
+          {popup.link_url && (
+            <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+              <p className="text-sm text-blue-600 dark:text-blue-400">
+                <i className="ri-external-link-line mr-1"></i>
+                Click will open: {popup.link_url}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
