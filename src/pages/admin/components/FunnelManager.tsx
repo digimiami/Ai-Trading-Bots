@@ -546,52 +546,52 @@ export default function FunnelManager() {
       {/* Funnel Create/Edit Modal */}
       {showFunnelModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto dark:bg-gray-800">
             <div className="p-6">
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-semibold text-white">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
                   {editingFunnel ? 'Edit Funnel' : 'Create New Funnel'}
                 </h2>
                 <button
                   onClick={() => setShowFunnelModal(false)}
-                  className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
                 >
-                  <i className="ri-close-line text-xl text-gray-400"></i>
+                  <i className="ri-close-line text-xl text-gray-600 dark:text-gray-400"></i>
                 </button>
               </div>
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-200 mb-2">Name</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Name</label>
                   <input
                     type="text"
                     value={funnelForm.name}
                     onChange={(e) => setFunnelForm({ ...funnelForm, name: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg"
+                    className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg"
                     placeholder="My Sales Funnel"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-200 mb-2">Description</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Description</label>
                   <textarea
                     value={funnelForm.description}
                     onChange={(e) => setFunnelForm({ ...funnelForm, description: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg h-24"
+                    className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg h-24"
                     placeholder="Funnel description..."
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-200 mb-2">Slug (URL)</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Slug (URL)</label>
                   <input
                     type="text"
                     value={funnelForm.slug}
                     onChange={(e) => setFunnelForm({ ...funnelForm, slug: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg"
+                    className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg"
                     placeholder="my-sales-funnel"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Will be accessible at /funnel/my-sales-funnel</p>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">Will be accessible at /funnel/my-sales-funnel</p>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -601,7 +601,7 @@ export default function FunnelManager() {
                     onChange={(e) => setFunnelForm({ ...funnelForm, is_active: e.target.checked })}
                     className="w-4 h-4"
                   />
-                  <label className="text-gray-200">Active</label>
+                  <label className="text-gray-700 dark:text-gray-200">Active</label>
                 </div>
 
                 <div className="flex gap-2 pt-4">
@@ -621,39 +621,39 @@ export default function FunnelManager() {
       {/* Page Create/Edit Modal */}
       {showPageModal && selectedFunnel && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <Card className="w-full max-w-6xl max-h-[90vh] overflow-y-auto">
+          <Card className="w-full max-w-6xl max-h-[90vh] overflow-y-auto dark:bg-gray-800">
             <div className="p-6">
               <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-semibold text-white">
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
                   {editingPage ? 'Edit Page' : 'Create New Page'}
                 </h2>
                 <button
                   onClick={() => setShowPageModal(false)}
-                  className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
                 >
-                  <i className="ri-close-line text-xl text-gray-400"></i>
+                  <i className="ri-close-line text-xl text-gray-600 dark:text-gray-400"></i>
                 </button>
               </div>
 
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-200 mb-2">Page Name</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Page Name</label>
                     <input
                       type="text"
                       value={pageForm.name}
                       onChange={(e) => setPageForm({ ...pageForm, name: e.target.value })}
-                      className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg"
+                      className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg"
                       placeholder="Landing Page"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-200 mb-2">Page Type</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Page Type</label>
                     <select
                       value={pageForm.page_type}
                       onChange={(e) => setPageForm({ ...pageForm, page_type: e.target.value as any })}
-                      className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg"
+                      className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg"
                     >
                       <option value="landing">Landing Page</option>
                       <option value="sale">Sale Page</option>
@@ -665,87 +665,87 @@ export default function FunnelManager() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-200 mb-2">Slug (URL)</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Slug (URL)</label>
                   <input
                     type="text"
                     value={pageForm.slug}
                     onChange={(e) => setPageForm({ ...pageForm, slug: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg"
+                    className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg"
                     placeholder="landing-page"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Will be accessible at /funnel/{selectedFunnel.slug}/landing-page</p>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">Will be accessible at /funnel/{selectedFunnel.slug}/landing-page</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-200 mb-2">Meta Title</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Meta Title</label>
                     <input
                       type="text"
                       value={pageForm.meta_title}
                       onChange={(e) => setPageForm({ ...pageForm, meta_title: e.target.value })}
-                      className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg"
+                      className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg"
                       placeholder="Page Title"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-200 mb-2">Order Index</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Order Index</label>
                     <input
                       type="number"
                       value={pageForm.order_index}
                       onChange={(e) => setPageForm({ ...pageForm, order_index: parseInt(e.target.value) || 0 })}
-                      className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg"
+                      className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-200 mb-2">Meta Description</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Meta Description</label>
                   <textarea
                     value={pageForm.meta_description}
                     onChange={(e) => setPageForm({ ...pageForm, meta_description: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg h-20"
+                    className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg h-20"
                     placeholder="Page description for SEO"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-200 mb-2">HTML Content</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">HTML Content</label>
                   <textarea
                     value={pageForm.html_content}
                     onChange={(e) => setPageForm({ ...pageForm, html_content: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg h-64 font-mono text-sm"
+                    className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg h-64 font-mono text-sm"
                     placeholder="<div>Your HTML content here</div>"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-200 mb-2">Custom CSS (Optional)</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Custom CSS (Optional)</label>
                   <textarea
                     value={pageForm.custom_css}
                     onChange={(e) => setPageForm({ ...pageForm, custom_css: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg h-32 font-mono text-sm"
+                    className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg h-32 font-mono text-sm"
                     placeholder="/* Your custom CSS here */"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-200 mb-2">Custom JavaScript (Optional)</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Custom JavaScript (Optional)</label>
                   <textarea
                     value={pageForm.custom_js}
                     onChange={(e) => setPageForm({ ...pageForm, custom_js: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg h-32 font-mono text-sm"
+                    className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg h-32 font-mono text-sm"
                     placeholder="// Your custom JavaScript here"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-200 mb-2">Redirect URL (Optional)</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-2">Redirect URL (Optional)</label>
                   <input
                     type="url"
                     value={pageForm.redirect_url}
                     onChange={(e) => setPageForm({ ...pageForm, redirect_url: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg"
+                    className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg"
                     placeholder="https://example.com"
                   />
                 </div>
@@ -757,7 +757,7 @@ export default function FunnelManager() {
                     onChange={(e) => setPageForm({ ...pageForm, is_active: e.target.checked })}
                     className="w-4 h-4"
                   />
-                  <label className="text-gray-200">Active</label>
+                  <label className="text-gray-700 dark:text-gray-200">Active</label>
                 </div>
 
                 <div className="flex gap-2 pt-4">

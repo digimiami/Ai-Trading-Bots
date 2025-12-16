@@ -190,10 +190,10 @@ export default function FunnelPageViewer() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-white dark:bg-gray-900 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading page...</p>
+          <p className="mt-4 text-gray-900 dark:text-gray-100">Loading page...</p>
         </div>
       </div>
     )
@@ -201,10 +201,10 @@ export default function FunnelPageViewer() {
 
   if (error || !page) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="min-h-screen bg-white dark:bg-gray-900 flex items-center justify-center">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Page Not Found</h1>
-          <p className="text-gray-600">{error || 'The page you are looking for does not exist.'}</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Page Not Found</h1>
+          <p className="text-gray-700 dark:text-gray-300">{error || 'The page you are looking for does not exist.'}</p>
         </div>
       </div>
     )
