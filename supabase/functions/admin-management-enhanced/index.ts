@@ -524,11 +524,13 @@ serve(async (req) => {
 
       case 'deleteUser':
         try {
+          console.log('🔍 deleteUser called with params:', JSON.stringify(params))
           let userId = params.userId
           const userEmail = params.userEmail
           
           // If email provided instead of userId, find the user ID
           if (!userId && userEmail) {
+            console.log(`📧 Looking up user by email: ${userEmail}`)
             const { data: userData, error: findError } = await supabaseClient
               .from('users')
               .select('id')
@@ -536,36 +538,24 @@ serve(async (req) => {
               .single()
             
             if (findError || !userData) {
-              // Try to find in auth.users
-              try {
-                const { data: authUsers } = await supabaseClient.auth.admin.listUsers()
-                const authUser = authUsers?.users?.find(u => u.email === userEmail)
-                
-                if (!authUser) {
-                  return new Response(JSON.stringify({ 
-                    error: `User not found: ${userEmail}` 
-                  }), {
-                    status: 404,
-                    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-                  })
-                }
-                
-                userId = authUser.id
-              } catch (listError) {
-                console.error('Error listing auth users:', listError)
-                return new Response(JSON.stringify({ 
-                  error: `User not found: ${userEmail}` 
-                }), {
-                  status: 404,
-                  headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-                })
-              }
+              console.log(`⚠️ User not found in database, error:`, findError)
+              // Don't try listUsers() as it can be slow/error-prone with many users
+              // Just return not found
+              return new Response(JSON.stringify({ 
+                error: `User not found: ${userEmail}`,
+                details: findError?.message || 'User does not exist in database'
+              }), {
+                status: 404,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              })
             } else {
               userId = userData.id
+              console.log(`✅ Found user ID: ${userId}`)
             }
           }
           
           if (!userId) {
+            console.error('❌ No userId or userEmail provided')
             return new Response(JSON.stringify({ 
               error: 'Either userId or userEmail must be provided' 
             }), {
@@ -574,87 +564,133 @@ serve(async (req) => {
             })
           }
           
+          console.log(`🔍 Checking user existence for ID: ${userId}`)
+          
           // Check if user exists in database
           const { data: dbUser, error: checkDbError } = await supabaseClient
             .from('users')
             .select('id, email')
             .eq('id', userId)
-            .single()
+            .maybeSingle()
+          
+          if (checkDbError) {
+            console.error('❌ Error checking database user:', checkDbError)
+            return new Response(JSON.stringify({ 
+              error: `Failed to check user existence: ${checkDbError.message}` 
+            }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          }
           
           // Check if user exists in auth
           let authUserExists = false
+          let authCheckError: any = null
           try {
-            const { data: authUser, error: authCheckError } = await supabaseClient.auth.admin.getUserById(userId)
-            authUserExists = !authCheckError && !!authUser?.user
-          } catch (authCheckError) {
-            console.warn('Could not check auth user existence:', authCheckError)
+            const { data: authUser, error: authError } = await supabaseClient.auth.admin.getUserById(userId)
+            authCheckError = authError
+            authUserExists = !authError && !!authUser?.user
+            console.log(`🔐 Auth user exists: ${authUserExists}, error:`, authError?.message || 'none')
+          } catch (authCheckErr: any) {
+            authCheckError = authCheckErr
+            console.warn('⚠️ Exception checking auth user existence:', authCheckErr)
             authUserExists = false
+          }
+          
+          // If neither exists, return success (already deleted)
+          if (!dbUser && !authUserExists) {
+            console.log(`ℹ️ User ${userId} already deleted from both systems`)
+            return new Response(JSON.stringify({ 
+              success: true, 
+              message: 'User was already deleted',
+              deletedUserId: userId
+            }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
           }
           
           // Delete from auth (only if exists)
           if (authUserExists) {
+            console.log(`🗑️ Deleting auth user: ${userId}`)
             const { error: deleteAuthError } = await supabaseClient.auth.admin.deleteUser(userId)
             if (deleteAuthError) {
-              console.error('Error deleting auth user:', deleteAuthError)
-              // Don't throw - continue to try deleting from database
-              // Some errors (like user already deleted) are acceptable
-              if (!deleteAuthError.message?.includes('not found') && 
-                  !deleteAuthError.message?.includes('does not exist')) {
+              console.error('❌ Error deleting auth user:', deleteAuthError)
+              // Check if it's a "not found" error (acceptable)
+              const isNotFoundError = deleteAuthError.message?.toLowerCase().includes('not found') || 
+                                     deleteAuthError.message?.toLowerCase().includes('does not exist') ||
+                                     deleteAuthError.message?.toLowerCase().includes('user not found')
+              
+              if (!isNotFoundError) {
                 return new Response(JSON.stringify({ 
-                  error: `Failed to delete auth user: ${deleteAuthError.message}` 
+                  error: `Failed to delete auth user: ${deleteAuthError.message}`,
+                  code: deleteAuthError.status || 'AUTH_DELETE_ERROR'
                 }), {
                   status: 500,
                   headers: { ...corsHeaders, 'Content-Type': 'application/json' }
                 })
+              } else {
+                console.log(`ℹ️ Auth user already deleted, continuing...`)
               }
+            } else {
+              console.log(`✅ Auth user deleted successfully`)
             }
           } else {
-            console.log(`Auth user ${userId} does not exist, skipping auth deletion`)
+            console.log(`ℹ️ Auth user ${userId} does not exist, skipping auth deletion`)
           }
 
           // Delete from database (only if exists)
           if (dbUser) {
+            console.log(`🗑️ Deleting database user: ${userId}`)
             const { error: deleteDbError } = await supabaseClient
               .from('users')
               .delete()
               .eq('id', userId)
 
             if (deleteDbError) {
-              console.error('Error deleting database user:', deleteDbError)
+              console.error('❌ Error deleting database user:', deleteDbError)
               // Check if it's a foreign key constraint error
               if (deleteDbError.code === '23503' || deleteDbError.message?.includes('foreign key')) {
                 return new Response(JSON.stringify({ 
                   error: `Cannot delete user: User has associated data (bots, trades, etc.). Please delete or reassign related data first.`,
-                  details: deleteDbError.message
+                  details: deleteDbError.message,
+                  code: deleteDbError.code
                 }), {
                   status: 400,
                   headers: { ...corsHeaders, 'Content-Type': 'application/json' }
                 })
               }
               return new Response(JSON.stringify({ 
-                error: `Failed to delete database user: ${deleteDbError.message}` 
+                error: `Failed to delete database user: ${deleteDbError.message}`,
+                code: deleteDbError.code || 'DB_DELETE_ERROR',
+                details: deleteDbError
               }), {
                 status: 500,
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
               })
+            } else {
+              console.log(`✅ Database user deleted successfully`)
             }
           } else {
-            console.log(`Database user ${userId} does not exist, skipping database deletion`)
+            console.log(`ℹ️ Database user ${userId} does not exist, skipping database deletion`)
           }
 
+          console.log(`✅ User deletion completed successfully for: ${userId}`)
           return new Response(JSON.stringify({ 
             success: true, 
             message: 'User deleted successfully',
-            deletedUserId: userId,
-            note: !dbUser && !authUserExists ? 'User was already deleted' : undefined
+            deletedUserId: userId
           }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         } catch (error: any) {
-          console.error('Error in deleteUser:', error)
+          console.error('❌ Unexpected error in deleteUser:', error)
+          console.error('Error stack:', error?.stack)
+          console.error('Error details:', JSON.stringify(error, Object.getOwnPropertyNames(error)))
           return new Response(JSON.stringify({ 
             error: error?.message || 'Failed to delete user',
-            details: String(error)
+            details: String(error),
+            code: error?.code || 'UNKNOWN_ERROR',
+            stack: error?.stack
           }), {
             status: 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
