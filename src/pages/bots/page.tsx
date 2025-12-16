@@ -31,6 +31,8 @@ export default function BotsPage() {
   const [editingLimitValue, setEditingLimitValue] = useState<number | null>(null);
   const [editingTradeAmountBotId, setEditingTradeAmountBotId] = useState<string | null>(null);
   const [editingTradeAmountValue, setEditingTradeAmountValue] = useState<number | null>(null);
+  const [editingCooldownBotId, setEditingCooldownBotId] = useState<string | null>(null);
+  const [editingCooldownValue, setEditingCooldownValue] = useState<number | null>(null);
   const [webhookExpandedBot, setWebhookExpandedBot] = useState<string | null>(null);
   const [webhookSignals, setWebhookSignals] = useState<Record<string, ManualTradeSignal[]>>({});
   const [webhookSignalsLoading, setWebhookSignalsLoading] = useState<Record<string, boolean>>({});
@@ -258,6 +260,21 @@ export default function BotsPage() {
 
   const getBotActivity = (botId: string) => {
     return activities.find(activity => activity.botId === botId);
+  };
+
+  // Get current cooldown_bars from bot's strategy_config
+  const getCurrentCooldownBars = (bot: TradingBot): number => {
+    let strategyConfig = bot.strategyConfig || bot.strategy_config || {};
+    if (typeof strategyConfig === 'string') {
+      try {
+        strategyConfig = JSON.parse(strategyConfig);
+      } catch (e) {
+        return 8; // Default
+      }
+    }
+    return strategyConfig?.cooldown_bars !== undefined && strategyConfig?.cooldown_bars !== null
+      ? strategyConfig.cooldown_bars
+      : 8; // Default: 8 bars if not specified
   };
 
   // Extract cooldown information from bot logs
@@ -1596,29 +1613,140 @@ export default function BotsPage() {
                         </div>
                       </div>
                       
-                      {/* Cooldown Progress Bar */}
-                      {cooldownInfo && cooldownInfo.isActive && (
-                        <div className="mt-3 pt-3 border-t border-gray-200">
-                          <div className="flex items-center justify-between mb-1.5">
-                            <div className="flex items-center gap-2">
-                              <i className="ri-time-line text-yellow-600 text-sm"></i>
-                              <span className="text-xs font-medium text-gray-700">Cooldown</span>
-                            </div>
-                            <span className="text-xs text-gray-600">
-                              {cooldownInfo.barsPassed}/{cooldownInfo.requiredBars} bars
-                            </span>
+                      {/* Cooldown Section */}
+                      <div className="mt-3 pt-3 border-t border-gray-200">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-2">
+                            <i className="ri-time-line text-yellow-600 text-sm"></i>
+                            <span className="text-xs font-medium text-gray-700">Cooldown Bars</span>
+                            <HelpTooltip text="Number of bars (time periods) the bot must wait after a trade before trading again. Set to 0 to disable cooldown." />
                           </div>
-                          <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                            <div 
-                              className="h-full bg-gradient-to-r from-yellow-400 to-yellow-600 rounded-full transition-all duration-300 ease-out"
-                              style={{ width: `${cooldownInfo.progress}%` }}
-                            ></div>
+                          <div className="flex items-center gap-2">
+                            {editingCooldownBotId !== bot.id && (
+                              <>
+                                <span className="text-xs text-gray-600">
+                                  {getCurrentCooldownBars(bot)} bar{getCurrentCooldownBars(bot) !== 1 ? 's' : ''}
+                                </span>
+                                <button
+                                  onClick={() => {
+                                    setEditingCooldownBotId(bot.id);
+                                    setEditingCooldownValue(getCurrentCooldownBars(bot));
+                                  }}
+                                  className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                                  title="Edit cooldown"
+                                >
+                                  <i className="ri-edit-line"></i>
+                                </button>
+                              </>
+                            )}
                           </div>
-                          <p className="text-xs text-gray-500 mt-1">
-                            {cooldownInfo.requiredBars - cooldownInfo.barsPassed} bar{cooldownInfo.requiredBars - cooldownInfo.barsPassed !== 1 ? 's' : ''} remaining
-                          </p>
                         </div>
-                      )}
+
+                        {/* Cooldown Progress Bar (only show when active) */}
+                        {cooldownInfo && cooldownInfo.isActive && (
+                          <div className="mb-2">
+                            <div className="flex items-center justify-between mb-1.5">
+                              <span className="text-xs text-gray-600">
+                                Progress: {cooldownInfo.barsPassed}/{cooldownInfo.requiredBars} bars
+                              </span>
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                              <div 
+                                className="h-full bg-gradient-to-r from-yellow-400 to-yellow-600 rounded-full transition-all duration-300 ease-out"
+                                style={{ width: `${cooldownInfo.progress}%` }}
+                              ></div>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {cooldownInfo.requiredBars - cooldownInfo.barsPassed} bar{cooldownInfo.requiredBars - cooldownInfo.barsPassed !== 1 ? 's' : ''} remaining
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Cooldown Editor */}
+                        {editingCooldownBotId === bot.id && (
+                          <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                            <div className="flex items-center gap-2 mb-2">
+                              <label className="text-xs font-medium text-gray-700">
+                                Cooldown Bars:
+                              </label>
+                              <input
+                                type="number"
+                                min="0"
+                                max="50"
+                                value={editingCooldownValue ?? getCurrentCooldownBars(bot)}
+                                onChange={(e) => setEditingCooldownValue(parseInt(e.target.value) || 0)}
+                                className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                              />
+                              <span className="text-xs text-gray-500">(0 = disabled)</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                onClick={async () => {
+                                  if (editingCooldownValue !== null && editingCooldownValue >= 0) {
+                                    try {
+                                      // Get current strategyConfig from bot
+                                      let currentConfig: any = {};
+                                      
+                                      if (bot.strategyConfig) {
+                                        if (typeof bot.strategyConfig === 'string') {
+                                          try {
+                                            currentConfig = JSON.parse(bot.strategyConfig);
+                                          } catch (e) {
+                                            console.warn('Failed to parse strategyConfig:', e);
+                                            currentConfig = {};
+                                          }
+                                        } else {
+                                          currentConfig = { ...bot.strategyConfig };
+                                        }
+                                      }
+                                      
+                                      // Update cooldown_bars
+                                      const updatedConfig = {
+                                        ...currentConfig,
+                                        cooldown_bars: editingCooldownValue
+                                      };
+                                      
+                                      // Update bot with merged strategyConfig
+                                      await updateBot(bot.id, {
+                                        strategyConfig: updatedConfig
+                                      } as any);
+                                      
+                                      setEditingCooldownBotId(null);
+                                      setEditingCooldownValue(null);
+                                      
+                                      // Refresh bot list after a short delay
+                                      setTimeout(async () => {
+                                        await fetchBots();
+                                      }, 500);
+                                      
+                                      alert(`✅ Cooldown bars updated to ${editingCooldownValue}`);
+                                    } catch (error: any) {
+                                      console.error('Error updating cooldown:', error);
+                                      const errorMsg = error?.message || 'Failed to update cooldown. Please try again.';
+                                      alert(`Failed to update cooldown: ${errorMsg}`);
+                                    }
+                                  }
+                                }}
+                                className="text-xs"
+                              >
+                                Save
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => {
+                                  setEditingCooldownBotId(null);
+                                  setEditingCooldownValue(null);
+                                }}
+                                className="text-xs"
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   ) : null;
                 })()}
