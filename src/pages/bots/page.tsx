@@ -96,30 +96,6 @@ export default function BotsPage() {
     }
   };
 
-  const loadManualTrades = async (botId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('manual_trade_signals')
-        .select('*')
-        .eq('bot_id', botId)
-        .order('created_at', { ascending: false })
-        .limit(10);
-      if (error) throw error;
-      setManualTrades(prev => ({ ...prev, [botId]: data || [] }));
-    } catch (error: any) {
-      console.error('Failed to load manual trades:', error);
-      setManualTrades(prev => ({ ...prev, [botId]: [] }));
-    }
-  };
-
-  // Load manual trades for all bots when bots are loaded
-  useEffect(() => {
-    if (bots && bots.length > 0) {
-      bots.forEach(bot => {
-        loadManualTrades(bot.id);
-      });
-    }
-  }, [bots]);
 
   const handleToggleWebhookPanel = async (botId: string) => {
     if (isWebhookView) {
