@@ -206,9 +206,7 @@ function AppRoutes() {
         </div>
       </div>
     }>
-      <div key={key}>
-        {element}
-      </div>
+      {element}
     </Suspense>
   );
 }
