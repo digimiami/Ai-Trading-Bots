@@ -10530,16 +10530,45 @@ class PaperTradingExecutor {
         ? Math.round(priceMovementDuringLatency / sizing.steps.tickSize) * sizing.steps.tickSize
         : priceMovementDuringLatency;
 
-      const leverage = bot.leverage || 1;
-      const notional = finalExecutedPrice * quantity;
-      const marginRequired = sizing.isFutures ? notional / leverage : notional;
-      
       // 🛡️ REALISTIC SIMULATION: Check minimum order value (like real exchanges)
       const minOrderValue = sizing.isFutures ? 5 : 1; // $5 for futures, $1 for spot
-      const orderValue = finalExecutedPrice * quantity;
+      let orderValue = finalExecutedPrice * quantity;
+      
+      // If order value is below minimum, try to increase quantity to meet minimum
+      if (orderValue < minOrderValue && finalExecutedPrice > 0) {
+        console.warn(`⚠️ [PAPER] Order value $${orderValue.toFixed(2)} below minimum $${minOrderValue} for ${bot.symbol}`);
+        console.warn(`💡 Attempting to increase quantity to meet minimum order value...`);
+        
+        // Calculate minimum quantity needed to meet order value requirement
+        const minQuantity = (minOrderValue / finalExecutedPrice) * 1.01; // Add 1% buffer
+        
+        // Round to step size
+        let adjustedQty = minQuantity;
+        if (sizing.steps.stepSize > 0) {
+          adjustedQty = Math.ceil(adjustedQty / sizing.steps.stepSize) * sizing.steps.stepSize;
+        }
+        
+        // Ensure adjusted quantity doesn't exceed max
+        if (adjustedQty <= sizing.constraints.max) {
+          quantity = adjustedQty;
+          orderValue = finalExecutedPrice * quantity;
+          console.log(`✅ [PAPER] Adjusted quantity to ${quantity.toFixed(6)} to meet minimum order value`);
+          console.log(`💰 New order value: $${orderValue.toFixed(2)} (minimum: $${minOrderValue})`);
+        } else {
+          // If adjusted quantity exceeds max, throw error
+          throw new Error(`Order value $${orderValue.toFixed(2)} is below minimum $${minOrderValue} for ${bot.symbol}. Calculated minimum quantity ${adjustedQty.toFixed(6)} exceeds maximum ${sizing.constraints.max}. Please increase trade amount or adjust bot configuration.`);
+        }
+      }
+      
+      // Final check after adjustment
       if (orderValue < minOrderValue) {
         throw new Error(`Order value $${orderValue.toFixed(2)} below minimum $${minOrderValue} for ${bot.symbol}. This happens in real trading too.`);
       }
+      
+      // Recalculate notional and margin after potential quantity adjustment
+      const leverage = bot.leverage || 1;
+      const notional = finalExecutedPrice * quantity;
+      const marginRequired = sizing.isFutures ? notional / leverage : notional;
 
       // For paper trading, allow trades even with low balance (it's simulated)
       // But log a warning if balance is very low
