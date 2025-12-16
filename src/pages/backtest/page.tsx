@@ -10,6 +10,7 @@ import {
   HTF_TREND_INDICATOR_OPTIONS
 } from '../../constants/strategyOptions';
 import { supabase } from '../../lib/supabase';
+import { getOptimizedSettingsForIndicator } from '../../utils/htfIndicatorSettings';
 
 const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -924,12 +925,17 @@ export default function BacktestPage() {
                         </label>
                         <select
                           value={advancedConfig.htf_trend_indicator}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            const newIndicator = e.target.value as typeof advancedConfig.htf_trend_indicator;
+                            // Auto-adjust related settings based on selected indicator
+                            const optimizedSettings = getOptimizedSettingsForIndicator(newIndicator, advancedConfig);
+                            
                             setAdvancedConfig(prev => ({
                               ...prev,
-                              htf_trend_indicator: e.target.value as typeof prev.htf_trend_indicator
-                            }))
-                          }
+                              htf_trend_indicator: newIndicator,
+                              ...optimizedSettings
+                            }));
+                          }}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                         >
                           {HTF_TREND_INDICATOR_OPTIONS.map(option => (
