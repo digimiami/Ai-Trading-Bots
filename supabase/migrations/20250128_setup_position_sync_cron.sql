@@ -17,52 +17,16 @@
 -- 4. Save
 
 -- =====================================================
--- Option 2: Using pg_cron (if available)
+-- Option 2: Using pg_cron (NOT RECOMMENDED - net extension not available)
 -- =====================================================
-
--- Check if pg_cron extension exists
-DO $$
-DECLARE
-  job_id bigint;
-BEGIN
-  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
-    -- Remove existing job if it exists
-    BEGIN
-      SELECT cron.unschedule('position-sync-schedule') INTO job_id;
-    EXCEPTION
-      WHEN OTHERS THEN
-        NULL;
-    END;
-    
-    -- Schedule position sync every 5 minutes
-    -- Note: This requires the net extension for http_post
-    -- If net extension is not available, use Supabase Dashboard instead
-    BEGIN
-      SELECT cron.schedule(
-        'position-sync-schedule',
-        '*/5 * * * *', -- Every 5 minutes
-        'SELECT net.http_post(
-          url := current_setting(''app.supabase_url'', true) || ''/functions/v1/position-sync'',
-          headers := jsonb_build_object(
-            ''Content-Type'', ''application/json'',
-            ''x-cron-secret'', current_setting(''app.cron_secret'', true)
-          ),
-          body := ''{}''::jsonb
-        ) AS request_id;'
-      ) INTO job_id;
-      
-      RAISE NOTICE 'Position sync cron job scheduled successfully (every 5 minutes). Job ID: %', job_id;
-    EXCEPTION
-      WHEN OTHERS THEN
-        RAISE NOTICE 'Could not schedule cron job (net extension may not be available): %. Use Supabase Dashboard instead.', SQLERRM;
-    END;
-  ELSE
-    RAISE NOTICE 'pg_cron extension not available. Use Supabase Dashboard to set up cron job instead.';
-  END IF;
-EXCEPTION
-  WHEN OTHERS THEN
-    RAISE NOTICE 'Could not set up pg_cron job: %. Use Supabase Dashboard instead.', SQLERRM;
-END $$;
+-- NOTE: Supabase does not have the 'net' extension available,
+-- so pg_cron cannot make HTTP calls directly.
+-- Use Option 1 (Supabase Dashboard) or Option 3 (External Cron) instead.
+--
+-- If you have pg_cron and want to use it, you would need to:
+-- 1. Create a PostgreSQL function that can be called by cron
+-- 2. Use an external service to trigger the Edge Function
+-- 3. Or use Supabase's built-in cron scheduler (Option 1)
 
 -- =====================================================
 -- Option 3: External Cron Job (Alternative)
