@@ -243,23 +243,63 @@ serve(async (req) => {
   }
 
   try {
+    // Log available environment variables (names only, for security)
+    const envVarNames = ['POSITION_SYNC_SECRET', 'CRON_SECRET', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];
+    const envVarsStatus: Record<string, boolean> = {};
+    envVarNames.forEach(name => {
+      envVarsStatus[name] = !!Deno.env.get(name);
+    });
+    console.log(`🔍 [${requestId}] Environment variables status:`, JSON.stringify(envVarsStatus));
+
     // Authentication check with detailed logging
     // Use POSITION_SYNC_SECRET to avoid conflicts with other functions' CRON_SECRET
     // Falls back to CRON_SECRET for backward compatibility
     const POSITION_SYNC_SECRET = Deno.env.get('POSITION_SYNC_SECRET') ?? Deno.env.get('CRON_SECRET') ?? '';
     const headerSecret = req.headers.get('x-cron-secret') ?? '';
 
-    // Log all headers for debugging
+    // Log all headers for debugging (check multiple possible header names)
     const allHeaders: Record<string, string> = {};
+    const headerNames: string[] = [];
     req.headers.forEach((value, key) => {
-      allHeaders[key] = key.toLowerCase().includes('secret') ? '[REDACTED]' : value;
+      headerNames.push(key);
+      allHeaders[key] = key.toLowerCase().includes('secret') || key.toLowerCase().includes('cron') ? '[REDACTED]' : value;
     });
-    console.log(`📋 [${requestId}] Request headers:`, JSON.stringify(Object.keys(allHeaders)));
+    console.log(`📋 [${requestId}] Request headers (${headerNames.length} total):`, JSON.stringify(headerNames));
+    
+    // Check for header with different casing
+    const headerVariations = [
+      'x-cron-secret',
+      'X-Cron-Secret',
+      'X-CRON-SECRET',
+      'x-Cron-Secret',
+      'cron-secret',
+      'Cron-Secret'
+    ];
+    const foundHeaders: Record<string, boolean> = {};
+    headerVariations.forEach(headerName => {
+      foundHeaders[headerName] = req.headers.has(headerName);
+    });
+    console.log(`🔍 [${requestId}] Header variations check:`, JSON.stringify(foundHeaders));
+    
+    // Try to get header with different casings
+    let headerSecretAlt = '';
+    for (const headerName of headerVariations) {
+      const value = req.headers.get(headerName);
+      if (value) {
+        headerSecretAlt = value;
+        console.log(`   Found header "${headerName}" with value (length: ${value.length})`);
+        break;
+      }
+    }
+    
+    // Use the found header if x-cron-secret wasn't found
+    const actualHeaderSecret = headerSecret || headerSecretAlt;
 
     // Detailed authentication logging
     console.log(`🔐 [${requestId}] Authentication check:`);
     console.log(`   POSITION_SYNC_SECRET present: ${!!POSITION_SYNC_SECRET} (length: ${POSITION_SYNC_SECRET.length})`);
-    console.log(`   Header secret present: ${!!headerSecret} (length: ${headerSecret.length})`);
+    console.log(`   Header secret present: ${!!actualHeaderSecret} (length: ${actualHeaderSecret.length})`);
+    console.log(`   Using header: ${actualHeaderSecret ? 'found' : 'NOT FOUND'}`);
     
     // Log character codes to detect hidden characters/whitespace
     if (POSITION_SYNC_SECRET) {
@@ -267,18 +307,18 @@ serve(async (req) => {
       const envCharCodes = Array.from(envFirstChars).map(c => c.charCodeAt(0)).join(',');
       console.log(`   Env secret (first 10 chars): "${envFirstChars}" (char codes: ${envCharCodes})`);
     }
-    if (headerSecret) {
-      const headerFirstChars = headerSecret.substring(0, Math.min(10, headerSecret.length));
+    if (actualHeaderSecret) {
+      const headerFirstChars = actualHeaderSecret.substring(0, Math.min(10, actualHeaderSecret.length));
       const headerCharCodes = Array.from(headerFirstChars).map(c => c.charCodeAt(0)).join(',');
       console.log(`   Header secret (first 10 chars): "${headerFirstChars}" (char codes: ${headerCharCodes})`);
     }
     
-    if (POSITION_SYNC_SECRET && headerSecret) {
+    if (POSITION_SYNC_SECRET && actualHeaderSecret) {
       // Trim both values to handle whitespace issues
       const envSecretTrimmed = POSITION_SYNC_SECRET.trim();
-      const headerSecretTrimmed = headerSecret.trim();
+      const headerSecretTrimmed = actualHeaderSecret.trim();
       
-      const secretsMatch = headerSecret === POSITION_SYNC_SECRET;
+      const secretsMatch = actualHeaderSecret === POSITION_SYNC_SECRET;
       const secretsMatchTrimmed = headerSecretTrimmed === envSecretTrimmed;
       
       console.log(`   🔑 Secrets match (exact): ${secretsMatch}`);
@@ -287,13 +327,13 @@ serve(async (req) => {
       if (!secretsMatch) {
         console.error(`   ❌ SECRET MISMATCH:`);
         console.error(`      Expected (first 10): "${POSITION_SYNC_SECRET.substring(0, Math.min(10, POSITION_SYNC_SECRET.length))}"`);
-        console.error(`      Received (first 10): "${headerSecret.substring(0, Math.min(10, headerSecret.length))}"`);
+        console.error(`      Received (first 10): "${actualHeaderSecret.substring(0, Math.min(10, actualHeaderSecret.length))}"`);
         console.error(`      Expected (last 10): "${POSITION_SYNC_SECRET.substring(Math.max(0, POSITION_SYNC_SECRET.length - 10))}"`);
-        console.error(`      Received (last 10): "${headerSecret.substring(Math.max(0, headerSecret.length - 10))}"`);
-        console.error(`      Expected length: ${POSITION_SYNC_SECRET.length}, Received length: ${headerSecret.length}`);
+        console.error(`      Received (last 10): "${actualHeaderSecret.substring(Math.max(0, actualHeaderSecret.length - 10))}"`);
+        console.error(`      Expected length: ${POSITION_SYNC_SECRET.length}, Received length: ${actualHeaderSecret.length}`);
         
         // Check for common issues
-        if (POSITION_SYNC_SECRET.length !== headerSecret.length) {
+        if (POSITION_SYNC_SECRET.length !== actualHeaderSecret.length) {
           console.error(`      ⚠️ Length mismatch detected!`);
         }
         if (envSecretTrimmed !== headerSecretTrimmed) {
@@ -305,18 +345,19 @@ serve(async (req) => {
     } else {
       console.warn(`   ⚠️ Missing secrets:`);
       if (!POSITION_SYNC_SECRET) console.warn(`      - POSITION_SYNC_SECRET env var is empty`);
-      if (!headerSecret) console.warn(`      - x-cron-secret header is missing or empty`);
+      if (!actualHeaderSecret) console.warn(`      - x-cron-secret header is missing or empty (checked variations: ${headerVariations.join(', ')})`);
     }
 
     // Check authentication - try exact match first, then trimmed match
     const envSecretTrimmed = POSITION_SYNC_SECRET.trim();
-    const headerSecretTrimmed = headerSecret.trim();
-    const exactMatch = headerSecret === POSITION_SYNC_SECRET;
+    const headerSecretTrimmed = actualHeaderSecret.trim();
+    const exactMatch = actualHeaderSecret === POSITION_SYNC_SECRET;
     const trimmedMatch = headerSecretTrimmed === envSecretTrimmed;
     
-    if (!POSITION_SYNC_SECRET || (!exactMatch && !trimmedMatch)) {
+    if (!POSITION_SYNC_SECRET || !actualHeaderSecret || (!exactMatch && !trimmedMatch)) {
       console.error(`❌ [${requestId}] Authentication failed - Secret mismatch or missing`);
       console.error(`   Exact match: ${exactMatch}, Trimmed match: ${trimmedMatch}`);
+      console.error(`   Env secret available: ${!!POSITION_SYNC_SECRET}, Header secret available: ${!!actualHeaderSecret}`);
       return new Response(
         JSON.stringify({ 
           error: 'Unauthorized', 
@@ -327,13 +368,15 @@ serve(async (req) => {
             envSecretPresent: !!POSITION_SYNC_SECRET,
             envSecretLength: POSITION_SYNC_SECRET.length,
             envSecretTrimmedLength: envSecretTrimmed.length,
-            headerSecretPresent: !!headerSecret,
-            headerSecretLength: headerSecret.length,
+            headerSecretPresent: !!actualHeaderSecret,
+            headerSecretLength: actualHeaderSecret.length,
             headerSecretTrimmedLength: headerSecretTrimmed.length,
             exactMatch,
             trimmedMatch,
+            headerVariationsChecked: headerVariations,
+            allHeadersFound: headerNames,
             envFirstChars: POSITION_SYNC_SECRET.substring(0, Math.min(10, POSITION_SYNC_SECRET.length)),
-            headerFirstChars: headerSecret.substring(0, Math.min(10, headerSecret.length))
+            headerFirstChars: actualHeaderSecret.substring(0, Math.min(10, actualHeaderSecret.length))
           }
         }),
         { status: 401, headers: corsHeaders }
