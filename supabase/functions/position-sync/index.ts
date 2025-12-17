@@ -535,6 +535,9 @@ serve(async (req) => {
   } catch (error: any) {
     const duration = Date.now() - requestStartTime;
     console.error(`❌ [${requestId}] Position sync failed:`, error);
+    console.error(`   Error type: ${error?.constructor?.name || typeof error}`);
+    console.error(`   Error message: ${error?.message || String(error)}`);
+    console.error(`   Error stack: ${error?.stack || 'No stack trace'}`);
     console.log(`${'='.repeat(60)}\n`);
 
     return new Response(
@@ -542,9 +545,14 @@ serve(async (req) => {
         error: 'Internal server error',
         message: error.message || String(error),
         requestId,
-        duration: `${duration}ms`
+        duration: `${duration}ms`,
+        errorType: error?.constructor?.name || typeof error,
+        stack: error?.stack || undefined
       }),
-      { status: 500, headers: corsHeaders }
+      { 
+        status: 500, 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      }
     );
   }
 });
