@@ -3380,22 +3380,32 @@ class BotExecutor {
       }
       console.error(`\n`);
       
-      await this.addBotLog(bot.id, {
-        level: 'error',
-        category: 'error',
-        message: `Bot execution error: ${errorMessage}`,
-        details: { 
-          error: errorMessage,
-          errorType: error instanceof Error ? error.name : typeof error,
-          stack: errorStack,
-          botId: bot.id,
-          botName: bot.name,
-          symbol: bot.symbol,
-          exchange: bot.exchange,
-          executionTimeMs: executionTime,
-          timestamp: TimeSync.getCurrentTimeISO()
-        }
-      });
+      // Check if this is a minimum order value error (already logged as warning)
+      const isMinOrderValueError = errorMessage.includes('110094') || 
+                                   errorMessage.includes('does not meet minimum order value') ||
+                                   errorMessage.includes('below minimum');
+      
+      // Only log as error if it's not already handled as a warning
+      if (!isMinOrderValueError) {
+        await this.addBotLog(bot.id, {
+          level: 'error',
+          category: 'error',
+          message: `Bot execution error: ${errorMessage}`,
+          details: { 
+            error: errorMessage,
+            errorType: error instanceof Error ? error.name : typeof error,
+            stack: errorStack,
+            botId: bot.id,
+            botName: bot.name,
+            symbol: bot.symbol,
+            exchange: bot.exchange,
+            executionTimeMs: executionTime,
+            timestamp: TimeSync.getCurrentTimeISO()
+          }
+        });
+      } else {
+        console.log(`ℹ️ Minimum order value error already logged as warning, skipping duplicate error log`);
+      }
       
       // Re-throw to be caught by Promise.allSettled in execute_all_bots
       throw error;
@@ -6647,6 +6657,34 @@ class BotExecutor {
           console.warn(`💰 Order value: $${orderValue.toFixed(2)}`);
           console.warn(`💡 This may happen temporarily. The bot will retry on the next execution.`);
           throw new Error(`Insufficient balance for ${symbol} order. Order value: $${orderValue.toFixed(2)}. Please check your account balance or wait for funds to become available. This is often temporary and will retry automatically.`);
+        } else if (data.retCode === 110094) {
+          // Minimum order value error - handle gracefully
+          const orderValue = parseFloat(formattedQty) * currentMarketPrice;
+          const minOrderValue = this.getMinimumOrderValue(symbol, bybitCategory);
+          const requiredTradeAmount = (minOrderValue / currentMarketPrice) * maxQty;
+          
+          console.warn(`⚠️ Order value below minimum for ${symbol}`);
+          console.warn(`💰 Current order value: $${orderValue.toFixed(2)}`);
+          console.warn(`📏 Minimum required: $${minOrderValue.toFixed(2)}`);
+          console.warn(`💡 This trade would fail. Please increase trade amount to at least $${requiredTradeAmount.toFixed(2)}.`);
+          console.warn(`📝 Skipping this trade to avoid error spam.`);
+          
+          // Log as warning instead of error to reduce error spam
+          await this.addBotLog(bot?.id || null, {
+            level: 'warning',
+            category: 'trade',
+            message: `⚠️ Trade skipped: Order value $${orderValue.toFixed(2)} below minimum $${minOrderValue.toFixed(2)} for ${symbol}. Increase trade amount to at least $${requiredTradeAmount.toFixed(2)}.`,
+            details: {
+              order_value: orderValue,
+              min_order_value: minOrderValue,
+              symbol: symbol,
+              error_code: 110094,
+              required_trade_amount: requiredTradeAmount
+            }
+          });
+          
+          // Throw a specific error that can be caught and handled gracefully
+          throw new Error(`Bybit order error: Order does not meet minimum order value ${minOrderValue}USDT (Code: 110094). Please increase trade amount to at least $${requiredTradeAmount.toFixed(2)} per trade.`);
         } else if (data.retCode === 170140) {
           // Calculate actual order value that was sent
           const orderValue = bybitCategory === 'spot' && requestBody.marketUnit === 1
