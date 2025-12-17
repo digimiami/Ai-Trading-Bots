@@ -353,6 +353,61 @@ export default function BotsPage() {
     }
   };
 
+  const handleExecute = async (botId: string) => {
+    if (isExecuting) {
+      return; // Prevent multiple simultaneous executions
+    }
+
+    try {
+      // Get bot details to determine trading mode
+      const bot = bots.find(b => b.id === botId);
+      if (!bot) {
+        alert('❌ Bot not found');
+        return;
+      }
+
+      if (bot.status !== 'running') {
+        alert(`❌ Bot is not running. Current status: ${bot.status}`);
+        return;
+      }
+
+      // Determine mode based on bot's paper trading setting
+      const mode: 'real' | 'paper' = bot.paperTrading || (bot as any).paper_trading ? 'paper' : 'real';
+
+      // Create manual trade signal with status 'pending'
+      const { data: signalData, error: signalError } = await supabase
+        .from('manual_trade_signals')
+        .insert({
+          bot_id: botId,
+          user_id: bot.user_id || (bot as any).user_id,
+          mode: mode,
+          side: 'buy', // Default to buy - bot executor will use strategy if needed
+          size_multiplier: 1.0,
+          reason: `Manual execute from UI (${mode.toUpperCase()})`,
+          status: 'pending'
+        })
+        .select()
+        .single();
+
+      if (signalError || !signalData) {
+        throw new Error(`Failed to create trade signal: ${signalError?.message || 'Unknown error'}`);
+      }
+
+      console.log(`✅ Manual trade signal created: ${signalData.id}`);
+
+      // Trigger bot executor to process the signal
+      await executeBot(botId);
+      
+      // Refresh webhook signals if panel is open
+      if (webhookExpandedBot === botId || isWebhookView) {
+        await loadWebhookSignals(botId);
+      }
+    } catch (error: any) {
+      console.error('Failed to execute bot:', error);
+      alert(`❌ Failed to execute bot: ${error?.message || 'Unknown error'}`);
+    }
+  };
+
   const handleBotAction = async (botId: string, action: 'start' | 'pause' | 'stop') => {
     try {
       console.log(`🔄 Attempting to ${action} bot ${botId} from origin: ${window.location.origin}`);
@@ -2036,7 +2091,7 @@ export default function BotsPage() {
                           variant="warning" 
                           size="sm" 
                           className="flex-1"
-                          onClick={() => executeBot(bot.id)}
+                          onClick={() => handleExecute(bot.id)}
                           disabled={isExecuting}
                         >
                           <i className="ri-play-circle-line mr-1"></i>
