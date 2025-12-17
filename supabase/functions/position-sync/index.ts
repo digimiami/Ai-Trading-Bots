@@ -261,15 +261,46 @@ serve(async (req) => {
     console.log(`   POSITION_SYNC_SECRET present: ${!!POSITION_SYNC_SECRET} (length: ${POSITION_SYNC_SECRET.length})`);
     console.log(`   Header secret present: ${!!headerSecret} (length: ${headerSecret.length})`);
     
+    // Log character codes to detect hidden characters/whitespace
+    if (POSITION_SYNC_SECRET) {
+      const envFirstChars = POSITION_SYNC_SECRET.substring(0, Math.min(10, POSITION_SYNC_SECRET.length));
+      const envCharCodes = Array.from(envFirstChars).map(c => c.charCodeAt(0)).join(',');
+      console.log(`   Env secret (first 10 chars): "${envFirstChars}" (char codes: ${envCharCodes})`);
+    }
+    if (headerSecret) {
+      const headerFirstChars = headerSecret.substring(0, Math.min(10, headerSecret.length));
+      const headerCharCodes = Array.from(headerFirstChars).map(c => c.charCodeAt(0)).join(',');
+      console.log(`   Header secret (first 10 chars): "${headerFirstChars}" (char codes: ${headerCharCodes})`);
+    }
+    
     if (POSITION_SYNC_SECRET && headerSecret) {
+      // Trim both values to handle whitespace issues
+      const envSecretTrimmed = POSITION_SYNC_SECRET.trim();
+      const headerSecretTrimmed = headerSecret.trim();
+      
       const secretsMatch = headerSecret === POSITION_SYNC_SECRET;
-      console.log(`   🔑 Secrets match: ${secretsMatch}`);
+      const secretsMatchTrimmed = headerSecretTrimmed === envSecretTrimmed;
+      
+      console.log(`   🔑 Secrets match (exact): ${secretsMatch}`);
+      console.log(`   🔑 Secrets match (trimmed): ${secretsMatchTrimmed}`);
+      
       if (!secretsMatch) {
         console.error(`   ❌ SECRET MISMATCH:`);
-        console.error(`      Expected (first 8): ${POSITION_SYNC_SECRET.substring(0, 8)}...`);
-        console.error(`      Received (first 8): ${headerSecret.substring(0, 8)}...`);
-        console.error(`      Expected (last 8): ...${POSITION_SYNC_SECRET.substring(Math.max(0, POSITION_SYNC_SECRET.length - 8))}`);
-        console.error(`      Received (last 8): ...${headerSecret.substring(Math.max(0, headerSecret.length - 8))}`);
+        console.error(`      Expected (first 10): "${POSITION_SYNC_SECRET.substring(0, Math.min(10, POSITION_SYNC_SECRET.length))}"`);
+        console.error(`      Received (first 10): "${headerSecret.substring(0, Math.min(10, headerSecret.length))}"`);
+        console.error(`      Expected (last 10): "${POSITION_SYNC_SECRET.substring(Math.max(0, POSITION_SYNC_SECRET.length - 10))}"`);
+        console.error(`      Received (last 10): "${headerSecret.substring(Math.max(0, headerSecret.length - 10))}"`);
+        console.error(`      Expected length: ${POSITION_SYNC_SECRET.length}, Received length: ${headerSecret.length}`);
+        
+        // Check for common issues
+        if (POSITION_SYNC_SECRET.length !== headerSecret.length) {
+          console.error(`      ⚠️ Length mismatch detected!`);
+        }
+        if (envSecretTrimmed !== headerSecretTrimmed) {
+          console.error(`      ⚠️ Even after trimming, secrets don't match!`);
+        } else {
+          console.warn(`      ℹ️ Secrets match after trimming - likely whitespace issue`);
+        }
       }
     } else {
       console.warn(`   ⚠️ Missing secrets:`);
@@ -277,24 +308,41 @@ serve(async (req) => {
       if (!headerSecret) console.warn(`      - x-cron-secret header is missing or empty`);
     }
 
-    if (!POSITION_SYNC_SECRET || headerSecret !== POSITION_SYNC_SECRET) {
+    // Check authentication - try exact match first, then trimmed match
+    const envSecretTrimmed = POSITION_SYNC_SECRET.trim();
+    const headerSecretTrimmed = headerSecret.trim();
+    const exactMatch = headerSecret === POSITION_SYNC_SECRET;
+    const trimmedMatch = headerSecretTrimmed === envSecretTrimmed;
+    
+    if (!POSITION_SYNC_SECRET || (!exactMatch && !trimmedMatch)) {
       console.error(`❌ [${requestId}] Authentication failed - Secret mismatch or missing`);
+      console.error(`   Exact match: ${exactMatch}, Trimmed match: ${trimmedMatch}`);
       return new Response(
         JSON.stringify({ 
           error: 'Unauthorized', 
           message: 'POSITION_SYNC_SECRET mismatch or missing',
           requestId,
-          hint: 'Check that POSITION_SYNC_SECRET environment variable matches x-cron-secret header value',
+          hint: 'Check that POSITION_SYNC_SECRET environment variable matches x-cron-secret header value (check for whitespace)',
           debug: {
             envSecretPresent: !!POSITION_SYNC_SECRET,
             envSecretLength: POSITION_SYNC_SECRET.length,
+            envSecretTrimmedLength: envSecretTrimmed.length,
             headerSecretPresent: !!headerSecret,
             headerSecretLength: headerSecret.length,
-            secretsMatch: POSITION_SYNC_SECRET && headerSecret ? headerSecret === POSITION_SYNC_SECRET : false
+            headerSecretTrimmedLength: headerSecretTrimmed.length,
+            exactMatch,
+            trimmedMatch,
+            envFirstChars: POSITION_SYNC_SECRET.substring(0, Math.min(10, POSITION_SYNC_SECRET.length)),
+            headerFirstChars: headerSecret.substring(0, Math.min(10, headerSecret.length))
           }
         }),
         { status: 401, headers: corsHeaders }
       );
+    }
+    
+    // Log if we used trimmed match (indicates whitespace issue)
+    if (!exactMatch && trimmedMatch) {
+      console.warn(`⚠️ [${requestId}] Authentication succeeded with trimmed match (whitespace detected)`);
     }
 
     console.log(`✅ [${requestId}] Authentication successful`);
