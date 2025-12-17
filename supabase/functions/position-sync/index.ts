@@ -95,6 +95,7 @@ async function syncPositionsForBot(
     }
 
     const exchangePositions = data.result.list.filter((p: any) => parseFloat(p.size || 0) !== 0);
+    console.log(`   📊 Exchange positions found: ${exchangePositions.length} for ${symbol}`);
 
     // Get database positions
     const { data: dbPositions, error: dbError } = await supabaseClient
@@ -106,9 +107,12 @@ async function syncPositionsForBot(
       .eq('status', 'open');
 
     if (dbError) {
+      console.error(`   ❌ Database error fetching positions:`, dbError);
       errors.push(`Database error: ${dbError.message}`);
       return { success: false, synced: 0, closed: 0, errors };
     }
+
+    console.log(`   💾 Database positions found: ${dbPositions?.length || 0} for ${symbol}`);
 
     // Update or close positions based on exchange data
     for (const dbPos of dbPositions || []) {
@@ -511,6 +515,11 @@ serve(async (req) => {
         console.log(`🔄 [${requestId}] Syncing positions for bot: ${bot.name} (${bot.symbol})`);
         
         const syncResult = await syncPositionsForBot(supabaseClient, bot, apiKey);
+        
+        // Log errors for this bot
+        if (syncResult.errors.length > 0) {
+          console.warn(`⚠️ [${requestId}] Errors syncing ${bot.name}:`, syncResult.errors);
+        }
         
         results.synced += syncResult.synced;
         results.closed += syncResult.closed;
