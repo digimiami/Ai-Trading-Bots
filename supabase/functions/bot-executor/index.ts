@@ -5280,28 +5280,39 @@ class BotExecutor {
           apiSummary = '\n\n⚠️ No API responses captured - check Edge Function logs';
         }
         
-        // Log detailed error to bot_activity_logs with API diagnostic info
-        await this.addBotLog(bot.id, {
-          level: 'error',
-          category: 'trade',
-          message: `Trade execution failed: ${errorMsg}${apiSummary}`,
-          details: {
-            side: tradeSignal?.side || 'unknown',
-            error: errorMsg,
-            symbol: bot.symbol,
-            exchange: bot.exchange,
-            tradingType: tradingType,
-            priceFetchError: priceFetchError,
-            errorType: 'Error',
-            timestamp: TimeSync.getCurrentTimeISO(),
-            diagnostic: {
-              symbolVariants: MarketDataFetcher.normalizeSymbol(bot.symbol, bot.exchange, tradingType),
-              apiUrl: `https://api.bybit.com/v5/market/tickers?category=${tradingType === 'futures' ? 'linear' : tradingType}&symbol=${bot.symbol}`,
-              apiResponses: apiResponses.length > 0 ? apiResponses : 'No API responses captured',
-              note: apiResponses.length > 0 ? 'See apiResponses above for actual Bybit API responses' : 'Check Supabase Edge Function logs for detailed Bybit API responses'
+        // Check if this is a minimum order value error (already logged as warning)
+        // Note: This catch block is for price fetch errors, but we check anyway for safety
+        const isMinOrderValueError = errorMsg.includes('110094') || 
+                                     errorMsg.includes('does not meet minimum order value') ||
+                                     errorMsg.includes('below minimum');
+        
+        // Only log as error if it's not already handled as a warning
+        if (!isMinOrderValueError) {
+          // Log detailed error to bot_activity_logs with API diagnostic info
+          await this.addBotLog(bot.id, {
+            level: 'error',
+            category: 'trade',
+            message: `Trade execution failed: ${errorMsg}${apiSummary}`,
+            details: {
+              side: tradeSignal?.side || 'unknown',
+              error: errorMsg,
+              symbol: bot.symbol,
+              exchange: bot.exchange,
+              tradingType: tradingType,
+              priceFetchError: priceFetchError,
+              errorType: 'Error',
+              timestamp: TimeSync.getCurrentTimeISO(),
+              diagnostic: {
+                symbolVariants: MarketDataFetcher.normalizeSymbol(bot.symbol, bot.exchange, tradingType),
+                apiUrl: `https://api.bybit.com/v5/market/tickers?category=${tradingType === 'futures' ? 'linear' : tradingType}&symbol=${bot.symbol}`,
+                apiResponses: apiResponses.length > 0 ? apiResponses : 'No API responses captured',
+                note: apiResponses.length > 0 ? 'See apiResponses above for actual Bybit API responses' : 'Check Supabase Edge Function logs for detailed Bybit API responses'
+              }
             }
-          }
-        });
+          });
+        } else {
+          console.log(`ℹ️ Minimum order value error already logged as warning, skipping duplicate error log`);
+        }
         
         // Clear the stored responses
         (globalThis as any).__lastBybitApiResponses = null;
@@ -12203,16 +12214,27 @@ serve(async (req) => {
         } catch (execError) {
           console.error(`❌ Bot execution failed for bot ${bot.id}:`, execError);
           const errorMessage = execError instanceof Error ? execError.message : String(execError);
-          await executor.addBotLog(bot.id, {
-            level: 'error',
-            category: 'error',
-            message: `Bot execution failed: ${errorMessage}`,
-            details: { 
-              error: errorMessage,
-              errorType: execError instanceof Error ? execError.name : typeof execError,
-              source: 'execute_bot_action'
-            }
-          });
+          
+          // Check if this is a minimum order value error (already logged as warning)
+          const isMinOrderValueError = errorMessage.includes('110094') || 
+                                       errorMessage.includes('does not meet minimum order value') ||
+                                       errorMessage.includes('below minimum');
+          
+          // Only log as error if it's not already handled as a warning
+          if (!isMinOrderValueError) {
+            await executor.addBotLog(bot.id, {
+              level: 'error',
+              category: 'error',
+              message: `Bot execution failed: ${errorMessage}`,
+              details: {
+                error: errorMessage,
+                errorType: execError instanceof Error ? execError.name : typeof execError,
+                source: 'execute_bot_action'
+              }
+            });
+          } else {
+            console.log(`ℹ️ Minimum order value error already logged as warning, skipping duplicate error log`);
+          }
           throw execError;
         }
         
@@ -12538,17 +12560,28 @@ serve(async (req) => {
                 try {
                   const execForLogging = new BotExecutor(supabaseClient, { id: isCron ? bot.user_id : user.id });
                   const errorMessage = error instanceof Error ? error.message : String(error);
-                  await execForLogging.addBotLog(bot.id, {
-                    level: 'error',
-                    category: 'error',
-                    message: `Bot execution failed: ${errorMessage}`,
-                    details: { 
-                      error: errorMessage,
-                      errorType: error instanceof Error ? error.name : typeof error,
-                      duration: `${duration}ms`,
-                      timestamp: new Date().toISOString()
-                    }
-                  });
+                  
+                  // Check if this is a minimum order value error (already logged as warning)
+                  const isMinOrderValueError = errorMessage.includes('110094') || 
+                                               errorMessage.includes('does not meet minimum order value') ||
+                                               errorMessage.includes('below minimum');
+                  
+                  // Only log as error if it's not already handled as a warning
+                  if (!isMinOrderValueError) {
+                    await execForLogging.addBotLog(bot.id, {
+                      level: 'error',
+                      category: 'error',
+                      message: `Bot execution failed: ${errorMessage}`,
+                      details: {
+                        error: errorMessage,
+                        errorType: error instanceof Error ? error.name : typeof error,
+                        duration: `${duration}ms`,
+                        timestamp: new Date().toISOString()
+                      }
+                    });
+                  } else {
+                    console.log(`ℹ️ Minimum order value error already logged as warning, skipping duplicate error log`);
+                  }
                 } catch (logError) {
                   console.error('Failed to log error to bot activity:', logError);
                 }
