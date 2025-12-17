@@ -3,6 +3,14 @@
 -- Sets up a cron job to sync positions from exchange for all running bots
 
 -- =====================================================
+-- IMPORTANT: Set POSITION_SYNC_SECRET First
+-- =====================================================
+-- Before creating the cron schedule, make sure you have set:
+-- 1. Go to Supabase Dashboard → Edge Functions → position-sync → Settings
+-- 2. Add Environment Variable: POSITION_SYNC_SECRET = [your-secret-value]
+-- 3. Save
+
+-- =====================================================
 -- Option 1: Using Supabase Dashboard (Recommended)
 -- =====================================================
 -- 1. Go to Supabase Dashboard → Edge Functions → position-sync
@@ -12,7 +20,8 @@
 --    - Cron Expression: */5 * * * * (every 5 minutes)
 --    - HTTP Method: POST
 --    - Headers:
---      x-cron-secret: YOUR_CRON_SECRET_VALUE
+--      Key: x-cron-secret
+--      Value: [SAME VALUE as POSITION_SYNC_SECRET environment variable]
 --    - Enabled: Yes
 -- 4. Save
 

@@ -240,10 +240,12 @@ serve(async (req) => {
 
   try {
     // Authentication check
-    const CRON_SECRET = Deno.env.get('CRON_SECRET') ?? '';
+    // Use POSITION_SYNC_SECRET to avoid conflicts with other functions' CRON_SECRET
+    // Falls back to CRON_SECRET for backward compatibility
+    const POSITION_SYNC_SECRET = Deno.env.get('POSITION_SYNC_SECRET') ?? Deno.env.get('CRON_SECRET') ?? '';
     const headerSecret = req.headers.get('x-cron-secret') ?? '';
 
-    if (!CRON_SECRET || headerSecret !== CRON_SECRET) {
+    if (!POSITION_SYNC_SECRET || headerSecret !== POSITION_SYNC_SECRET) {
       console.error(`❌ [${requestId}] Authentication failed`);
       return new Response(
         JSON.stringify({ error: 'Unauthorized', requestId }),
