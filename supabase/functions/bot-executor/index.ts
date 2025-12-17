@@ -10869,14 +10869,63 @@ class PaperTradingExecutor {
           console.log(`✅ [PAPER] Adjusted quantity to ${quantity.toFixed(6)} to meet minimum order value`);
           console.log(`💰 New order value: $${orderValue.toFixed(2)} (minimum: $${minOrderValue})`);
         } else {
-          // If adjusted quantity exceeds max, throw error
-          throw new Error(`Order value $${orderValue.toFixed(2)} is below minimum $${minOrderValue} for ${bot.symbol}. Calculated minimum quantity ${adjustedQty.toFixed(6)} exceeds maximum ${sizing.constraints.max}. Please increase trade amount or adjust bot configuration.`);
+          // If adjusted quantity exceeds max, skip trade gracefully for paper trading
+          const requiredTradeAmount = (minOrderValue / finalExecutedPrice) * sizing.constraints.max;
+          console.warn(`⚠️ [PAPER] Skipping trade: Order value $${orderValue.toFixed(2)} below minimum $${minOrderValue} for ${bot.symbol}`);
+          console.warn(`💡 Calculated minimum quantity ${adjustedQty.toFixed(6)} exceeds maximum ${sizing.constraints.max}`);
+          console.warn(`💡 Suggestion: Increase trade amount to at least $${requiredTradeAmount.toFixed(2)} to meet minimum order value`);
+          console.warn(`📝 This trade would fail in real trading too. Skipping gracefully in paper trading mode.`);
+          
+          // Log as warning (not error) directly to database and return early without throwing
+          try {
+            await this.supabaseClient
+              .from('bot_activity_logs')
+              .insert({
+                bot_id: bot.id,
+                level: 'warning',
+                category: 'trade',
+                message: `⚠️ Trade skipped: Order value $${orderValue.toFixed(2)} below minimum $${minOrderValue}. Minimum quantity ${adjustedQty.toFixed(6)} exceeds maximum ${sizing.constraints.max}. Increase trade amount to at least $${requiredTradeAmount.toFixed(2)}.`,
+                details: {
+                  order_value: orderValue,
+                  min_order_value: minOrderValue,
+                  calculated_quantity: adjustedQty,
+                  max_quantity: sizing.constraints.max,
+                  required_trade_amount: requiredTradeAmount,
+                  paper_trading: true
+                }
+              });
+          } catch (logError) {
+            console.warn('⚠️ Failed to log skipped trade warning:', logError);
+          }
+          return; // Exit early, don't execute the trade
         }
       }
       
       // Final check after adjustment
       if (orderValue < minOrderValue) {
-        throw new Error(`Order value $${orderValue.toFixed(2)} below minimum $${minOrderValue} for ${bot.symbol}. This happens in real trading too.`);
+        // For paper trading, skip gracefully instead of throwing error
+        console.warn(`⚠️ [PAPER] Skipping trade: Order value $${orderValue.toFixed(2)} below minimum $${minOrderValue} for ${bot.symbol}`);
+        console.warn(`📝 This trade would fail in real trading too. Skipping gracefully in paper trading mode.`);
+        
+        // Log as warning (not error) directly to database and return early without throwing
+        try {
+          await this.supabaseClient
+            .from('bot_activity_logs')
+            .insert({
+              bot_id: bot.id,
+              level: 'warning',
+              category: 'trade',
+              message: `⚠️ Trade skipped: Order value $${orderValue.toFixed(2)} below minimum $${minOrderValue} for ${bot.symbol}. This happens in real trading too. Please increase trade amount.`,
+              details: {
+                order_value: orderValue,
+                min_order_value: minOrderValue,
+                paper_trading: true
+              }
+            });
+        } catch (logError) {
+          console.warn('⚠️ Failed to log skipped trade warning:', logError);
+        }
+        return; // Exit early, don't execute the trade
       }
       
       // Recalculate notional and margin after potential quantity adjustment
