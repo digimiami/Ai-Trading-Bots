@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Message, SendMessageParams, GetMessagesParams, User } from '../types/messaging'
 
@@ -114,9 +114,23 @@ export function useMessaging() {
 export function useUnreadMessageCount() {
   const [count, setCount] = useState(0)
   const [loading, setLoading] = useState(true)
-  const { getUnreadCount } = useMessaging()
+  const messaging = useMessaging()
+  
+  // Use useRef to prevent infinite loops from function reference changes
+  const isFetchingRef = useRef(false)
+  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const getUnreadCountRef = useRef(messaging.getUnreadCount)
+  const subscriptionSetupRef = useRef(false)
+
+  // Keep the ref updated with the latest function (but don't trigger effects)
+  getUnreadCountRef.current = messaging.getUnreadCount
 
   const fetchCount = useCallback(async () => {
+    // Prevent concurrent fetches
+    if (isFetchingRef.current) {
+      return
+    }
+
     try {
       // Check authentication before making the call
       const session = await supabase.auth.getSession()
@@ -127,29 +141,64 @@ export function useUnreadMessageCount() {
         return
       }
 
+      isFetchingRef.current = true
       setLoading(true)
-      const unreadCount = await getUnreadCount()
+      const unreadCount = await getUnreadCountRef.current()
       setCount(unreadCount)
+      // Clear any retry timeout on success
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current)
+        retryTimeoutRef.current = null
+      }
     } catch (err: any) {
-      // Only log non-authentication errors
-      if (err.message !== 'Not authenticated' && err.message !== 'Unauthorized') {
+      // Only log non-authentication errors and non-resource errors
+      const isResourceError = err.message?.includes('INSUFFICIENT_RESOURCES') || 
+                             err.message?.includes('Failed to fetch') ||
+                             err.name === 'TypeError'
+      
+      if (err.message !== 'Not authenticated' && 
+          err.message !== 'Unauthorized' && 
+          !isResourceError) {
         console.error('Error fetching unread count:', err)
       }
+      
       // Set count to 0 on any error (including auth errors)
       setCount(0)
+      
+      // If it's a resource error, don't retry immediately - wait longer
+      if (isResourceError) {
+        // Wait 30 seconds before allowing another fetch to prevent resource exhaustion
+        if (retryTimeoutRef.current) {
+          clearTimeout(retryTimeoutRef.current)
+        }
+        retryTimeoutRef.current = setTimeout(() => {
+          isFetchingRef.current = false
+        }, 30000)
+        return
+      }
     } finally {
+      // Only reset fetching flag if it's not a resource error with retry timeout
+      if (!retryTimeoutRef.current) {
+        isFetchingRef.current = false
+      }
       setLoading(false)
     }
-  }, [getUnreadCount])
+  }, []) // Empty dependency array - we use refs to access the latest functions
 
   useEffect(() => {
+    // Prevent multiple subscription setups
+    if (subscriptionSetupRef.current) {
+      return
+    }
+
     let channel: any = null
     let interval: NodeJS.Timeout | null = null
+    let mounted = true
 
     const setupSubscription = async () => {
       // Check if authenticated before setting up real-time subscription
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) {
+      if (!session || !mounted) {
         setCount(0)
         setLoading(false)
         return // Don't set up subscription if not authenticated
@@ -158,39 +207,60 @@ export function useUnreadMessageCount() {
       // Fetch initial count
       await fetchCount()
 
+      if (!mounted) return
+
       // Set up real-time subscription for messages
-      channel = supabase
-        .channel('messages')
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'messages'
-          },
-          () => {
-            // Refetch count when messages change
+      try {
+        channel = supabase
+          .channel('messages')
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'messages'
+            },
+            () => {
+              // Refetch count when messages change (only if not already fetching)
+              if (!isFetchingRef.current && mounted) {
+                fetchCount()
+              }
+            }
+          )
+          .subscribe()
+
+        // Poll every 60 seconds as backup (reduced from 30s to 60s to save egress)
+        interval = setInterval(() => {
+          if (!isFetchingRef.current && mounted) {
             fetchCount()
           }
-        )
-        .subscribe()
-
-      // Poll every 60 seconds as backup (reduced from 30s to 60s to save egress)
-      interval = setInterval(fetchCount, 60000)
+        }, 60000)
+        
+        subscriptionSetupRef.current = true
+      } catch (err) {
+        console.error('Error setting up message subscription:', err)
+      }
     }
 
     setupSubscription()
 
     // Cleanup function
     return () => {
+      mounted = false
+      subscriptionSetupRef.current = false
       if (channel) {
         channel.unsubscribe()
       }
       if (interval) {
         clearInterval(interval)
       }
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current)
+        retryTimeoutRef.current = null
+      }
+      isFetchingRef.current = false
     }
-  }, [fetchCount])
+  }, []) // Empty dependency array - only run once on mount
 
   return { count, loading, refetch: fetchCount }
 }
