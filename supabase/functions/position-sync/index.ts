@@ -230,28 +230,74 @@ serve(async (req) => {
   const requestStartTime = Date.now();
   const requestId = crypto.randomUUID().substring(0, 8);
 
+  // Log immediately - this should always appear
   console.log(`\n${'='.repeat(60)}`);
   console.log(`🔄 [${requestId}] Position Sync Cron Job STARTED`);
   console.log(`📅 Timestamp: ${new Date().toISOString()}`);
+  console.log(`📡 Method: ${req.method}`);
+  console.log(`🌐 URL: ${req.url}`);
 
   if (req.method === 'OPTIONS') {
+    console.log(`✅ [${requestId}] OPTIONS request - returning CORS headers`);
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    // Authentication check
+    // Authentication check with detailed logging
     // Use POSITION_SYNC_SECRET to avoid conflicts with other functions' CRON_SECRET
     // Falls back to CRON_SECRET for backward compatibility
     const POSITION_SYNC_SECRET = Deno.env.get('POSITION_SYNC_SECRET') ?? Deno.env.get('CRON_SECRET') ?? '';
     const headerSecret = req.headers.get('x-cron-secret') ?? '';
 
+    // Log all headers for debugging
+    const allHeaders: Record<string, string> = {};
+    req.headers.forEach((value, key) => {
+      allHeaders[key] = key.toLowerCase().includes('secret') ? '[REDACTED]' : value;
+    });
+    console.log(`📋 [${requestId}] Request headers:`, JSON.stringify(Object.keys(allHeaders)));
+
+    // Detailed authentication logging
+    console.log(`🔐 [${requestId}] Authentication check:`);
+    console.log(`   POSITION_SYNC_SECRET present: ${!!POSITION_SYNC_SECRET} (length: ${POSITION_SYNC_SECRET.length})`);
+    console.log(`   Header secret present: ${!!headerSecret} (length: ${headerSecret.length})`);
+    
+    if (POSITION_SYNC_SECRET && headerSecret) {
+      const secretsMatch = headerSecret === POSITION_SYNC_SECRET;
+      console.log(`   🔑 Secrets match: ${secretsMatch}`);
+      if (!secretsMatch) {
+        console.error(`   ❌ SECRET MISMATCH:`);
+        console.error(`      Expected (first 8): ${POSITION_SYNC_SECRET.substring(0, 8)}...`);
+        console.error(`      Received (first 8): ${headerSecret.substring(0, 8)}...`);
+        console.error(`      Expected (last 8): ...${POSITION_SYNC_SECRET.substring(Math.max(0, POSITION_SYNC_SECRET.length - 8))}`);
+        console.error(`      Received (last 8): ...${headerSecret.substring(Math.max(0, headerSecret.length - 8))}`);
+      }
+    } else {
+      console.warn(`   ⚠️ Missing secrets:`);
+      if (!POSITION_SYNC_SECRET) console.warn(`      - POSITION_SYNC_SECRET env var is empty`);
+      if (!headerSecret) console.warn(`      - x-cron-secret header is missing or empty`);
+    }
+
     if (!POSITION_SYNC_SECRET || headerSecret !== POSITION_SYNC_SECRET) {
-      console.error(`❌ [${requestId}] Authentication failed`);
+      console.error(`❌ [${requestId}] Authentication failed - Secret mismatch or missing`);
       return new Response(
-        JSON.stringify({ error: 'Unauthorized', requestId }),
+        JSON.stringify({ 
+          error: 'Unauthorized', 
+          message: 'POSITION_SYNC_SECRET mismatch or missing',
+          requestId,
+          hint: 'Check that POSITION_SYNC_SECRET environment variable matches x-cron-secret header value',
+          debug: {
+            envSecretPresent: !!POSITION_SYNC_SECRET,
+            envSecretLength: POSITION_SYNC_SECRET.length,
+            headerSecretPresent: !!headerSecret,
+            headerSecretLength: headerSecret.length,
+            secretsMatch: POSITION_SYNC_SECRET && headerSecret ? headerSecret === POSITION_SYNC_SECRET : false
+          }
+        }),
         { status: 401, headers: corsHeaders }
       );
     }
+
+    console.log(`✅ [${requestId}] Authentication successful`);
 
     // Initialize Supabase client
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
