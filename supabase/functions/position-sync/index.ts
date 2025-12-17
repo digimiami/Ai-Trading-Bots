@@ -245,6 +245,23 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  // Health check endpoint for GET requests (no auth required)
+  if (req.method === 'GET') {
+    console.log(`ℹ️ [${requestId}] GET request - health check`);
+    return new Response(
+      JSON.stringify({
+        status: 'ok',
+        service: 'position-sync',
+        timestamp: new Date().toISOString(),
+        requestId
+      }),
+      { 
+        status: 200, 
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      }
+    );
+  }
+
   try {
     // Log available environment variables (names only, for security)
     const envVarNames = ['POSITION_SYNC_SECRET', 'CRON_SECRET', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY'];
