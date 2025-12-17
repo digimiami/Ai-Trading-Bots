@@ -359,27 +359,31 @@ export default function BotsPage() {
     }
 
     try {
-      // Get bot details to determine trading mode
-      const bot = bots.find(b => b.id === botId);
-      if (!bot) {
-        alert('❌ Bot not found');
-        return;
+      // Get bot details from database to get user_id and status
+      const { data: botData, error: botError } = await supabase
+        .from('trading_bots')
+        .select('id, user_id, name, symbol, exchange, trading_type, status, paper_trading')
+        .eq('id', botId)
+        .single();
+
+      if (botError || !botData) {
+        throw new Error(`Failed to fetch bot: ${botError?.message || 'Bot not found'}`);
       }
 
-      if (bot.status !== 'running') {
-        alert(`❌ Bot is not running. Current status: ${bot.status}`);
+      if (botData.status !== 'running') {
+        alert(`❌ Bot is not running. Current status: ${botData.status}`);
         return;
       }
 
       // Determine mode based on bot's paper trading setting
-      const mode: 'real' | 'paper' = bot.paperTrading || (bot as any).paper_trading ? 'paper' : 'real';
+      const mode: 'real' | 'paper' = botData.paper_trading ? 'paper' : 'real';
 
       // Create manual trade signal with status 'pending'
       const { data: signalData, error: signalError } = await supabase
         .from('manual_trade_signals')
         .insert({
           bot_id: botId,
-          user_id: bot.user_id || (bot as any).user_id,
+          user_id: botData.user_id,
           mode: mode,
           side: 'buy', // Default to buy - bot executor will use strategy if needed
           size_multiplier: 1.0,
