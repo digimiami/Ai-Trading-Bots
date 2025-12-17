@@ -5486,13 +5486,19 @@ class BotExecutor {
       console.log('✅ Trade recorded successfully:', trade);
       
       // Track position opening for real trades
+      console.log(`📊 [Position Tracking] Bot paper_trading: ${bot.paper_trading}, Will track: ${bot.paper_trading !== true}`);
       if (bot.paper_trading !== true) {
         try {
+          console.log(`📊 [Position Tracking] Creating position for ${bot.symbol} ${trade.side} at $${normalizedPrice}, quantity: ${tradeAmount}`);
           await this.trackPositionOpen(bot, trade, orderResult, normalizedPrice, tradeAmount, currentPrice);
+          console.log(`✅ [Position Tracking] Position tracked successfully`);
         } catch (posError) {
-          console.warn('⚠️ Failed to track position open (non-critical):', posError);
+          console.error('❌ [Position Tracking] Failed to track position open:', posError);
+          console.error('   Error details:', posError instanceof Error ? posError.message : String(posError));
           // Don't fail the trade if position tracking fails
         }
+      } else {
+        console.log(`ℹ️ [Position Tracking] Skipping position tracking - paper trading mode`);
       }
       
       // Update bot performance
@@ -8783,9 +8789,14 @@ class BotExecutor {
    */
   private async trackPositionOpen(bot: any, trade: any, orderResult: any, entryPrice: number, quantity: number, currentPrice: number): Promise<void> {
     try {
+      console.log(`📊 [trackPositionOpen] Starting position tracking for bot ${bot.id} (${bot.name})`);
+      console.log(`   Symbol: ${bot.symbol}, Side: ${trade.side}, Entry: $${entryPrice}, Quantity: ${quantity}`);
+      
       const tradingType = bot.tradingType || bot.trading_type || 'futures';
       const side = (trade.side || '').toLowerCase();
       const normalizedSide = side === 'buy' ? 'long' : side === 'sell' ? 'short' : side;
+      
+      console.log(`   Trading type: ${tradingType}, Normalized side: ${normalizedSide}`);
       
       // Calculate fees
       const feeRate = resolveFeeRate(bot.exchange, tradingType);
@@ -8827,10 +8838,11 @@ class BotExecutor {
       
       if (existingPosition) {
         // Update existing position (position size increased)
+        console.log(`📊 [trackPositionOpen] Found existing position ${existingPosition.id}, updating...`);
         const newQuantity = parseFloat(existingPosition.quantity) + quantity;
         const avgEntryPrice = ((parseFloat(existingPosition.entry_price) * parseFloat(existingPosition.quantity)) + (entryPrice * quantity)) / newQuantity;
         
-        await this.supabaseClient
+        const { error: updateError } = await this.supabaseClient
           .from('trading_positions')
           .update({
             quantity: newQuantity,
@@ -8843,7 +8855,12 @@ class BotExecutor {
           })
           .eq('id', existingPosition.id);
         
-        console.log(`📊 Updated existing position: ${bot.symbol} ${normalizedSide}, new size: ${newQuantity}`);
+        if (updateError) {
+          console.error(`❌ [trackPositionOpen] Failed to update position:`, updateError);
+          throw updateError;
+        }
+        
+        console.log(`✅ [trackPositionOpen] Updated existing position: ${bot.symbol} ${normalizedSide}, new size: ${newQuantity}, avg entry: $${avgEntryPrice}`);
       } else {
         // Create new position
         const { data: position, error: posError } = await this.supabaseClient
@@ -8872,11 +8889,22 @@ class BotExecutor {
           .single();
         
         if (posError) {
-          console.error('❌ Failed to create position record:', posError);
+          console.error('❌ [trackPositionOpen] Failed to create position record:', posError);
+          console.error('   Insert payload:', JSON.stringify({
+            bot_id: bot.id,
+            user_id: bot.user_id,
+            trade_id: trade.id,
+            symbol: bot.symbol,
+            exchange: bot.exchange,
+            trading_type: tradingType,
+            side: normalizedSide,
+            entry_price: entryPrice,
+            quantity: quantity
+          }, null, 2));
           throw posError;
         }
         
-        console.log(`✅ Position tracked: ${bot.symbol} ${normalizedSide} at $${entryPrice}, size: ${quantity}`);
+        console.log(`✅ [trackPositionOpen] Position created successfully: ${bot.symbol} ${normalizedSide} at $${entryPrice}, size: ${quantity}, position ID: ${position?.id}`);
       }
     } catch (error: any) {
       console.error('❌ Error tracking position open:', error);
