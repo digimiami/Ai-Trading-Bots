@@ -411,7 +411,7 @@ serve(async (req) => {
     console.log(`🔍 [${requestId}] Fetching running bots...`);
     const { data: bots, error: botsError } = await supabaseClient
       .from('trading_bots')
-      .select('id, user_id, name, symbol, exchange, trading_type, tradingType, paper_trading, status')
+      .select('id, user_id, name, symbol, exchange, trading_type, paper_trading, status')
       .eq('status', 'running')
       .eq('paper_trading', false);
 
