@@ -231,11 +231,14 @@ serve(async (req) => {
   const requestId = crypto.randomUUID().substring(0, 8);
 
   // Log immediately - this should always appear
+  // Use multiple log statements to ensure at least one appears
   console.log(`\n${'='.repeat(60)}`);
   console.log(`🔄 [${requestId}] Position Sync Cron Job STARTED`);
   console.log(`📅 Timestamp: ${new Date().toISOString()}`);
   console.log(`📡 Method: ${req.method}`);
   console.log(`🌐 URL: ${req.url}`);
+  console.error(`[${requestId}] ERROR LEVEL LOG TEST - Function is executing`); // Use error level to ensure visibility
+  console.warn(`[${requestId}] WARN LEVEL LOG TEST - Function is executing`); // Use warn level to ensure visibility
 
   if (req.method === 'OPTIONS') {
     console.log(`✅ [${requestId}] OPTIONS request - returning CORS headers`);
