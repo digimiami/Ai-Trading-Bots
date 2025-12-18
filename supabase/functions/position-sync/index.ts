@@ -7,6 +7,17 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
 }
 
+// Decrypt API keys (they are stored encrypted in the database)
+function decrypt(encryptedText: string): string {
+  // Decode base64, then convert UTF-8 bytes back to string
+  const binaryString = atob(encryptedText);
+  const utf8Bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    utf8Bytes[i] = binaryString.charCodeAt(i);
+  }
+  return new TextDecoder().decode(utf8Bytes);
+}
+
 const DEFAULT_SPOT_FEE_RATE = 0.001;      // 0.10%
 const DEFAULT_FUTURES_FEE_RATE = 0.0006;  // 0.06%
 
@@ -57,21 +68,24 @@ async function recalculateBotStats(
 ): Promise<void> {
   try {
     // Fetch all closed trades for this bot
+    // Note: Column is 'fee' (singular), not 'fees'
     const { data: trades, error: tradesError } = await supabaseClient
       .from('trades')
-      .select('status, pnl, fee, fees, executed_at')
+      .select('status, pnl, fee, executed_at')
       .eq('bot_id', botId)
       .eq('user_id', userId)
       .order('executed_at', { ascending: true });
 
     if (tradesError) {
-      console.warn(`   ⚠️ Error fetching trades for stats:`, tradesError);
+      console.error(`   ❌ Error fetching trades for stats:`, tradesError);
+      console.error(`   ❌ Stats will not be updated for bot ${botId} due to trade fetch error`);
+      // If we can't fetch trades, we can't calculate stats - return early
       return;
     }
 
     if (!trades || trades.length === 0) {
       // No trades, reset stats
-      await supabaseClient
+      const { error: resetError } = await supabaseClient
         .from('trading_bots')
         .update({
           total_trades: 0,
@@ -82,6 +96,12 @@ async function recalculateBotStats(
           updated_at: new Date().toISOString()
         })
         .eq('id', botId);
+      
+      if (resetError) {
+        console.error(`   ❌ Failed to reset bot stats:`, resetError);
+      } else {
+        console.log(`   ✅ Reset bot stats (no trades found)`);
+      }
       return;
     }
 
@@ -101,9 +121,8 @@ async function recalculateBotStats(
     for (const trade of trades) {
       const status = (trade.status || '').toString().toLowerCase();
       const pnlValue = trade.pnl !== null && trade.pnl !== undefined ? parseFloat(trade.pnl) : NaN;
-      // Handle both 'fee' and 'fees' columns
-      const feeValue = (trade.fees !== null && trade.fees !== undefined ? parseFloat(trade.fees) : 0) ||
-                       (trade.fee !== null && trade.fee !== undefined ? parseFloat(trade.fee) : 0);
+      // Column is 'fee' (singular), not 'fees'
+      const feeValue = trade.fee !== null && trade.fee !== undefined ? parseFloat(trade.fee) : 0;
 
       if (executedStatuses.has(status)) {
         totalTrades += 1;
@@ -132,7 +151,7 @@ async function recalculateBotStats(
     const drawdownPercent = peakEquity > 0 ? (maxDrawdown / peakEquity) * 100 : 0;
 
     // Update bot stats
-    await supabaseClient
+    const { error: statsUpdateError } = await supabaseClient
       .from('trading_bots')
       .update({
         total_trades: totalTrades,
@@ -144,7 +163,12 @@ async function recalculateBotStats(
       })
       .eq('id', botId);
 
-    console.log(`   ✅ Stats recalculated for bot ${botId}: ${totalTrades} trades, ${winRate.toFixed(2)}% win rate, $${totalPnL.toFixed(2)} PnL`);
+    if (statsUpdateError) {
+      console.error(`   ❌ Failed to update bot stats: ${statsUpdateError.message}`);
+      throw statsUpdateError;
+    }
+
+    console.log(`   ✅ Stats recalculated for bot ${botId}: ${totalTrades} trades, ${winRate.toFixed(2)}% win rate, $${totalPnL.toFixed(2)} PnL, $${totalFees.toFixed(2)} fees, ${drawdownPercent.toFixed(2)}% drawdown`);
   } catch (error: any) {
     console.error(`   ❌ Error recalculating stats for bot ${botId}:`, error);
   }
@@ -166,19 +190,30 @@ async function syncPositionsForBot(
 
     console.log(`   🔍 Fetching positions for ${symbol} (${tradingType}) from ${exchange}`);
 
-    // Note: Spot trading doesn't have positions like futures. For spot, we check account balances/orders instead.
-    // However, Bybit's /v5/position/list endpoint may still be called for spot (it will return empty results).
+    // Spot trading doesn't use positions like futures - Bybit's /v5/position/list doesn't support category=spot
+    // For spot trading, we skip position sync (positions are tracked via account balances/orders instead)
     if (tradingType === 'spot') {
-      console.log(`   ℹ️ Note: Spot trading doesn't use positions. This sync will check for open positions (usually empty for spot).`);
+      console.log(`   ℹ️ Skipping position sync for spot trading (Bybit doesn't support position/list for spot).`);
+      console.log(`   ℹ️ Spot positions are tracked via account balances and orders, not the position/list endpoint.`);
+      return { success: true, synced: 0, closed: 0, errors: [] };
     }
 
     // Fetch positions from exchange (mainnet only - no testnet support)
     const baseUrl = 'https://api.bybit.com';
     const timestamp = Date.now().toString();
     const recvWindow = '5000';
-    const category = tradingType === 'futures' ? 'linear' : tradingType === 'spot' ? 'spot' : 'linear';
+    const category = tradingType === 'futures' ? 'linear' : 'linear'; // Only linear/option supported, not spot
 
-    const queryParams = `category=${category}&symbol=${symbol}`;
+    // Build query params and ensure they're sorted alphabetically (required by Bybit)
+    const positionParams: Record<string, string> = {
+      category: category,
+      symbol: symbol
+    };
+    const queryParams = Object.keys(positionParams)
+      .sort()
+      .map(key => `${key}=${positionParams[key]}`)
+      .join('&');
+    
     // Trim API key and secret to prevent whitespace issues
     const apiKey = (apiKeys.api_key || '').trim();
     const apiSecret = (apiKeys.api_secret || '').trim();
@@ -191,12 +226,25 @@ async function syncPositionsForBot(
     }
     
     // First, validate API key with a simpler endpoint (wallet balance) to diagnose auth issues
-    const walletQueryParams = `accountType=CONTRACT`;
-    const walletSignaturePayload = timestamp + apiKey + recvWindow + walletQueryParams;
+    // Bybit V5 wallet-balance requires UNIFIED account type and sorted parameters including api_key, recv_window, timestamp
+    const walletParams = {
+      api_key: apiKey,
+      accountType: 'UNIFIED',
+      recv_window: recvWindow,
+      timestamp: timestamp
+    };
+    const sortedWalletParams = Object.keys(walletParams)
+      .sort()
+      .map(key => `${key}=${walletParams[key as keyof typeof walletParams]}`)
+      .join('&');
+    const walletSignaturePayload = timestamp + apiKey + recvWindow + sortedWalletParams;
     const walletSignature = await createBybitSignature(walletSignaturePayload, apiSecret);
     
+    // Log wallet-balance validation details for debugging
+    console.log(`   🔍 Wallet-balance validation: signature payload length=${walletSignaturePayload.length}, sorted params="${sortedWalletParams.substring(0, 100)}..."`);
+    
     try {
-      const walletTestResponse = await fetch(`${baseUrl}/v5/account/wallet-balance?${walletQueryParams}`, {
+      const walletTestResponse = await fetch(`${baseUrl}/v5/account/wallet-balance?${sortedWalletParams}`, {
         method: 'GET',
         headers: {
           'X-BAPI-API-KEY': apiKey,
@@ -207,9 +255,35 @@ async function syncPositionsForBot(
       });
       
       if (!walletTestResponse.ok) {
-        const walletErrorText = await walletTestResponse.text().catch(() => '');
-        console.warn(`   ⚠️ API key validation failed (wallet-balance returned ${walletTestResponse.status}): ${walletErrorText.substring(0, 200)}`);
+        let walletErrorText = '';
+        let walletErrorJson: any = null;
+        try {
+          walletErrorText = await walletTestResponse.text();
+          if (walletErrorText && walletErrorText.trim()) {
+            try {
+              walletErrorJson = JSON.parse(walletErrorText);
+            } catch {
+              walletErrorJson = { rawResponse: walletErrorText };
+            }
+          } else {
+            walletErrorJson = { emptyResponse: true };
+          }
+        } catch (e) {
+          walletErrorText = `Failed to read error: ${e}`;
+        }
+        
+        console.warn(`   ⚠️ API key validation failed (wallet-balance returned ${walletTestResponse.status}):`);
+        if (walletErrorJson?.retCode) {
+          console.warn(`      retCode: ${walletErrorJson.retCode}, retMsg: ${walletErrorJson.retMsg || 'Unknown'}`);
+        } else if (walletErrorJson?.emptyResponse) {
+          console.warn(`      Empty response body (common for 401 errors)`);
+        } else if (walletErrorText) {
+          console.warn(`      Error: ${walletErrorText.substring(0, 200)}`);
+        }
         console.warn(`   💡 This suggests the API key is invalid, expired, or doesn't have required permissions.`);
+        console.warn(`   ⚠️ IMPORTANT: Position sync requires "Read" permissions, not just "Trade" permissions.`);
+        console.warn(`   💡 Verify the API key has "Read" permissions for "Account" and "Position" in Bybit API settings.`);
+        console.warn(`   💡 In Bybit API settings, enable: "Read" → "Account" and "Read" → "Position" (not just "Trade" permissions).`);
       } else {
         const walletData = await walletTestResponse.json().catch(() => null);
         if (walletData?.retCode === 0) {
@@ -218,8 +292,8 @@ async function syncPositionsForBot(
           console.warn(`   ⚠️ API key validation warning: wallet-balance returned retCode ${walletData?.retCode}: ${walletData?.retMsg || 'Unknown'}`);
         }
       }
-    } catch (walletTestError) {
-      console.warn(`   ⚠️ API key validation test failed: ${walletTestError}`);
+    } catch (walletTestError: any) {
+      console.warn(`   ⚠️ API key validation test failed: ${walletTestError?.message || String(walletTestError)}`);
     }
 
     const signaturePayload = timestamp + apiKey + recvWindow + queryParams;
@@ -424,18 +498,54 @@ async function syncPositionsForBot(
             .eq('id', dbPos.id);
 
           if (updateError) {
-            errors.push(`Failed to close position ${dbPos.id}: ${updateError.message}`);
+            // Check if it's the known database schema issue with peak.running_pnl
+            if (updateError.message && updateError.message.includes('peak.running_pnl')) {
+              console.warn(`   ⚠️ Database schema issue detected: ${updateError.message}`);
+              console.warn(`   💡 This is caused by a database trigger/view on trading_positions referencing a non-existent column 'peak.running_pnl'`);
+              console.warn(`   💡 Position ${dbPos.id} (${symbol}) is closed on exchange but cannot be updated in database due to trigger error`);
+              console.warn(`   💡 ACTION REQUIRED: Fix database trigger/view or manually close position ${dbPos.id} in database`);
+              
+              // Still try to update trade record (it may not have the same trigger issue)
+              let tradeUpdated = false;
+              if (dbPos.trade_id) {
+                // Only update columns that exist: pnl, fee, status (not fees or exit_price)
+                const tradeUpdate: any = {
+                  pnl: realizedPnL,
+                  fee: totalFees,
+                  status: 'closed',
+                  updated_at: new Date().toISOString()
+                };
+                
+                const { error: tradeUpdateError } = await supabaseClient
+                  .from('trades')
+                  .update(tradeUpdate)
+                  .eq('id', dbPos.trade_id);
+
+                if (tradeUpdateError) {
+                  console.error(`   ⚠️ Failed to update trade ${dbPos.trade_id}:`, tradeUpdateError);
+                  console.error(`   ⚠️ Trade update error details:`, JSON.stringify(tradeUpdateError, null, 2));
+                } else {
+                  console.log(`   ✅ Updated trade ${dbPos.trade_id} with PnL: $${realizedPnL.toFixed(2)} (position update blocked by trigger)`);
+                  tradeUpdated = true;
+                  // Recalculate stats since trade was updated
+                  await recalculateBotStats(supabaseClient, bot.id, bot.user_id);
+                }
+              }
+              
+              // Add detailed error message
+              errors.push(`Position ${dbPos.id} (${symbol}) closed on exchange but database update blocked by trigger error (peak.running_pnl). ${tradeUpdated ? 'Trade record updated successfully.' : 'Trade record also failed to update.'} Manual database fix required.`);
+            } else {
+              errors.push(`Failed to close position ${dbPos.id}: ${updateError.message}`);
+            }
           } else {
             closed++;
             
             // Update trade if trade_id exists
             if (dbPos.trade_id) {
-              // Update both 'fee' and 'fees' columns to handle schema variations
+              // Only update columns that exist: pnl, fee, status (not fees or exit_price)
               const tradeUpdate: any = {
                 pnl: realizedPnL,
                 fee: totalFees,
-                fees: totalFees,
-                exit_price: currentPrice,
                 status: 'closed',
                 updated_at: new Date().toISOString()
               };
@@ -447,9 +557,10 @@ async function syncPositionsForBot(
 
               if (tradeUpdateError) {
                 console.error(`   ⚠️ Failed to update trade ${dbPos.trade_id}:`, tradeUpdateError);
+                console.error(`   ⚠️ Trade update error details:`, JSON.stringify(tradeUpdateError, null, 2));
                 errors.push(`Failed to update trade ${dbPos.trade_id}: ${tradeUpdateError.message}`);
               } else {
-                console.log(`   ✅ Updated trade ${dbPos.trade_id} with PnL: $${realizedPnL.toFixed(2)}`);
+                console.log(`   ✅ Updated trade ${dbPos.trade_id} with PnL: $${realizedPnL.toFixed(2)}, fee: $${totalFees.toFixed(2)}`);
               }
             }
 
@@ -486,18 +597,31 @@ async function syncPositionsForBot(
             .eq('id', dbPos.id);
 
           if (updateError) {
-            errors.push(`Failed to update position ${dbPos.id}: ${updateError.message}`);
+            // Check if it's the same database schema issue
+            if (updateError.message && updateError.message.includes('peak.running_pnl')) {
+              console.warn(`   ⚠️ Cannot update open position ${dbPos.id}: Database trigger error (peak.running_pnl)`);
+              console.warn(`   💡 Position data will not be updated until database trigger is fixed`);
+              errors.push(`Position ${dbPos.id} (${symbol}) update blocked by trigger error (peak.running_pnl). Database fix required.`);
+            } else {
+              errors.push(`Failed to update position ${dbPos.id}: ${updateError.message}`);
+            }
           } else {
             synced++;
+            console.log(`   ✅ Updated position ${dbPos.id}: price=$${currentPrice.toFixed(2)}, unrealized PnL=$${unrealizedPnL.toFixed(2)}`);
           }
         }
       }
     }
 
-    // If we closed any positions, recalculate stats once at the end
+    // Always recalculate bot stats (even if no positions closed) to ensure stats are up-to-date
+    // This ensures win rate, PnL, fees, drawdown are recalculated from all trades
+    console.log(`   🔄 Recalculating bot stats...`);
+    await recalculateBotStats(supabaseClient, bot.id, bot.user_id);
+    
     if (closed > 0) {
-      console.log(`   🔄 Recalculating bot stats after closing ${closed} position(s)`);
-      await recalculateBotStats(supabaseClient, bot.id, bot.user_id);
+      console.log(`   ✅ Closed ${closed} position(s) and recalculated stats`);
+    } else if (synced > 0) {
+      console.log(`   ✅ Updated ${synced} open position(s) and recalculated stats`);
     }
 
     return { success: true, synced, closed, errors };
@@ -784,6 +908,17 @@ serve(async (req) => {
       }
 
       console.log(`   🔑 Found ${apiKeys.length} API key(s) for user ${userId}`);
+      
+      // Log all available API keys for debugging
+      console.log(`   📋 Available API keys:`);
+      for (let i = 0; i < apiKeys.length; i++) {
+        const key = apiKeys[i];
+        const exchangeLower = (key.exchange || 'unknown').toLowerCase();
+        const keyPreview = key.api_key ? `${key.api_key.substring(0, 8)}...` : 'MISSING';
+        const createdDate = key.created_at ? new Date(key.created_at).toISOString() : 'unknown';
+        const isActive = key.is_active ? '✅' : '❌';
+        console.log(`      ${i + 1}. ${isActive} ${exchangeLower}: ${keyPreview} (created: ${createdDate})`);
+      }
 
       // Create map of exchange -> API keys (most recent first due to ordering)
       const apiKeysByExchange = new Map<string, any>();
@@ -792,9 +927,11 @@ serve(async (req) => {
         // Only set if not already present (first = most recent due to DESC ordering)
         if (!apiKeysByExchange.has(exchangeLower)) {
           apiKeysByExchange.set(exchangeLower, key);
-          console.log(`   🔑 Using API key for ${exchangeLower}: ${key.api_key?.substring(0, 8)}... (created: ${key.created_at || 'unknown'})`);
+          const createdDate = key.created_at ? new Date(key.created_at).toISOString() : 'unknown';
+          console.log(`   ✅ Selected most recent API key for ${exchangeLower}: ${key.api_key?.substring(0, 8)}... (created: ${createdDate})`);
         } else {
-          console.log(`   ⚠️ Skipping older API key for ${exchangeLower}: ${key.api_key?.substring(0, 8)}... (created: ${key.created_at || 'unknown'})`);
+          const createdDate = key.created_at ? new Date(key.created_at).toISOString() : 'unknown';
+          console.log(`   ⚠️ Skipping older API key for ${exchangeLower}: ${key.api_key?.substring(0, 8)}... (created: ${createdDate})`);
         }
       }
 
@@ -819,9 +956,30 @@ serve(async (req) => {
           continue;
         }
 
+        // CRITICAL: Decrypt API keys before using them (they are stored encrypted in the database)
+        let decryptedApiKey: string;
+        let decryptedApiSecret: string;
+        try {
+          decryptedApiKey = decrypt(apiKey.api_key);
+          decryptedApiSecret = decrypt(apiKey.api_secret);
+          console.log(`   🔓 API keys decrypted successfully for ${exchange}`);
+        } catch (decryptError: any) {
+          const errorMsg = `Failed to decrypt API keys for ${exchange}: ${decryptError?.message || String(decryptError)}`;
+          console.error(`❌ [${requestId}] ${errorMsg}`);
+          results.errors.push(errorMsg);
+          continue;
+        }
+
+        // Create a decrypted copy of the API key object
+        const decryptedApiKeyObj = {
+          ...apiKey,
+          api_key: decryptedApiKey,
+          api_secret: decryptedApiSecret
+        };
+
         console.log(`🔄 [${requestId}] Syncing positions for bot: ${bot.name} (${bot.symbol})`);
         
-        const syncResult = await syncPositionsForBot(supabaseClient, bot, apiKey);
+        const syncResult = await syncPositionsForBot(supabaseClient, bot, decryptedApiKeyObj);
         
         // Log detailed results for this bot
         if (syncResult.synced > 0 || syncResult.closed > 0) {
