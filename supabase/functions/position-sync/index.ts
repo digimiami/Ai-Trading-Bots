@@ -47,8 +47,108 @@ async function createBybitSignature(payload: string, secret: string): Promise<st
 }
 
 /**
- * Sync positions from exchange for a single bot
+ * Recalculate bot statistics from trades
  */
+async function recalculateBotStats(
+  supabaseClient: any,
+  botId: string,
+  userId: string
+): Promise<void> {
+  try {
+    // Fetch all closed trades for this bot
+    const { data: trades, error: tradesError } = await supabaseClient
+      .from('trades')
+      .select('status, pnl, fee, fees, executed_at')
+      .eq('bot_id', botId)
+      .eq('user_id', userId)
+      .order('executed_at', { ascending: true });
+
+    if (tradesError) {
+      console.warn(`   ⚠️ Error fetching trades for stats:`, tradesError);
+      return;
+    }
+
+    if (!trades || trades.length === 0) {
+      // No trades, reset stats
+      await supabaseClient
+        .from('trading_bots')
+        .update({
+          total_trades: 0,
+          win_rate: 0,
+          pnl: 0,
+          fees: 0,
+          drawdown: 0,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', botId);
+      return;
+    }
+
+    const executedStatuses = new Set(['filled', 'completed', 'closed', 'stopped', 'taken_profit']);
+    const closedStatuses = new Set(['completed', 'closed', 'stopped', 'taken_profit']);
+
+    let totalTrades = 0;
+    let closedTrades = 0;
+    let winTrades = 0;
+    let lossTrades = 0;
+    let totalPnL = 0;
+    let totalFees = 0;
+    let peakEquity = 0;
+    let maxDrawdown = 0;
+    let runningPnL = 0;
+
+    for (const trade of trades) {
+      const status = (trade.status || '').toString().toLowerCase();
+      const pnlValue = trade.pnl !== null && trade.pnl !== undefined ? parseFloat(trade.pnl) : NaN;
+      // Handle both 'fee' and 'fees' columns
+      const feeValue = (trade.fees !== null && trade.fees !== undefined ? parseFloat(trade.fees) : 0) ||
+                       (trade.fee !== null && trade.fee !== undefined ? parseFloat(trade.fee) : 0);
+
+      if (executedStatuses.has(status)) {
+        totalTrades += 1;
+        totalFees += feeValue;
+      }
+
+      if (closedStatuses.has(status) && !Number.isNaN(pnlValue)) {
+        closedTrades += 1;
+        runningPnL += pnlValue;
+        totalPnL += pnlValue;
+        
+        if (pnlValue > 0) {
+          winTrades += 1;
+        } else if (pnlValue < 0) {
+          lossTrades += 1;
+        }
+
+        // Calculate drawdown
+        peakEquity = Math.max(peakEquity, runningPnL);
+        const currentDrawdown = peakEquity - runningPnL;
+        maxDrawdown = Math.max(maxDrawdown, currentDrawdown);
+      }
+    }
+
+    const winRate = closedTrades > 0 ? (winTrades / closedTrades) * 100 : 0;
+    const drawdownPercent = peakEquity > 0 ? (maxDrawdown / peakEquity) * 100 : 0;
+
+    // Update bot stats
+    await supabaseClient
+      .from('trading_bots')
+      .update({
+        total_trades: totalTrades,
+        win_rate: Math.round(winRate * 100) / 100,
+        pnl: Math.round(totalPnL * 100) / 100,
+        fees: Math.round(totalFees * 100) / 100,
+        drawdown: Math.round(drawdownPercent * 100) / 100,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', botId);
+
+    console.log(`   ✅ Stats recalculated for bot ${botId}: ${totalTrades} trades, ${winRate.toFixed(2)}% win rate, $${totalPnL.toFixed(2)} PnL`);
+  } catch (error: any) {
+    console.error(`   ❌ Error recalculating stats for bot ${botId}:`, error);
+  }
+}
+
 async function syncPositionsForBot(
   supabaseClient: any,
   bot: any,
@@ -62,6 +162,8 @@ async function syncPositionsForBot(
     const tradingType = bot.tradingType || bot.trading_type || 'futures';
     const symbol = bot.symbol;
     const exchange = bot.exchange || 'bybit';
+
+    console.log(`   🔍 Fetching positions for ${symbol} (${tradingType}) from ${exchange}`);
 
     // Fetch positions from exchange
     const baseUrl = 'https://api.bybit.com';
@@ -84,13 +186,25 @@ async function syncPositionsForBot(
     });
 
     if (!response.ok) {
-      errors.push(`Failed to fetch positions: HTTP ${response.status}`);
+      const errorText = await response.text();
+      const errorMsg = `Failed to fetch positions: HTTP ${response.status} - ${errorText}`;
+      console.error(`   ❌ ${errorMsg}`);
+      errors.push(errorMsg);
       return { success: false, synced: 0, closed: 0, errors };
     }
 
     const data = await response.json();
-    if (data.retCode !== 0 || !data.result?.list) {
-      errors.push(`Exchange error: ${data.retMsg || 'Unknown error'}`);
+    if (data.retCode !== 0) {
+      const errorMsg = `Exchange error (retCode: ${data.retCode}): ${data.retMsg || 'Unknown error'}`;
+      console.error(`   ❌ ${errorMsg}`);
+      errors.push(errorMsg);
+      return { success: false, synced: 0, closed: 0, errors };
+    }
+
+    if (!data.result?.list) {
+      const errorMsg = `Exchange returned no result list for ${symbol}`;
+      console.error(`   ❌ ${errorMsg}`);
+      errors.push(errorMsg);
       return { success: false, synced: 0, closed: 0, errors };
     }
 
@@ -113,6 +227,18 @@ async function syncPositionsForBot(
     }
 
     console.log(`   💾 Database positions found: ${dbPositions?.length || 0} for ${symbol}`);
+
+    // If no database positions but exchange has positions, log it (positions should be created by bot-executor)
+    if ((!dbPositions || dbPositions.length === 0) && exchangePositions.length > 0) {
+      console.warn(`   ⚠️ Exchange has ${exchangePositions.length} position(s) but database has none for ${symbol}`);
+      console.warn(`   ℹ️ This might indicate positions weren't tracked when opened. Consider checking bot-executor logs.`);
+    }
+
+    // If no exchange positions and no database positions, that's normal
+    if ((!dbPositions || dbPositions.length === 0) && exchangePositions.length === 0) {
+      console.log(`   ℹ️ No positions found on exchange or in database for ${symbol} - bot may not have opened any positions yet`);
+      return { success: true, synced: 0, closed: 0, errors };
+    }
 
     // Update or close positions based on exchange data
     for (const dbPos of dbPositions || []) {
@@ -173,17 +299,31 @@ async function syncPositionsForBot(
             
             // Update trade if trade_id exists
             if (dbPos.trade_id) {
-              await supabaseClient
+              // Update both 'fee' and 'fees' columns to handle schema variations
+              const tradeUpdate: any = {
+                pnl: realizedPnL,
+                fee: totalFees,
+                fees: totalFees,
+                exit_price: currentPrice,
+                status: 'closed',
+                updated_at: new Date().toISOString()
+              };
+              
+              const { error: tradeUpdateError } = await supabaseClient
                 .from('trades')
-                .update({
-                  pnl: realizedPnL,
-                  fees: totalFees,
-                  exit_price: currentPrice,
-                  status: 'closed',
-                  updated_at: new Date().toISOString()
-                })
+                .update(tradeUpdate)
                 .eq('id', dbPos.trade_id);
+
+              if (tradeUpdateError) {
+                console.error(`   ⚠️ Failed to update trade ${dbPos.trade_id}:`, tradeUpdateError);
+                errors.push(`Failed to update trade ${dbPos.trade_id}: ${tradeUpdateError.message}`);
+              } else {
+                console.log(`   ✅ Updated trade ${dbPos.trade_id} with PnL: $${realizedPnL.toFixed(2)}`);
+              }
             }
+
+            // Recalculate bot stats after closing position
+            await recalculateBotStats(supabaseClient, bot.id, bot.user_id);
           }
         } else {
           // Close without price update if we can't get current price
@@ -223,9 +363,18 @@ async function syncPositionsForBot(
       }
     }
 
+    // If we closed any positions, recalculate stats once at the end
+    if (closed > 0) {
+      console.log(`   🔄 Recalculating bot stats after closing ${closed} position(s)`);
+      await recalculateBotStats(supabaseClient, bot.id, bot.user_id);
+    }
+
     return { success: true, synced, closed, errors };
   } catch (error: any) {
-    errors.push(`Sync error: ${error.message || String(error)}`);
+    const errorMsg = `Sync error for ${bot.name} (${bot.symbol}): ${error.message || String(error)}`;
+    console.error(`   ❌ ${errorMsg}`);
+    console.error(`   Stack: ${error.stack || 'No stack trace'}`);
+    errors.push(errorMsg);
     return { success: false, synced, closed, errors };
   }
 }
@@ -516,9 +665,17 @@ serve(async (req) => {
         
         const syncResult = await syncPositionsForBot(supabaseClient, bot, apiKey);
         
+        // Log detailed results for this bot
+        if (syncResult.synced > 0 || syncResult.closed > 0) {
+          console.log(`   ✅ ${bot.name}: ${syncResult.synced} synced, ${syncResult.closed} closed`);
+        }
+        
         // Log errors for this bot
         if (syncResult.errors.length > 0) {
-          console.warn(`⚠️ [${requestId}] Errors syncing ${bot.name}:`, syncResult.errors);
+          console.error(`   ❌ [${requestId}] Errors syncing ${bot.name} (${bot.symbol}):`);
+          syncResult.errors.forEach((err, idx) => {
+            console.error(`      ${idx + 1}. ${err}`);
+          });
         }
         
         results.synced += syncResult.synced;
