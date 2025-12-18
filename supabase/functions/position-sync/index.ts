@@ -85,14 +85,13 @@ async function recalculateBotStats(
 
     if (!trades || trades.length === 0) {
       // No trades, reset stats
+      // Note: Only update columns that exist in the schema (drawdown and fees don't exist)
       const { error: resetError } = await supabaseClient
         .from('trading_bots')
         .update({
           total_trades: 0,
           win_rate: 0,
           pnl: 0,
-          fees: 0,
-          drawdown: 0,
           updated_at: new Date().toISOString()
         })
         .eq('id', botId);
@@ -106,7 +105,7 @@ async function recalculateBotStats(
     }
 
     const executedStatuses = new Set(['filled', 'completed', 'closed', 'stopped', 'taken_profit']);
-    const closedStatuses = new Set(['completed', 'closed', 'stopped', 'taken_profit']);
+    const closedStatuses = new Set(['completed', 'closed', 'stopped', 'taken_profit', 'filled']); // Include 'filled' as it's commonly used for closed trades
 
     let totalTrades = 0;
     let closedTrades = 0;
@@ -129,7 +128,12 @@ async function recalculateBotStats(
         totalFees += feeValue;
       }
 
-      if (closedStatuses.has(status) && !Number.isNaN(pnlValue)) {
+      // Consider a trade closed if:
+      // 1. Status is in closedStatuses, OR
+      // 2. Trade has a PnL value set (not null/undefined/NaN) - indicates it was closed even if status wasn't updated properly
+      const isClosed = closedStatuses.has(status) || (!Number.isNaN(pnlValue) && trade.pnl !== null && trade.pnl !== undefined);
+      
+      if (isClosed && !Number.isNaN(pnlValue)) {
         closedTrades += 1;
         runningPnL += pnlValue;
         totalPnL += pnlValue;
@@ -151,14 +155,13 @@ async function recalculateBotStats(
     const drawdownPercent = peakEquity > 0 ? (maxDrawdown / peakEquity) * 100 : 0;
 
     // Update bot stats
+    // Note: Only update columns that exist in the schema (drawdown and fees don't exist in trading_bots)
     const { error: statsUpdateError } = await supabaseClient
       .from('trading_bots')
       .update({
         total_trades: totalTrades,
         win_rate: Math.round(winRate * 100) / 100,
         pnl: Math.round(totalPnL * 100) / 100,
-        fees: Math.round(totalFees * 100) / 100,
-        drawdown: Math.round(drawdownPercent * 100) / 100,
         updated_at: new Date().toISOString()
       })
       .eq('id', botId);
@@ -168,7 +171,7 @@ async function recalculateBotStats(
       throw statsUpdateError;
     }
 
-    console.log(`   ✅ Stats recalculated for bot ${botId}: ${totalTrades} trades, ${winRate.toFixed(2)}% win rate, $${totalPnL.toFixed(2)} PnL, $${totalFees.toFixed(2)} fees, ${drawdownPercent.toFixed(2)}% drawdown`);
+    console.log(`   ✅ Stats recalculated for bot ${botId}: ${totalTrades} trades, ${winRate.toFixed(2)}% win rate, $${totalPnL.toFixed(2)} PnL, $${totalFees.toFixed(2)} fees, ${drawdownPercent.toFixed(2)}% drawdown (drawdown/fees not stored in trading_bots)`);
   } catch (error: any) {
     console.error(`   ❌ Error recalculating stats for bot ${botId}:`, error);
   }
@@ -508,27 +511,78 @@ async function syncPositionsForBot(
               // Still try to update trade record (it may not have the same trigger issue)
               let tradeUpdated = false;
               if (dbPos.trade_id) {
-                // Only update columns that exist: pnl, fee, status (not fees or exit_price)
-                const tradeUpdate: any = {
+                // First, try updating just pnl and fee (most important data) without status
+                // This avoids constraint issues that might be caused by status updates
+                const tradeUpdatePnL: any = {
                   pnl: realizedPnL,
-                  fee: totalFees,
-                  status: 'closed',
-                  updated_at: new Date().toISOString()
+                  fee: totalFees
                 };
                 
-                const { error: tradeUpdateError } = await supabaseClient
+                let updateResult = await supabaseClient
                   .from('trades')
-                  .update(tradeUpdate)
+                  .update(tradeUpdatePnL)
                   .eq('id', dbPos.trade_id);
 
-                if (tradeUpdateError) {
-                  console.error(`   ⚠️ Failed to update trade ${dbPos.trade_id}:`, tradeUpdateError);
-                  console.error(`   ⚠️ Trade update error details:`, JSON.stringify(tradeUpdateError, null, 2));
-                } else {
-                  console.log(`   ✅ Updated trade ${dbPos.trade_id} with PnL: $${realizedPnL.toFixed(2)} (position update blocked by trigger)`);
+                let tradeUpdateError = updateResult.error;
+
+                // If pnl/fee update succeeds, try to update status separately
+                if (!tradeUpdateError) {
+                  // Fetch current trade to check its status
+                  const { data: currentTrade } = await supabaseClient
+                    .from('trades')
+                    .select('status')
+                    .eq('id', dbPos.trade_id)
+                    .single();
+
+                  // Only update status if it's not already a closed status
+                  const currentStatus = (currentTrade?.status || '').toLowerCase();
+                  const closedStatuses = ['closed', 'completed', 'filled'];
+                  
+                  if (!closedStatuses.includes(currentStatus)) {
+                    // Try updating status - use 'filled' as it's commonly accepted
+                    const statusUpdate: any = { status: 'filled' };
+                    updateResult = await supabaseClient
+                      .from('trades')
+                      .update(statusUpdate)
+                      .eq('id', dbPos.trade_id);
+                    
+                    tradeUpdateError = updateResult.error;
+                    
+                    // If 'filled' fails, try 'completed'
+                    if (tradeUpdateError && (tradeUpdateError.code === '23514' || (tradeUpdateError.message && tradeUpdateError.message.includes('check constraint')))) {
+                      statusUpdate.status = 'completed';
+                      updateResult = await supabaseClient
+                        .from('trades')
+                        .update(statusUpdate)
+                        .eq('id', dbPos.trade_id);
+                      tradeUpdateError = updateResult.error;
+                    }
+                    
+                    // If 'completed' fails, try 'closed'
+                    if (tradeUpdateError && (tradeUpdateError.code === '23514' || (tradeUpdateError.message && tradeUpdateError.message.includes('check constraint')))) {
+                      statusUpdate.status = 'closed';
+                      updateResult = await supabaseClient
+                        .from('trades')
+                        .update(statusUpdate)
+                        .eq('id', dbPos.trade_id);
+                      tradeUpdateError = updateResult.error;
+                    }
+                    
+                    // If status update fails, log but don't fail the whole operation (pnl/fee were updated)
+                    if (tradeUpdateError) {
+                      console.warn(`   ⚠️ Trade PnL/fee updated successfully, but status update failed:`, tradeUpdateError.message);
+                      console.warn(`   💡 Trade ${dbPos.trade_id} has correct PnL/fee but status may need manual update`);
+                    }
+                  }
+                  
+                  console.log(`   ✅ Updated trade ${dbPos.trade_id} with PnL: $${realizedPnL.toFixed(2)}, fee: $${totalFees.toFixed(2)} (position update blocked by trigger)`);
                   tradeUpdated = true;
                   // Recalculate stats since trade was updated
                   await recalculateBotStats(supabaseClient, bot.id, bot.user_id);
+                } else {
+                  // If pnl/fee update failed, log the error
+                  console.error(`   ⚠️ Failed to update trade ${dbPos.trade_id} (PnL/fee):`, tradeUpdateError);
+                  console.error(`   ⚠️ Trade update error details:`, JSON.stringify(tradeUpdateError, null, 2));
                 }
               }
               
@@ -542,25 +596,79 @@ async function syncPositionsForBot(
             
             // Update trade if trade_id exists
             if (dbPos.trade_id) {
-              // Only update columns that exist: pnl, fee, status (not fees or exit_price)
-              const tradeUpdate: any = {
+              // First, try updating just pnl and fee (most important data) without status
+              // This avoids constraint issues that might be caused by status updates
+              const tradeUpdatePnL: any = {
                 pnl: realizedPnL,
-                fee: totalFees,
-                status: 'closed',
-                updated_at: new Date().toISOString()
+                fee: totalFees
               };
               
-              const { error: tradeUpdateError } = await supabaseClient
+              let updateResult = await supabaseClient
                 .from('trades')
-                .update(tradeUpdate)
+                .update(tradeUpdatePnL)
                 .eq('id', dbPos.trade_id);
 
-              if (tradeUpdateError) {
-                console.error(`   ⚠️ Failed to update trade ${dbPos.trade_id}:`, tradeUpdateError);
+              let tradeUpdateError = updateResult.error;
+
+              // If pnl/fee update succeeds, try to update status separately
+              if (!tradeUpdateError) {
+                // Fetch current trade to check its status
+                const { data: currentTrade } = await supabaseClient
+                  .from('trades')
+                  .select('status')
+                  .eq('id', dbPos.trade_id)
+                  .single();
+
+                // Only update status if it's not already a closed status
+                const currentStatus = (currentTrade?.status || '').toLowerCase();
+                const closedStatuses = ['closed', 'completed', 'filled'];
+                
+                if (!closedStatuses.includes(currentStatus)) {
+                  // Try updating status - use 'filled' as it's commonly accepted
+                  const statusUpdate: any = { status: 'filled' };
+                  updateResult = await supabaseClient
+                    .from('trades')
+                    .update(statusUpdate)
+                    .eq('id', dbPos.trade_id);
+                  
+                  tradeUpdateError = updateResult.error;
+                  
+                  // If 'filled' fails, try 'completed'
+                  if (tradeUpdateError && (tradeUpdateError.code === '23514' || (tradeUpdateError.message && tradeUpdateError.message.includes('check constraint')))) {
+                    statusUpdate.status = 'completed';
+                    updateResult = await supabaseClient
+                      .from('trades')
+                      .update(statusUpdate)
+                      .eq('id', dbPos.trade_id);
+                    tradeUpdateError = updateResult.error;
+                  }
+                  
+                  // If 'completed' fails, try 'closed'
+                  if (tradeUpdateError && (tradeUpdateError.code === '23514' || (tradeUpdateError.message && tradeUpdateError.message.includes('check constraint')))) {
+                    statusUpdate.status = 'closed';
+                    updateResult = await supabaseClient
+                      .from('trades')
+                      .update(statusUpdate)
+                      .eq('id', dbPos.trade_id);
+                    tradeUpdateError = updateResult.error;
+                  }
+                  
+                  // If status update fails, log but don't fail the whole operation (pnl/fee were updated)
+                  if (tradeUpdateError) {
+                    console.warn(`   ⚠️ Trade PnL/fee updated successfully, but status update failed:`, tradeUpdateError.message);
+                    console.warn(`   💡 Trade ${dbPos.trade_id} has correct PnL/fee but status may need manual update`);
+                    // Don't add to errors since pnl/fee were successfully updated
+                  } else {
+                    console.log(`   ✅ Updated trade ${dbPos.trade_id} with PnL: $${realizedPnL.toFixed(2)}, fee: $${totalFees.toFixed(2)}, status: ${statusUpdate.status}`);
+                  }
+                } else {
+                  console.log(`   ✅ Updated trade ${dbPos.trade_id} with PnL: $${realizedPnL.toFixed(2)}, fee: $${totalFees.toFixed(2)} (status already closed: ${currentStatus})`);
+                }
+              } else {
+                // If pnl/fee update failed, log the error
+                console.error(`   ⚠️ Failed to update trade ${dbPos.trade_id} (PnL/fee):`, tradeUpdateError);
                 console.error(`   ⚠️ Trade update error details:`, JSON.stringify(tradeUpdateError, null, 2));
                 errors.push(`Failed to update trade ${dbPos.trade_id}: ${tradeUpdateError.message}`);
-              } else {
-                console.log(`   ✅ Updated trade ${dbPos.trade_id} with PnL: $${realizedPnL.toFixed(2)}, fee: $${totalFees.toFixed(2)}`);
               }
             }
 
