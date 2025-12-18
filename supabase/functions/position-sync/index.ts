@@ -165,7 +165,7 @@ async function syncPositionsForBot(
 
     console.log(`   🔍 Fetching positions for ${symbol} (${tradingType}) from ${exchange}`);
 
-    // Fetch positions from exchange
+    // Fetch positions from exchange (mainnet only - no testnet support)
     const baseUrl = 'https://api.bybit.com';
     const timestamp = Date.now().toString();
     const recvWindow = '5000';
@@ -174,6 +174,12 @@ async function syncPositionsForBot(
     const queryParams = `category=${category}&symbol=${symbol}`;
     const signaturePayload = timestamp + apiKeys.api_key + recvWindow + queryParams;
     const signature = await createBybitSignature(signaturePayload, apiKeys.api_secret);
+
+    // Log API key info (first 8 chars only for security)
+    const apiKeyPreview = apiKeys.api_key ? `${apiKeys.api_key.substring(0, 8)}...` : 'MISSING';
+    console.log(`   🔑 Using API key: ${apiKeyPreview}`);
+    console.log(`   📝 Request details: category=${category}, symbol=${symbol}, timestamp=${timestamp}`);
+    console.log(`   🔐 Signature payload length: ${signaturePayload.length}, signature length: ${signature.length}`);
 
     const response = await fetch(`${baseUrl}/v5/position/list?${queryParams}`, {
       method: 'GET',
@@ -186,17 +192,53 @@ async function syncPositionsForBot(
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      const errorMsg = `Failed to fetch positions: HTTP ${response.status} - ${errorText}`;
+      let errorText = '';
+      let bybitError: any = null;
+      
+      try {
+        errorText = await response.text();
+        // Try to parse as JSON to get Bybit error details
+        try {
+          bybitError = JSON.parse(errorText);
+        } catch {
+          // Not JSON, use text as-is
+        }
+      } catch (e) {
+        errorText = `Failed to read error response: ${e}`;
+      }
+
+      // Build detailed error message
+      let errorMsg = `Failed to fetch positions: HTTP ${response.status}`;
+      if (bybitError && bybitError.retCode) {
+        errorMsg += ` (retCode: ${bybitError.retCode}, retMsg: ${bybitError.retMsg || 'Unknown'})`;
+      } else if (errorText) {
+        errorMsg += ` - ${errorText.substring(0, 200)}`;
+      }
+      
+      // Add API key context
+      errorMsg += ` | API Key: ${apiKeyPreview} | Category: ${category}`;
+      
       console.error(`   ❌ ${errorMsg}`);
+      console.error(`   📋 Full error response:`, bybitError || errorText);
+      
+      // Add helpful hints based on error code
+      if (response.status === 401) {
+        if (bybitError?.retCode === 10003) {
+          errorMsg += ' | Hint: Invalid API key or secret. Please verify your Bybit API credentials.';
+        } else {
+          errorMsg += ' | Hint: Authentication failed. Check API key permissions (needs "Position" read permission).';
+        }
+      }
+      
       errors.push(errorMsg);
       return { success: false, synced: 0, closed: 0, errors };
     }
 
     const data = await response.json();
     if (data.retCode !== 0) {
-      const errorMsg = `Exchange error (retCode: ${data.retCode}): ${data.retMsg || 'Unknown error'}`;
+      const errorMsg = `Exchange error (retCode: ${data.retCode}): ${data.retMsg || 'Unknown error'} | API Key: ${apiKeyPreview}`;
       console.error(`   ❌ ${errorMsg}`);
+      console.error(`   📋 Full error response:`, JSON.stringify(data, null, 2));
       errors.push(errorMsg);
       return { success: false, synced: 0, closed: 0, errors };
     }
@@ -628,7 +670,7 @@ serve(async (req) => {
 
     // Process each user's bots
     for (const [userId, userBots] of botsByUser.entries()) {
-      // Get API keys for this user
+      // Get API keys for this user (mainnet only - no testnet support)
       const { data: apiKeys, error: apiKeysError } = await supabaseClient
         .from('api_keys')
         .select('*')
@@ -636,12 +678,21 @@ serve(async (req) => {
         .eq('is_testnet', false)
         .eq('is_active', true);
 
-      if (apiKeysError || !apiKeys || apiKeys.length === 0) {
-        const errorMsg = `No API keys found for user ${userId}`;
+      if (apiKeysError) {
+        const errorMsg = `Error fetching API keys for user ${userId}: ${apiKeysError.message}`;
+        console.error(`❌ [${requestId}] ${errorMsg}`);
+        results.errors.push(errorMsg);
+        continue;
+      }
+
+      if (!apiKeys || apiKeys.length === 0) {
+        const errorMsg = `No active mainnet API keys found for user ${userId}. Please add Bybit API keys in account settings.`;
         console.warn(`⚠️ [${requestId}] ${errorMsg}`);
         results.errors.push(errorMsg);
         continue;
       }
+
+      console.log(`   🔑 Found ${apiKeys.length} API key(s) for user ${userId}`);
 
       // Create map of exchange -> API keys
       const apiKeysByExchange = new Map<string, any>();
@@ -655,8 +706,17 @@ serve(async (req) => {
         const apiKey = apiKeysByExchange.get(exchange);
 
         if (!apiKey) {
-          const errorMsg = `No API keys for ${exchange} for bot ${bot.name} (${bot.id})`;
+          const errorMsg = `No API keys for ${exchange} for bot ${bot.name} (${bot.id}). Available exchanges: ${Array.from(apiKeysByExchange.keys()).join(', ') || 'none'}`;
           console.warn(`⚠️ [${requestId}] ${errorMsg}`);
+          console.warn(`   💡 Hint: Make sure you have added ${exchange} API keys in account settings`);
+          results.errors.push(errorMsg);
+          continue;
+        }
+
+        // Validate API key has required fields
+        if (!apiKey.api_key || !apiKey.api_secret) {
+          const errorMsg = `Invalid API key configuration for ${exchange} (missing api_key or api_secret) for bot ${bot.name}`;
+          console.error(`❌ [${requestId}] ${errorMsg}`);
           results.errors.push(errorMsg);
           continue;
         }
