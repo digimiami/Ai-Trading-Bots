@@ -190,6 +190,38 @@ async function syncPositionsForBot(
       return { success: false, synced: 0, closed: 0, errors };
     }
     
+    // First, validate API key with a simpler endpoint (wallet balance) to diagnose auth issues
+    const walletQueryParams = `accountType=CONTRACT`;
+    const walletSignaturePayload = timestamp + apiKey + recvWindow + walletQueryParams;
+    const walletSignature = await createBybitSignature(walletSignaturePayload, apiSecret);
+    
+    try {
+      const walletTestResponse = await fetch(`${baseUrl}/v5/account/wallet-balance?${walletQueryParams}`, {
+        method: 'GET',
+        headers: {
+          'X-BAPI-API-KEY': apiKey,
+          'X-BAPI-TIMESTAMP': timestamp,
+          'X-BAPI-RECV-WINDOW': recvWindow,
+          'X-BAPI-SIGN': walletSignature,
+        },
+      });
+      
+      if (!walletTestResponse.ok) {
+        const walletErrorText = await walletTestResponse.text().catch(() => '');
+        console.warn(`   ⚠️ API key validation failed (wallet-balance returned ${walletTestResponse.status}): ${walletErrorText.substring(0, 200)}`);
+        console.warn(`   💡 This suggests the API key is invalid, expired, or doesn't have required permissions.`);
+      } else {
+        const walletData = await walletTestResponse.json().catch(() => null);
+        if (walletData?.retCode === 0) {
+          console.log(`   ✅ API key validation successful (wallet-balance OK)`);
+        } else {
+          console.warn(`   ⚠️ API key validation warning: wallet-balance returned retCode ${walletData?.retCode}: ${walletData?.retMsg || 'Unknown'}`);
+        }
+      }
+    } catch (walletTestError) {
+      console.warn(`   ⚠️ API key validation test failed: ${walletTestError}`);
+    }
+
     const signaturePayload = timestamp + apiKey + recvWindow + queryParams;
     const signature = await createBybitSignature(signaturePayload, apiSecret);
 
@@ -197,8 +229,9 @@ async function syncPositionsForBot(
     const apiKeyPreview = apiKey ? `${apiKey.substring(0, 8)}...` : 'MISSING';
     console.log(`   🔑 Using API key: ${apiKeyPreview}`);
     console.log(`   📝 Request details: category=${category}, symbol=${symbol}, timestamp=${timestamp}`);
-    console.log(`   🔐 Signature payload length: ${signaturePayload.length}, signature length: ${signature.length}`);
-    console.log(`   🔐 Signature (first 16 chars): ${signature.substring(0, 16)}...`);
+    console.log(`   🔐 Signature payload: "${signaturePayload.substring(0, 50)}...${signaturePayload.substring(signaturePayload.length - 20)}" (length: ${signaturePayload.length})`);
+    console.log(`   🔐 Signature: ${signature.substring(0, 16)}...${signature.substring(signature.length - 8)} (length: ${signature.length}, all lowercase: ${signature === signature.toLowerCase()})`);
+    console.log(`   🔐 API secret length: ${apiSecret.length}, starts with: ${apiSecret.substring(0, 4)}...`);
 
     const response = await fetch(`${baseUrl}/v5/position/list?${queryParams}`, {
       method: 'GET',
