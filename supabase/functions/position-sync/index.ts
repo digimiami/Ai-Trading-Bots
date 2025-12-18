@@ -43,7 +43,8 @@ async function createBybitSignature(payload: string, secret: string): Promise<st
   
   const signature = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
   const hashArray = Array.from(new Uint8Array(signature));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  // Bybit expects lowercase hex string
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toLowerCase();
 }
 
 /**
@@ -165,6 +166,12 @@ async function syncPositionsForBot(
 
     console.log(`   🔍 Fetching positions for ${symbol} (${tradingType}) from ${exchange}`);
 
+    // Note: Spot trading doesn't have positions like futures. For spot, we check account balances/orders instead.
+    // However, Bybit's /v5/position/list endpoint may still be called for spot (it will return empty results).
+    if (tradingType === 'spot') {
+      console.log(`   ℹ️ Note: Spot trading doesn't use positions. This sync will check for open positions (usually empty for spot).`);
+    }
+
     // Fetch positions from exchange (mainnet only - no testnet support)
     const baseUrl = 'https://api.bybit.com';
     const timestamp = Date.now().toString();
@@ -172,19 +179,31 @@ async function syncPositionsForBot(
     const category = tradingType === 'futures' ? 'linear' : tradingType === 'spot' ? 'spot' : 'linear';
 
     const queryParams = `category=${category}&symbol=${symbol}`;
-    const signaturePayload = timestamp + apiKeys.api_key + recvWindow + queryParams;
-    const signature = await createBybitSignature(signaturePayload, apiKeys.api_secret);
+    // Trim API key and secret to prevent whitespace issues
+    const apiKey = (apiKeys.api_key || '').trim();
+    const apiSecret = (apiKeys.api_secret || '').trim();
+    
+    if (!apiKey || !apiSecret) {
+      const errorMsg = `Invalid API key configuration: missing api_key or api_secret`;
+      console.error(`   ❌ ${errorMsg}`);
+      errors.push(errorMsg);
+      return { success: false, synced: 0, closed: 0, errors };
+    }
+    
+    const signaturePayload = timestamp + apiKey + recvWindow + queryParams;
+    const signature = await createBybitSignature(signaturePayload, apiSecret);
 
     // Log API key info (first 8 chars only for security)
-    const apiKeyPreview = apiKeys.api_key ? `${apiKeys.api_key.substring(0, 8)}...` : 'MISSING';
+    const apiKeyPreview = apiKey ? `${apiKey.substring(0, 8)}...` : 'MISSING';
     console.log(`   🔑 Using API key: ${apiKeyPreview}`);
     console.log(`   📝 Request details: category=${category}, symbol=${symbol}, timestamp=${timestamp}`);
     console.log(`   🔐 Signature payload length: ${signaturePayload.length}, signature length: ${signature.length}`);
+    console.log(`   🔐 Signature (first 16 chars): ${signature.substring(0, 16)}...`);
 
     const response = await fetch(`${baseUrl}/v5/position/list?${queryParams}`, {
       method: 'GET',
       headers: {
-        'X-BAPI-API-KEY': apiKeys.api_key,
+        'X-BAPI-API-KEY': apiKey,
         'X-BAPI-TIMESTAMP': timestamp,
         'X-BAPI-RECV-WINDOW': recvWindow,
         'X-BAPI-SIGN': signature,
