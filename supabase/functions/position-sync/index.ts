@@ -194,23 +194,43 @@ async function syncPositionsForBot(
     if (!response.ok) {
       let errorText = '';
       let bybitError: any = null;
+      const responseHeaders: Record<string, string> = {};
+      
+      // Capture response headers for debugging
+      response.headers.forEach((value, key) => {
+        responseHeaders[key] = value;
+      });
       
       try {
         errorText = await response.text();
         // Try to parse as JSON to get Bybit error details
-        try {
-          bybitError = JSON.parse(errorText);
-        } catch {
-          // Not JSON, use text as-is
+        if (errorText && errorText.trim()) {
+          try {
+            bybitError = JSON.parse(errorText);
+          } catch {
+            // Not JSON, use text as-is
+            bybitError = { rawResponse: errorText };
+          }
+        } else {
+          // Empty response body - common for 401 errors
+          bybitError = { emptyResponse: true };
         }
       } catch (e) {
         errorText = `Failed to read error response: ${e}`;
+        bybitError = { readError: String(e) };
       }
 
       // Build detailed error message
       let errorMsg = `Failed to fetch positions: HTTP ${response.status}`;
-      if (bybitError && bybitError.retCode) {
-        errorMsg += ` (retCode: ${bybitError.retCode}, retMsg: ${bybitError.retMsg || 'Unknown'})`;
+      
+      if (bybitError) {
+        if (bybitError.retCode) {
+          errorMsg += ` (retCode: ${bybitError.retCode}, retMsg: ${bybitError.retMsg || 'Unknown'})`;
+        } else if (bybitError.emptyResponse) {
+          errorMsg += ` (empty response body)`;
+        } else if (bybitError.rawResponse) {
+          errorMsg += ` - ${bybitError.rawResponse.substring(0, 200)}`;
+        }
       } else if (errorText) {
         errorMsg += ` - ${errorText.substring(0, 200)}`;
       }
@@ -219,14 +239,31 @@ async function syncPositionsForBot(
       errorMsg += ` | API Key: ${apiKeyPreview} | Category: ${category}`;
       
       console.error(`   ❌ ${errorMsg}`);
-      console.error(`   📋 Full error response:`, bybitError || errorText);
+      console.error(`   📋 Response status: ${response.status} ${response.statusText}`);
+      console.error(`   📋 Response headers:`, JSON.stringify(responseHeaders, null, 2));
+      console.error(`   📋 Response body:`, bybitError || errorText || '(empty)');
+      console.error(`   📋 Request URL: ${baseUrl}/v5/position/list?${queryParams}`);
+      console.error(`   📋 Request headers:`, {
+        'X-BAPI-API-KEY': apiKeyPreview,
+        'X-BAPI-TIMESTAMP': timestamp,
+        'X-BAPI-RECV-WINDOW': recvWindow,
+        'X-BAPI-SIGN': `${signature.substring(0, 16)}...`
+      });
       
       // Add helpful hints based on error code
       if (response.status === 401) {
         if (bybitError?.retCode === 10003) {
           errorMsg += ' | Hint: Invalid API key or secret. Please verify your Bybit API credentials.';
+        } else if (bybitError?.retCode === 10004) {
+          errorMsg += ' | Hint: Invalid signature. Check API secret is correct.';
+        } else if (bybitError?.retCode === 10005) {
+          errorMsg += ' | Hint: Request expired. Check system clock synchronization.';
+        } else if (bybitError?.retCode === 10006) {
+          errorMsg += ' | Hint: IP not whitelisted. Add Supabase Edge Function IPs to Bybit API key whitelist.';
+        } else if (bybitError?.retCode === 33004) {
+          errorMsg += ' | Hint: Insufficient permissions. API key needs "Position" read permission.';
         } else {
-          errorMsg += ' | Hint: Authentication failed. Check API key permissions (needs "Position" read permission).';
+          errorMsg += ' | Hint: Authentication failed. Check API key permissions (needs "Position" read permission) and verify API key/secret are correct.';
         }
       }
       
