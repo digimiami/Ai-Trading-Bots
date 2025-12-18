@@ -94,3 +94,4 @@ Based on the persistent 401 errors, the most likely issues are:
 2. **Verify deployment version** is 7 or 8
 3. **Manually redeploy** if still on version 6
 4. **Re-save the secret** and redeploy if secret seems missing
+

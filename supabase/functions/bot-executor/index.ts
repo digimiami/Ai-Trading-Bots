@@ -477,10 +477,11 @@ function getSymbolSteps(symbol: string): SymbolSteps {
     'ASTERUSDT': { stepSize: 0.1, tickSize: 0.0001 },
     'HYPEUSDT': { stepSize: 0.1, tickSize: 0.0001 },
     'VIRTUALUSDT': { stepSize: 0.1, tickSize: 0.0001 },
-    'WIFUSDT': { stepSize: 0.1, tickSize: 0.0001 },
-    'ZENUSDT': { stepSize: 0.1, tickSize: 0.0001 },
-    'LTCUSDT': { stepSize: 0.01, tickSize: 0.01 }
-  };
+      'WIFUSDT': { stepSize: 0.1, tickSize: 0.0001 },
+      'ZENUSDT': { stepSize: 0.1, tickSize: 0.0001 },
+      'LTCUSDT': { stepSize: 0.01, tickSize: 0.01 },
+      'SWARMSUSDT': { stepSize: 1, tickSize: 0.0001 }
+    };
 
   if (isLowLiquiditySymbol(symbol)) {
     return { stepSize: 1000, tickSize: 0.00000001 };
@@ -6218,18 +6219,29 @@ class BotExecutor {
       
       // Use actual Bybit step size if available, otherwise fall back to configured
       const { stepSize: configuredStepSize } = getSymbolSteps(symbol);
-      const stepSize = actualStepSize !== null && actualStepSize > 0 ? actualStepSize : configuredStepSize;
+      
+      // Validate actual step size from Bybit - if it's 0 or invalid, use configured value
+      let stepSize = configuredStepSize;
+      if (actualStepSize !== null && actualStepSize > 0) {
+        stepSize = actualStepSize;
+        // Log if there's a mismatch (only if actual step size is valid)
+        if (Math.abs(actualStepSize - configuredStepSize) > 0.0001) {
+          console.warn(`⚠️ Step size mismatch for ${symbol}: configured=${configuredStepSize}, Bybit=${actualStepSize} - using Bybit value`);
+          console.warn(`🔧 Will re-round quantity ${amount} using actual Bybit step size ${actualStepSize}`);
+        }
+      } else if (actualStepSize === 0) {
+        // Bybit returned 0, which is invalid - use configured value
+        console.warn(`⚠️ Bybit returned invalid step size (0) for ${symbol}, using configured value: ${configuredStepSize}`);
+      } else if (actualStepSize === null) {
+        // Bybit didn't return step size - use configured value (this is normal)
+        console.log(`ℹ️ Using configured step size ${configuredStepSize} for ${symbol} (Bybit didn't provide step size)`);
+      }
+      
       const constraints = getQuantityConstraints(symbol);
       
       // Use actual Bybit min/max if available
       const minQty = actualMin !== null && actualMin > 0 ? actualMin : constraints.min;
       const maxQty = actualMax !== null && actualMax > 0 ? actualMax : constraints.max;
-      
-      // Log if there's a mismatch
-      if (actualStepSize !== null && Math.abs(actualStepSize - configuredStepSize) > 0.0001) {
-        console.warn(`⚠️ Step size mismatch for ${symbol}: configured=${configuredStepSize}, Bybit=${actualStepSize} - using Bybit value`);
-        console.warn(`🔧 Re-rounding quantity ${amount} using actual Bybit step size ${actualStepSize}`);
-      }
       
       // Clamp amount to min/max FIRST, then round
       let qty = Math.max(minQty, Math.min(maxQty, amount));
@@ -6342,6 +6354,19 @@ class BotExecutor {
           formattedQty = correctedQty.toFixed(stepDecimals);
           console.log(`🔧 Corrected quantity from ${parsedFormattedQty} to ${formattedQty} to match step size ${stepSize} exactly`);
         }
+        
+        // Final validation: ensure formatted quantity matches step size exactly
+        // Re-parse and re-format to catch any precision issues
+        const finalParsed = parseFloat(formattedQty);
+        const finalFactor = 1 / stepSize;
+        const finalRounded = Math.round(finalParsed * finalFactor) / finalFactor;
+        const finalFormatted = finalRounded.toFixed(stepDecimals);
+        
+        // Only update if there's a difference (to avoid unnecessary changes)
+        if (Math.abs(parseFloat(finalFormatted) - finalParsed) > epsilon) {
+          console.log(`🔧 Final correction: ${formattedQty} → ${finalFormatted} to ensure exact step size match`);
+          formattedQty = finalFormatted;
+        }
       }
       
       // Log the final quantity for debugging
@@ -6379,14 +6404,26 @@ class BotExecutor {
         // Round up to meet step size and constraints
         let adjustedQty = Math.max(minQuantity, minQty);
         if (stepSize > 0) {
+          // Use Math.ceil to round up, then multiply by stepSize
           adjustedQty = Math.ceil(adjustedQty / stepSize) * stepSize;
+          // Re-round to handle any floating point precision issues
+          const factor = 1 / stepSize;
+          adjustedQty = Math.round(adjustedQty * factor) / factor;
         }
         adjustedQty = Math.min(adjustedQty, maxQty);
+        
+        // Ensure we're still within bounds after rounding
+        if (adjustedQty >= maxQty && stepSize > 0) {
+          const maxSteps = Math.floor(maxQty / stepSize);
+          adjustedQty = (maxSteps - 1) * stepSize;
+        }
+        adjustedQty = Math.max(adjustedQty, minQty);
         
         // Recalculate order value with adjusted quantity
         const adjustedOrderValue = adjustedQty * currentMarketPrice;
         const adjustedStepDecimals = stepSize < 1 ? stepSize.toString().split('.')[1]?.length || 0 : 0;
-        const adjustedFormattedQty = parseFloat(adjustedQty.toFixed(adjustedStepDecimals)).toString();
+        // Format directly without parseFloat to preserve exact precision
+        const adjustedFormattedQty = adjustedQty.toFixed(adjustedStepDecimals);
         
         if (adjustedOrderValue >= minOrderValue && adjustedQty <= maxQty) {
           console.log(`✅ Adjusted quantity from ${formattedQty} to ${adjustedFormattedQty} to meet minimum order value`);
@@ -6407,15 +6444,77 @@ class BotExecutor {
       };
       
       // For spot trading with market orders, use marketUnit to specify quote currency amount
-      // marketUnit: 0 = base currency (use qty in BTC/ETH/etc), 1 = quote currency (use qty in USDT)
+      // For market buy orders, default is quoteCoin (USDT), so marketUnit is optional
+      // marketUnit: numeric 0 = baseCoin, 1 = quoteCoin (or can omit for buy orders)
       // For futures/linear, always use qty in base currency
       if (bybitCategory === 'spot') {
+        // Recalculate order value using potentially adjusted quantity
         const orderValue = parseFloat(formattedQty) * currentMarketPrice;
-        // Use marketUnit: 1 to specify order value in USDT (quote currency)
-        requestBody.marketUnit = 1; // 1 = quote currency (USDT)
-        requestBody.qty = orderValue.toFixed(2); // Order value in USDT
-        console.log(`💰 Spot order using marketUnit=1 (quote currency): $${orderValue.toFixed(2)} USDT`);
+        const minOrderValue = this.getMinimumOrderValue(symbol, bybitCategory);
+        
+        // For buy orders, use quoteCoin (USDT amount) - this is the default
+        // For sell orders, use baseCoin (base currency quantity) - this is the default
+        if (capitalizedSide === 'Buy') {
+          // Buy orders: marketUnit=1 means qty is in USDT (quote currency)
+          // Ensure order value meets minimum requirement (with small buffer for rounding)
+          const finalOrderValue = Math.max(orderValue, minOrderValue * 1.01);
+          requestBody.marketUnit = 1; // 1 = quoteCoin (USDT amount)
+          requestBody.qty = finalOrderValue.toFixed(2); // Order value in USDT with 2 decimal places
+          
+          console.log(`💰 Spot BUY order: marketUnit=1 (quoteCoin/USDT), qty=$${finalOrderValue.toFixed(2)} USDT`);
+          console.log(`   Base qty: ${formattedQty}, Price: $${currentMarketPrice}, Order value: $${orderValue.toFixed(2)}`);
+          if (finalOrderValue > orderValue) {
+            console.log(`   ⚠️ Adjusted order value from $${orderValue.toFixed(2)} to $${finalOrderValue.toFixed(2)} to meet minimum $${minOrderValue}`);
+          }
+        } else {
+          // Sell orders: marketUnit=0 means qty is in base currency
+          // Need to validate base currency quantity against step size
+          const finalQtyValue = parseFloat(formattedQty);
+          if (isNaN(finalQtyValue) || finalQtyValue < minQty || finalQtyValue > maxQty) {
+            throw new Error(`Invalid formatted quantity ${formattedQty} for ${symbol}. Min: ${minQty}, Max: ${maxQty}`);
+          }
+          
+          // Verify step size match
+          if (stepSize > 0) {
+            const finalRemainder = finalQtyValue % stepSize;
+            const epsilon = 0.0000001;
+            if (finalRemainder > epsilon && (stepSize - finalRemainder) > epsilon) {
+              const factor = 1 / stepSize;
+              const corrected = Math.round(finalQtyValue * factor) / factor;
+              formattedQty = corrected.toFixed(stepDecimals);
+              console.log(`🔧 Last correction for sell: ${finalQtyValue} → ${formattedQty} to match step size ${stepSize}`);
+            }
+          }
+          
+          requestBody.marketUnit = 0; // 0 = baseCoin (base currency quantity)
+          requestBody.qty = formattedQty.toString(); // Base currency quantity
+          
+          console.log(`💰 Spot SELL order: marketUnit=0 (baseCoin), qty=${formattedQty} ${symbol.replace('USDT', '')}`);
+        }
+        // For spot orders with marketUnit=1, we don't validate base currency quantity against step size
+        // because qty represents USDT amount, not base currency quantity
       } else {
+        // For linear/futures, validate and format base currency quantity
+        
+        // Final validation: ensure formatted quantity is valid before creating request
+        const finalQtyValue = parseFloat(formattedQty);
+        if (isNaN(finalQtyValue) || finalQtyValue < minQty || finalQtyValue > maxQty) {
+          throw new Error(`Invalid formatted quantity ${formattedQty} for ${symbol}. Min: ${minQty}, Max: ${maxQty}`);
+        }
+        
+        // Verify step size match one more time
+        if (stepSize > 0) {
+          const finalRemainder = finalQtyValue % stepSize;
+          const epsilon = 0.0000001;
+          if (finalRemainder > epsilon && (stepSize - finalRemainder) > epsilon) {
+            // Last chance correction
+            const factor = 1 / stepSize;
+            const corrected = Math.round(finalQtyValue * factor) / factor;
+            formattedQty = corrected.toFixed(stepDecimals);
+            console.log(`🔧 Last correction: ${finalQtyValue} → ${formattedQty} to match step size ${stepSize}`);
+          }
+        }
+        
         // For linear/futures, ensure quantity is properly formatted as string with correct precision
         // Bybit requires qty as string, not number, and must match step size precisely
         requestBody.qty = formattedQty.toString(); // Ensure it's a string
@@ -6440,6 +6539,12 @@ class BotExecutor {
       console.log('Side:', capitalizedSide, '(original:', side + ')');
       console.log('Quantity:', formattedQty);
       console.log('Price:', currentMarketPrice);
+      if (bybitCategory === 'spot') {
+        console.log('MarketUnit:', requestBody.marketUnit);
+        console.log('Qty (USDT):', requestBody.qty);
+        console.log('Order Value:', parseFloat(requestBody.qty));
+      }
+      console.log('Request Body:', JSON.stringify(requestBody, null, 2));
       console.log('=== END DEBUG ===');
       
       // Try each domain until one succeeds
@@ -6656,14 +6761,28 @@ class BotExecutor {
           }
           
           // Provide more helpful error message
-          let errorMsg = `Invalid quantity for ${symbol}: ${formattedQty}. Min: ${minQty}, Max: ${maxQty}, Step: ${stepSize}`;
-          if (actualStepSize !== null && Math.abs(actualStepSize - stepSize) > 0.0001) {
-            errorMsg += ` (Bybit actual step: ${actualStepSize})`;
+          // For spot orders with marketUnit=quoteCoin, show the USDT amount sent, not base currency quantity
+          const qtyDisplay = bybitCategory === 'spot' && (requestBody.marketUnit === 'quoteCoin' || requestBody.marketUnit === 1)
+            ? `${requestBody.qty} USDT (order value)`
+            : formattedQty;
+          
+          let errorMsg = `Invalid quantity for ${symbol}: ${qtyDisplay}`;
+          if (bybitCategory !== 'spot' || (requestBody.marketUnit !== 'quoteCoin' && requestBody.marketUnit !== 1)) {
+            // Only show step size info for base currency quantity (futures or spot with marketUnit=baseCoin)
+            errorMsg += `. Min: ${minQty}, Max: ${maxQty}, Step: ${stepSize}`;
+            if (actualStepSize !== null && Math.abs(actualStepSize - stepSize) > 0.0001) {
+              errorMsg += ` (Bybit actual step: ${actualStepSize})`;
+            }
           }
+          
           if (orderValue > 10000) {
             errorMsg += ` Order value ($${orderValue.toFixed(2)}) may be too high. Please reduce trade amount.`;
           } else if (data.retMsg?.toLowerCase().includes('qty') || data.retMsg?.toLowerCase().includes('quantity')) {
-            errorMsg += ` Bybit rejected quantity. The quantity may not match the required step size (${actualStepSize}). Try reducing trade amount or check if ${symbol} has different limits on Bybit.`;
+            if (bybitCategory === 'spot' && (requestBody.marketUnit === 'quoteCoin' || requestBody.marketUnit === 1)) {
+              errorMsg += ` Bybit rejected order value. Check if ${symbol} has minimum order value requirements (min: $${minOrderValue}) or other limits on Bybit.`;
+            } else {
+              errorMsg += ` Bybit rejected quantity. The quantity may not match the required step size (${actualStepSize || stepSize}). Try reducing trade amount or check if ${symbol} has different limits on Bybit.`;
+            }
           } else {
             errorMsg += ` Bybit API error: ${data.retMsg || 'Unknown error'}.`;
           }
@@ -6678,34 +6797,53 @@ class BotExecutor {
           // Minimum order value error - handle gracefully
           const orderValue = parseFloat(formattedQty) * currentMarketPrice;
           const minOrderValue = this.getMinimumOrderValue(symbol, bybitCategory);
-          const requiredTradeAmount = (minOrderValue / currentMarketPrice) * maxQty;
+          
+          // Calculate required trade amount to meet minimum order value
+          // Order value = trade_amount * leverage * risk_multiplier (approximately)
+          // So: trade_amount = order_value / (leverage * risk_multiplier)
+          // To meet minimum: trade_amount >= minOrderValue / (leverage * risk_multiplier)
+          const leverage = bot?.leverage || 1;
+          const riskMultiplier = getRiskMultiplier(bot); // Use the same function as calculateTradeSizing
+          const multiplier = leverage * riskMultiplier;
+          
+          // Calculate minimum trade amount needed (with 20% buffer for rounding/step size)
+          const requiredTradeAmount = (minOrderValue / multiplier) * 1.2;
+          
+          // Ensure minimum trade amount is reasonable (at least $10 for futures, $5 for spot)
+          const minTradeAmount = bybitCategory === 'linear' ? 10 : 5;
+          const finalRequiredAmount = Math.max(requiredTradeAmount, minTradeAmount);
           
           console.warn(`⚠️ Order value below minimum for ${symbol}`);
           console.warn(`💰 Current order value: $${orderValue.toFixed(2)}`);
           console.warn(`📏 Minimum required: $${minOrderValue.toFixed(2)}`);
-          console.warn(`💡 This trade would fail. Please increase trade amount to at least $${requiredTradeAmount.toFixed(2)}.`);
+          console.warn(`💡 Current trade amount: $${bot?.trade_amount || bot?.tradeAmount || 'N/A'}`);
+          console.warn(`💡 Leverage: ${leverage}x, Risk multiplier: ${riskMultiplier}x`);
+          console.warn(`💡 Increase trade amount to at least $${finalRequiredAmount.toFixed(2)}.`);
           console.warn(`📝 Skipping this trade to avoid error spam.`);
           
           // Log as warning instead of error to reduce error spam
           await this.addBotLog(bot?.id || null, {
             level: 'warning',
             category: 'trade',
-            message: `⚠️ Trade skipped: Order value $${orderValue.toFixed(2)} below minimum $${minOrderValue.toFixed(2)} for ${symbol}. Increase trade amount to at least $${requiredTradeAmount.toFixed(2)}.`,
+            message: `⚠️ Trade skipped: Order value $${orderValue.toFixed(2)} below minimum $${minOrderValue.toFixed(2)} for ${symbol}. Increase trade amount to at least $${finalRequiredAmount.toFixed(2)}.`,
             details: {
               order_value: orderValue,
               min_order_value: minOrderValue,
               symbol: symbol,
               error_code: 110094,
-              required_trade_amount: requiredTradeAmount
+              required_trade_amount: finalRequiredAmount,
+              current_trade_amount: bot?.trade_amount || bot?.tradeAmount,
+              leverage: leverage,
+              risk_multiplier: riskMultiplier
             }
           });
           
           // Throw a specific error that can be caught and handled gracefully
-          throw new Error(`Bybit order error: Order does not meet minimum order value ${minOrderValue}USDT (Code: 110094). Please increase trade amount to at least $${requiredTradeAmount.toFixed(2)} per trade.`);
+          throw new Error(`Bybit order error: Order does not meet minimum order value ${minOrderValue}USDT (Code: 110094). Please increase trade amount to at least $${finalRequiredAmount.toFixed(2)} per trade.`);
         } else if (data.retCode === 170140) {
           // Calculate actual order value that was sent
-          const orderValue = bybitCategory === 'spot' && requestBody.marketUnit === 1
-            ? parseFloat(requestBody.qty) // For spot with marketUnit=1, qty is the USDT amount
+          const orderValue = bybitCategory === 'spot' && (requestBody.marketUnit === 'quoteCoin' || requestBody.marketUnit === 1)
+            ? parseFloat(requestBody.qty) // For spot with marketUnit=quoteCoin, qty is the USDT amount
             : parseFloat(formattedQty) * currentMarketPrice;
           const minOrderValue = this.getMinimumOrderValue(symbol, bybitCategory);
           console.error(`❌ Order value below minimum for ${symbol}`);
@@ -8769,7 +8907,8 @@ class BotExecutor {
       // Meme coins and low-value tokens - typically need larger minimum order values
       'PEPEUSDT': { spot: 5, linear: 5 },
       'DOGEUSDT': { spot: 5, linear: 5 },
-      'SHIBUSDT': { spot: 5, linear: 5 }
+      'SHIBUSDT': { spot: 5, linear: 5 },
+      'SWARMSUSDT': { spot: 5, linear: 5 }
     };
     
     // Determine which minimum to use based on category

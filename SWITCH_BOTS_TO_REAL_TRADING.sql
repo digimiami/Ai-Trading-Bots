@@ -77,3 +77,4 @@ LEFT JOIN api_keys ak ON ak.user_id = b.user_id
 WHERE b.status = 'running'
 GROUP BY b.id, b.name, b.symbol, b.paper_trading, b.user_id
 ORDER BY b.paper_trading DESC, b.name;
+

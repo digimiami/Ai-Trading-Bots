@@ -22,6 +22,15 @@ export interface BotActivity {
   isActive: boolean;
   currentAction?: string;
   waitingFor?: string;
+  waitingDetails?: {
+    reason?: string;
+    currentRSI?: number;
+    currentADX?: number;
+    currentPrice?: number;
+    requiredRSI?: string;
+    requiredADX?: string;
+    confidence?: number;
+  };
   executionState?: 'executing' | 'analyzing' | 'waiting' | 'idle' | 'error';
   errorCount: number;
   successCount: number;
@@ -121,7 +130,20 @@ export function useBotActivity(bots?: any[]) {
   };
 
   // Analyze logs to determine current activity state
-  const analyzeActivityState = (logs: BotActivityLog[], botStatus: string): { currentAction: string; waitingFor?: string; executionState: 'executing' | 'analyzing' | 'waiting' | 'idle' | 'error' } => {
+  const analyzeActivityState = (logs: BotActivityLog[], botStatus: string, bot?: any): { 
+    currentAction: string; 
+    waitingFor?: string; 
+    waitingDetails?: {
+      reason?: string;
+      currentRSI?: number;
+      currentADX?: number;
+      currentPrice?: number;
+      requiredRSI?: string;
+      requiredADX?: string;
+      confidence?: number;
+    };
+    executionState: 'executing' | 'analyzing' | 'waiting' | 'idle' | 'error' 
+  } => {
     if (botStatus !== 'running') {
       return {
         currentAction: `Bot is ${botStatus}`,
@@ -160,15 +182,84 @@ export function useBotActivity(bots?: any[]) {
     const message = latestLog.message.toLowerCase();
     
     // Check for "no signal" messages - bot is waiting for signals
+    // Extract detailed information from strategy logs
+    const strategyLog = logs.find(log => 
+      log.category === 'strategy' && 
+      log.details?.shouldTrade === false &&
+      (now - new Date(log.timestamp).getTime()) < fiveMinutesAgo
+    );
+    
+    const marketLog = logs.find(log => 
+      (log.category === 'market' || log.category === 'strategy') &&
+      log.details?.marketData &&
+      (now - new Date(log.timestamp).getTime()) < fiveMinutesAgo
+    );
+    
     if (message.includes('no trading signals detected') || 
         message.includes('no manual trade signals found') ||
         message.includes('no signal') ||
         message.includes('no trading signals') ||
         message.includes('all strategy parameters checked') ||
-        message.includes('returned no signal')) {
+        message.includes('returned no signal') ||
+        (strategyLog && strategyLog.details?.shouldTrade === false)) {
+      
+      // Extract waiting details from logs
+      const waitingDetails: any = {};
+      
+      if (strategyLog?.details) {
+        waitingDetails.reason = strategyLog.details.reason || 'Trading conditions not met';
+        waitingDetails.confidence = strategyLog.details.confidence;
+        
+        if (strategyLog.details.marketData) {
+          waitingDetails.currentRSI = strategyLog.details.marketData.rsi;
+          waitingDetails.currentADX = strategyLog.details.marketData.adx;
+          waitingDetails.currentPrice = strategyLog.details.marketData.price;
+        }
+      } else if (marketLog?.details) {
+        // Try different formats for market data
+        const marketData = marketLog.details.marketData || marketLog.details;
+        if (marketData) {
+          waitingDetails.currentRSI = marketData.rsi;
+          waitingDetails.currentADX = marketData.adx;
+          waitingDetails.currentPrice = marketData.price;
+        }
+        // Also check if RSI/ADX are directly in details
+        if (marketLog.details.rsi !== undefined) waitingDetails.currentRSI = marketLog.details.rsi;
+        if (marketLog.details.adx !== undefined) waitingDetails.currentADX = marketLog.details.adx;
+        if (marketLog.details.price !== undefined) waitingDetails.currentPrice = marketLog.details.price;
+      }
+      
+      // Also check latest log for market data if not found yet
+      if (!waitingDetails.currentRSI && latestLog.details) {
+        const details = latestLog.details;
+        if (details.rsi !== undefined) waitingDetails.currentRSI = details.rsi;
+        if (details.adx !== undefined) waitingDetails.currentADX = details.adx;
+        if (details.price !== undefined) waitingDetails.currentPrice = details.price;
+        if (details.marketData) {
+          if (details.marketData.rsi !== undefined) waitingDetails.currentRSI = details.marketData.rsi;
+          if (details.marketData.adx !== undefined) waitingDetails.currentADX = details.marketData.adx;
+          if (details.marketData.price !== undefined) waitingDetails.currentPrice = details.marketData.price;
+        }
+      }
+      
+      // Extract strategy thresholds from bot config if available
+      if (bot?.strategy_config) {
+        const config = bot.strategy_config;
+        if (config.rsiThreshold || config.rsi_oversold || config.rsi_overbought) {
+          const buyThreshold = config.rsi_oversold || config.rsiThreshold || 30;
+          const sellThreshold = config.rsi_overbought || 70;
+          waitingDetails.requiredRSI = `RSI < ${buyThreshold} (buy) or RSI > ${sellThreshold} (sell)`;
+        }
+        if (config.adxThreshold || config.adx_threshold) {
+          const adxThreshold = config.adxThreshold || config.adx_threshold || 25;
+          waitingDetails.requiredADX = `ADX > ${adxThreshold}`;
+        }
+      }
+      
       return {
-        currentAction: 'Waiting for trading signal',
+        currentAction: waitingDetails.reason || 'Waiting for trading signal',
         waitingFor: 'Market signal or strategy condition',
+        waitingDetails: Object.keys(waitingDetails).length > 0 ? waitingDetails : undefined,
         executionState: 'waiting'
       };
     }
@@ -315,6 +406,7 @@ export function useBotActivity(bots?: any[]) {
               isActive: bot.status === 'running',
               currentAction: activityState.currentAction,
               waitingFor: activityState.waitingFor,
+              waitingDetails: activityState.waitingDetails,
               executionState: activityState.executionState,
               errorCount,
               successCount,

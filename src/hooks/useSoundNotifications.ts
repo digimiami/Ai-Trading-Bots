@@ -268,7 +268,19 @@ export function useSoundNotifications() {
         if (error) {
           // Don't log AbortError - it's just a cancelled request
           if (error.name !== 'AbortError' && error.message !== 'The user aborted a request.') {
-            console.warn('Error fetching recent trades for sound notifications:', error);
+            // Suppress network connectivity errors (they're too noisy)
+            const errorMessage = error.message || String(error);
+            const isNetworkError = 
+              errorMessage.includes('Failed to fetch') ||
+              errorMessage.includes('ERR_NAME_NOT_RESOLVED') ||
+              errorMessage.includes('ERR_NETWORK_CHANGED') ||
+              errorMessage.includes('ERR_CONNECTION_RESET') ||
+              errorMessage.includes('network');
+            
+            if (!isNetworkError) {
+              console.warn('Error fetching recent trades for sound notifications:', error);
+            }
+            // Silently return for network errors - they'll retry on next poll
           }
           return;
         }
@@ -295,7 +307,18 @@ export function useSoundNotifications() {
           });
         }
       } catch (error) {
-        console.warn('Error in sound notification polling:', error);
+        // Suppress network connectivity errors
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const isNetworkError = 
+          errorMessage.includes('Failed to fetch') ||
+          errorMessage.includes('ERR_NAME_NOT_RESOLVED') ||
+          errorMessage.includes('ERR_NETWORK_CHANGED') ||
+          errorMessage.includes('ERR_CONNECTION_RESET');
+        
+        if (!isNetworkError) {
+          console.warn('Error in sound notification polling:', error);
+        }
+        // Silently continue - will retry on next interval
       }
     }, 5000); // Poll every 5 seconds
 

@@ -1622,6 +1622,7 @@ export default function BotsPage() {
                   const activityState = activity ? {
                     currentAction: activity.currentAction || 'No recent activity',
                     waitingFor: activity.waitingFor,
+                    waitingDetails: activity.waitingDetails,
                     executionState: activity.executionState || 'idle',
                     hasError: activity.errorCount > 0
                   } : null;
@@ -1660,9 +1661,57 @@ export default function BotsPage() {
                               {activityState.currentAction}
                             </p>
                             {activityState.waitingFor && activityState.executionState === 'waiting' && (
-                              <p className="text-xs text-gray-600 italic mt-1">
-                                💡 {activityState.waitingFor}
-                              </p>
+                              <div className="mt-2 space-y-1">
+                                <p className="text-xs text-gray-600 italic">
+                                  💡 {activityState.waitingFor}
+                                </p>
+                                {activityState.waitingDetails && (
+                                  <div className="mt-2 pt-2 border-t border-gray-200 space-y-1">
+                                    {activityState.waitingDetails.reason && (
+                                      <p className="text-xs font-medium text-gray-700">
+                                        <i className="ri-information-line mr-1"></i>
+                                        {activityState.waitingDetails.reason}
+                                      </p>
+                                    )}
+                                    {(activityState.waitingDetails.currentRSI !== undefined || 
+                                      activityState.waitingDetails.currentADX !== undefined || 
+                                      activityState.waitingDetails.currentPrice !== undefined) && (
+                                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                                        {activityState.waitingDetails.currentRSI !== undefined && (
+                                          <div>
+                                            <span className="text-gray-600">RSI:</span>
+                                            <span className="ml-1 font-medium">{activityState.waitingDetails.currentRSI.toFixed(2)}</span>
+                                            {activityState.waitingDetails.requiredRSI && (
+                                              <span className="text-gray-500 text-[10px] block mt-0.5">({activityState.waitingDetails.requiredRSI})</span>
+                                            )}
+                                          </div>
+                                        )}
+                                        {activityState.waitingDetails.currentADX !== undefined && (
+                                          <div>
+                                            <span className="text-gray-600">ADX:</span>
+                                            <span className="ml-1 font-medium">{activityState.waitingDetails.currentADX.toFixed(2)}</span>
+                                            {activityState.waitingDetails.requiredADX && (
+                                              <span className="text-gray-500 text-[10px] block mt-0.5">(need {activityState.waitingDetails.requiredADX})</span>
+                                            )}
+                                          </div>
+                                        )}
+                                        {activityState.waitingDetails.currentPrice !== undefined && (
+                                          <div>
+                                            <span className="text-gray-600">Price:</span>
+                                            <span className="ml-1 font-medium">${activityState.waitingDetails.currentPrice.toFixed(4)}</span>
+                                          </div>
+                                        )}
+                                        {activityState.waitingDetails.confidence !== undefined && (
+                                          <div>
+                                            <span className="text-gray-600">Confidence:</span>
+                                            <span className="ml-1 font-medium">{(activityState.waitingDetails.confidence * 100).toFixed(1)}%</span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                             )}
                             {activityState.hasError && activity.errorCount > 0 && (
                               <div className="mt-2">

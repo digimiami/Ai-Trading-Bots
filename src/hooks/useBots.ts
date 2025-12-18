@@ -121,6 +121,13 @@ export const useBots = () => {
       }
       throw new Error('No bot data returned');
     } catch (err) {
+      // Provide more helpful error messages for network issues
+      if (err instanceof TypeError && err.message.includes('Failed to fetch')) {
+        const networkError = new Error('Network connection failed. Please check your internet connection and try again.');
+        networkError.name = 'NetworkError';
+        console.error('Network error creating bot:', err);
+        throw networkError;
+      }
       console.error('Error creating bot:', err);
       throw err;
     }

@@ -6,3 +6,4 @@ ADD COLUMN IF NOT EXISTS forward_to TEXT;
 COMMENT ON COLUMN public.mailboxes.forward_to IS 'Email address to forward all inbound emails to (optional)';
 
 
+

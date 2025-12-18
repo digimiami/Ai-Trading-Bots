@@ -351,6 +351,54 @@ export default function BotActivityLogs({ activity, onClearLogs, onSimulateActiv
               {activity.waitingFor}
             </div>
           )}
+          {activity.waitingDetails && activity.executionState === 'waiting' && (
+            <div className="mt-2 pt-2 border-t border-gray-200">
+              <div className="text-xs text-gray-600 space-y-1">
+                {activity.waitingDetails.reason && (
+                  <div className="font-medium text-gray-700">
+                    <i className="ri-information-line mr-1"></i>
+                    {activity.waitingDetails.reason}
+                  </div>
+                )}
+                {(activity.waitingDetails.currentRSI !== undefined || 
+                  activity.waitingDetails.currentADX !== undefined || 
+                  activity.waitingDetails.currentPrice !== undefined) && (
+                  <div className="mt-1 space-y-0.5">
+                    {activity.waitingDetails.currentRSI !== undefined && (
+                      <div className="flex items-center justify-between">
+                        <span>RSI:</span>
+                        <span className="font-medium">{activity.waitingDetails.currentRSI.toFixed(2)}</span>
+                        {activity.waitingDetails.requiredRSI && (
+                          <span className="text-gray-500 ml-2">({activity.waitingDetails.requiredRSI})</span>
+                        )}
+                      </div>
+                    )}
+                    {activity.waitingDetails.currentADX !== undefined && (
+                      <div className="flex items-center justify-between">
+                        <span>ADX:</span>
+                        <span className="font-medium">{activity.waitingDetails.currentADX.toFixed(2)}</span>
+                        {activity.waitingDetails.requiredADX && (
+                          <span className="text-gray-500 ml-2">(need {activity.waitingDetails.requiredADX})</span>
+                        )}
+                      </div>
+                    )}
+                    {activity.waitingDetails.currentPrice !== undefined && (
+                      <div className="flex items-center justify-between">
+                        <span>Price:</span>
+                        <span className="font-medium">${activity.waitingDetails.currentPrice.toFixed(4)}</span>
+                      </div>
+                    )}
+                    {activity.waitingDetails.confidence !== undefined && (
+                      <div className="flex items-center justify-between">
+                        <span>Confidence:</span>
+                        <span className="font-medium">{(activity.waitingDetails.confidence * 100).toFixed(1)}%</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

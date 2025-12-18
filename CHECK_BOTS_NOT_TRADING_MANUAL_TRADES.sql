@@ -148,3 +148,4 @@ GROUP BY tb.id, tb.name, tb.status
 ORDER BY latest_signal DESC NULLS LAST, tb.name;
 
 
+
