@@ -151,22 +151,77 @@ async function recalculateBotStats(
       }
     }
 
-    const winRate = closedTrades > 0 ? (winTrades / closedTrades) * 100 : 0;
+    // Calculate win rate safely, ensuring no division by zero or invalid values
+    let winRate = 0;
+    if (closedTrades > 0 && winTrades >= 0 && winTrades <= closedTrades) {
+      winRate = (winTrades / closedTrades) * 100;
+    } else if (closedTrades === 0) {
+      winRate = 0;
+    } else {
+      // Invalid state - log warning and use 0
+      console.warn(`   ⚠️ Invalid win rate calculation: winTrades=${winTrades}, closedTrades=${closedTrades}, using 0`);
+      winRate = 0;
+    }
+    
+    // Ensure winRate is a valid number
+    if (isNaN(winRate) || !isFinite(winRate)) {
+      console.warn(`   ⚠️ Win rate is NaN or Infinity: ${winRate}, using 0`);
+      winRate = 0;
+    }
+    
     const drawdownPercent = peakEquity > 0 ? (maxDrawdown / peakEquity) * 100 : 0;
+
+    // Clamp win_rate to valid range (0-100) to prevent DECIMAL(5,2) overflow
+    // DECIMAL(5,2) can store -999.99 to 999.99, but win_rate should be 0-100
+    let clampedWinRate = Math.max(0, Math.min(100, Math.round(winRate * 100) / 100));
+    
+    // Ensure win_rate is a valid number (not NaN or Infinity)
+    if (isNaN(clampedWinRate) || !isFinite(clampedWinRate)) {
+      console.warn(`   ⚠️ Invalid win_rate calculated: ${winRate}, using 0 instead`);
+      clampedWinRate = 0;
+    }
+    
+    // Additional safety check: ensure value doesn't exceed DECIMAL(5,2) max (999.99)
+    // This should never happen for win_rate (0-100), but adding as safety measure
+    if (Math.abs(clampedWinRate) > 999.99) {
+      console.error(`   ❌ Win rate overflow detected: ${clampedWinRate}, clamping to 100`);
+      clampedWinRate = clampedWinRate > 0 ? 100 : 0;
+    }
+
+    // Validate and clamp PnL to prevent overflow (DECIMAL(15,2) can store up to 999,999,999,999,999.99)
+    const safePnL = isNaN(totalPnL) || !isFinite(totalPnL) ? 0 : Math.round(totalPnL * 100) / 100;
+    const maxPnL = 999999999999999.99;
+    const clampedPnL = Math.max(-maxPnL, Math.min(maxPnL, safePnL));
 
     // Update bot stats
     // Note: Only update columns that exist in the schema (drawdown and fees don't exist in trading_bots)
+    const statsUpdate = {
+      total_trades: totalTrades,
+      win_rate: clampedWinRate,
+      pnl: clampedPnL,
+      updated_at: new Date().toISOString()
+    };
+
+    // Log values before update for debugging
+    if (Math.abs(clampedWinRate) > 100 || isNaN(clampedWinRate)) {
+      console.error(`   ⚠️ Suspicious win_rate value: ${clampedWinRate} (calculated from ${winTrades}/${closedTrades} = ${winRate}%)`);
+    }
+
     const { error: statsUpdateError } = await supabaseClient
       .from('trading_bots')
-      .update({
-        total_trades: totalTrades,
-        win_rate: Math.round(winRate * 100) / 100,
-        pnl: Math.round(totalPnL * 100) / 100,
-        updated_at: new Date().toISOString()
-      })
+      .update(statsUpdate)
       .eq('id', botId);
 
     if (statsUpdateError) {
+      // Check if it's a numeric overflow error
+      if (statsUpdateError.message && statsUpdateError.message.includes('numeric field overflow')) {
+        console.error(`   ❌ Numeric overflow error updating bot stats:`);
+        console.error(`      win_rate: ${clampedWinRate} (calculated: ${winRate}%)`);
+        console.error(`      pnl: ${clampedPnL} (calculated: ${totalPnL})`);
+        console.error(`      total_trades: ${totalTrades}`);
+        console.error(`      win_trades: ${winTrades}, closed_trades: ${closedTrades}`);
+        console.error(`   💡 This suggests a DECIMAL(5,2) field received a value >= 1000 or <= -1000`);
+      }
       console.error(`   ❌ Failed to update bot stats: ${statsUpdateError.message}`);
       throw statsUpdateError;
     }
