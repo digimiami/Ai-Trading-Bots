@@ -760,12 +760,14 @@ serve(async (req) => {
     // Process each user's bots
     for (const [userId, userBots] of botsByUser.entries()) {
       // Get API keys for this user (mainnet only - no testnet support)
+      // Order by created_at DESC to prioritize most recently added API keys
       const { data: apiKeys, error: apiKeysError } = await supabaseClient
         .from('api_keys')
         .select('*')
         .eq('user_id', userId)
         .eq('is_testnet', false)
-        .eq('is_active', true);
+        .eq('is_active', true)
+        .order('created_at', { ascending: false });
 
       if (apiKeysError) {
         const errorMsg = `Error fetching API keys for user ${userId}: ${apiKeysError.message}`;
@@ -783,10 +785,17 @@ serve(async (req) => {
 
       console.log(`   🔑 Found ${apiKeys.length} API key(s) for user ${userId}`);
 
-      // Create map of exchange -> API keys
+      // Create map of exchange -> API keys (most recent first due to ordering)
       const apiKeysByExchange = new Map<string, any>();
       for (const key of apiKeys) {
-        apiKeysByExchange.set(key.exchange.toLowerCase(), key);
+        const exchangeLower = key.exchange.toLowerCase();
+        // Only set if not already present (first = most recent due to DESC ordering)
+        if (!apiKeysByExchange.has(exchangeLower)) {
+          apiKeysByExchange.set(exchangeLower, key);
+          console.log(`   🔑 Using API key for ${exchangeLower}: ${key.api_key?.substring(0, 8)}... (created: ${key.created_at || 'unknown'})`);
+        } else {
+          console.log(`   ⚠️ Skipping older API key for ${exchangeLower}: ${key.api_key?.substring(0, 8)}... (created: ${key.created_at || 'unknown'})`);
+        }
       }
 
       // Sync positions for each bot
