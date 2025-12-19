@@ -1942,6 +1942,32 @@ class MarketDataFetcher {
             }
           } else {
             console.warn(`  ⚠️ No CoinGecko mapping for ${symbol}`);
+            // Try CoinGecko search API as last resort for unmapped coins
+            try {
+              const baseCoin = symbolUpper.replace(/USDT$/, '').replace(/^(1000|10000)/, '');
+              const searchUrl = `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(baseCoin)}`;
+              console.log(`  Trying CoinGecko search for: ${baseCoin}`);
+              const searchResponse = await fetch(searchUrl, { signal: AbortSignal.timeout(5000) });
+              if (searchResponse.ok) {
+                const searchData = await searchResponse.json();
+                if (searchData.coins && searchData.coins.length > 0) {
+                  // Use the first result
+                  const coinId = searchData.coins[0].id;
+                  const priceUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${coinId}&vs_currencies=usd`;
+                  const priceResponse = await fetch(priceUrl, { signal: AbortSignal.timeout(5000) });
+                  if (priceResponse.ok) {
+                    const priceData = await priceResponse.json();
+                    const price = priceData[coinId]?.usd;
+                    if (price > 0 && isFinite(price)) {
+                      console.log(`✅ Bitunix price found via CoinGecko search for ${symbol}: ${price} (coin: ${coinId})`);
+                      return price;
+                    }
+                  }
+                }
+              }
+            } catch (searchErr: any) {
+              console.warn(`  ⚠️ CoinGecko search fallback failed:`, searchErr.message);
+            }
           }
         } catch (geckoErr: any) {
           console.warn(`⚠️ CoinGecko fallback failed:`, geckoErr.message);
@@ -6161,42 +6187,7 @@ class BotExecutor {
             throw new Error(`Insufficient balance for ${bot.symbol} ${tradeSignal.side} order. Available: $${balanceCheck.availableBalance.toFixed(2)}, Required: $${balanceCheck.totalRequired.toFixed(2)} (order: $${orderValue.toFixed(2)} + 5% buffer). Shortfall: $${shortfall.toFixed(2)}. Please add funds to your Bitunix ${tradingType === 'futures' ? 'Futures' : 'Spot'} wallet.`);
           }
         }
-        const bitunixOrderResult = await this.placeBitunixOrder(apiKey, apiSecret, bot.symbol, tradeSignal.side, amount, price, tradingType, bot);
-        
-        // Set SL/TP on the position after order is filled (for futures only)
-        const marketType = tradingType === 'futures' || tradingType === 'linear' ? 'futures' : 'spot';
-        if (marketType === 'futures' && price > 0) {
-          try {
-            // Small delay to allow position to update after order fills
-            await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
-            
-            // Get actual position entry price from Bitunix
-            const entryPrice = await this.getBitunixPositionEntryPrice(apiKey, apiSecret, bot.symbol, marketType);
-            if (entryPrice && entryPrice > 0) {
-              const capitalizedSide = tradeSignal.side.charAt(0).toUpperCase() + tradeSignal.side.slice(1).toLowerCase();
-              await this.setBitunixSLTP(apiKey, apiSecret, bot.symbol, capitalizedSide, entryPrice, bot, tradeSignal, marketType);
-            } else {
-              console.warn('⚠️ Could not fetch Bitunix position entry price, skipping SL/TP (position may have been closed)');
-            }
-          } catch (slTpError) {
-            // Log error but don't fail the trade
-            console.error('⚠️ Bitunix SL/TP setting error:', slTpError);
-            if (bot?.id) {
-              await this.addBotLog(bot.id, {
-                level: 'error',
-                category: 'trade',
-                message: `⚠️ Bitunix SL/TP setting error for ${bot.symbol}: ${slTpError instanceof Error ? slTpError.message : String(slTpError)}`,
-                details: {
-                  symbol: bot.symbol,
-                  error: slTpError instanceof Error ? slTpError.message : String(slTpError),
-                  note: 'Trade completed but SL/TP may not be set. Check position manually.'
-                }
-              });
-            }
-          }
-        }
-        
-        return bitunixOrderResult;
+        return await this.placeBitunixOrder(apiKey, apiSecret, bot.symbol, tradeSignal.side, amount, price, tradingType, bot);
       }
       
       throw new Error(`Unsupported exchange: ${bot.exchange}`);
