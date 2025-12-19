@@ -144,28 +144,28 @@ export default function Home() {
           </Card>
         )}
 
-          <Card className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+          <Card className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200 dark:from-blue-950/40 dark:to-indigo-950/40 dark:border-blue-900/40">
             <div className="flex items-start space-x-4">
-              <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
-                <i className="ri-robot-line text-2xl text-blue-600"></i>
+              <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/50 rounded-full flex items-center justify-center">
+                <i className="ri-robot-line text-2xl text-blue-600 dark:text-blue-400"></i>
               </div>
               <div className="flex-1">
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
                   Welcome to Pablo! 🎉
                 </h3>
-                <p className="text-gray-600 text-sm mb-4">
+                <p className="text-gray-600 dark:text-gray-300 text-sm mb-4">
                   Ready to start automated trading? Create your first AI trading bot and let it work 24/7 for you.
                 </p>
-                <div className="mb-3 p-3 bg-orange-50 border border-orange-200 rounded-lg">
-                  <p className="text-xs text-gray-700 mb-2">
-                    <i className="ri-information-line text-orange-600 mr-1"></i>
+                <div className="mb-3 p-3 bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-900/40 rounded-lg">
+                  <p className="text-xs text-gray-700 dark:text-gray-200 mb-2">
+                    <i className="ri-information-line text-orange-600 dark:text-orange-400 mr-1"></i>
                     <strong>Need a Bybit account?</strong> Sign up with our referral link to get started:
                   </p>
                   <a
                     href="https://www.bybit.com/invite?ref=LJXQEA"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center text-sm font-medium text-orange-600 hover:text-orange-700 hover:underline"
+                    className="inline-flex items-center text-sm font-medium text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300 hover:underline"
                   >
                     <i className="ri-external-link-line mr-1"></i>
                     Sign up for Bybit Account
@@ -190,9 +190,9 @@ export default function Home() {
               </div>
               <button
                 onClick={() => setShowWelcome(false)}
-                className="p-1 hover:bg-blue-100 rounded-lg transition-colors"
+                className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-lg transition-colors"
               >
-                <i className="ri-close-line text-gray-500"></i>
+                <i className="ri-close-line text-gray-500 dark:text-gray-400"></i>
               </button>
             </div>
           </Card>
@@ -203,7 +203,7 @@ export default function Home() {
 
         {/* Quick Actions */}
         <Card className="p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Quick Actions</h3>
           <div className="grid grid-cols-2 gap-3">
             <Button
               variant="primary"
@@ -315,7 +315,7 @@ export default function Home() {
         {/* Recent Activity */}
         <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-gray-900">Recent Activity</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Recent Activity</h3>
             <Button
               variant="secondary"
               onClick={() => navigate('/trades')}
@@ -355,72 +355,90 @@ export default function Home() {
                 icon: 'ri-robot-line',
                 color: 'blue'
               }
-            ].map((activity, index) => (
-              <div key={index} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
-                <div className={`w-8 h-8 bg-${activity.color}-100 rounded-full flex items-center justify-center`}>
-                  <i className={`${activity.icon} text-${activity.color}-600`}></i>
+            ].map((activity, index) => {
+              const colorClasses = {
+                green: {
+                  bg: 'bg-green-100 dark:bg-green-900/30',
+                  text: 'text-green-600 dark:text-green-400'
+                },
+                red: {
+                  bg: 'bg-red-100 dark:bg-red-900/30',
+                  text: 'text-red-600 dark:text-red-400'
+                },
+                blue: {
+                  bg: 'bg-blue-100 dark:bg-blue-900/30',
+                  text: 'text-blue-600 dark:text-blue-400'
+                }
+              };
+              const colors = colorClasses[activity.color as keyof typeof colorClasses] || colorClasses.blue;
+              
+              return (
+                <div key={index} className="flex items-center space-x-3 p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg">
+                  <div className={`w-8 h-8 ${colors.bg} rounded-full flex items-center justify-center`}>
+                    <i className={`${activity.icon} ${colors.text}`}></i>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-gray-900 dark:text-white">{activity.message}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{activity.time}</p>
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-gray-900">{activity.message}</p>
-                  <p className="text-xs text-gray-500">{activity.time}</p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </Card>
 
         {/* Performance Summary */}
         <Card className="p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Today's Performance</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Today's Performance</h3>
           <div className="grid grid-cols-2 gap-4">
-            <div className="text-center p-4 bg-green-50 rounded-lg">
-              <div className={`text-2xl font-bold ${totalPnL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            <div className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+              <div className={`text-2xl font-bold ${totalPnL >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                 {totalPnL >= 0 ? '+' : ''}${totalPnL.toFixed(2)}
               </div>
-              <div className="text-sm text-gray-600">Total P&L</div>
+              <div className="text-sm text-gray-600 dark:text-gray-300">Total P&L</div>
             </div>
-            <div className="text-center p-4 bg-blue-50 rounded-lg">
-              <div className="text-2xl font-bold text-blue-600">
+            <div className="text-center p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+              <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
                 {bots.reduce((sum, bot) => sum + (bot.totalTrades || 0), 0)}
               </div>
-              <div className="text-sm text-gray-600">Total Trades</div>
+              <div className="text-sm text-gray-600 dark:text-gray-300">Total Trades</div>
             </div>
-            <div className="text-center p-4 bg-purple-50 rounded-lg">
-              <div className="text-2xl font-bold text-purple-600">
+            <div className="text-center p-4 bg-purple-50 dark:bg-purple-900/20 rounded-lg">
+              <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">
                 {bots.length > 0 
                   ? (bots.reduce((sum, bot) => sum + (bot.winRate || 0), 0) / bots.length).toFixed(1)
                   : '0.0'}%
               </div>
-              <div className="text-sm text-gray-600">Avg Win Rate</div>
+              <div className="text-sm text-gray-600 dark:text-gray-300">Avg Win Rate</div>
             </div>
-            <div className="text-center p-4 bg-orange-50 rounded-lg">
-              <div className="text-2xl font-bold text-orange-600">{activeBots.length}</div>
-              <div className="text-sm text-gray-600">Active Bots</div>
+            <div className="text-center p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg">
+              <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">{activeBots.length}</div>
+              <div className="text-sm text-gray-600 dark:text-gray-300">Active Bots</div>
             </div>
           </div>
         </Card>
 
         {/* Educational Content */}
         <Card className="p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Trading Tips</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Trading Tips</h3>
           <div className="space-y-3">
-            <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-lg shadow-sm">
+            <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-900/40 rounded-lg shadow-sm">
               <div className="flex items-start space-x-3">
-                <i className="ri-lightbulb-line text-indigo-600 mt-1 text-lg"></i>
+                <i className="ri-lightbulb-line text-indigo-600 dark:text-indigo-400 mt-1 text-lg"></i>
                 <div>
-                  <h4 className="font-medium text-indigo-900 mb-1">Risk Management</h4>
-                  <p className="text-sm text-indigo-700">
+                  <h4 className="font-medium text-indigo-900 dark:text-indigo-100 mb-1">Risk Management</h4>
+                  <p className="text-sm text-indigo-700 dark:text-indigo-200">
                     Never risk more than 2-3% of your capital on a single trade. Use stop losses to protect your investments and revisit them as volatility changes.
                   </p>
                 </div>
               </div>
             </div>
-            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg shadow-sm">
+            <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-900/40 rounded-lg shadow-sm">
               <div className="flex items-start space-x-3">
-                <i className="ri-bar-chart-line text-emerald-600 mt-1 text-lg"></i>
+                <i className="ri-bar-chart-line text-emerald-600 dark:text-emerald-400 mt-1 text-lg"></i>
                 <div>
-                  <h4 className="font-medium text-emerald-900 mb-1">Diversification</h4>
-                  <p className="text-sm text-green-700">
+                  <h4 className="font-medium text-emerald-900 dark:text-emerald-100 mb-1">Diversification</h4>
+                  <p className="text-sm text-green-700 dark:text-emerald-200">
                     Spread your trades across different cryptocurrencies and strategies to reduce overall risk.
                   </p>
                 </div>
@@ -437,67 +455,67 @@ export default function Home() {
                 </div>
               </div>
             </div>
-            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg shadow-sm">
+            <div className="p-3 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-900/40 rounded-lg shadow-sm">
               <div className="flex items-start space-x-3">
-                <i className="ri-heart-pulse-line text-rose-600 mt-1 text-lg"></i>
+                <i className="ri-heart-pulse-line text-rose-600 dark:text-rose-400 mt-1 text-lg"></i>
                 <div>
-                  <h4 className="font-medium text-rose-900 mb-1">Keep Emotions in Check</h4>
-                  <p className="text-sm text-rose-700">
+                  <h4 className="font-medium text-rose-900 dark:text-rose-100 mb-1">Keep Emotions in Check</h4>
+                  <p className="text-sm text-rose-700 dark:text-rose-200">
                     Stick to your plan. Avoid chasing pumps or panic-selling dips—your automation works best when signals stay objective.
                   </p>
                 </div>
               </div>
             </div>
-            <div className="p-3 bg-sky-50 border border-sky-200 rounded-lg shadow-sm">
+            <div className="p-3 bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-900/40 rounded-lg shadow-sm">
               <div className="flex items-start space-x-3">
-                <i className="ri-history-line text-sky-600 mt-1 text-lg"></i>
+                <i className="ri-history-line text-sky-600 dark:text-sky-400 mt-1 text-lg"></i>
                 <div>
-                  <h4 className="font-medium text-sky-900 mb-1">Backtest & Iterate</h4>
-                  <p className="text-sm text-sky-700">
+                  <h4 className="font-medium text-sky-900 dark:text-sky-100 mb-1">Backtest & Iterate</h4>
+                  <p className="text-sm text-sky-700 dark:text-sky-200">
                     Before deploying capital, run backtests over multiple market regimes. Iteration builds confidence and surfaces edge cases early.
                   </p>
                 </div>
               </div>
             </div>
-            <div className="p-3 bg-cyan-50 border border-cyan-200 rounded-lg shadow-sm">
+            <div className="p-3 bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-200 dark:border-cyan-900/40 rounded-lg shadow-sm">
               <div className="flex items-start space-x-3">
-                <i className="ri-slideshow-line text-cyan-600 mt-1 text-lg"></i>
+                <i className="ri-slideshow-line text-cyan-600 dark:text-cyan-400 mt-1 text-lg"></i>
                 <div>
-                  <h4 className="font-medium text-cyan-900 mb-1">Right-Size Positions</h4>
-                  <p className="text-sm text-cyan-700">
+                  <h4 className="font-medium text-cyan-900 dark:text-cyan-100 mb-1">Right-Size Positions</h4>
+                  <p className="text-sm text-cyan-700 dark:text-cyan-200">
                     Scale entries based on volatility and conviction. Smaller sizing during uncertain markets keeps drawdowns manageable.
                   </p>
                 </div>
               </div>
             </div>
-            <div className="p-3 bg-lime-50 border border-lime-200 rounded-lg shadow-sm">
+            <div className="p-3 bg-lime-50 dark:bg-lime-900/20 border border-lime-200 dark:border-lime-900/40 rounded-lg shadow-sm">
               <div className="flex items-start space-x-3">
-                <i className="ri-pie-chart-2-line text-lime-600 mt-1 text-lg"></i>
+                <i className="ri-pie-chart-2-line text-lime-600 dark:text-lime-400 mt-1 text-lg"></i>
                 <div>
-                  <h4 className="font-medium text-lime-900 mb-1">Track Core Metrics</h4>
-                  <p className="text-sm text-lime-700">
+                  <h4 className="font-medium text-lime-900 dark:text-lime-100 mb-1">Track Core Metrics</h4>
+                  <p className="text-sm text-lime-700 dark:text-lime-200">
                     Monitor win rate, profit factor, max drawdown, and average trade duration to spot trends before they erode performance.
                   </p>
                 </div>
               </div>
             </div>
-            <div className="p-3 bg-violet-50 border border-violet-200 rounded-lg shadow-sm">
+            <div className="p-3 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-900/40 rounded-lg shadow-sm">
               <div className="flex items-start space-x-3">
-                <i className="ri-wireless-charging-line text-violet-600 mt-1 text-lg"></i>
+                <i className="ri-wireless-charging-line text-violet-600 dark:text-violet-400 mt-1 text-lg"></i>
                 <div>
-                  <h4 className="font-medium text-violet-900 mb-1">Plan Liquidity</h4>
-                  <p className="text-sm text-violet-700">
+                  <h4 className="font-medium text-violet-900 dark:text-violet-100 mb-1">Plan Liquidity</h4>
+                  <p className="text-sm text-violet-700 dark:text-violet-200">
                     Favor pairs with healthy depth. Thin books amplify slippage, so adjust order types or trade size when liquidity dries up.
                   </p>
                 </div>
               </div>
             </div>
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg shadow-sm">
+            <div className="p-3 bg-slate-50 dark:bg-slate-900/20 border border-slate-200 dark:border-slate-800/40 rounded-lg shadow-sm">
               <div className="flex items-start space-x-3">
-                <i className="ri-shield-check-line text-slate-600 mt-1 text-lg"></i>
+                <i className="ri-shield-check-line text-slate-600 dark:text-slate-400 mt-1 text-lg"></i>
                 <div>
-                  <h4 className="font-medium text-slate-900 mb-1">Stay Compliant</h4>
-                  <p className="text-sm text-slate-700">
+                  <h4 className="font-medium text-slate-900 dark:text-slate-100 mb-1">Stay Compliant</h4>
+                  <p className="text-sm text-slate-700 dark:text-slate-200">
                     Keep tabs on exchange rules, tax obligations, and API rate limits. Small compliance habits prevent sudden trading interruptions.
                   </p>
                 </div>

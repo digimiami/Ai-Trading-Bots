@@ -9,23 +9,23 @@ interface StatCardProps {
 
 function StatCard({ title, value, change, changeType, icon }: StatCardProps) {
   const changeColors = {
-    positive: 'text-green-600',
-    negative: 'text-red-600',
-    neutral: 'text-gray-600'
+    positive: 'text-green-600 dark:text-green-400',
+    negative: 'text-red-600 dark:text-red-400',
+    neutral: 'text-gray-600 dark:text-gray-300'
   };
 
   return (
-    <div className="bg-white rounded-lg p-4 shadow-sm border border-gray-200">
+    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border border-gray-200 dark:border-gray-700">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-medium text-gray-600">{title}</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
+          <p className="text-sm font-medium text-gray-600 dark:text-gray-300">{title}</p>
+          <p className="text-2xl font-bold text-gray-900 dark:text-white mt-1">{value}</p>
           <p className={`text-sm mt-1 ${changeColors[changeType]}`}>
             {change}
           </p>
         </div>
-        <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-          <i className={`${icon} text-blue-600 text-xl`}></i>
+        <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+          <i className={`${icon} text-blue-600 dark:text-blue-400 text-xl`}></i>
         </div>
       </div>
     </div>
