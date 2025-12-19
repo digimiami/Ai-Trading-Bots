@@ -2224,7 +2224,7 @@ export default function Settings() {
                         <strong>Don't have a MEXC account?</strong>
                       </p>
                       <a
-                        href="https://www.mexc.com"
+                        href="https://promote.mexc.com/r/jprBX8cE"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"

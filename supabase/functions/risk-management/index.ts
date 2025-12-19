@@ -332,6 +332,28 @@ serve(async (req) => {
                   continue // Try next endpoint
                 }
               }
+            } else if (exchange === 'mexc') {
+              // MEXC ticker endpoint
+              try {
+                const tickerUrl = `https://api.mexc.com/api/v3/ticker/price?symbol=${symbol}`
+                const tickerResponse = await fetch(tickerUrl)
+                
+                if (tickerResponse.ok) {
+                  const tickerData = await tickerResponse.json()
+                  
+                  // MEXC response format: { price: "12345.67" } or [{ symbol: "BTCUSDT", price: "12345.67" }]
+                  if (Array.isArray(tickerData)) {
+                    const ticker = tickerData.find((t: any) => 
+                      (t.symbol || '').toUpperCase() === symbol.toUpperCase()
+                    )
+                    exitPrice = parseFloat(ticker?.price || '0')
+                  } else if (tickerData.price) {
+                    exitPrice = parseFloat(tickerData.price)
+                  }
+                }
+              } catch (err) {
+                console.warn('MEXC ticker fetch error:', err)
+              }
             }
           } catch (priceError) {
             console.error('Error fetching exit price:', priceError)
