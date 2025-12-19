@@ -1988,6 +1988,14 @@ export default function Settings() {
                         placeholder="Enter Bybit API Secret"
                       />
                     </div>
+                    <div className="p-4 bg-red-50 border-2 border-red-300 rounded-lg">
+                      <p className="text-sm text-red-800 font-semibold flex items-start">
+                        <i className="ri-alert-line text-red-600 mr-2 mt-0.5 text-lg"></i>
+                        <span>
+                          <strong>⚠️ Disable Withdrawals (NEVER check this box).</strong> If your bot is hacked, the hacker can trade your funds but they cannot send them to their own wallet.
+                        </span>
+                      </p>
+                    </div>
                     <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
                       <p className="text-xs text-gray-700 mb-2">
                         <i className="ri-information-line text-orange-600 mr-1"></i>
@@ -2068,6 +2076,14 @@ export default function Settings() {
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
                         placeholder="Enter Bitunix API Secret"
                       />
+                    </div>
+                    <div className="p-4 bg-red-50 border-2 border-red-300 rounded-lg">
+                      <p className="text-sm text-red-800 font-semibold flex items-start">
+                        <i className="ri-alert-line text-red-600 mr-2 mt-0.5 text-lg"></i>
+                        <span>
+                          <strong>⚠️ Disable Withdrawals (NEVER check this box).</strong> If your bot is hacked, the hacker can trade your funds but they cannot send them to their own wallet.
+                        </span>
+                      </p>
                     </div>
                     <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
                       <p className="text-xs text-gray-700 mb-2">
