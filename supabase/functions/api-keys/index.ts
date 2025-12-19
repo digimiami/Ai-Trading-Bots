@@ -630,30 +630,22 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string) {
     console.log('Bitunix API Response:', JSON.stringify(data, null, 2))
     
     // Parse Bitunix balance response
-    // Official format: { code: 0, msg: "success", data: [{ coin: "BTC", balance: 1.5, balanceLocked: 0.5 }] }
+    // According to docs, response format: { code: 0, msg: "success", data: [...] }
+    // Data may be array or object depending on endpoint
     const responseData = data.data || {}
     
     // Handle different response formats
     let assets: any[] = []
     if (Array.isArray(responseData)) {
-      // Official format: data is an array of assets
       assets = responseData
-      console.log(`Bitunix: Found ${assets.length} assets in array format`)
-    } else if (responseData.assets && Array.isArray(responseData.assets)) {
+    } else if (responseData.assets) {
       assets = responseData.assets
-      console.log(`Bitunix: Found ${assets.length} assets in assets array`)
-    } else if (responseData.balances && Array.isArray(responseData.balances)) {
+    } else if (responseData.balances) {
       assets = responseData.balances
-      console.log(`Bitunix: Found ${assets.length} assets in balances array`)
     } else if (responseData.coin || responseData.balance !== undefined) {
       // Single asset response
       assets = [responseData]
-      console.log(`Bitunix: Found single asset response`)
-    } else {
-      console.warn('Bitunix: Unknown response format:', responseData)
     }
-    
-    console.log(`Bitunix: Processing ${assets.length} assets`)
     
     let totalBalance = 0
     let availableBalance = 0
@@ -661,29 +653,14 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string) {
     const parsedAssets: any[] = []
     
     // Process assets/balances
-    // Bitunix may use: coin, balance, balanceLocked, available, frozen, etc.
+    // Official Bitunix format: { coin: "BTC", balance: 1.5, balanceLocked: 0.5 }
+    // balance = total balance, balanceLocked = locked amount
+    // available = balance - balanceLocked
     for (const asset of assets) {
-      // Try different field name patterns
-      const free = parseFloat(
-        asset.available || 
-        asset.balance || 
-        (asset.balance && asset.balanceLocked ? (asset.balance - asset.balanceLocked).toString() : asset.balance) ||
-        asset.free || 
-        '0'
-      )
-      const locked = parseFloat(
-        asset.balanceLocked || 
-        asset.frozen || 
-        asset.locked || 
-        asset.inUse || 
-        '0'
-      )
-      const total = parseFloat(
-        asset.total || 
-        asset.equity || 
-        asset.balance || 
-        (free + locked).toString()
-      )
+      // Official Bitunix response format
+      const total = parseFloat(asset.balance || asset.total || asset.equity || '0')
+      const locked = parseFloat(asset.balanceLocked || asset.frozen || asset.locked || asset.inUse || '0')
+      const free = total - locked // Available = total - locked
       
       // Get asset symbol
       const assetSymbol = asset.asset || asset.coin || asset.currency || asset.symbol || ''

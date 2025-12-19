@@ -552,14 +552,14 @@ export default function FuturesPairsFinderPage() {
                   Exchange
                 </label>
                 <select
-                  value={selectedExchange === 'okx' || selectedExchange === 'bitunix' ? 'all' : selectedExchange}
+                  value={selectedExchange === 'okx' ? 'all' : selectedExchange}
                   onChange={(e) => handleExchangeChange(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="all">All Exchanges</option>
                   <option value="bybit">Bybit</option>
+                  <option value="bitunix">Bitunix</option>
                   <option value="okx" disabled>OKX (Coming Soon)</option>
-                  <option value="bitunix" disabled>Bitunix (Coming Soon)</option>
                 </select>
               </div>
 

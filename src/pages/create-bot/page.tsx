@@ -51,8 +51,8 @@ export default function CreateBotPage() {
   // Get initial values from URL params (for navigation from Futures Pairs Finder or Pablo Ready)
   const urlSymbol = searchParams.get('symbol') || 'BTCUSDT';
   const urlExchangeParam = searchParams.get('exchange') || 'bybit';
-  // Force bybit if okx or bitunix is passed (they're disabled)
-  const urlExchange = (urlExchangeParam === 'okx' || urlExchangeParam === 'bitunix') ? 'bybit' : (urlExchangeParam as 'bybit' | 'okx');
+  // Allow all exchanges including Bitunix
+  const urlExchange = urlExchangeParam as 'bybit' | 'okx' | 'bitunix';
   const urlTradingType = (searchParams.get('tradingType') || 'spot') as 'spot' | 'futures';
   const urlLeverage = searchParams.get('leverage') ? parseInt(searchParams.get('leverage')!) : 5;
   const urlRiskLevel = (searchParams.get('riskLevel') || 'medium') as 'low' | 'medium' | 'high';
@@ -449,9 +449,9 @@ export default function CreateBotPage() {
         return;
       }
       
-      // Validate exchange is enabled
-      if (formData.exchange === 'okx' || formData.exchange === 'bitunix') {
-        setError('OKX and Bitunix exchanges are coming soon. Please use Bybit for now.');
+      // Validate exchange is enabled (Bitunix is now enabled)
+      if (formData.exchange === 'okx') {
+        setError('OKX exchange is coming soon. Please use Bybit or Bitunix for now.');
         setIsCreating(false);
         return;
       }
@@ -889,7 +889,7 @@ All settings have been applied to your bot configuration.`;
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                     Exchange
-                    <HelpTooltip text="Select the cryptocurrency exchange where your bot will trade. Currently supports Bybit. OKX and Bitunix are coming soon." />
+                    <HelpTooltip text="Select the cryptocurrency exchange where your bot will trade. Currently supports Bybit and Bitunix. OKX is coming soon." />
                   </label>
                   <select
                     value={formData.exchange}
@@ -897,8 +897,8 @@ All settings have been applied to your bot configuration.`;
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   >
                     <option value="bybit">Bybit</option>
+                    <option value="bitunix">Bitunix</option>
                     <option value="okx" disabled>OKX (Coming Soon)</option>
-                    <option value="bitunix" disabled>Bitunix (Coming Soon)</option>
                   </select>
                 </div>
 
