@@ -8670,6 +8670,7 @@ class BotExecutor {
               // Handle Code 2 (System error) - try different parameter formats
               if (data.code === 2) {
                 console.log(`   ⚠️ System error (Code: 2) from ${baseUrl}${requestPath}, trying alternative parameter format...`);
+                console.log(`   📋 Original request: symbol=${symbol}, side=${sideCode}, type=${orderTypeCode}, qty=${amount}, price=${price}`);
                 
                 // Try alternative parameter names: 'volume' instead of 'qty' (for spot or older API versions)
                 const altOrderParams: any = {
@@ -8684,6 +8685,7 @@ class BotExecutor {
                 }
                 
                 const altBodyString = JSON.stringify(altOrderParams).replace(/\s+/g, '');
+                console.log(`   🔄 Trying alternative format with 'volume': ${altBodyString}`);
                 const altSignature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, altBodyString, apiSecret);
                 
                 try {
@@ -8816,7 +8818,8 @@ class BotExecutor {
                 // If we reach here, alternative formats were already tried above
                 // This means all parameter formats failed - try next endpoint
                 console.warn(`   ⚠️ Code 2 persisted after trying all parameter formats, trying next endpoint...`);
-                lastError = new Error(`Bitunix system error (Code: 2): ${errorMsg}. All parameter formats failed.`);
+                console.warn(`   💡 Possible causes: Symbol ${symbol} may not be tradeable, account may need margin mode/leverage setup, or temporary API issue`);
+                lastError = new Error(`Bitunix system error (Code: 2): ${errorMsg}. All parameter formats failed. Please verify: 1) Symbol ${symbol} is tradeable on Bitunix futures, 2) API key has trading permissions, 3) Account has margin mode and leverage configured.`);
                 continue;
               }
               
@@ -8848,7 +8851,27 @@ class BotExecutor {
       }
       
       // All endpoints failed
-      throw lastError || new Error('Bitunix order placement failed: All endpoints returned errors');
+      if (lastError) {
+        // Enhance error message with diagnostic information
+        const enhancedError = new Error(
+          `${lastError.message}\n\n` +
+          `Bitunix Order Placement Diagnostic:\n` +
+          `- Symbol: ${symbol}\n` +
+          `- Side: ${side} (code: ${side.toUpperCase() === 'SELL' ? 1 : 2})\n` +
+          `- Type: ${(price && price > 0) ? 'Limit' : 'Market'} (code: ${(price && price > 0) ? 1 : 2})\n` +
+          `- Quantity: ${amount}\n` +
+          `- Price: ${price || 'N/A'}\n` +
+          `- Trading Type: ${tradingType}\n` +
+          `\nTroubleshooting:\n` +
+          `1. Verify symbol ${symbol} is available for futures trading on Bitunix\n` +
+          `2. Check API key has futures trading permissions\n` +
+          `3. Ensure account has margin mode and leverage configured\n` +
+          `4. Verify quantity and price meet exchange requirements\n` +
+          `5. Contact Bitunix support if issue persists`
+        );
+        throw enhancedError;
+      }
+      throw new Error('Bitunix order placement failed: All endpoints returned errors');
     } catch (error) {
       console.error('❌ Bitunix order placement error:', error);
       throw error;
