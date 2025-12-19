@@ -23,7 +23,7 @@ export default function BotsPage() {
   const { playTestSound } = useSoundNotifications();
   const { activities, addLog } = useBotActivity(bots);
   const { isExecuting, lastExecution, timeSync, executeBot, executeAllBots } = useBotExecutor();
-  const [filter, setFilter] = useState<'all' | 'running' | 'paused' | 'stopped' | 'live'>('all');
+  const [filter, setFilter] = useState<'all' | 'running' | 'paused' | 'stopped' | 'live' | 'paper'>('all');
   const [viewMode, setViewMode] = useState<'overview' | 'webhook'>('overview');
   const [bulkLoading, setBulkLoading] = useState(false);
   const [togglingAiMl, setTogglingAiMl] = useState<string | null>(null);
@@ -209,6 +209,7 @@ export default function BotsPage() {
     let matchesFilter = true;
     if (filter === 'all') matchesFilter = true;
     else if (filter === 'live') matchesFilter = !bot.paperTrading;
+    else if (filter === 'paper') matchesFilter = bot.paperTrading === true;
     else matchesFilter = bot.status === filter;
 
     // Apply search filter
@@ -1059,7 +1060,8 @@ export default function BotsPage() {
         <div className="max-w-6xl mx-auto space-y-4">
           {/* Bulk Actions - Paper/Real Trading */}
           <Card className="p-4">
-            <div className="flex flex-wrap gap-2 items-center">
+            {/* Desktop: Show all buttons */}
+            <div className="hidden md:flex flex-wrap gap-2 items-center">
               <span className="text-sm font-medium text-gray-700 mr-2">Bulk Actions:</span>
               <Button
                 variant="primary"
@@ -1109,6 +1111,54 @@ export default function BotsPage() {
                 <i className="ri-money-dollar-circle-line mr-1"></i>
                 Activate All Real
               </Button>
+            </div>
+
+            {/* Mobile: Dropdown menu with all bulk actions */}
+            <div className="md:hidden">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-gray-700">Bulk Actions:</span>
+                <DropdownMenu
+                  trigger={
+                    <button className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors touch-manipulation">
+                      <i className="ri-menu-line text-xl text-gray-600 dark:text-gray-300"></i>
+                    </button>
+                  }
+                  items={[
+                    {
+                      label: 'Refresh All Stats',
+                      icon: 'ri-refresh-line',
+                      onClick: handleRefreshStats,
+                      disabled: refreshing || loading,
+                    },
+                    {
+                      label: 'Pause All',
+                      icon: 'ri-pause-line',
+                      onClick: handlePauseAll,
+                      disabled: bulkLoading || filteredBots.filter(bot => bot.status === 'running').length === 0,
+                    },
+                    {
+                      label: 'Activate All Paper',
+                      icon: 'ri-edit-box-line',
+                      onClick: handleActivateAllPaper,
+                      disabled: bulkLoading || filteredBots.filter(bot => !bot.paperTrading).length === 0,
+                    },
+                    {
+                      label: 'Pause All Real',
+                      icon: 'ri-pause-circle-line',
+                      onClick: handlePauseAllReal,
+                      disabled: bulkLoading || filteredBots.filter(bot => !bot.paperTrading && bot.status === 'running').length === 0,
+                    },
+                    {
+                      label: 'Activate All Real',
+                      icon: 'ri-money-dollar-circle-line',
+                      onClick: handleActivateAllReal,
+                      disabled: bulkLoading || filteredBots.filter(bot => bot.paperTrading).length === 0,
+                      danger: true,
+                    },
+                  ] as DropdownMenuItem[]}
+                  align="right"
+                />
+              </div>
             </div>
           </Card>
           {/* Execution Status */}
@@ -1174,7 +1224,8 @@ export default function BotsPage() {
               { id: 'running', label: 'Running' },
               { id: 'paused', label: 'Paused' },
               { id: 'stopped', label: 'Stopped' },
-              { id: 'live', label: 'Live Trading' }
+              { id: 'live', label: 'Live Trading' },
+              { id: 'paper', label: 'Paper Trading' }
             ].map((option) => (
               <button
                 key={option.id}
