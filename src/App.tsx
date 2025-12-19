@@ -28,13 +28,16 @@ function AppRoutes() {
   // Initialize sound notifications for real trades
   useSoundNotifications();
 
-  // Load theme from localStorage on mount
+  // Load appearance settings from localStorage on mount
   useEffect(() => {
     try {
     const savedSettings = localStorage.getItem('appearance_settings');
     if (savedSettings) {
       const appearance = JSON.parse(savedSettings);
         const theme = appearance?.theme || 'light';
+        const fontSize = appearance?.fontSize || 'medium';
+        const density = appearance?.density || 'comfortable';
+        const compactMode = appearance?.compactMode || false;
         
         // Remove all theme classes first
         document.documentElement.classList.remove('dark', 'theme-blue', 'theme-green', 'theme-purple', 'theme-orange');
@@ -48,9 +51,24 @@ function AppRoutes() {
           document.documentElement.classList.add(`theme-${theme}`);
           document.body.classList.add(`theme-${theme}`);
         }
+        
+        // Apply font size
+        document.documentElement.classList.remove('font-size-small', 'font-size-medium', 'font-size-large');
+        document.documentElement.classList.add(`font-size-${fontSize}`);
+        
+        // Apply density
+        document.documentElement.classList.remove('density-compact', 'density-comfortable', 'density-spacious');
+        document.documentElement.classList.add(`density-${density}`);
+        
+        // Apply compact mode
+        if (compactMode) {
+          document.documentElement.classList.add('compact-mode');
+        } else {
+          document.documentElement.classList.remove('compact-mode');
+        }
       }
     } catch (error) {
-      console.error('Error loading theme from localStorage:', error);
+      console.error('Error loading appearance settings from localStorage:', error);
       // Clear invalid data
       localStorage.removeItem('appearance_settings');
     }

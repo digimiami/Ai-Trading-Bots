@@ -61,7 +61,10 @@ export default function Settings() {
           return {
             theme: parsed.theme || 'light',
             currency: parsed.currency || 'USD',
-            language: parsed.language || 'English'
+            language: parsed.language || 'English',
+            fontSize: parsed.fontSize || 'medium',
+            density: parsed.density || 'comfortable',
+            compactMode: parsed.compactMode || false
           };
         }
       }
@@ -73,7 +76,10 @@ export default function Settings() {
     return {
       theme: 'light',
       currency: 'USD',
-      language: 'English'
+      language: 'English',
+      fontSize: 'medium',
+      density: 'comfortable',
+      compactMode: false
     };
   });
 
@@ -189,10 +195,10 @@ export default function Settings() {
   const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   // Load profile data on component mount
-  // Apply theme whenever it changes
+  // Apply theme and appearance settings whenever they change
   useEffect(() => {
-    // Ensure appearance.theme exists
-    if (!appearance || !appearance.theme) {
+    // Ensure appearance exists
+    if (!appearance) {
       return;
     }
     
@@ -204,22 +210,41 @@ export default function Settings() {
       // Apply new theme
       const isColorTheme = ['blue', 'green', 'purple', 'orange'].includes(appearance.theme);
       
-    if (appearance.theme === 'dark') {
+      if (appearance.theme === 'dark') {
         // Dark theme without color accent
-      document.documentElement.classList.add('dark');
-      document.body.classList.add('dark');
+        document.documentElement.classList.add('dark');
+        document.body.classList.add('dark');
       } else if (isColorTheme) {
         // Color themes are light themes with accent colors
         document.documentElement.classList.add(`theme-${appearance.theme}`);
         document.body.classList.add(`theme-${appearance.theme}`);
-    }
+      }
       // Light theme (default) - no classes needed
       
-    console.log(`🎨 Theme applied: ${appearance.theme}`);
+      // Apply font size
+      document.documentElement.classList.remove('font-size-small', 'font-size-medium', 'font-size-large');
+      if (appearance.fontSize) {
+        document.documentElement.classList.add(`font-size-${appearance.fontSize}`);
+      }
+      
+      // Apply density
+      document.documentElement.classList.remove('density-compact', 'density-comfortable', 'density-spacious');
+      if (appearance.density) {
+        document.documentElement.classList.add(`density-${appearance.density}`);
+      }
+      
+      // Apply compact mode
+      if (appearance.compactMode) {
+        document.documentElement.classList.add('compact-mode');
+      } else {
+        document.documentElement.classList.remove('compact-mode');
+      }
+      
+      console.log(`🎨 Appearance applied: theme=${appearance.theme}, fontSize=${appearance.fontSize}, density=${appearance.density}, compactMode=${appearance.compactMode}`);
     } catch (error) {
-      console.error('Error applying theme:', error);
+      console.error('Error applying appearance settings:', error);
     }
-  }, [appearance?.theme]); // Watch for theme changes
+  }, [appearance?.theme, appearance?.fontSize, appearance?.density, appearance?.compactMode]); // Watch for all appearance changes
 
   useEffect(() => {
     // Check AI keys from Edge Function secrets on mount only
@@ -1585,6 +1610,77 @@ export default function Settings() {
                 <option value="Portuguese">🇵🇹 Português</option>
                 <option value="Italian">🇮🇹 Italiano</option>
               </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Font Size
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { value: 'small', label: 'Small', icon: 'ri-text' },
+                  { value: 'medium', label: 'Medium', icon: 'ri-text' },
+                  { value: 'large', label: 'Large', icon: 'ri-text' }
+                ].map((size) => (
+                  <button
+                    key={size.value}
+                    onClick={() => handleAppearanceChange('fontSize', size.value)}
+                    className={`flex flex-col items-center justify-center px-3 py-2 rounded-lg border-2 transition-all ${
+                      appearance.fontSize === size.value
+                        ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200'
+                        : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600'
+                    }`}
+                  >
+                    <i className={`${size.icon} text-xl mb-1`}></i>
+                    <span className="font-medium text-xs">{size.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Density
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { value: 'compact', label: 'Compact', icon: 'ri-layout-grid-line' },
+                  { value: 'comfortable', label: 'Comfortable', icon: 'ri-layout-line' },
+                  { value: 'spacious', label: 'Spacious', icon: 'ri-layout-masonry-line' }
+                ].map((density) => (
+                  <button
+                    key={density.value}
+                    onClick={() => handleAppearanceChange('density', density.value)}
+                    className={`flex flex-col items-center justify-center px-3 py-2 rounded-lg border-2 transition-all ${
+                      appearance.density === density.value
+                        ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-200'
+                        : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600'
+                    }`}
+                  >
+                    <i className={`${density.icon} text-xl mb-1`}></i>
+                    <span className="font-medium text-xs">{density.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+              <div>
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Compact Mode</span>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Reduce spacing for more content</p>
+              </div>
+              <button
+                onClick={() => handleAppearanceChange('compactMode', !appearance.compactMode)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  appearance.compactMode ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    appearance.compactMode ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
             </div>
 
             <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">

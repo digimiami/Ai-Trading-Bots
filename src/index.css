@@ -7,23 +7,25 @@
   --theme-primary: #3b82f6;
   --theme-bg: #ffffff;
   --theme-text: #111827;
-  --theme-text-secondary: #6b7280;
+  --theme-text-secondary: #4b5563;
+  --font-size-base: 1rem;
+  --spacing-base: 1rem;
 }
 
-/* Dark theme - ensure white text */
+/* Dark theme - ensure white text with better contrast */
 .dark {
   --theme-primary: #60a5fa;
-  --theme-bg: #111827;
-  --theme-text: #ffffff;
-  --theme-text-secondary: #d1d5db;
+  --theme-bg: #0f172a;
+  --theme-text: #f8fafc;
+  --theme-text-secondary: #cbd5e1;
 }
 
 /* Blue theme */
 .theme-blue {
   --theme-primary: #3b82f6;
   --theme-bg: #ffffff;
-  --theme-text: #111827;
-  --theme-text-secondary: #6b7280;
+  --theme-text: #0f172a;
+  --theme-text-secondary: #475569;
 }
 
 .theme-blue.dark,
@@ -39,8 +41,8 @@
 .theme-green {
   --theme-primary: #10b981;
   --theme-bg: #ffffff;
-  --theme-text: #111827;
-  --theme-text-secondary: #6b7280;
+  --theme-text: #0f172a;
+  --theme-text-secondary: #475569;
 }
 
 .theme-green.dark,
@@ -56,8 +58,8 @@
 .theme-purple {
   --theme-primary: #8b5cf6;
   --theme-bg: #ffffff;
-  --theme-text: #111827;
-  --theme-text-secondary: #6b7280;
+  --theme-text: #0f172a;
+  --theme-text-secondary: #475569;
 }
 
 .theme-purple.dark,
@@ -73,8 +75,8 @@
 .theme-orange {
   --theme-primary: #f97316;
   --theme-bg: #ffffff;
-  --theme-text: #111827;
-  --theme-text-secondary: #6b7280;
+  --theme-text: #0f172a;
+  --theme-text-secondary: #475569;
 }
 
 .theme-orange.dark,
@@ -86,9 +88,9 @@
   color: #ffffff;
 }
 
-/* Global dark mode text color fixes - ensure white text */
+/* Global dark mode text color fixes - ensure white text with better contrast */
 .dark {
-  color: #ffffff;
+  color: #f8fafc;
 }
 
 .dark p:not([class*="text-"]),
@@ -105,13 +107,14 @@
 .dark input:not([class*="text-"]),
 .dark select:not([class*="text-"]),
 .dark textarea:not([class*="text-"]) {
-  color: #ffffff;
+  color: #f8fafc;
 }
 
 /* Ensure body and root elements have white text in dark mode */
 body.dark,
 html.dark {
-  color: #ffffff;
+  color: #f8fafc;
+  background-color: #0f172a;
 }
 
 /* Override for elements that should have white text in dark mode */
@@ -119,16 +122,61 @@ html.dark {
 .dark .text-gray-800,
 .dark .text-gray-700,
 .dark .text-gray-600 {
-  color: #ffffff !important;
+  color: #f8fafc !important;
 }
 
-/* Keep secondary text lighter but still visible */
+/* Keep secondary text lighter but still visible in dark mode */
 .dark .text-gray-500 {
-  color: #d1d5db !important;
+  color: #cbd5e1 !important;
 }
 
 .dark .text-gray-400 {
-  color: #9ca3af !important;
+  color: #94a3b8 !important;
+}
+
+/* Light mode - ensure darker text on white backgrounds for better contrast */
+:root:not(.dark) {
+  color: #0f172a;
+}
+
+:root:not(.dark) p:not([class*="text-"]),
+:root:not(.dark) span:not([class*="text-"]),
+:root:not(.dark) div:not([class*="text-"]),
+:root:not(.dark) h1:not([class*="text-"]),
+:root:not(.dark) h2:not([class*="text-"]),
+:root:not(.dark) h3:not([class*="text-"]),
+:root:not(.dark) h4:not([class*="text-"]),
+:root:not(.dark) h5:not([class*="text-"]),
+:root:not(.dark) h6:not([class*="text-"]) {
+  color: #0f172a;
+}
+
+/* Ensure darker text on white backgrounds in light mode */
+body:not(.dark),
+html:not(.dark) {
+  color: #0f172a;
+  background-color: #ffffff;
+}
+
+/* Override for better contrast in light mode */
+:root:not(.dark) .text-gray-900 {
+  color: #0f172a !important;
+}
+
+:root:not(.dark) .text-gray-800 {
+  color: #1e293b !important;
+}
+
+:root:not(.dark) .text-gray-700 {
+  color: #334155 !important;
+}
+
+:root:not(.dark) .text-gray-600 {
+  color: #475569 !important;
+}
+
+:root:not(.dark) .text-gray-500 {
+  color: #64748b !important;
 }
 
 /* Theme-aware primary color classes */
@@ -230,6 +278,113 @@ html.dark {
 .dark.theme-orange .bg-blue-900\/30 { background-color: rgba(124, 45, 18, 0.3) !important; }
 .dark.theme-orange .text-blue-700 { color: #fdba74 !important; }
 .dark.theme-orange .text-blue-200 { color: #fed7aa !important; }
+
+/* Font size settings */
+.font-size-small {
+  font-size: 0.875rem;
+}
+
+.font-size-medium {
+  font-size: 1rem;
+}
+
+.font-size-large {
+  font-size: 1.125rem;
+}
+
+/* Density settings */
+.density-compact {
+  --spacing-base: 0.5rem;
+}
+
+.density-compact .space-y-4 > * + * {
+  margin-top: 0.5rem;
+}
+
+.density-compact .space-y-3 > * + * {
+  margin-top: 0.375rem;
+}
+
+.density-compact .space-y-2 > * + * {
+  margin-top: 0.25rem;
+}
+
+.density-comfortable {
+  --spacing-base: 1rem;
+}
+
+.density-spacious {
+  --spacing-base: 1.5rem;
+}
+
+.density-spacious .space-y-4 > * + * {
+  margin-top: 1.5rem;
+}
+
+.density-spacious .space-y-3 > * + * {
+  margin-top: 1.125rem;
+}
+
+.density-spacious .space-y-2 > * + * {
+  margin-top: 0.75rem;
+}
+
+/* Compact mode */
+.compact-mode {
+  --spacing-base: 0.5rem;
+}
+
+.compact-mode .p-6 {
+  padding: 1rem;
+}
+
+.compact-mode .p-4 {
+  padding: 0.75rem;
+}
+
+.compact-mode .gap-4 {
+  gap: 0.75rem;
+}
+
+.compact-mode .gap-3 {
+  gap: 0.5rem;
+}
+
+.compact-mode .gap-2 {
+  gap: 0.375rem;
+}
+
+/* Ensure dark backgrounds in dark mode */
+.dark body,
+.dark .bg-gray-50 {
+  background-color: #0f172a !important;
+}
+
+.dark .bg-white {
+  background-color: #1e293b !important;
+}
+
+.dark .bg-gray-100 {
+  background-color: #1e293b !important;
+}
+
+.dark .bg-gray-200 {
+  background-color: #334155 !important;
+}
+
+/* Ensure light backgrounds stay white in light mode with darker text */
+:root:not(.dark) body {
+  background-color: #f9fafb !important;
+  color: #0f172a !important;
+}
+
+:root:not(.dark) .bg-white {
+  background-color: #ffffff !important;
+}
+
+:root:not(.dark) .bg-gray-50 {
+  background-color: #f9fafb !important;
+}
 
 /* Make all font weights bold by default for improved visibility */
 html, body {
