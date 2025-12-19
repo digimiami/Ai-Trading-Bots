@@ -7361,13 +7361,18 @@ class BotExecutor {
       const timestamp = Date.now().toString();
       const nonce = this.generateNonce();
       
-      // Try account balance endpoints
-      const endpointsToTry = [
-        '/api/v1/account',
-        '/api/v1/account/balance',
-        '/api/v1/futures/account',
-        '/api/v1/spot/account'
-      ];
+      // Try account balance endpoints (order matters - try most specific first)
+      const endpointsToTry = marketType === 'futures'
+        ? [
+            '/api/v1/futures/account',  // Futures-specific account
+            '/api/v1/account',          // General account endpoint
+            '/api/v1/account/balance',  // Alternative balance endpoint
+          ]
+        : [
+            '/api/v1/spot/account',     // Spot-specific account
+            '/api/v1/account',          // General account endpoint
+            '/api/v1/account/balance',  // Alternative balance endpoint
+          ];
       
       let response: Response | null = null;
       let data: any = null;
@@ -7375,8 +7380,8 @@ class BotExecutor {
       for (const baseUrl of baseUrls) {
         for (const endpointPath of endpointsToTry) {
           try {
-            const queryParams = '';
-            const body = '';
+            const queryParams = ''; // Empty for GET requests
+            const body = ''; // Empty for GET requests
             const signature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, body, apiSecret);
             
             response = await fetch(`${baseUrl}${endpointPath}`, {
@@ -7391,17 +7396,33 @@ class BotExecutor {
             });
             
             if (!response.ok) {
-              continue; // Try next endpoint
+              if (response.status === 404) {
+                continue; // Try next endpoint
+              }
+              // For other errors, log and continue
+              const errorText = await response.text().catch(() => '');
+              console.warn(`⚠️ Balance check failed: ${baseUrl}${endpointPath} returned ${response.status}: ${errorText.substring(0, 200)}`);
+              continue;
             }
             
             const responseText = await response.text();
+            if (!responseText) {
+              continue; // Empty response, try next endpoint
+            }
+            
             data = JSON.parse(responseText);
             
             if (data && data.code === 0) {
+              console.log(`✅ Bitunix balance check successful: ${baseUrl}${endpointPath}`);
               break; // Success
+            } else if (data && data.code) {
+              // Log non-zero error codes but continue trying
+              console.warn(`⚠️ Balance check returned code ${data.code}: ${data.msg || 'Unknown error'} from ${baseUrl}${endpointPath}`);
             }
-          } catch (err) {
-            continue; // Try next endpoint
+          } catch (err: any) {
+            // Log error but continue trying other endpoints
+            console.warn(`⚠️ Balance check error for ${baseUrl}${endpointPath}:`, err.message || String(err));
+            continue;
           }
         }
         
@@ -8520,6 +8541,7 @@ class BotExecutor {
       // IMPORTANT: Bitunix uses NUMERIC codes, not strings!
       // side: 1 = Sell, 2 = Buy
       // type: 1 = Limit, 2 = Market
+      // IMPORTANT: Bitunix futures API uses 'qty' parameter, not 'volume'
       const sideCode = side.toUpperCase() === 'SELL' ? 1 : 2; // 1 = Sell, 2 = Buy
       const orderTypeCode = (price && price > 0) ? 1 : 2; // 1 = Limit, 2 = Market
       
@@ -8527,7 +8549,7 @@ class BotExecutor {
         symbol: symbol.toUpperCase(),
         side: sideCode, // Numeric: 1 = Sell, 2 = Buy
         type: orderTypeCode, // Numeric: 1 = Limit, 2 = Market
-        volume: amount.toString(), // Use 'volume' instead of 'qty' per some API docs
+        qty: amount.toString(), // Bitunix futures API uses 'qty', not 'volume'
       };
       
       // Add price for limit orders (required for type=1, optional for type=2)
@@ -8535,8 +8557,7 @@ class BotExecutor {
         orderParams.price = price.toString();
       }
       
-      // Also try with 'qty' parameter (some API versions use this)
-      // We'll try both formats if Code 2 error occurs
+      // Keep 'volume' as fallback for older API versions or spot trading
       
       // Create body string (JSON with no spaces, per Bitunix docs)
       const bodyString = JSON.stringify(orderParams).replace(/\s+/g, '');
@@ -8602,6 +8623,13 @@ class BotExecutor {
             if (data.code !== 0) {
               const errorMsg = data.msg || data.message || 'Unknown error';
               
+              // Handle Code 10007 (Signature Error) - might need to try different endpoint
+              if (data.code === 10007) {
+                console.warn(`   ⚠️ API returned code 10007: Signature Error, trying next endpoint...`);
+                lastError = new Error(`Bitunix signature error (Code: 10007): ${errorMsg}`);
+                continue; // Try next endpoint - signature might work on different endpoint
+              }
+              
               // Handle Code 10003 (Token invalid) FIRST - don't retry, fail immediately
               // This must be checked before Code 2 because invalid API keys will fail on all endpoints
               if (data.code === 10003) {
@@ -8643,12 +8671,12 @@ class BotExecutor {
               if (data.code === 2) {
                 console.log(`   ⚠️ System error (Code: 2) from ${baseUrl}${requestPath}, trying alternative parameter format...`);
                 
-                // Try alternative parameter names: 'qty' instead of 'volume', or vice versa
+                // Try alternative parameter names: 'volume' instead of 'qty' (for spot or older API versions)
                 const altOrderParams: any = {
                   symbol: symbol.toUpperCase(),
                   side: sideCode,
                   type: orderTypeCode,
-                  qty: amount.toString(), // Try 'qty' instead of 'volume'
+                  volume: amount.toString(), // Try 'volume' as alternative
                 };
                 
                 if (orderTypeCode === 1 && price && price > 0) {
@@ -8782,33 +8810,14 @@ class BotExecutor {
                 }
               }
               
-              // Handle Code 2 (System error) - if all alternative formats failed, provide better error
+              // Code 2 handling is done above in the dedicated block
+              // This block should not be reached for Code 2, but handle other codes here
               if (data.code === 2) {
-                console.error(`❌ Bitunix system error (Code: 2) persisted after trying all parameter formats for ${symbol}`);
-                console.error(`📋 Error message: ${errorMsg}`);
-                console.error(`🌐 Base URL: ${baseUrl}, Endpoint: ${requestPath}`);
-                
-                // Log to bot activity logs
-                if (bot?.id) {
-                  await this.addBotLog(bot.id, {
-                    level: 'error',
-                    category: 'trade',
-                    message: `Bitunix system error (Code: 2) - API may be experiencing issues. Please try again later or contact Bitunix support.`,
-                    details: {
-                      symbol: symbol,
-                      code: 2,
-                      msg: errorMsg,
-                      exchange: 'bitunix',
-                      base_url: baseUrl,
-                      endpoint: requestPath,
-                      action_required: 'This may be a temporary Bitunix API issue. Try again in a few minutes or contact Bitunix support if the issue persists.'
-                    }
-                  });
-                }
-                
-                // Don't throw immediately, try next endpoint first
-                lastError = new Error(`Bitunix system error (Code: 2): ${errorMsg}. This may be a temporary API issue.`);
-                continue; // Try next endpoint
+                // If we reach here, alternative formats were already tried above
+                // This means all parameter formats failed - try next endpoint
+                console.warn(`   ⚠️ Code 2 persisted after trying all parameter formats, trying next endpoint...`);
+                lastError = new Error(`Bitunix system error (Code: 2): ${errorMsg}. All parameter formats failed.`);
+                continue;
               }
               
               console.warn(`   ⚠️ API returned code ${data.code}: ${errorMsg}, trying next endpoint...`);
@@ -8859,25 +8868,24 @@ class BotExecutor {
     // According to Bitunix official docs:
     // digest = SHA256(nonce + timestamp + api-key + queryParams + body)
     // sign = SHA256(digest + secretKey)
-    
-    const encoder = new TextEncoder();
+    // Where digest is converted to hex string before concatenating with secretKey
     
     // Step 1: Create digest
     const digestInput = nonce + timestamp + apiKey + queryParams + body;
-    const digestData = encoder.encode(digestInput);
-    const digestHash = await crypto.subtle.digest('SHA-256', digestData);
+    const digestHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(digestInput));
+    const digestHex = Array.from(new Uint8Array(digestHash))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
     
-    // Step 2: Create signature from digest + secretKey
-    const secretData = encoder.encode(secretKey);
-    const signInput = new Uint8Array(digestHash.byteLength + secretData.length);
-    signInput.set(new Uint8Array(digestHash), 0);
-    signInput.set(secretData, digestHash.byteLength);
-    
-    const signHash = await crypto.subtle.digest('SHA-256', signInput);
-    const hashArray = Array.from(new Uint8Array(signHash));
+    // Step 2: Create signature from hex digest + secretKey (both as strings)
+    const signInput = digestHex + secretKey;
+    const signHash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(signInput));
+    const signHex = Array.from(new Uint8Array(signHash))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
     
     // Return lowercase hex string
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toLowerCase();
+    return signHex.toLowerCase();
   }
   
   private async createBitunixSignature(message: string, secret: string): Promise<string> {
