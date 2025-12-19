@@ -251,9 +251,9 @@ export default function LandingPage() {
         {/* Hero Section */}
         <section className="mx-auto flex max-w-6xl flex-col items-center px-6 pb-32 pt-16 text-center">
           <div className="flex-1 space-y-8 max-w-4xl">
-            <div className="inline-flex items-center space-x-2 rounded-full border border-slate-700/80 bg-slate-900/60 px-4 py-1 text-sm text-blue-200 shadow-lg shadow-blue-500/10 backdrop-blur">
+            <div className="inline-flex items-center space-x-2 rounded-full border border-slate-700/80 bg-slate-900/60 px-4 py-1 text-sm shadow-lg shadow-blue-500/10 backdrop-blur">
               <i className="ri-sparkling-2-fill text-blue-400" />
-              <span>14-Day Free Trial • No Credit Card Required</span>
+              <span className="text-white">14-Day Free Trial • No Credit Card Required</span>
             </div>
             <h1 className="text-4xl font-semibold leading-tight tracking-tight sm:text-5xl lg:text-6xl">
               <span className="text-white">Hyper-intelligent trading bots that</span> <span className="bg-gradient-to-r from-sky-400 via-indigo-400 to-purple-500 bg-clip-text text-transparent">learn the market in real time.</span>
@@ -459,14 +459,14 @@ export default function LandingPage() {
                           <span className="text-sm text-white">/month</span>
                         )}
                       </div>
-                      <ul className="space-y-3 text-sm text-white">
+                      <ul className="space-y-3 text-sm">
                         <li className="flex items-center space-x-2">
                           <i className="ri-checkbox-circle-fill text-emerald-400" />
-                          <span>{plan.max_bots === null ? 'Unlimited' : plan.max_bots} Trading Bots</span>
+                          <span className="text-white">{plan.max_bots === null ? 'Unlimited' : plan.max_bots} Trading Bots</span>
                         </li>
                         <li className="flex items-center space-x-2">
                           <i className="ri-checkbox-circle-fill text-emerald-400" />
-                          <span>
+                          <span className="text-white">
                             {plan.max_trades_per_day === null 
                               ? 'Unlimited' 
                               : `${plan.max_trades_per_day}`} Trades/Day
@@ -474,7 +474,7 @@ export default function LandingPage() {
                         </li>
                         <li className="flex items-center space-x-2">
                           <i className="ri-checkbox-circle-fill text-emerald-400" />
-                          <span>
+                          <span className="text-white">
                             {plan.max_exchanges === null 
                               ? 'Unlimited' 
                               : `${plan.max_exchanges}`} Exchange{plan.max_exchanges !== 1 ? 's' : ''}
@@ -483,19 +483,19 @@ export default function LandingPage() {
                         {plan.features?.paper_trading && (
                           <li className="flex items-center space-x-2">
                             <i className="ri-checkbox-circle-fill text-emerald-400" />
-                            <span>Paper Trading</span>
+                            <span className="text-white">Paper Trading</span>
                           </li>
                         )}
                         {plan.features?.real_trading && (
                           <li className="flex items-center space-x-2">
                             <i className="ri-checkbox-circle-fill text-emerald-400" />
-                            <span>Real Trading</span>
+                            <span className="text-white">Real Trading</span>
                           </li>
                         )}
                         {plan.features?.ai_optimization && (
                           <li className="flex items-center space-x-2">
                             <i className="ri-checkbox-circle-fill text-emerald-400" />
-                            <span>AI Optimization</span>
+                            <span className="text-white">AI Optimization</span>
                           </li>
                         )}
                       </ul>
