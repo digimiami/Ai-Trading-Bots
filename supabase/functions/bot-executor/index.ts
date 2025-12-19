@@ -6161,7 +6161,42 @@ class BotExecutor {
             throw new Error(`Insufficient balance for ${bot.symbol} ${tradeSignal.side} order. Available: $${balanceCheck.availableBalance.toFixed(2)}, Required: $${balanceCheck.totalRequired.toFixed(2)} (order: $${orderValue.toFixed(2)} + 5% buffer). Shortfall: $${shortfall.toFixed(2)}. Please add funds to your Bitunix ${tradingType === 'futures' ? 'Futures' : 'Spot'} wallet.`);
           }
         }
-        return await this.placeBitunixOrder(apiKey, apiSecret, bot.symbol, tradeSignal.side, amount, price, tradingType, bot);
+        const bitunixOrderResult = await this.placeBitunixOrder(apiKey, apiSecret, bot.symbol, tradeSignal.side, amount, price, tradingType, bot);
+        
+        // Set SL/TP on the position after order is filled (for futures only)
+        const marketType = tradingType === 'futures' || tradingType === 'linear' ? 'futures' : 'spot';
+        if (marketType === 'futures' && price > 0) {
+          try {
+            // Small delay to allow position to update after order fills
+            await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
+            
+            // Get actual position entry price from Bitunix
+            const entryPrice = await this.getBitunixPositionEntryPrice(apiKey, apiSecret, bot.symbol, marketType);
+            if (entryPrice && entryPrice > 0) {
+              const capitalizedSide = tradeSignal.side.charAt(0).toUpperCase() + tradeSignal.side.slice(1).toLowerCase();
+              await this.setBitunixSLTP(apiKey, apiSecret, bot.symbol, capitalizedSide, entryPrice, bot, tradeSignal, marketType);
+            } else {
+              console.warn('⚠️ Could not fetch Bitunix position entry price, skipping SL/TP (position may have been closed)');
+            }
+          } catch (slTpError) {
+            // Log error but don't fail the trade
+            console.error('⚠️ Bitunix SL/TP setting error:', slTpError);
+            if (bot?.id) {
+              await this.addBotLog(bot.id, {
+                level: 'error',
+                category: 'trade',
+                message: `⚠️ Bitunix SL/TP setting error for ${bot.symbol}: ${slTpError instanceof Error ? slTpError.message : String(slTpError)}`,
+                details: {
+                  symbol: bot.symbol,
+                  error: slTpError instanceof Error ? slTpError.message : String(slTpError),
+                  note: 'Trade completed but SL/TP may not be set. Check position manually.'
+                }
+              });
+            }
+          }
+        }
+        
+        return bitunixOrderResult;
       }
       
       throw new Error(`Unsupported exchange: ${bot.exchange}`);
@@ -10323,10 +10358,10 @@ class BotExecutor {
             side: trade.side,
             entry_price: trade.price || trade.entry_price,
             price: trade.price || trade.entry_price,
-            amount: trade.amount || trade.size || orderResult?.executedQty || orderResult?.qty || 'N/A',
-            quantity: trade.amount || trade.size || orderResult?.executedQty || orderResult?.qty || 'N/A',
+            amount: trade.amount || trade.size,
+            quantity: trade.amount || trade.size,
             leverage: bot.leverage || trade.leverage,
-            order_id: trade.exchange_order_id || orderResult?.orderId || orderResult?.order_id,
+            order_id: trade.exchange_order_id || orderResult?.orderId,
             user_id: this.user?.id || trade.user_id || bot.user_id, // Pass user_id explicitly
             paper_trading: bot.paper_trading || false,
             exchange: bot.exchange || 'bybit', // Always include exchange
@@ -10526,10 +10561,10 @@ class BotExecutor {
             side: trade.side,
             entry_price: trade.entry_price || trade.price,
             exit_price: exitPrice,
-            amount: trade.amount || trade.size || 'N/A',
-            quantity: trade.amount || trade.size || 'N/A',
+            amount: trade.amount || trade.size,
+            quantity: trade.amount || trade.size,
             pnl: pnl,
-            close_reason: closeReason || 'unknown',
+            close_reason: closeReason,
             user_id: this.user?.id || trade.user_id || bot.user_id, // Pass user_id explicitly
             paper_trading: bot.paper_trading || false,
             exchange: bot.exchange || 'bybit', // Always include exchange
@@ -10786,8 +10821,6 @@ class PaperTradingExecutor {
             side: trade.side,
             entry_price: trade.entry_price || trade.price,
             exit_price: exitPrice,
-            amount: trade.amount || trade.size || 'N/A',
-            quantity: trade.amount || trade.size || 'N/A',
             pnl: pnl,
             pnl_percentage: trade.entry_price ? ((pnl / (trade.entry_price * (trade.amount || trade.size || 1))) * 100).toFixed(2) : '0',
             close_reason: closeReason || 'unknown',
@@ -10796,7 +10829,6 @@ class PaperTradingExecutor {
             paper_trading: bot.paper_trading || false,
             exchange: bot.exchange || 'bybit',
             trading_type: bot.tradingType || bot.trading_type || 'futures',
-            tradingType: bot.tradingType || bot.trading_type || 'futures',
             account_balance: accountBalance
           }
         })

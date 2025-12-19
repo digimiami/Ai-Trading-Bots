@@ -295,6 +295,43 @@ serve(async (req) => {
               if (data.code === '0' && data.data?.length > 0) {
                 exitPrice = parseFloat(data.data[0].last || '0')
               }
+            } else if (exchange === 'bitunix') {
+              const marketType = tradingType === 'futures' || tradingType === 'linear' ? 'futures' : 'spot'
+              const baseUrl = marketType === 'futures' ? 'https://fapi.bitunix.com' : 'https://api.bitunix.com'
+              
+              // Try multiple ticker endpoints
+              const tickerEndpoints = [
+                `/api/v1/market/ticker?symbol=${symbol}&marketType=${marketType}`,
+                `/api/v1/market/ticker?symbol=${symbol}`,
+                `/api/v1/market/tickers?marketType=${marketType}`
+              ]
+              
+              for (const endpoint of tickerEndpoints) {
+                try {
+                  const response = await fetch(`${baseUrl}${endpoint}`)
+                  const data = await response.json()
+                  
+                  if (data.code === 0) {
+                    // Handle single ticker response
+                    if (data.data && typeof data.data === 'object' && !Array.isArray(data.data)) {
+                      exitPrice = parseFloat(data.data.lastPrice || data.data.price || data.data.close || '0')
+                      if (exitPrice > 0) break
+                    }
+                    // Handle tickers array response
+                    else if (Array.isArray(data.data) && data.data.length > 0) {
+                      const ticker = data.data.find((t: any) => 
+                        (t.symbol || '').toUpperCase() === symbol.toUpperCase()
+                      )
+                      if (ticker) {
+                        exitPrice = parseFloat(ticker.lastPrice || ticker.price || ticker.close || '0')
+                        if (exitPrice > 0) break
+                      }
+                    }
+                  }
+                } catch (err) {
+                  continue // Try next endpoint
+                }
+              }
             }
           } catch (priceError) {
             console.error('Error fetching exit price:', priceError)
