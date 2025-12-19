@@ -7362,29 +7362,31 @@ class BotExecutor {
       const nonce = this.generateNonce();
       
       // Try account balance endpoints (order matters - try most specific first)
+      // IMPORTANT: Bitunix futures account endpoint requires marginCoin query parameter
       const endpointsToTry = marketType === 'futures'
         ? [
-            '/api/v1/futures/account',  // Futures-specific account
-            '/api/v1/account',          // General account endpoint
-            '/api/v1/account/balance',  // Alternative balance endpoint
+            { path: '/api/v1/futures/account', params: 'marginCoin=USDT' },  // Futures-specific account (REQUIRES marginCoin)
+            { path: '/api/v1/account', params: '' },          // General account endpoint
+            { path: '/api/v1/account/balance', params: '' },  // Alternative balance endpoint
           ]
         : [
-            '/api/v1/spot/account',     // Spot-specific account
-            '/api/v1/account',          // General account endpoint
-            '/api/v1/account/balance',  // Alternative balance endpoint
+            { path: '/api/v1/spot/account', params: '' },     // Spot-specific account
+            { path: '/api/v1/account', params: '' },          // General account endpoint
+            { path: '/api/v1/account/balance', params: '' },  // Alternative balance endpoint
           ];
       
       let response: Response | null = null;
       let data: any = null;
       
       for (const baseUrl of baseUrls) {
-        for (const endpointPath of endpointsToTry) {
+        for (const endpoint of endpointsToTry) {
           try {
-            const queryParams = ''; // Empty for GET requests
+            const queryParams = endpoint.params; // Include marginCoin for futures account
             const body = ''; // Empty for GET requests
             const signature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, body, apiSecret);
             
-            response = await fetch(`${baseUrl}${endpointPath}`, {
+            const url = queryParams ? `${baseUrl}${endpoint.path}?${queryParams}` : `${baseUrl}${endpoint.path}`;
+            response = await fetch(url, {
               method: 'GET',
               headers: {
                 'api-key': String(apiKey),
@@ -7401,7 +7403,7 @@ class BotExecutor {
               }
               // For other errors, log and continue
               const errorText = await response.text().catch(() => '');
-              console.warn(`⚠️ Balance check failed: ${baseUrl}${endpointPath} returned ${response.status}: ${errorText.substring(0, 200)}`);
+              console.warn(`⚠️ Balance check failed: ${baseUrl}${endpoint.path}${queryParams ? '?' + queryParams : ''} returned ${response.status}: ${errorText.substring(0, 200)}`);
               continue;
             }
             
@@ -7413,15 +7415,15 @@ class BotExecutor {
             data = JSON.parse(responseText);
             
             if (data && data.code === 0) {
-              console.log(`✅ Bitunix balance check successful: ${baseUrl}${endpointPath}`);
+              console.log(`✅ Bitunix balance check successful: ${baseUrl}${endpoint.path}${queryParams ? '?' + queryParams : ''}`);
               break; // Success
             } else if (data && data.code) {
               // Log non-zero error codes but continue trying
-              console.warn(`⚠️ Balance check returned code ${data.code}: ${data.msg || 'Unknown error'} from ${baseUrl}${endpointPath}`);
+              console.warn(`⚠️ Balance check returned code ${data.code}: ${data.msg || 'Unknown error'} from ${baseUrl}${endpoint.path}${queryParams ? '?' + queryParams : ''}`);
             }
           } catch (err: any) {
             // Log error but continue trying other endpoints
-            console.warn(`⚠️ Balance check error for ${baseUrl}${endpointPath}:`, err.message || String(err));
+            console.warn(`⚠️ Balance check error for ${baseUrl}${endpoint.path}${endpoint.params ? '?' + endpoint.params : ''}:`, err.message || String(err));
             continue;
           }
         }
@@ -8809,6 +8811,62 @@ class BotExecutor {
                   }
                 } catch (altErr2) {
                   console.warn(`   ⚠️ Alternative format 2 also failed:`, altErr2);
+                }
+                
+                // If limit order failed, try market order as last resort (market orders have fewer requirements)
+                if (orderTypeCode === 1 && price && price > 0) {
+                  console.log(`   🔄 Trying market order format (no price required)...`);
+                  const marketOrderParams: any = {
+                    symbol: symbol.toUpperCase(),
+                    side: sideCode,
+                    type: 2, // Market order
+                    qty: amount.toString(),
+                  };
+                  
+                  const marketBodyString = JSON.stringify(marketOrderParams).replace(/\s+/g, '');
+                  const marketSignature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, marketBodyString, apiSecret);
+                  
+                  try {
+                    const marketResponse = await fetch(`${baseUrl}${requestPath}`, {
+                      method: 'POST',
+                      headers: {
+                        'api-key': String(apiKey),
+                        'nonce': String(nonce),
+                        'timestamp': String(timestamp),
+                        'sign': String(marketSignature),
+                        'Content-Type': 'application/json',
+                        'language': 'en-US'
+                      },
+                      body: marketBodyString
+                    });
+                    
+                    const marketResponseText = await marketResponse.text();
+                    console.log(`   Market order response: ${marketResponse.status}, body: ${marketResponseText.substring(0, 300)}`);
+                    
+                    if (marketResponse.ok) {
+                      const marketData = JSON.parse(marketResponseText);
+                      
+                      if (marketData.code === 0) {
+                        console.log(`✅ Bitunix market order placed successfully via ${baseUrl}${requestPath}`);
+                        if (bot?.id) {
+                          await this.addBotLog(bot.id, {
+                            level: 'info',
+                            category: 'trade',
+                            message: `Bitunix order placed as market order (limit order failed)`,
+                            details: { symbol, originalType: 'limit', executedType: 'market' }
+                          });
+                        }
+                        return {
+                          orderId: marketData.data?.orderId || marketData.data?.id || marketData.data?.order_id || marketData.data?.clientId,
+                          status: marketData.data?.status || 'filled',
+                          exchange: 'bitunix',
+                          response: marketData
+                        };
+                      }
+                    }
+                  } catch (marketErr) {
+                    console.warn(`   ⚠️ Market order fallback also failed:`, marketErr);
+                  }
                 }
               }
               
