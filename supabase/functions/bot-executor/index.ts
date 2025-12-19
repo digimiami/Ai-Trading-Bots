@@ -10323,10 +10323,10 @@ class BotExecutor {
             side: trade.side,
             entry_price: trade.price || trade.entry_price,
             price: trade.price || trade.entry_price,
-            amount: trade.amount || trade.size,
-            quantity: trade.amount || trade.size,
+            amount: trade.amount || trade.size || orderResult?.executedQty || orderResult?.qty || 'N/A',
+            quantity: trade.amount || trade.size || orderResult?.executedQty || orderResult?.qty || 'N/A',
             leverage: bot.leverage || trade.leverage,
-            order_id: trade.exchange_order_id || orderResult?.orderId,
+            order_id: trade.exchange_order_id || orderResult?.orderId || orderResult?.order_id,
             user_id: this.user?.id || trade.user_id || bot.user_id, // Pass user_id explicitly
             paper_trading: bot.paper_trading || false,
             exchange: bot.exchange || 'bybit', // Always include exchange
@@ -10526,10 +10526,10 @@ class BotExecutor {
             side: trade.side,
             entry_price: trade.entry_price || trade.price,
             exit_price: exitPrice,
-            amount: trade.amount || trade.size,
-            quantity: trade.amount || trade.size,
+            amount: trade.amount || trade.size || 'N/A',
+            quantity: trade.amount || trade.size || 'N/A',
             pnl: pnl,
-            close_reason: closeReason,
+            close_reason: closeReason || 'unknown',
             user_id: this.user?.id || trade.user_id || bot.user_id, // Pass user_id explicitly
             paper_trading: bot.paper_trading || false,
             exchange: bot.exchange || 'bybit', // Always include exchange
@@ -10786,6 +10786,8 @@ class PaperTradingExecutor {
             side: trade.side,
             entry_price: trade.entry_price || trade.price,
             exit_price: exitPrice,
+            amount: trade.amount || trade.size || 'N/A',
+            quantity: trade.amount || trade.size || 'N/A',
             pnl: pnl,
             pnl_percentage: trade.entry_price ? ((pnl / (trade.entry_price * (trade.amount || trade.size || 1))) * 100).toFixed(2) : '0',
             close_reason: closeReason || 'unknown',
@@ -10794,6 +10796,7 @@ class PaperTradingExecutor {
             paper_trading: bot.paper_trading || false,
             exchange: bot.exchange || 'bybit',
             trading_type: bot.tradingType || bot.trading_type || 'futures',
+            tradingType: bot.tradingType || bot.trading_type || 'futures',
             account_balance: accountBalance
           }
         })

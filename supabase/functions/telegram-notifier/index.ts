@@ -92,12 +92,13 @@ function formatNotificationMessage(type: string, data: any): string {
              balanceSection;
 
     case 'position_open':
+      const openAmount = data.amount || data.quantity || 'N/A';
       return `${icon} <b>Position Opened</b>\n\n` +
              `Bot: ${data.bot_name}\n` +
              `Symbol: ${data.symbol}\n` +
              `Side: ${data.side.toUpperCase()}\n` +
-             `Entry Price: $${data.entry_price || data.price}\n` +
-             `Amount: ${data.amount || data.quantity}\n` +
+             `Entry Price: $${(data.entry_price || data.price || 0).toFixed(2)}\n` +
+             `Amount: ${openAmount}\n` +
              `${data.leverage ? `Leverage: ${data.leverage}x\n` : ''}` +
              `${data.order_id ? `Order ID: ${data.order_id}\n` : ''}` +
              balanceSection;
@@ -105,13 +106,14 @@ function formatNotificationMessage(type: string, data: any): string {
     case 'position_close':
       const pnlEmoji = data.pnl >= 0 ? '✅' : '❌';
       const pnlSign = data.pnl >= 0 ? '+' : '';
+      const amount = data.amount || data.quantity || 'N/A';
       return `${icon} <b>Position Closed</b>\n\n` +
              `Bot: ${data.bot_name}\n` +
              `Symbol: ${data.symbol}\n` +
              `Side: ${data.side.toUpperCase()}\n` +
-             `Entry Price: $${data.entry_price || data.price}\n` +
-             `Exit Price: $${data.exit_price}\n` +
-             `Amount: ${data.amount || data.quantity}\n` +
+             `Entry Price: $${(data.entry_price || data.price || 0).toFixed(2)}\n` +
+             `Exit Price: $${(data.exit_price || 0).toFixed(2)}\n` +
+             `Amount: ${amount}\n` +
              `${pnlEmoji} P&L: ${pnlSign}$${Math.abs(data.pnl || 0).toFixed(2)}\n` +
              `${data.close_reason ? `Reason: ${data.close_reason}\n` : ''}` +
              balanceSection;

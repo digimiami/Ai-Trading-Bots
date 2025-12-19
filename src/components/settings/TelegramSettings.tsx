@@ -14,6 +14,8 @@ export default function TelegramSettings() {
     enabled: true,
     notifications: {
       trade_executed: true,
+      position_open: true,
+      position_close: true,
       bot_started: true,
       bot_stopped: true,
       error_occurred: true,
@@ -143,6 +145,32 @@ export default function TelegramSettings() {
                   className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                 />
                 <span className="text-sm text-gray-700">💰 Trade Executed</span>
+              </label>
+
+              <label className="flex items-center p-2 hover:bg-gray-50 rounded">
+                <input
+                  type="checkbox"
+                  checked={settings.notifications.position_open ?? true}
+                  onChange={(e) => setSettings(prev => ({
+                    ...prev,
+                    notifications: { ...prev.notifications, position_open: e.target.checked }
+                  }))}
+                  className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <span className="text-sm text-gray-700">📈 Position Opened</span>
+              </label>
+
+              <label className="flex items-center p-2 hover:bg-gray-50 rounded">
+                <input
+                  type="checkbox"
+                  checked={settings.notifications.position_close ?? true}
+                  onChange={(e) => setSettings(prev => ({
+                    ...prev,
+                    notifications: { ...prev.notifications, position_close: e.target.checked }
+                  }))}
+                  className="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <span className="text-sm text-gray-700">📉 Position Closed</span>
               </label>
 
               <label className="flex items-center p-2 hover:bg-gray-50 rounded">
