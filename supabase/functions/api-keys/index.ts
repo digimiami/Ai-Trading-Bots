@@ -630,22 +630,30 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string) {
     console.log('Bitunix API Response:', JSON.stringify(data, null, 2))
     
     // Parse Bitunix balance response
-    // According to docs, response format: { code: 0, msg: "success", data: [...] }
-    // Data may be array or object depending on endpoint
+    // Official format: { code: 0, msg: "success", data: [{ coin: "BTC", balance: 1.5, balanceLocked: 0.5 }] }
     const responseData = data.data || {}
     
     // Handle different response formats
     let assets: any[] = []
     if (Array.isArray(responseData)) {
+      // Official format: data is an array of assets
       assets = responseData
-    } else if (responseData.assets) {
+      console.log(`Bitunix: Found ${assets.length} assets in array format`)
+    } else if (responseData.assets && Array.isArray(responseData.assets)) {
       assets = responseData.assets
-    } else if (responseData.balances) {
+      console.log(`Bitunix: Found ${assets.length} assets in assets array`)
+    } else if (responseData.balances && Array.isArray(responseData.balances)) {
       assets = responseData.balances
+      console.log(`Bitunix: Found ${assets.length} assets in balances array`)
     } else if (responseData.coin || responseData.balance !== undefined) {
       // Single asset response
       assets = [responseData]
+      console.log(`Bitunix: Found single asset response`)
+    } else {
+      console.warn('Bitunix: Unknown response format:', responseData)
     }
+    
+    console.log(`Bitunix: Processing ${assets.length} assets`)
     
     let totalBalance = 0
     let availableBalance = 0
