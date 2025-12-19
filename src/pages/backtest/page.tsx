@@ -487,6 +487,18 @@ All settings have been applied to your backtest configuration.`;
     }
   };
 
+  // Calculate effective symbol for AI recommendations (use first selected symbol)
+  const effectiveSymbol = (() => {
+    if (config.useCustomPairs && config.customPairs.trim()) {
+      const firstPair = config.customPairs.split(/[,\s]+/).find(p => p.trim());
+      if (firstPair) {
+        const normalized = firstPair.trim().toUpperCase();
+        return normalized.endsWith('USDT') ? normalized : normalized + 'USDT';
+      }
+    }
+    return config.symbols.length > 0 ? config.symbols[0] : null;
+  })();
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header title="Multiple Pairs Backtesting" />
