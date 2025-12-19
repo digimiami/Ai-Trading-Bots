@@ -121,6 +121,38 @@ serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
           })
         }
+      } else if (exchange === 'mexc') {
+        // MEXC tickers endpoint
+        try {
+          const response = await fetch('https://api.mexc.com/api/v3/ticker/24hr', {
+            signal: AbortSignal.timeout(10000)
+          });
+          
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('MEXC tickers fetch failed:', response.status, errorText);
+            return new Response(JSON.stringify({
+              error: 'Failed to fetch MEXC tickers',
+              status: response.status,
+              body: errorText
+            }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+          }
+          
+          const data = await response.json();
+          // MEXC returns array of tickers: [{ symbol: "BTCUSDT", price: "...", ... }, ...]
+          return new Response(JSON.stringify({ code: 0, data: data }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        } catch (fetchError: any) {
+          console.error('MEXC tickers fetch error:', fetchError);
+          return new Response(JSON.stringify({
+            error: 'Failed to fetch MEXC tickers',
+            details: fetchError.message
+          }), { 
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          })
+        }
       }
     }
 
@@ -195,6 +227,24 @@ serve(async (req) => {
           console.error('Bitunix klines fetch failed:', response.status, errorText)
           return new Response(JSON.stringify({
             error: 'Failed to fetch Bitunix klines',
+            status: response.status,
+            body: errorText
+          }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+        }
+
+        const data = await response.json()
+        return new Response(JSON.stringify(data), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      } else if (exchange === 'mexc') {
+        // MEXC klines endpoint
+        const klinesUrl = `https://api.mexc.com/api/v3/klines?symbol=${symbol}&interval=${interval}&limit=${limit}${start ? `&startTime=${start}` : ''}`
+        const response = await fetch(klinesUrl)
+        if (!response.ok) {
+          const errorText = await response.text()
+          console.error('MEXC klines fetch failed:', response.status, errorText)
+          return new Response(JSON.stringify({
+            error: 'Failed to fetch MEXC klines',
             status: response.status,
             body: errorText
           }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })

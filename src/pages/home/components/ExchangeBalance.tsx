@@ -79,6 +79,8 @@ export default function ExchangeBalanceDisplay({ balances }: ExchangeBalanceProp
         return 'ri-exchange-line';
       case 'bitunix':
         return 'ri-exchange-line';
+      case 'mexc':
+        return 'ri-exchange-line';
       default:
         return 'ri-exchange-line';
     }
@@ -92,6 +94,8 @@ export default function ExchangeBalanceDisplay({ balances }: ExchangeBalanceProp
         return 'text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30';
       case 'bitunix':
         return 'text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/30';
+      case 'mexc':
+        return 'text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/30';
       default:
         return 'text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800';
     }

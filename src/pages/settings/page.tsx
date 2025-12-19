@@ -91,6 +91,8 @@ export default function Settings() {
     okxPassphrase: '',
     bitunixApiKey: '',
     bitunixApiSecret: '',
+    mexcApiKey: '',
+    mexcApiSecret: '',
     webhookUrl: '',
     webhookSecret: '',
     alertsEnabled: true
@@ -316,6 +318,7 @@ export default function Settings() {
       const bybitKey = apiKeys.find(k => k.exchange === 'bybit');
       const okxKey = apiKeys.find(k => k.exchange === 'okx');
       const bitunixKey = apiKeys.find(k => k.exchange === 'bitunix');
+      const mexcKey = apiKeys.find(k => k.exchange === 'mexc');
       
       setApiSettings(prev => ({
         ...prev,
@@ -327,6 +330,8 @@ export default function Settings() {
         okxPassphrase: okxKey ? '••••••••••••••••' : '',
         bitunixApiKey: bitunixKey ? '••••••••••••••••' : '',
         bitunixApiSecret: bitunixKey ? '••••••••••••••••' : '',
+        mexcApiKey: mexcKey ? '••••••••••••••••' : '',
+        mexcApiSecret: mexcKey ? '••••••••••••••••' : '',
       }));
     } else if (showApiConfig && apiKeys.length === 0) {
       // Reset to defaults when opening modal with no existing keys
@@ -339,6 +344,8 @@ export default function Settings() {
         okxPassphrase: '',
         bitunixApiKey: '',
         bitunixApiSecret: '',
+        mexcApiKey: '',
+        mexcApiSecret: '',
       }));
     }
   }, [showApiConfig, apiKeys]);
@@ -562,6 +569,16 @@ export default function Settings() {
         });
       }
 
+      // Save MEXC API key if provided
+      if (apiSettings.mexcApiKey && apiSettings.mexcApiSecret) {
+        await saveApiKey({
+          exchange: 'mexc',
+          apiKey: apiSettings.mexcApiKey,
+          apiSecret: apiSettings.mexcApiSecret,
+          passphrase: '', // MEXC doesn't use passphrase
+        });
+      }
+
       // Clear form fields after saving (for security - keys are encrypted in DB)
       setApiSettings(prev => ({
         bybitApiKey: '',
@@ -571,6 +588,8 @@ export default function Settings() {
         okxPassphrase: '',
         bitunixApiKey: '',
         bitunixApiSecret: '',
+        mexcApiKey: '',
+        mexcApiSecret: '',
         webhookUrl: prev.webhookUrl,
         webhookSecret: prev.webhookSecret,
         alertsEnabled: prev.alertsEnabled
@@ -583,7 +602,7 @@ export default function Settings() {
     }
   };
 
-  const handleSaveExchange = async (exchange: 'bybit' | 'okx' | 'bitunix') => {
+  const handleSaveExchange = async (exchange: 'bybit' | 'okx' | 'bitunix' | 'mexc') => {
     try {
       // Ensure user exists before saving API keys
       const userExists = await ensureUserExists();
@@ -684,6 +703,37 @@ export default function Settings() {
           bitunixApiSecret: '',
         }));
         alert('✅ Bitunix API keys saved successfully!');
+      } else if (exchange === 'mexc') {
+        if (!apiSettings.mexcApiKey || !apiSettings.mexcApiSecret) {
+          alert('Please enter both API Key and API Secret for MEXC');
+          return;
+        }
+        // Test connection first before saving
+        const testResult = await testConnection({
+          exchange: 'mexc',
+          apiKey: apiSettings.mexcApiKey,
+          apiSecret: apiSettings.mexcApiSecret,
+          passphrase: '' // MEXC doesn't use passphrase
+        });
+        
+        if (!testResult.success) {
+          const proceed = confirm(`⚠️ Connection test failed: ${testResult.message}\n\nDo you still want to save these keys?`);
+          if (!proceed) return;
+        }
+        
+        await saveApiKey({
+          exchange: 'mexc',
+          apiKey: apiSettings.mexcApiKey,
+          apiSecret: apiSettings.mexcApiSecret,
+          passphrase: '', // MEXC doesn't use passphrase
+        });
+        // Clear only MEXC fields after saving
+        setApiSettings(prev => ({
+          ...prev,
+          mexcApiKey: '',
+          mexcApiSecret: '',
+        }));
+        alert('✅ MEXC API keys saved successfully!');
       }
     } catch (error: any) {
       alert(`Failed to save ${exchange.toUpperCase()} API keys: ${error.message}`);
@@ -815,7 +865,7 @@ export default function Settings() {
     setShowEditProfile(true);
   };
 
-  const handleTestConnection = async (exchange: 'bybit' | 'okx' | 'bitunix') => {
+  const handleTestConnection = async (exchange: 'bybit' | 'okx' | 'bitunix' | 'mexc') => {
     try {
       let formData: ApiKeyFormData;
       
@@ -851,6 +901,17 @@ export default function Settings() {
             apiSecret: apiSettings.bitunixApiSecret,
             passphrase: '' // Bitunix doesn't use passphrase
           };
+      } else if (exchange === 'mexc') {
+        if (!apiSettings.mexcApiKey || !apiSettings.mexcApiSecret) {
+          alert('Please enter both API Key and API Secret for MEXC');
+          return;
+        }
+        formData = {
+          exchange: 'mexc',
+          apiKey: apiSettings.mexcApiKey,
+          apiSecret: apiSettings.mexcApiSecret,
+          passphrase: '' // MEXC doesn't use passphrase
+        };
       } else {
         alert('Invalid exchange');
         return;
@@ -2110,6 +2171,78 @@ export default function Settings() {
                       <button
                         onClick={() => handleSaveExchange('bitunix')}
                         className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-lg transition-colors text-sm font-medium"
+                      >
+                        <i className="ri-save-line mr-1"></i>
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* MEXC API */}
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-3 flex items-center">
+                    <i className="ri-exchange-line text-blue-600 mr-2"></i>
+                    MEXC API
+                  </h3>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        API Key
+                      </label>
+                      <input
+                        type="password"
+                        value={apiSettings.mexcApiKey}
+                        onChange={(e) => handleApiChange('mexcApiKey', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        placeholder="Enter MEXC API Key"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        API Secret
+                      </label>
+                      <input
+                        type="password"
+                        value={apiSettings.mexcApiSecret}
+                        onChange={(e) => handleApiChange('mexcApiSecret', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                        placeholder="Enter MEXC API Secret"
+                      />
+                    </div>
+                    <div className="p-4 bg-red-50 border-2 border-red-300 rounded-lg">
+                      <p className="text-sm text-red-800 font-semibold flex items-start">
+                        <i className="ri-alert-line text-red-600 mr-2 mt-0.5 text-lg"></i>
+                        <span>
+                          <strong>⚠️ Disable Withdrawals (NEVER check this box).</strong> If your bot is hacked, the hacker can trade your funds but they cannot send them to their own wallet.
+                        </span>
+                      </p>
+                    </div>
+                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <p className="text-xs text-gray-700 mb-2">
+                        <i className="ri-information-line text-blue-600 mr-1"></i>
+                        <strong>Don't have a MEXC account?</strong>
+                      </p>
+                      <a
+                        href="https://www.mexc.com"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"
+                      >
+                        <i className="ri-external-link-line mr-1"></i>
+                        Sign up for MEXC Account
+                      </a>
+                    </div>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => handleTestConnection('mexc')}
+                        className="flex-1 bg-blue-100 hover:bg-blue-200 text-blue-700 py-2 px-4 rounded-lg transition-colors text-sm"
+                      >
+                        Test Connection
+                      </button>
+                      <button
+                        onClick={() => handleSaveExchange('mexc')}
+                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg transition-colors text-sm font-medium"
                       >
                         <i className="ri-save-line mr-1"></i>
                         Save

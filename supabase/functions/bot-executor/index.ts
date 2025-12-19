@@ -8936,6 +8936,110 @@ class BotExecutor {
     }
   }
   
+  private async placeMEXCOrder(apiKey: string, apiSecret: string, symbol: string, side: string, amount: number, price: number, tradingType: string = 'spot', bot: any = null): Promise<any> {
+    // MEXC API documentation: https://mexc.com/api-docs/spot-v3/introduction
+    const baseUrl = 'https://api.mexc.com';
+    
+    console.log(`🔑 MEXC Order Details:`);
+    console.log(`   Trading Type: ${tradingType}`);
+    console.log(`   Symbol: ${symbol}, Side: ${side}, Amount: ${amount}, Price: ${price}`);
+    
+    try {
+      const timestamp = Date.now().toString();
+      const symbolUpper = symbol.toUpperCase();
+      
+      // MEXC order parameters
+      // side: BUY or SELL
+      // type: LIMIT or MARKET
+      const orderSide = side.toUpperCase() === 'BUY' || side.toUpperCase() === 'LONG' ? 'BUY' : 'SELL';
+      const orderType = price > 0 ? 'LIMIT' : 'MARKET';
+      
+      // Build request body
+      const orderBody: any = {
+        symbol: symbolUpper,
+        side: orderSide,
+        type: orderType,
+        quantity: amount.toString()
+      };
+      
+      if (orderType === 'LIMIT' && price > 0) {
+        orderBody.price = price.toString();
+        orderBody.timeInForce = 'GTC'; // Good Till Cancel
+      }
+      
+      // MEXC signature: HMAC_SHA256(queryString + timestamp, secretKey)
+      // For POST requests, queryString is empty, so signature = HMAC_SHA256(timestamp, secretKey)
+      const queryString = '';
+      const signaturePayload = queryString + timestamp;
+      const signature = await this.createHMACSignature(signaturePayload, apiSecret);
+      
+      console.log(`   Signature payload: ${signaturePayload}`);
+      console.log(`   Generated signature: ${signature}`);
+      
+      // MEXC API headers
+      const headers: Record<string, string> = {
+        'X-MEXC-APIKEY': apiKey,
+        'Content-Type': 'application/json'
+      };
+      
+      // MEXC order endpoint
+      const orderUrl = `${baseUrl}/api/v3/order?timestamp=${timestamp}&signature=${signature}`;
+      
+      console.log(`📤 Placing MEXC ${orderType} order: ${orderSide} ${amount} ${symbolUpper} @ ${price > 0 ? price : 'MARKET'}`);
+      
+      const response = await fetch(orderUrl, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify(orderBody)
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`❌ MEXC order failed: HTTP ${response.status}`, errorText);
+        throw new Error(`MEXC API error: HTTP ${response.status} - ${errorText.substring(0, 200)}`);
+      }
+      
+      const data = await response.json();
+      console.log(`📥 MEXC order response:`, JSON.stringify(data).substring(0, 300));
+      
+      // MEXC response format: { orderId: "...", ... } or { code: 200, data: {...} }
+      if (data.orderId || (data.code === 200 && data.data)) {
+        const orderId = data.orderId || data.data?.orderId || data.data?.id;
+        console.log(`✅ MEXC order placed successfully: Order ID ${orderId}`);
+        return {
+          orderId: orderId,
+          status: data.status || 'NEW',
+          exchange: 'mexc',
+          response: data
+        };
+      } else {
+        throw new Error(`MEXC order failed: ${data.msg || data.message || JSON.stringify(data)}`);
+      }
+    } catch (error: any) {
+      console.error('❌ MEXC order placement error:', error);
+      throw error;
+    }
+  }
+
+  // Helper function to create HMAC SHA256 signature (for MEXC)
+  private async createHMACSignature(message: string, secret: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(secret);
+    const messageData = encoder.encode(message);
+    
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      keyData,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    
+    const signature = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+    const hashArray = Array.from(new Uint8Array(signature));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
   private generateNonce(): string {
     // Generate 32-bit random string (8 hex characters)
     const randomBytes = new Uint8Array(4);

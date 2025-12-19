@@ -1018,6 +1018,15 @@ serve(async (req) => {
                   : balance.error || 'Connection failed',
                 exchange
               }
+            } else if (exchange === 'mexc') {
+              const balance = await fetchMEXCBalance(apiKey, apiSecret)
+              testResult = {
+                success: balance.status === 'connected',
+                message: balance.status === 'connected' 
+                  ? 'Connection successful' 
+                  : balance.error || 'Connection failed',
+                exchange
+              }
             } else {
               testResult = {
                 success: false,
