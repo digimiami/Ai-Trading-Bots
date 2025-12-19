@@ -255,10 +255,10 @@ export default function LandingPage() {
               <i className="ri-sparkling-2-fill text-blue-400" />
               <span>14-Day Free Trial • No Credit Card Required</span>
             </div>
-            <h1 className="text-4xl font-semibold leading-tight tracking-tight sm:text-5xl lg:text-6xl">
+            <h1 className="text-4xl font-semibold leading-tight tracking-tight text-white sm:text-5xl lg:text-6xl">
               Hyper-intelligent trading bots that <span className="bg-gradient-to-r from-sky-400 via-indigo-400 to-purple-500 bg-clip-text text-transparent">learn the market in real time.</span>
             </h1>
-            <p className="max-w-2xl mx-auto text-lg text-slate-300/75 sm:text-xl">
+            <p className="max-w-2xl mx-auto text-lg text-slate-200 sm:text-xl">
               Pablo merges multi-exchange liquidity, deep learning models, and adaptive risk engines into a single neural console. Deploy bots that evolve with volatility—without writing a line of code.
             </p>
             <div className="flex flex-col items-center space-y-3 sm:flex-row sm:space-x-4 sm:space-y-0 justify-center">
@@ -281,7 +281,7 @@ export default function LandingPage() {
             <h2 className="text-3xl font-semibold text-white sm:text-4xl mb-4">
               Everything you need to trade like a pro
             </h2>
-            <p className="text-base text-slate-300/75 max-w-2xl mx-auto">
+            <p className="text-base text-slate-200 max-w-2xl mx-auto">
               Powerful tools and AI-driven insights to help you make smarter trading decisions
             </p>
           </div>
@@ -295,7 +295,7 @@ export default function LandingPage() {
                   <i className="ri-robot-line" />
                 </div>
                 <h3 className="text-2xl font-semibold text-white">AI Assistant</h3>
-                <p className="text-sm text-slate-300/80">
+                <p className="text-sm text-slate-200">
                   Get intelligent trading recommendations powered by advanced AI. Ask questions, get strategy suggestions, and receive real-time market insights to optimize your trading decisions.
                 </p>
                 <div className="flex items-center space-x-2 text-sm font-medium text-blue-300/80">
@@ -313,7 +313,7 @@ export default function LandingPage() {
                   <i className="ri-bar-chart-line" />
                 </div>
                 <h3 className="text-2xl font-semibold text-white">Backtest Engine</h3>
-                <p className="text-sm text-slate-300/80">
+                <p className="text-sm text-slate-200">
                   Test your trading strategies against historical data before risking real capital. Analyze performance, optimize parameters, and validate your approach with comprehensive backtesting tools.
                 </p>
                 <div className="flex items-center space-x-2 text-sm font-medium text-emerald-300/80">
@@ -331,7 +331,7 @@ export default function LandingPage() {
                   <i className="ri-search-line" />
                 </div>
                 <h3 className="text-2xl font-semibold text-white">Futures Pairs Finder</h3>
-                <p className="text-sm text-slate-300/80">
+                <p className="text-sm text-slate-200">
                   Discover the best trading opportunities across futures markets. Filter by volume, volatility, and performance metrics to find pairs that match your trading style and risk tolerance.
                 </p>
                 <div className="flex items-center space-x-2 text-sm font-medium text-purple-300/80">
@@ -349,7 +349,7 @@ export default function LandingPage() {
                   <i className="ri-brain-line" />
                 </div>
                 <h3 className="text-2xl font-semibold text-white">AI/ML Dashboard</h3>
-                <p className="text-sm text-slate-300/80">
+                <p className="text-sm text-slate-200">
                   Leverage machine learning models to predict market movements and optimize your trading strategies. Access advanced analytics, pattern recognition, and predictive insights.
                 </p>
                 <div className="flex items-center space-x-2 text-sm font-medium text-amber-300/80">
@@ -367,7 +367,7 @@ export default function LandingPage() {
                   <i className="ri-rocket-line" />
                 </div>
                 <h3 className="text-2xl font-semibold text-white">Pablo Bots Ready</h3>
-                <p className="text-sm text-slate-300/80">
+                <p className="text-sm text-slate-200">
                   Deploy pre-configured, battle-tested trading bots in seconds. Choose from our curated selection of optimized strategies designed by professional traders and AI analysis.
                 </p>
                 <div className="flex items-center space-x-2 text-sm font-medium text-cyan-300/80">
@@ -385,7 +385,7 @@ export default function LandingPage() {
                   <i className="ri-shield-check-line" />
                 </div>
                 <h3 className="text-2xl font-semibold text-white">Risk Management</h3>
-                <p className="text-sm text-slate-300/80">
+                <p className="text-sm text-slate-200">
                   Advanced risk controls and safety features to protect your capital. Set stop losses, take profits, leverage limits, and emergency stops to trade with confidence.
                 </p>
                 <div className="flex items-center space-x-2 text-sm font-medium text-indigo-300/80">
@@ -404,7 +404,7 @@ export default function LandingPage() {
             <h2 className="text-3xl font-semibold text-white sm:text-4xl mb-4">
               Start free, scale as you grow
             </h2>
-            <p className="text-base text-slate-300/75">
+            <p className="text-base text-slate-200">
               Transparent pricing. Unlimited paper trading. Start with a 14-day free trial—no credit card required.
             </p>
           </div>
@@ -449,17 +449,17 @@ export default function LandingPage() {
                     <div className="relative mt-8 space-y-6">
                       <div>
                         <h3 className="text-2xl font-semibold text-white">{plan.display_name}</h3>
-                        <p className="mt-3 text-sm text-slate-400/80 min-h-[40px]">{plan.description}</p>
+                        <p className="mt-3 text-sm text-slate-200 min-h-[40px]">{plan.description}</p>
                       </div>
                       <div className="flex items-end space-x-2">
                         <span className="text-4xl font-semibold text-white">
                           {plan.price_monthly_usd === 0 ? 'Free' : displayPrice}
                         </span>
                         {plan.price_monthly_usd > 0 && (
-                          <span className="text-sm text-slate-400/80">/month</span>
+                          <span className="text-sm text-slate-300">/month</span>
                         )}
                       </div>
-                      <ul className="space-y-3 text-sm text-slate-300/80">
+                      <ul className="space-y-3 text-sm text-slate-200">
                         <li className="flex items-center space-x-2">
                           <i className="ri-checkbox-circle-fill text-emerald-400" />
                           <span>{plan.max_bots === null ? 'Unlimited' : plan.max_bots} Trading Bots</span>
@@ -514,7 +514,7 @@ export default function LandingPage() {
           )}
 
           <div className="mt-8 text-center">
-            <p className="text-sm text-slate-400/80">
+            <p className="text-sm text-slate-200">
               All plans include access to all features. Upgrade anytime. Cancel anytime.
             </p>
           </div>
@@ -530,9 +530,9 @@ export default function LandingPage() {
                 alt="Pablo Logo" 
                 className="h-9 w-9 sm:h-10 sm:w-10 object-contain"
               />
-              <span className="text-sm uppercase tracking-[0.3em] text-slate-400/80">Pablo Bots</span>
+              <span className="text-sm uppercase tracking-[0.3em] text-slate-300">Pablo Bots</span>
             </div>
-            <p className="mt-3 text-xs text-slate-500/80">
+            <p className="mt-3 text-xs text-slate-300">
               © {new Date().getFullYear()} Pablo Bots Trading Systems. Crafted for forward-looking funds and traders.
             </p>
             <div className="mt-4">
@@ -540,36 +540,36 @@ export default function LandingPage() {
                 variant="compact"
                 title="Pablo AI Trading Bots | Hyper-Automated Crypto Execution"
                 description="Launch institutional-grade trading bots in minutes. Pablo orchestrates market data, machine learning, and risk controls so you can scale across exchanges without writing code."
-                className="text-slate-300/80"
+                className="text-slate-200"
               />
             </div>
           </div>
           <div className="flex flex-col items-start space-y-3 text-sm md:flex-row md:items-center md:space-x-6 md:space-y-0">
-            <button onClick={() => navigate('/auth')} className="text-slate-300/80 transition hover:text-white">
+            <button onClick={() => navigate('/auth')} className="text-slate-200 transition hover:text-white">
               Sign In
             </button>
-            <button onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })} className="text-slate-300/80 transition hover:text-white">
+            <button onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })} className="text-slate-200 transition hover:text-white">
               Features
             </button>
-            <button onClick={() => navigate('/market-dashboard')} className="text-slate-300/80 transition hover:text-white">
+            <button onClick={() => navigate('/market-dashboard')} className="text-slate-200 transition hover:text-white">
               Market Dashboard
             </button>
-            <button onClick={() => navigate('/crypto-bubbles')} className="text-slate-300/80 transition hover:text-white">
+            <button onClick={() => navigate('/crypto-bubbles')} className="text-slate-200 transition hover:text-white">
               Crypto Bubbles
             </button>
-            <button onClick={() => navigate('/crypto-news')} className="text-slate-300/80 transition hover:text-white">
+            <button onClick={() => navigate('/crypto-news')} className="text-slate-200 transition hover:text-white">
               Crypto News
             </button>
-            <button onClick={() => document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' })} className="text-slate-300/80 transition hover:text-white">
+            <button onClick={() => document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' })} className="text-slate-200 transition hover:text-white">
               Pricing
             </button>
-            <button onClick={() => navigate('/contact')} className="text-slate-300/80 transition hover:text-white">
+            <button onClick={() => navigate('/contact')} className="text-slate-200 transition hover:text-white">
               Contact
             </button>
-            <button onClick={() => navigate('/privacy')} className="text-slate-300/80 transition hover:text-white">
+            <button onClick={() => navigate('/privacy')} className="text-slate-200 transition hover:text-white">
               Privacy
             </button>
-            <button onClick={() => navigate('/terms')} className="text-slate-300/80 transition hover:text-white">
+            <button onClick={() => navigate('/terms')} className="text-slate-200 transition hover:text-white">
               Terms
             </button>
           </div>
