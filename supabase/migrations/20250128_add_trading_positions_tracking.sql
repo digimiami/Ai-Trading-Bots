@@ -56,6 +56,8 @@ DECLARE
   v_win_rate DECIMAL;
   v_max_drawdown DECIMAL;
   v_peak_pnl DECIMAL;
+  v_pnl_percentage DECIMAL(5,2);
+  v_trade_amount DECIMAL;
 BEGIN
   -- Only process when position is closed
   IF NEW.status = 'closed' AND (OLD.status IS NULL OR OLD.status = 'open') THEN
@@ -73,14 +75,17 @@ BEGIN
     FROM trading_positions
     WHERE bot_id = v_bot_id AND status = 'closed';
     
-    -- Calculate win rate
+    -- Calculate win rate (clamp to 0-100)
     IF v_total_trades > 0 THEN
       v_win_rate := (v_win_trades::DECIMAL / v_total_trades::DECIMAL) * 100;
     ELSE
       v_win_rate := 0;
     END IF;
+    -- Clamp win_rate to 0-100
+    v_win_rate := GREATEST(0, LEAST(100, v_win_rate));
     
     -- Calculate max drawdown from cumulative PnL
+    -- FIX: Changed peak.running_pnl to peak.peak
     WITH cumulative_pnl AS (
       SELECT 
         realized_pnl,
@@ -94,32 +99,44 @@ BEGIN
       FROM cumulative_pnl
     )
     SELECT 
-      COALESCE(MAX(peak.running_pnl - cp.running_pnl), 0),
+      COALESCE(MAX(peak.peak - cp.running_pnl), 0),
       COALESCE(MAX(cp.running_pnl), 0)
     INTO v_max_drawdown, v_peak_pnl
     FROM cumulative_pnl cp
     CROSS JOIN peak_pnl peak
-    WHERE peak.running_pnl - cp.running_pnl > 0;
+    WHERE peak.peak - cp.running_pnl > 0;
+    
+    -- Get trade_amount for pnl_percentage calculation
+    SELECT COALESCE(trade_amount, 0) INTO v_trade_amount
+    FROM trading_bots
+    WHERE id = v_bot_id;
+    
+    -- Calculate pnl_percentage with clamping to prevent overflow
+    IF v_trade_amount > 0 THEN
+      v_pnl_percentage := (v_total_pnl / v_trade_amount) * 100;
+      -- Clamp to DECIMAL(5,2) bounds: -999.99 to 999.99
+      v_pnl_percentage := GREATEST(-999.99, LEAST(999.99, v_pnl_percentage));
+    ELSE
+      v_pnl_percentage := 0;
+    END IF;
     
     -- Update bot metrics
     UPDATE trading_bots
     SET 
       total_trades = v_total_trades,
       pnl = v_total_pnl,
-      pnl_percentage = CASE 
-        WHEN trade_amount > 0 THEN (v_total_pnl / trade_amount) * 100 
-        ELSE 0 
-      END,
+      pnl_percentage = v_pnl_percentage,
       win_rate = v_win_rate,
       updated_at = NOW()
     WHERE id = v_bot_id;
     
     -- Also update the trades table if trade_id exists
+    -- FIX: Changed fees to fee (singular)
     IF NEW.trade_id IS NOT NULL THEN
       UPDATE trades
       SET 
         pnl = NEW.realized_pnl,
-        fees = NEW.fees,
+        fee = NEW.fees,
         exit_price = NEW.exit_price,
         status = 'closed',
         updated_at = NOW()
@@ -180,6 +197,11 @@ $$ LANGUAGE plpgsql;
 
 -- Add RLS policies
 ALTER TABLE trading_positions ENABLE ROW LEVEL SECURITY;
+
+-- Drop existing policies if they exist, then recreate
+DROP POLICY IF EXISTS "Users can view their own positions" ON trading_positions;
+DROP POLICY IF EXISTS "Users can insert their own positions" ON trading_positions;
+DROP POLICY IF EXISTS "Users can update their own positions" ON trading_positions;
 
 CREATE POLICY "Users can view their own positions"
   ON trading_positions FOR SELECT

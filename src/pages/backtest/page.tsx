@@ -11,6 +11,8 @@ import {
 } from '../../constants/strategyOptions';
 import { supabase } from '../../lib/supabase';
 import { getOptimizedSettingsForIndicator } from '../../utils/htfIndicatorSettings';
+import PairRecommendations from '../../components/bot/PairRecommendations';
+import type { PairRecommendation } from '../../services/pairRecommendations';
 
 const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -116,6 +118,57 @@ export default function BacktestPage() {
 
   const handleStrategyChange = (field: keyof TradingStrategy, value: any) => {
     setStrategy(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleApplyRecommendation = (recommendation: PairRecommendation) => {
+    // Apply recommended strategy parameters
+    if (recommendation.strategy) {
+      setStrategy(recommendation.strategy);
+      console.log('✅ Applied Strategy Parameters:', recommendation.strategy);
+    }
+
+    // Apply recommended advanced config - ensure ALL parameters are applied
+    if (recommendation.advancedConfig) {
+      setAdvancedConfig(prev => {
+        // Deep merge to ensure all advanced config parameters are included
+        const merged: AdvancedStrategyConfig = {
+          ...prev,
+          ...recommendation.advancedConfig,
+          // Ensure nested arrays are properly merged
+          allowed_hours_utc: recommendation.advancedConfig!.allowed_hours_utc || prev.allowed_hours_utc
+        };
+        console.log('✅ Applied Advanced Strategy Config:', merged);
+        return merged;
+      });
+    }
+
+    // Apply recommended basic settings
+    setConfig(prev => ({
+      ...prev,
+      tradeAmount: recommendation.suggestedTradeAmount || prev.tradeAmount,
+      leverage: recommendation.suggestedLeverage || prev.leverage,
+      stopLoss: recommendation.suggestedStopLoss || prev.stopLoss,
+      takeProfit: recommendation.suggestedTakeProfit || prev.takeProfit,
+      riskLevel: (recommendation.riskAssessment as 'low' | 'medium' | 'high') || prev.riskLevel
+    }));
+
+    // Count strategy and advanced config changes separately
+    const strategyChanges = recommendation.changes.filter(c => c.parameter.startsWith('Strategy.')).length;
+    const advancedChanges = recommendation.changes.filter(c => c.parameter.startsWith('Advanced.')).length;
+    const totalChanges = recommendation.changes.length;
+
+    // Show detailed success message
+    const message = `✅ AI Recommendations Applied!
+
+📊 Summary:
+• Strategy Parameters: ${strategyChanges} optimized
+• Advanced Config: ${advancedChanges} optimized
+• Basic Settings: Updated
+• Total Changes: ${totalChanges} parameters
+
+All settings have been applied to your backtest configuration.`;
+    
+    alert(message);
   };
 
   const handleSaveBacktest = async () => {
@@ -537,6 +590,23 @@ export default function BacktestPage() {
                 })()}
               </div>
             </div>
+
+            {/* AI Recommendations */}
+            {effectiveSymbol && (
+              <div className="mb-6">
+                <PairRecommendations
+                  symbol={effectiveSymbol}
+                  tradingType={config.tradingType}
+                  currentStrategy={strategy}
+                  currentAdvancedConfig={advancedConfig}
+                  currentTradeAmount={config.tradeAmount}
+                  currentLeverage={config.leverage}
+                  currentStopLoss={config.stopLoss}
+                  currentTakeProfit={config.takeProfit}
+                  onApplyRecommendation={handleApplyRecommendation}
+                />
+              </div>
+            )}
 
             {/* Date Range */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
