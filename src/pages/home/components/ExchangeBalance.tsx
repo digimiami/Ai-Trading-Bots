@@ -1,11 +1,67 @@
+import { useState, useEffect } from 'react';
 import { ExchangeBalance } from '../../../hooks/useExchangeBalance';
 import Card from '../../../components/base/Card';
+import { supabase } from '../../../lib/supabase';
 
 interface ExchangeBalanceProps {
   balances: ExchangeBalance[];
 }
 
 export default function ExchangeBalanceDisplay({ balances }: ExchangeBalanceProps) {
+  const [todayPnLByExchange, setTodayPnLByExchange] = useState<Record<string, number>>({});
+  const [loadingPnL, setLoadingPnL] = useState(true);
+  
+  useEffect(() => {
+    const fetchTodayPnL = async () => {
+      try {
+        setLoadingPnL(true);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayStart = today.toISOString();
+        const todayEnd = new Date(today);
+        todayEnd.setHours(23, 59, 59, 999);
+        const todayEndStr = todayEnd.toISOString();
+
+        // Fetch today's trades with PnL grouped by exchange
+        const { data: trades, error } = await supabase
+          .from('trades')
+          .select('exchange, pnl')
+          .gte('executed_at', todayStart)
+          .lte('executed_at', todayEndStr)
+          .in('status', ['filled', 'completed', 'closed']);
+
+        if (error) {
+          console.error('Error fetching today PnL:', error);
+          return;
+        }
+
+        // Calculate PnL by exchange
+        const pnlByExchange: Record<string, number> = {};
+        if (trades) {
+          trades.forEach((trade: any) => {
+            const exchange = (trade.exchange || '').toLowerCase();
+            if (exchange) {
+              const pnl = parseFloat(trade.pnl || 0);
+              if (!isNaN(pnl)) {
+                pnlByExchange[exchange] = (pnlByExchange[exchange] || 0) + pnl;
+              }
+            }
+          });
+        }
+
+        setTodayPnLByExchange(pnlByExchange);
+      } catch (error) {
+        console.error('Error calculating today PnL:', error);
+      } finally {
+        setLoadingPnL(false);
+      }
+    };
+
+    if (balances.length > 0) {
+      fetchTodayPnL();
+    }
+  }, [balances]);
+  
   const formatBalance = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -129,6 +185,21 @@ export default function ExchangeBalanceDisplay({ balances }: ExchangeBalanceProp
                 <p className="text-lg font-bold text-gray-900 dark:text-white">
                   {formatBalance(balance.totalBalance)}
                 </p>
+                {(() => {
+                  const todayPnL = todayPnLByExchange[balance.exchange.toLowerCase()] || 0;
+                  if (loadingPnL) {
+                    return (
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        Today PnL: Loading...
+                      </p>
+                    );
+                  }
+                  return (
+                    <p className={`text-sm font-medium ${todayPnL >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                      Today PnL: {todayPnL >= 0 ? '+' : ''}{formatBalance(todayPnL)}
+                    </p>
+                  );
+                })()}
                 <p className="text-sm text-gray-500 dark:text-gray-400">
                   Available: {formatBalance(balance.availableBalance)}
                 </p>
