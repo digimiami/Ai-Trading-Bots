@@ -1635,19 +1635,30 @@ All settings have been applied to your backtest configuration.`;
                     <h4 className="font-semibold mb-3">Performance by Pair</h4>
                     <div className="space-y-2">
                       {Object.entries(results.results_per_pair).map(([pair, data]: [string, any]) => (
-                        <div key={pair} className="bg-white rounded-lg p-4 border border-gray-200">
+                        <div key={pair} className={`bg-white rounded-lg p-4 border ${data.error ? 'border-red-300' : 'border-gray-200'}`}>
                           <div className="flex justify-between items-start mb-2">
                             <div>
                               <div className="font-medium text-lg">{pair}</div>
-                              <div className="text-sm text-gray-500">{data.trades || 0} trades</div>
+                              {data.error ? (
+                                <div className="text-sm text-red-600 font-semibold">Error: {data.error}</div>
+                              ) : (
+                                <div className="text-sm text-gray-500">{data.trades || 0} trades</div>
+                              )}
                             </div>
                             <div className="text-right">
-                              <div className={`font-bold text-lg ${(data.pnl || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                ${(data.pnl || 0).toFixed(2)}
-                              </div>
-                              <div className="text-sm text-gray-500">{(data.win_rate || 0).toFixed(1)}% win</div>
+                              {data.error ? (
+                                <div className="text-red-600 font-semibold">Failed</div>
+                              ) : (
+                                <>
+                                  <div className={`font-bold text-lg ${(data.pnl || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                    ${(data.pnl || 0).toFixed(2)}
+                                  </div>
+                                  <div className="text-sm text-gray-500">{(data.win_rate || 0).toFixed(1)}% win</div>
+                                </>
+                              )}
                             </div>
                           </div>
+                          {!data.error && (
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3 pt-3 border-t border-gray-200 text-xs">
                             <div>
                               <div className="text-gray-500">Long: {data.long_trades || 0}</div>
@@ -1666,6 +1677,7 @@ All settings have been applied to your backtest configuration.`;
                               <div className="text-red-600 font-semibold">${(data.gross_loss || 0).toFixed(2)}</div>
                             </div>
                           </div>
+                          )}
                         </div>
                       ))}
                     </div>

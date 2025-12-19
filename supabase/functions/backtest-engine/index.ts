@@ -190,6 +190,10 @@ async function runBacktestForSymbol(
   
   console.log(`Fetched ${klines.length} klines for ${symbol}`);
   
+  if (klines.length < 50) {
+    console.warn(`Warning: Only ${klines.length} klines fetched for ${symbol}, may not be enough for accurate backtesting`);
+  }
+  
   // Extract price arrays
   const opens = klines.map(k => parseFloat(k[1]));
   const highs = klines.map(k => parseFloat(k[2]));
@@ -280,13 +284,18 @@ async function runBacktestForSymbol(
     const atr = calculateATR(highSlice, lowSlice, priceSlice, atrPeriod);
     
     // Check if we should enter a trade (simplified strategy)
+    // Use strategyConfig values first, fallback to strategy, then defaults
+    const rsiOversold = strategyConfig.rsi_oversold || 30;
+    const rsiOverbought = strategyConfig.rsi_overbought || 70;
+    const adxThreshold = strategyConfig.adx_trend_min || strategyConfig.adx_min_htf || strategy.adxThreshold || 25;
+    
     const shouldEnterLong = 
-      rsi < (strategyConfig.rsi_oversold || 30) &&
-      adx > (strategy.adxThreshold || 25);
+      rsi < rsiOversold &&
+      adx > adxThreshold;
     
     const shouldEnterShort = 
-      rsi > (strategyConfig.rsi_overbought || 70) &&
-      adx > (strategy.adxThreshold || 25);
+      rsi > rsiOverbought &&
+      adx > adxThreshold;
     
     // Exit existing position
     if (position) {
@@ -357,9 +366,12 @@ async function runBacktestForSymbol(
     if (!position && barsSinceLastTrade >= cooldownBars) {
       let side: 'long' | 'short' | null = null;
       
-      if (shouldEnterLong && (strategyConfig.bias_mode === 'auto' || strategyConfig.bias_mode === 'long-only' || strategyConfig.bias_mode === 'both')) {
+      // Default bias_mode to 'auto' if not set
+      const biasMode = strategyConfig.bias_mode || 'auto';
+      
+      if (shouldEnterLong && (biasMode === 'auto' || biasMode === 'long-only' || biasMode === 'both')) {
         side = 'long';
-      } else if (shouldEnterShort && (strategyConfig.bias_mode === 'auto' || strategyConfig.bias_mode === 'short-only' || strategyConfig.bias_mode === 'both')) {
+      } else if (shouldEnterShort && (biasMode === 'auto' || biasMode === 'short-only' || biasMode === 'both')) {
         side = 'short';
       }
       
@@ -449,6 +461,8 @@ async function runBacktestForSymbol(
     // Long/Short PnL
     const longPnL = longTrades.reduce((sum, t) => sum + t.pnl, 0);
     const shortPnL = shortTrades.reduce((sum, t) => sum + t.pnl, 0);
+    
+    console.log(`Backtest completed for ${symbol}: ${trades.length} trades, ${winRate.toFixed(2)}% win rate, $${totalPnL.toFixed(2)} PnL`);
     
     return {
       symbol,
@@ -586,6 +600,18 @@ serve(async (req) => {
           trades: 0,
           win_rate: 0,
           pnl: 0,
+          pnl_percentage: 0,
+          avg_position_size: 0,
+          long_trades: 0,
+          short_trades: 0,
+          long_wins: 0,
+          long_losses: 0,
+          short_wins: 0,
+          short_losses: 0,
+          long_pnl: 0,
+          short_pnl: 0,
+          gross_profit: 0,
+          gross_loss: 0,
           error: error.message
         }
       }
