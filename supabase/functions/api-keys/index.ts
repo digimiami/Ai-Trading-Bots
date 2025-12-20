@@ -429,177 +429,106 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string) {
     // - sign: signature string
     // - Content-Type: application/json
     
-    // Try multiple account endpoints based on documentation
-    const endpointsToTry = [
-      '/api/v1/account', // Get single account (from Account section)
-      '/api/v1/account/balance', // Alternative balance endpoint
-      '/api/spot/v1/user/account', // Spot account
-      '/api/futures/v1/user/account' // Futures account
-    ]
+    // According to official Bitunix API docs: https://openapidoc.bitunix.com/doc/account/get_single_account.html
+    // The correct endpoint is: GET /api/v1/futures/account?marginCoin=USDT
+    // This endpoint requires the marginCoin query parameter
+    const marginCoinsToTry = ['USDT', 'BTC', 'ETH'] // Try common margin coins
+    const baseUrl = 'https://fapi.bitunix.com' // Futures API domain
+    const endpointPath = '/api/v1/futures/account'
     
     let response: Response | null = null
-    let requestPath = ''
     let lastError: any = null
-    let successfulBaseUrl = ''
     let data: any = null
     
-    // Try both API domains (fapi for futures, api for general)
-    // Prioritize api.bitunix.com since bot-executor uses it successfully
-    const sortedBaseUrls = ['https://api.bitunix.com', 'https://fapi.bitunix.com']
-    
-    for (const baseUrl of sortedBaseUrls) {
-      for (const endpointPath of endpointsToTry) {
-        try {
-          console.log(`Trying Bitunix: ${baseUrl}${endpointPath}`)
-          requestPath = endpointPath
+    // Try each margin coin
+    for (const marginCoin of marginCoinsToTry) {
+      try {
+        console.log(`Trying Bitunix: ${baseUrl}${endpointPath}?marginCoin=${marginCoin}`)
+        
+        // According to official Bitunix docs, signature uses double SHA256:
+        // digest = SHA256(nonce + timestamp + api-key + queryParams + body)
+        // sign = SHA256(digest + secretKey)
+        // Query params format: sorted keys concatenated without separators
+        // For marginCoin=USDT: queryParams = "marginCoinUSDT"
+        
+        const queryParams = `marginCoin${marginCoin}` // Sorted: marginCoin first, then value
+        const body = '' // Empty for GET request
+        
+        // Create signature using double SHA256 (official method)
+        const signature = await createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, body, apiSecret)
           
-          // According to official Bitunix docs, signature uses double SHA256:
-          // digest = SHA256(nonce + timestamp + api-key + queryParams + body)
-          // sign = SHA256(digest + secretKey)
-          // For GET with no query params: queryParams = "", body = ""
-          
-          const queryParams = '' // Empty for GET with no query params
-          const body = '' // Empty for GET request
-          
-          // Create signature using double SHA256 (official method)
-          const signature = await createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, body, apiSecret)
-          
-          console.log('5. Signature input: nonce + timestamp + api-key + queryParams + body')
-          console.log('   nonce:', nonce)
-          console.log('   timestamp:', timestamp)
-          console.log('   api-key:', apiKey.substring(0, 10) + '...')
-          console.log('   queryParams:', queryParams || '(empty)')
-          console.log('   body:', body || '(empty)')
-          console.log('6. Generated signature (double SHA256):', signature)
-          
-          // Headers according to official documentation
-          const headers: Record<string, string> = {
-            'api-key': String(apiKey),
-            'nonce': String(nonce),
-            'timestamp': String(timestamp),
-            'sign': String(signature),
-            'Content-Type': 'application/json'
-          }
-          
-          // Try GET request without query params first (some endpoints don't need params in URL)
-          response = await fetch(`${baseUrl}${endpointPath}`, {
-            method: 'GET',
-            headers: headers
-          })
-          
-          // Parse response to check error code
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => null)
-            if (errorData && errorData.code === 2) {
-              console.log(`System error (Code: 2) from ${baseUrl}${endpointPath}, trying with query params in URL...`)
-              // Try with query params in URL (timestamp and nonce)
-              // Query params for signature: sorted keys concatenated without separators (per docs)
-              const queryParamsForSig = `nonce${nonce}timestamp${timestamp}` // Sorted: nonce first, then timestamp
-              const retrySignature = await createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParamsForSig, '', apiSecret)
-              const retryHeaders: Record<string, string> = {
-                'api-key': String(apiKey),
-                'nonce': String(nonce),
-                'timestamp': String(timestamp),
-                'sign': String(retrySignature),
-                'Content-Type': 'application/json'
-              }
-              const queryString = `timestamp=${timestamp}&nonce=${nonce}`
-              response = await fetch(`${baseUrl}${endpointPath}?${queryString}`, {
-                method: 'GET',
-                headers: retryHeaders
-              })
-            }
-          }
-          
-          // If GET still fails, try POST
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => null)
-            if (errorData && (errorData.code === 2 || response.status === 404 || response.status === 400)) {
-              console.log(`GET failed, trying POST for ${baseUrl}${endpointPath}...`)
-              // For POST, body must be JSON string with NO SPACES (per docs)
-              const bodyParams = { timestamp, nonce }
-              const bodyString = JSON.stringify(bodyParams).replace(/\s+/g, '') // Remove all spaces
-              // For POST, queryParams = "" (empty), body is in request body
-              const postQueryParams = '' // Empty for POST
-              const postSignature = await createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, postQueryParams, bodyString, apiSecret)
-              
-              const postHeaders: Record<string, string> = {
-                'api-key': String(apiKey),
-                'nonce': String(nonce),
-                'timestamp': String(timestamp),
-                'sign': String(postSignature),
-                'Content-Type': 'application/json'
-              }
-              
-              response = await fetch(`${baseUrl}${endpointPath}`, {
-                method: 'POST',
-                headers: postHeaders,
-                body: bodyString
-              })
-            }
-          }
-          
-          // Check if successful - read response once
-          let responseData: any = null
-          if (response.ok) {
-            try {
-              responseData = await response.json()
-              if (responseData && responseData.code === 0) {
-                console.log(`✅ Success with: ${baseUrl}${endpointPath}`)
-                successfulBaseUrl = baseUrl
-                // Store response data for later parsing
-                data = responseData
-                // Break out of both loops
-                break
-              } else if (responseData && responseData.code !== 0) {
-                // Got response but with error code
-                const errorMsg = responseData.msg || responseData.message || 'Unknown error'
-                console.log(`Endpoint ${baseUrl}${endpointPath} returned code ${responseData.code}: ${errorMsg}`)
-                lastError = new Error(`Bitunix API error: ${errorMsg} (Code: ${responseData.code})`)
-                // Continue to next endpoint
-                continue
-              }
-            } catch (parseError) {
-              console.log(`Failed to parse response from ${baseUrl}${endpointPath}:`, parseError)
-              lastError = parseError
+        console.log('5. Signature input: nonce + timestamp + api-key + queryParams + body')
+        console.log('   nonce:', nonce)
+        console.log('   timestamp:', timestamp)
+        console.log('   api-key:', apiKey.substring(0, 10) + '...')
+        console.log('   queryParams:', queryParams)
+        console.log('   body:', body || '(empty)')
+        console.log('6. Generated signature (double SHA256):', signature)
+        
+        // Headers according to official documentation
+        const headers: Record<string, string> = {
+          'api-key': String(apiKey),
+          'nonce': String(nonce),
+          'timestamp': String(timestamp),
+          'sign': String(signature),
+          'Content-Type': 'application/json'
+        }
+        
+        // Make GET request with marginCoin query parameter
+        const queryString = `marginCoin=${marginCoin}`
+        response = await fetch(`${baseUrl}${endpointPath}?${queryString}`, {
+          method: 'GET',
+          headers: headers
+        })
+        
+        // Check if successful
+        if (response.ok) {
+          try {
+            const responseData = await response.json()
+            if (responseData && responseData.code === 0) {
+              console.log(`✅ Success with marginCoin=${marginCoin}`)
+              // Store response data for parsing
+              data = responseData
+              // Break out of loop
+              break
+            } else if (responseData && responseData.code !== 0) {
+              // Got response but with error code
+              const errorMsg = responseData.msg || responseData.message || 'Unknown error'
+              console.log(`Margin coin ${marginCoin} returned code ${responseData.code}: ${errorMsg}`)
+              lastError = new Error(`Bitunix API error: ${errorMsg} (Code: ${responseData.code})`)
+              // Continue to next margin coin
               continue
             }
-          } else {
-            // HTTP error - try to get error message
+          } catch (parseError) {
+            console.log(`Failed to parse response for marginCoin=${marginCoin}:`, parseError)
+            lastError = parseError
+            continue
+          }
+        } else {
+          // HTTP error - try to get error message
+          try {
+            const errorText = await response.text()
+            console.log(`Margin coin ${marginCoin} returned ${response.status}: ${errorText}`)
+            // Try to parse as JSON for error details
             try {
-              const errorText = await response.text()
-              console.log(`Endpoint ${baseUrl}${endpointPath} returned ${response.status}: ${errorText}`)
-              // Try to parse as JSON for error details
-              try {
-                responseData = JSON.parse(errorText)
-                if (responseData.code !== undefined) {
-                  const errorMsg = responseData.msg || responseData.message || errorText
-                  lastError = new Error(`Bitunix API error: ${errorMsg} (Code: ${responseData.code})`)
-                } else {
-                  lastError = new Error(`Bitunix API HTTP error: ${response.status} - ${errorText}`)
-                }
-              } catch {
+              const responseData = JSON.parse(errorText)
+              if (responseData.code !== undefined) {
+                const errorMsg = responseData.msg || responseData.message || errorText
+                lastError = new Error(`Bitunix API error: ${errorMsg} (Code: ${responseData.code})`)
+              } else {
                 lastError = new Error(`Bitunix API HTTP error: ${response.status} - ${errorText}`)
               }
             } catch {
-              lastError = new Error(`Bitunix API HTTP error: ${response.status}`)
+              lastError = new Error(`Bitunix API HTTP error: ${response.status} - ${errorText}`)
             }
-            
-            if (response.status === 401 || response.status === 403) {
-              // Auth error - might want to stop trying, but continue for now
-              console.log('Authentication error, but continuing to try other endpoints...')
-            }
+          } catch {
+            lastError = new Error(`Bitunix API HTTP error: ${response.status}`)
           }
-        } catch (err: any) {
-          console.log(`Error trying ${baseUrl}${endpointPath}:`, err.message)
-          lastError = err
-          continue
         }
-      }
-      
-      // Break out of baseUrl loop if we found a successful response
-      if (data && data.code === 0) {
-        break
+      } catch (err: any) {
+        console.log(`Error trying marginCoin=${marginCoin}:`, err.message)
+        lastError = err
+        continue
       }
     }
     
@@ -653,17 +582,21 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string) {
     const parsedAssets: any[] = []
     
     // Process assets/balances
-    // Official Bitunix format: { coin: "BTC", balance: 1.5, balanceLocked: 0.5 }
-    // balance = total balance, balanceLocked = locked amount
-    // available = balance - balanceLocked
+    // Official Bitunix futures account format: 
+    // { marginCoin: "USDT", available: "1000", frozen: "0", margin: "10", transfer: "1000", ... }
+    // available = available balance, frozen = locked in orders, margin = locked in positions
+    // total = available + frozen + margin
     for (const asset of assets) {
-      // Official Bitunix response format
-      const total = parseFloat(asset.balance || asset.total || asset.equity || '0')
-      const locked = parseFloat(asset.balanceLocked || asset.frozen || asset.locked || asset.inUse || '0')
-      const free = total - locked // Available = total - locked
+      // Official Bitunix futures account response format
+      const available = parseFloat(asset.available || '0')
+      const frozen = parseFloat(asset.frozen || '0')
+      const margin = parseFloat(asset.margin || '0')
+      const total = available + frozen + margin // Total balance
+      const locked = frozen + margin // Total locked (orders + positions)
+      const free = available // Available balance
       
-      // Get asset symbol
-      const assetSymbol = asset.asset || asset.coin || asset.currency || asset.symbol || ''
+      // Get asset symbol (marginCoin in futures account response)
+      const assetSymbol = asset.marginCoin || asset.asset || asset.coin || asset.currency || asset.symbol || ''
       
       // Only include assets with non-zero balance
       if (total > 0 || free > 0 || locked > 0) {
