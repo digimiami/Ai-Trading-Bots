@@ -779,10 +779,23 @@ async function fetchMEXCBalance(apiKey: string, apiSecret: string) {
         if (!response.ok) {
           try {
             const errorData = JSON.parse(responseText)
-            lastError = new Error(`MEXC API error (${response.status}): ${errorData.msg || errorData.message || errorData.code || responseText}`)
+            const errorMsg = errorData.msg || errorData.message || errorData.code || responseText
+            // Check for permission-related errors
+            const errorMsgLower = errorMsg.toLowerCase()
+            if (errorMsgLower.includes('permission') || errorMsgLower.includes('no permission') || 
+                errorMsgLower.includes('access') && errorMsgLower.includes('endpoint')) {
+              lastError = new Error(`MEXC API permission error: Your API key needs "View Account Details" permission enabled. Please check your MEXC API key settings and enable this permission.`)
+            } else {
+              lastError = new Error(`MEXC API error (${response.status}): ${errorMsg}`)
+            }
             lastResponseData = errorData
           } catch {
-            lastError = new Error(`MEXC API HTTP error (${response.status}): ${responseText.substring(0, 100)}`)
+            const errorText = responseText.substring(0, 100).toLowerCase()
+            if (errorText.includes('permission') || errorText.includes('no permission')) {
+              lastError = new Error(`MEXC API permission error: Your API key needs "View Account Details" permission enabled. Please check your MEXC API key settings and enable this permission.`)
+            } else {
+              lastError = new Error(`MEXC API HTTP error (${response.status}): ${responseText.substring(0, 100)}`)
+            }
           }
           continue
         }
@@ -848,7 +861,19 @@ async function fetchMEXCBalance(apiKey: string, apiSecret: string) {
     }
     
     // All endpoints failed
+    // If we already have a helpful permission error message, use it directly
+    if (lastError?.message && lastError.message.includes('permission')) {
+      throw lastError
+    }
+    
     const errorMsg = lastError?.message || lastResponseData?.msg || lastResponseData?.message || 'All endpoints failed'
+    const errorMsgLower = errorMsg.toLowerCase()
+    
+    // Check if it's a permission error in the final message
+    if (errorMsgLower.includes('permission') || errorMsgLower.includes('no permission')) {
+      throw new Error(`MEXC API permission error: Your API key needs "View Account Details" permission enabled. Please check your MEXC API key settings and enable this permission.`)
+    }
+    
     throw new Error(`MEXC API returned error: ${errorMsg}`)
     
   } catch (error: any) {
