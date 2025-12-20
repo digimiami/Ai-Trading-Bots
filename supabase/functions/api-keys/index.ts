@@ -753,11 +753,10 @@ async function fetchMEXCBalance(apiKey: string, apiSecret: string) {
     // Build query string with timestamp, recvWindow, and signature
     const queryString = `${sortedParams}&signature=${signature}`
     
-    // Try MEXC v1 private endpoints (spot and futures)
+    // Try MEXC endpoints for account balances
     const endpointsToTry = [
-      '/api/v1/private/account/assets',  // Spot account assets
-      '/api/v3/account',                 // Fallback v3 endpoint
-      '/api/v3/capital/config/getall'    // Alternative v3 endpoint
+      '/api/v1/private/account/assets',  // v1 account assets (futures/spot)
+      '/api/v3/account'                  // v3 account balances (spot)
     ]
     
     let lastError: any = null
@@ -799,26 +798,42 @@ async function fetchMEXCBalance(apiKey: string, apiSecret: string) {
         console.log('MEXC API Response:', JSON.stringify(data, null, 2))
         
         // Handle different response formats
-        // Format 1: { code: 0, data: { assets: [...] } }
-        if (data.code === 0 && data.data) {
-          const assets = data.data.assets || data.data.balances || []
-          return parseMEXCAssets(assets)
+        // Format 1: { code: 0, success: true, data: [{ currency, availableBalance, frozenBalance, ... }] } - v1/private/account/assets
+        if (data.code === 0 && data.data && Array.isArray(data.data)) {
+          // v1 endpoint returns array of asset objects with currency, availableBalance, frozenBalance
+          return parseMEXCV1Assets(data.data)
         }
         
-        // Format 2: { code: 200, data: { balances: [...] } }
+        // Format 2: { code: 0, data: { assets: [...] } or { balances: [...] } }
+        if (data.code === 0 && data.data && !Array.isArray(data.data)) {
+          const assets = data.data.assets || data.data.balances || []
+          if (Array.isArray(assets)) {
+            return parseMEXCAssets(assets)
+          }
+        }
+        
+        // Format 3: { code: 200, data: { balances: [...] } }
         if (data.code === 200 && data.data) {
           const assets = data.data.balances || data.data.assets || []
-          return parseMEXCAssets(assets)
+          if (Array.isArray(assets)) {
+            return parseMEXCAssets(assets)
+          }
         }
         
-        // Format 3: Direct balances array
+        // Format 4: Direct balances array (v3 format)
         if (data.balances && Array.isArray(data.balances)) {
           return parseMEXCAssets(data.balances)
         }
         
-        // Format 4: Direct assets array
+        // Format 5: Direct assets array
         if (data.assets && Array.isArray(data.assets)) {
           return parseMEXCAssets(data.assets)
+        }
+        
+        // Skip /api/v3/capital/config/getall endpoint responses (coin config, not balances)
+        if (Array.isArray(data) && data.length > 0 && data[0].coin && data[0].networkList) {
+          console.log('Skipping coin configuration endpoint response')
+          continue
         }
         
         // If we got here, response format is unexpected
@@ -851,7 +866,51 @@ async function fetchMEXCBalance(apiKey: string, apiSecret: string) {
   }
 }
 
-// Helper function to parse MEXC assets
+// Helper function to parse MEXC v1 assets format
+// Format: [{ currency: "USDT", availableBalance: 32.8, frozenBalance: 0, ... }]
+function parseMEXCV1Assets(assets: any[]): any {
+  const parsedAssets: any[] = []
+  let totalBalance = 0
+  let availableBalance = 0
+  let lockedBalance = 0
+  
+  for (const asset of assets) {
+    // v1 format: { currency, availableBalance, frozenBalance, cashBalance, equity }
+    const free = parseFloat(asset.availableBalance || asset.availableCash || asset.cashBalance || '0')
+    const locked = parseFloat(asset.frozenBalance || '0')
+    const total = parseFloat(asset.equity || asset.cashBalance || (free + locked).toString())
+    
+    const assetSymbol = asset.currency || asset.asset || asset.coin || ''
+    
+    // Only include assets with non-zero balance
+    if (total > 0 || free > 0 || locked > 0) {
+      parsedAssets.push({
+        asset: assetSymbol,
+        free,
+        locked,
+        total
+      })
+      
+      // Sum all balances
+      totalBalance += total
+      availableBalance += free
+      lockedBalance += locked
+    }
+  }
+  
+  return {
+    exchange: 'mexc',
+    totalBalance,
+    availableBalance,
+    lockedBalance,
+    assets: parsedAssets,
+    lastUpdated: new Date().toISOString(),
+    status: 'connected'
+  }
+}
+
+// Helper function to parse MEXC v3 assets format
+// Format: [{ asset: "BTC", free: "1.5", locked: "0.5" }]
 function parseMEXCAssets(assets: any[]): any {
   const parsedAssets: any[] = []
   let totalBalance = 0
@@ -859,9 +918,9 @@ function parseMEXCAssets(assets: any[]): any {
   let lockedBalance = 0
   
   for (const asset of assets) {
-    // MEXC format: { asset: "BTC", free: "1.5", frozen: "0.5" } or { coin: "BTC", available: "1.5", frozen: "0.5" }
+    // v3 format: { asset: "BTC", free: "1.5", locked: "0.5" } or { coin: "BTC", available: "1.5", frozen: "0.5" }
     const free = parseFloat(asset.free || asset.available || '0')
-    const locked = parseFloat(asset.frozen || asset.locked || '0')
+    const locked = parseFloat(asset.locked || asset.frozen || '0')
     const total = free + locked
     
     const assetSymbol = asset.asset || asset.coin || asset.currency || ''
@@ -875,7 +934,7 @@ function parseMEXCAssets(assets: any[]): any {
         total
       })
       
-      // Sum all balances (or prioritize USDT if needed)
+      // Sum all balances
       totalBalance += total
       availableBalance += free
       lockedBalance += locked
