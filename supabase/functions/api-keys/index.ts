@@ -709,6 +709,164 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string) {
   }
 }
 
+async function fetchMEXCBalance(apiKey: string, apiSecret: string) {
+  const baseUrl = 'https://api.mexc.com'
+  
+  try {
+    const timestamp = Date.now().toString()
+    const recvWindow = '5000'
+    const requestPath = '/api/v1/private/account/assets'
+    
+    console.log('=== MEXC BALANCE DEBUG ===')
+    console.log('0. Environment: MAINNET')
+    console.log('0. Base URL:', baseUrl)
+    console.log('1. Timestamp (ms):', timestamp)
+    console.log('2. RecvWindow:', recvWindow)
+    console.log('3. API Key (first 10 chars):', apiKey.substring(0, 10) + '...')
+    console.log('4. Secret (first 10 chars):', apiSecret.substring(0, 10) + '...')
+    
+    // MEXC signature: HMAC SHA256(queryString + timestamp + recvWindow)
+    // Query string should be sorted alphabetically
+    const queryParams: Record<string, string> = {
+      timestamp,
+      recvWindow
+    }
+    
+    // Sort parameters alphabetically
+    const sortedParams = Object.keys(queryParams)
+      .sort()
+      .map(key => `${key}=${queryParams[key]}`)
+      .join('&')
+    
+    // Create signature string: queryString + timestamp + recvWindow
+    const signatureString = sortedParams
+    
+    console.log('5. Sorted params:', sortedParams)
+    console.log('6. Signature string:', signatureString)
+    
+    // Create HMAC SHA256 signature
+    const signature = await createMEXCSignature(signatureString, apiSecret)
+    
+    console.log('7. Generated signature:', signature)
+    
+    // Build final URL with signature
+    const finalUrl = `${baseUrl}${requestPath}?${sortedParams}&signature=${signature}`
+    
+    console.log('8. Final URL:', finalUrl.replace(/signature=[^&]+/, 'signature=***'))
+    console.log('=== END MEXC DEBUG ===')
+    
+    const response = await fetch(finalUrl, {
+      method: 'GET',
+      headers: {
+        'X-MEXC-APIKEY': apiKey,
+        'Content-Type': 'application/json'
+      }
+    })
+    
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('MEXC API HTTP Error:', response.status, errorText)
+      throw new Error(`MEXC API error: ${response.status} - ${errorText}`)
+    }
+    
+    const data = await response.json()
+    console.log('MEXC API Response:', JSON.stringify(data, null, 2))
+    
+    // MEXC returns { code: 0, data: { assets: [...] } } on success
+    if (data.code !== 0 && data.code !== '0') {
+      throw new Error(`MEXC API error: ${data.msg || data.message || 'Unknown error'}`)
+    }
+    
+    const assets = data.data?.assets || []
+    
+    if (!assets || assets.length === 0) {
+      return {
+        exchange: 'mexc',
+        totalBalance: 0,
+        availableBalance: 0,
+        lockedBalance: 0,
+        assets: [],
+        lastUpdated: new Date().toISOString(),
+        status: 'connected',
+        note: 'Account has no balances'
+      }
+    }
+    
+    let totalBalance = 0
+    let availableBalance = 0
+    let lockedBalance = 0
+    const parsedAssets: any[] = []
+    
+    // Process MEXC assets
+    // MEXC format: { asset: "BTC", free: "1.5", frozen: "0.5", ... }
+    for (const asset of assets) {
+      const free = parseFloat(asset.free || asset.available || '0')
+      const locked = parseFloat(asset.frozen || asset.locked || '0')
+      const total = free + locked
+      
+      const assetSymbol = asset.asset || asset.currency || asset.coin || ''
+      
+      // Only include assets with non-zero balance
+      if (total > 0 || free > 0 || locked > 0) {
+        totalBalance += total
+        availableBalance += free
+        lockedBalance += locked
+        
+        parsedAssets.push({
+          asset: assetSymbol,
+          free,
+          locked,
+          total
+        })
+      }
+    }
+    
+    console.log(`MEXC Final balances - Total: ${totalBalance}, Available: ${availableBalance}, Locked: ${lockedBalance}`)
+    
+    return {
+      exchange: 'mexc',
+      totalBalance,
+      availableBalance,
+      lockedBalance,
+      assets: parsedAssets,
+      lastUpdated: new Date().toISOString(),
+      status: 'connected'
+    }
+  } catch (error: any) {
+    console.error('MEXC balance fetch error:', error)
+    return {
+      exchange: 'mexc',
+      totalBalance: 0,
+      availableBalance: 0,
+      lockedBalance: 0,
+      assets: [],
+      lastUpdated: new Date().toISOString(),
+      status: 'error',
+      error: error.message || 'Failed to fetch MEXC balance'
+    }
+  }
+}
+
+// Helper function to create MEXC signature
+async function createMEXCSignature(message: string, secret: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const keyData = encoder.encode(secret)
+  const messageData = encoder.encode(message)
+  
+  const cryptoKey = await crypto.subtle.importKey(
+    'raw',
+    keyData,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  )
+  
+  const signature = await crypto.subtle.sign('HMAC', cryptoKey, messageData)
+  const hashArray = Array.from(new Uint8Array(signature))
+  // MEXC expects lowercase hex string
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toLowerCase()
+}
+
 // Helper function to create Bitunix signature using HMAC-SHA256 (same as bot-executor)
 // This method works for orders, so let's try it for account endpoint too
 async function createBitunixSignatureHMAC(message: string, secret: string): Promise<string> {
@@ -886,6 +1044,8 @@ serve(async (req) => {
                 exchangeBalance = await fetchOKXBalance(decryptedApiKey, decryptedApiSecret, decryptedPassphrase || '')
               } else if (apiKey.exchange === 'bitunix') {
                 exchangeBalance = await fetchBitunixBalance(decryptedApiKey, decryptedApiSecret)
+              } else if (apiKey.exchange === 'mexc') {
+                exchangeBalance = await fetchMEXCBalance(decryptedApiKey, decryptedApiSecret)
               }
 
               if (exchangeBalance) {
@@ -1011,6 +1171,15 @@ serve(async (req) => {
               }
             } else if (exchange === 'bitunix') {
               const balance = await fetchBitunixBalance(apiKey, apiSecret)
+              testResult = {
+                success: balance.status === 'connected',
+                message: balance.status === 'connected' 
+                  ? 'Connection successful' 
+                  : balance.error || 'Connection failed',
+                exchange
+              }
+            } else if (exchange === 'mexc') {
+              const balance = await fetchMEXCBalance(apiKey, apiSecret)
               testResult = {
                 success: balance.status === 'connected',
                 message: balance.status === 'connected' 

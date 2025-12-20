@@ -23,6 +23,8 @@ export default function ExchangeBalanceDisplay({ balances }: ExchangeBalanceProp
         return 'ri-exchange-line';
       case 'bitunix':
         return 'ri-exchange-line';
+      case 'mexc':
+        return 'ri-exchange-line';
       default:
         return 'ri-exchange-line';
     }
@@ -36,6 +38,8 @@ export default function ExchangeBalanceDisplay({ balances }: ExchangeBalanceProp
         return 'text-blue-600 bg-blue-100';
       case 'bitunix':
         return 'text-green-600 bg-green-100';
+      case 'mexc':
+        return 'text-purple-600 bg-purple-100';
       default:
         return 'text-gray-600 bg-gray-100';
     }
