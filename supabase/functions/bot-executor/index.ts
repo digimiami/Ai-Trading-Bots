@@ -6401,18 +6401,42 @@ class BotExecutor {
       // Bybit V5 API requires capitalized side: "Buy" or "Sell"
       const capitalizedSide = side.charAt(0).toUpperCase() + side.slice(1).toLowerCase();
       
-      // Fetch current market price for accurate SL/TP calculation
+      // Fetch current market price for accurate order value calculation
+      // For futures contracts, we need the mark price for notional value calculation
       let currentMarketPrice = price;
-      if (!currentMarketPrice || currentMarketPrice === 0) {
+      
+      // Always fetch price for futures/linear contracts to ensure accurate order value
+      // For FUSDT (USDT perpetual), mark price should be ~1.0, not the provided price
+      if (bybitCategory === 'linear' || !currentMarketPrice || currentMarketPrice === 0 || currentMarketPrice < 0.1) {
         try {
           const tradingType = bybitCategory === 'linear' ? 'linear' : 'spot';
           const priceResponse = await fetch(`https://api.bybit.com/v5/market/tickers?category=${tradingType}&symbol=${symbol}`);
           const priceData = await priceResponse.json();
-          currentMarketPrice = parseFloat(priceData.result?.list?.[0]?.lastPrice || '0');
-          console.log(`📊 Fetched current price for ${symbol}: ${currentMarketPrice}`);
+          const fetchedPrice = parseFloat(priceData.result?.list?.[0]?.lastPrice || priceData.result?.list?.[0]?.markPrice || '0');
+          
+          if (fetchedPrice > 0) {
+            currentMarketPrice = fetchedPrice;
+            console.log(`📊 Fetched current price for ${symbol}: ${currentMarketPrice}`);
+          } else {
+            // Fallback: For FUSDT (USDT perpetual), use 1.0 as default mark price
+            if (symbol === 'FUSDT' && bybitCategory === 'linear') {
+              currentMarketPrice = 1.0;
+              console.log(`📊 Using default mark price 1.0 for FUSDT perpetual`);
+            } else {
+              console.warn('Failed to fetch valid price, using provided price:', price);
+              currentMarketPrice = price || 1.0;
+            }
+          }
         } catch (error) {
-          console.warn('Failed to fetch current price, using provided price:', price);
-          currentMarketPrice = price;
+          console.warn('Failed to fetch current price:', error);
+          // Fallback: For FUSDT (USDT perpetual), use 1.0 as default mark price
+          if (symbol === 'FUSDT' && bybitCategory === 'linear') {
+            currentMarketPrice = 1.0;
+            console.log(`📊 Using default mark price 1.0 for FUSDT perpetual (fallback)`);
+          } else {
+            console.warn('Using provided price:', price);
+            currentMarketPrice = price || 1.0;
+          }
         }
       }
       
