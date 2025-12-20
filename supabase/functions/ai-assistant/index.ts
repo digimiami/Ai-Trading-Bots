@@ -165,7 +165,7 @@ serve(async (req) => {
     const functions = [
       {
         name: 'create_bot',
-        description: 'MANDATORY: Create a new trading bot with specified configuration. YOU MUST CALL THIS FUNCTION whenever the user asks to create, add, set up, make, or start a new trading bot. Do not just explain how to create a bot - actually create it by calling this function. Required parameters: name (bot name), exchange (bybit/okx/bitunix), symbol (trading pair like BTCUSDT).',
+        description: 'MANDATORY: Create a new trading bot with specified configuration. YOU MUST CALL THIS FUNCTION whenever the user asks to create, add, set up, make, or start a new trading bot. Do not just explain how to create a bot - actually create it by calling this function. Required parameters: name (bot name), exchange (bybit/okx/bitunix/mexc), symbol (trading pair like BTCUSDT).',
         parameters: {
           type: 'object',
           properties: {
@@ -175,7 +175,7 @@ serve(async (req) => {
             },
             exchange: {
               type: 'string',
-              enum: ['bybit', 'okx', 'bitunix'],
+              enum: ['bybit', 'okx', 'bitunix', 'mexc'],
               description: 'Exchange to trade on'
             },
             tradingType: {
@@ -548,7 +548,7 @@ Pablo AI Trading is an automated cryptocurrency trading platform that allows use
 
 ### BASIC SETTINGS
 - **Bot Name**: Unique identifier for the bot
-- **Exchange**: bybit, okx, or bitunix
+- **Exchange**: bybit, okx, bitunix, or mexc
 - **Trading Type**: spot or futures
 - **Symbol**: Trading pair (e.g., BTCUSDT, ETHUSDT)
 - **Timeframe**: 1m, 3m, 5m, 15m, 30m, 45m, 1h, 2h, 3h, 4h, 5h, 6h, 7h, 8h, 9h, 10h, 12h, 1d, 1w, 1M
