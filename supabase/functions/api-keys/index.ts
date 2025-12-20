@@ -724,23 +724,34 @@ async function fetchMEXCBalance(apiKey: string, apiSecret: string) {
     console.log('3. API Key (first 10 chars):', apiKey.substring(0, 10) + '...')
     console.log('4. Secret (first 10 chars):', apiSecret.substring(0, 10) + '...')
     
-    // MEXC signature format: HMAC-SHA256(apiKey + timestamp + recvWindow + queryString)
-    // For GET requests with no query params: queryString = ""
-    const queryString = ''
-    const signaturePayload = apiKey + timestamp + recvWindow + queryString
-    const signature = await createHMACSignature(signaturePayload, apiSecret)
+    // MEXC signature format: HMAC-SHA256(sorted query parameters)
+    // Parameters should be sorted alphabetically: recvWindow, timestamp
+    // Signature is generated from: "recvWindow=5000&timestamp=1234567890"
+    const queryParams: Record<string, string> = {
+      timestamp,
+      recvWindow
+    }
     
-    console.log('5. Signature payload:', signaturePayload.substring(0, 50) + '...')
+    // Sort parameters alphabetically for signature
+    const sortedParams = Object.keys(queryParams)
+      .sort()
+      .map(key => `${key}=${queryParams[key]}`)
+      .join('&')
+    
+    // Generate signature from sorted query string
+    const signature = await createHMACSignature(sortedParams, apiSecret)
+    
+    console.log('5. Sorted params:', sortedParams)
     console.log('6. Generated signature:', signature)
     
-    // MEXC uses different headers: ApiKey, Request-Time, Signature, Recv-Window
+    // MEXC uses X-MEXC-APIKEY header and timestamp/signature in query string
     const headers: Record<string, string> = {
-      'ApiKey': apiKey,
-      'Request-Time': timestamp,
-      'Signature': signature,
-      'Recv-Window': recvWindow,
+      'X-MEXC-APIKEY': apiKey,
       'Content-Type': 'application/json'
     }
+    
+    // Build query string with timestamp, recvWindow, and signature
+    const queryString = `${sortedParams}&signature=${signature}`
     
     // Try MEXC v1 private endpoints (spot and futures)
     const endpointsToTry = [
@@ -755,7 +766,8 @@ async function fetchMEXCBalance(apiKey: string, apiSecret: string) {
     for (const endpointPath of endpointsToTry) {
       try {
         console.log(`Trying MEXC endpoint: ${endpointPath}`)
-        const url = `${baseUrl}${endpointPath}`
+        const url = `${baseUrl}${endpointPath}?${queryString}`
+        console.log(`Full URL (without signature): ${baseUrl}${endpointPath}?${sortedParams}&signature=***`)
         const response = await fetch(url, {
           method: 'GET',
           headers: headers
