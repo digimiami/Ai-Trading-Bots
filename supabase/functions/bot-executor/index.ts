@@ -5393,6 +5393,30 @@ class BotExecutor {
         try {
           console.log(`\n🔄 Attempt ${retryCount + 1}/${maxRetries}: Placing order...`);
           orderResult = await this.placeOrder(bot, tradeSignal, tradeAmount, normalizedPrice);
+          
+          // Check if order was skipped (e.g., symbol not available on exchange)
+          if (orderResult && orderResult.status === 'skipped') {
+            console.log(`⏸️ Order skipped: ${orderResult.reason || 'Unknown reason'}`);
+            console.log(`📋 Order Result:`, JSON.stringify(orderResult, null, 2));
+            
+            // Log skipped order to bot activity logs
+            await this.addBotLog(bot.id, {
+              level: 'warning',
+              category: 'trade',
+              message: `Trade skipped: ${orderResult.reason || 'Order was skipped'}`,
+              details: {
+                symbol: bot.symbol,
+                exchange: bot.exchange,
+                side: tradeSignal?.side,
+                reason: orderResult.reason,
+                orderResult: orderResult
+              }
+            });
+            
+            // Return early - don't retry skipped orders
+            return;
+          }
+          
           console.log(`✅ Order placed successfully!`);
           console.log(`📋 Order Result:`, JSON.stringify(orderResult, null, 2));
           break; // Success, exit retry loop
@@ -8563,6 +8587,11 @@ class BotExecutor {
       const timestamp = Date.now().toString(); // milliseconds
       const nonce = this.generateNonce(); // 32-bit random string
       
+      // Track if all errors were Code 2 (likely symbol doesn't exist)
+      let allErrorsWereCode2 = true;
+      let code2ErrorCount = 0;
+      let totalAttempts = 0;
+      
       // Bitunix order parameters per official API documentation
       // IMPORTANT: Bitunix uses NUMERIC codes, not strings!
       // side: 1 = Sell, 2 = Buy
@@ -8695,6 +8724,8 @@ class BotExecutor {
               
               // Handle Code 2 (System error) - try different parameter formats
               if (data.code === 2) {
+                code2ErrorCount++;
+                totalAttempts++;
                 console.log(`   ⚠️ System error (Code: 2) from ${baseUrl}${requestPath}, trying alternative parameter format...`);
                 console.log(`   📋 Original request: symbol=${symbol}, side=${sideCode}, type=${orderTypeCode}, qty=${amount}, price=${price}`);
                 
@@ -8905,6 +8936,12 @@ class BotExecutor {
                 continue;
               }
               
+              totalAttempts++;
+              if (data.code !== 2) {
+                allErrorsWereCode2 = false; // Not all errors are Code 2
+              } else {
+                code2ErrorCount++;
+              }
               console.warn(`   ⚠️ API returned code ${data.code}: ${errorMsg}, trying next endpoint...`);
               lastError = new Error(`Bitunix order error: ${errorMsg} (Code: ${data.code})`);
               continue; // Try next endpoint
@@ -8919,10 +8956,19 @@ class BotExecutor {
               response: data
             };
           } catch (endpointErr: any) {
+            totalAttempts++;
             // If this is a Code 10003 (invalid API key) error, fail immediately - don't try other endpoints
             if (endpointErr.message && endpointErr.message.includes('Code: 10003')) {
               console.error(`❌ Bitunix API key is invalid (Code: 10003) - stopping all retry attempts`);
+              allErrorsWereCode2 = false; // This is not Code 2, so symbol might exist
               throw endpointErr; // Re-throw immediately, don't try other endpoints
+            }
+            
+            // Check if error message contains Code 2
+            if (endpointErr.message && endpointErr.message.includes('Code: 2')) {
+              code2ErrorCount++;
+            } else {
+              allErrorsWereCode2 = false; // Not all errors are Code 2
             }
             
             console.warn(`   ⚠️ Error with ${baseUrl}${requestPath}:`, endpointErr.message);
@@ -8934,6 +8980,36 @@ class BotExecutor {
       
       // All endpoints failed
       if (lastError) {
+        // Check if all errors were Code 2 - likely symbol doesn't exist on Bitunix
+        if (allErrorsWereCode2 && code2ErrorCount > 0 && totalAttempts === code2ErrorCount) {
+          console.warn(`   ⚠️ All attempts returned Code 2 (System error). Symbol ${symbol} likely doesn't exist on Bitunix ${marketType}.`);
+          
+          if (bot?.id) {
+            await this.addBotLog(bot.id, {
+              level: 'warning',
+              category: 'trade',
+              message: `⚠️ Trade skipped: Symbol ${symbol} is not available for ${marketType} trading on Bitunix. All order attempts returned "System error" (Code: 2), which typically indicates the symbol is not listed on this exchange.`,
+              details: {
+                symbol: symbol,
+                exchange: 'bitunix',
+                marketType: marketType,
+                error_code: 2,
+                attempts: totalAttempts,
+                action_required: 'Verify symbol is available on Bitunix or switch to a different exchange'
+              }
+            });
+          }
+          
+          // Return a skipped result instead of throwing an error
+          return {
+            orderId: null,
+            status: 'skipped',
+            exchange: 'bitunix',
+            reason: `Symbol ${symbol} not available on Bitunix ${marketType}`,
+            response: null
+          };
+        }
+        
         // Enhance error message with diagnostic information
         const enhancedError = new Error(
           `${lastError.message}\n\n` +
@@ -8944,9 +9020,10 @@ class BotExecutor {
           `- Quantity: ${amount}\n` +
           `- Price: ${price || 'N/A'}\n` +
           `- Trading Type: ${tradingType}\n` +
+          `- Code 2 errors: ${code2ErrorCount}/${totalAttempts} attempts\n` +
           `\nTroubleshooting:\n` +
-          `1. Verify symbol ${symbol} is available for futures trading on Bitunix\n` +
-          `2. Check API key has futures trading permissions\n` +
+          `1. Verify symbol ${symbol} is available for ${marketType} trading on Bitunix\n` +
+          `2. Check API key has ${marketType} trading permissions\n` +
           `3. Ensure account has margin mode and leverage configured\n` +
           `4. Verify quantity and price meet exchange requirements\n` +
           `5. Contact Bitunix support if issue persists`
