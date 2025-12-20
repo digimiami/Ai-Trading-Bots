@@ -38,15 +38,15 @@ export default function FuturesPairsFinderPage() {
   const [pairs, setPairs] = useState<FuturesPair[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedExchange, setSelectedExchange] = useState<'all' | 'bybit' | 'okx' | 'bitunix'>('all');
+  const [selectedExchange, setSelectedExchange] = useState<'all' | 'bybit' | 'okx' | 'bitunix' | 'mexc'>('all');
   
   // Ensure only enabled exchanges can be selected
   const handleExchangeChange = (value: string) => {
-    if (value === 'okx' || value === 'bitunix') {
-      // If disabled exchange is selected, default to 'all' (which will only show Bybit)
+    if (value === 'okx') {
+      // If disabled exchange is selected, default to 'all'
       setSelectedExchange('all');
     } else {
-      setSelectedExchange(value as 'all' | 'bybit');
+      setSelectedExchange(value as 'all' | 'bybit' | 'bitunix' | 'mexc');
     }
   };
   const [sortBy, setSortBy] = useState<'performance' | 'volume' | 'change24h' | 'change30d'>('performance');

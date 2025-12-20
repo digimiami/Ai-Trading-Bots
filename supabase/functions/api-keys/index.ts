@@ -714,124 +714,135 @@ async function fetchMEXCBalance(apiKey: string, apiSecret: string) {
   
   try {
     const timestamp = Date.now().toString()
-    const recvWindow = '5000'
-    const requestPath = '/api/v1/private/account/assets'
+    const queryString = ''
+    const signaturePayload = queryString + timestamp
+    const signature = await createHMACSignature(signaturePayload, apiSecret)
     
-    console.log('=== MEXC BALANCE DEBUG ===')
-    console.log('0. Environment: MAINNET')
-    console.log('0. Base URL:', baseUrl)
-    console.log('1. Timestamp (ms):', timestamp)
-    console.log('2. RecvWindow:', recvWindow)
-    console.log('3. API Key (first 10 chars):', apiKey.substring(0, 10) + '...')
-    console.log('4. Secret (first 10 chars):', apiSecret.substring(0, 10) + '...')
-    
-    // MEXC signature: HMAC SHA256(queryString + timestamp + recvWindow)
-    // Query string should be sorted alphabetically
-    const queryParams: Record<string, string> = {
-      timestamp,
-      recvWindow
+    const headers: Record<string, string> = {
+      'X-MEXC-APIKEY': apiKey,
+      'Content-Type': 'application/json'
     }
     
-    // Sort parameters alphabetically
-    const sortedParams = Object.keys(queryParams)
-      .sort()
-      .map(key => `${key}=${queryParams[key]}`)
-      .join('&')
+    const endpointsToTry = [
+      '/api/v3/account',
+      '/api/v3/capital/config/getall',
+      '/api/v3/balance'
+    ]
     
-    // Create signature string: queryString + timestamp + recvWindow
-    const signatureString = sortedParams
+    let response: Response | null = null
+    let data: any = null
     
-    console.log('5. Sorted params:', sortedParams)
-    console.log('6. Signature string:', signatureString)
-    
-    // Create HMAC SHA256 signature
-    const signature = await createMEXCSignature(signatureString, apiSecret)
-    
-    console.log('7. Generated signature:', signature)
-    
-    // Build final URL with signature
-    const finalUrl = `${baseUrl}${requestPath}?${sortedParams}&signature=${signature}`
-    
-    console.log('8. Final URL:', finalUrl.replace(/signature=[^&]+/, 'signature=***'))
-    console.log('=== END MEXC DEBUG ===')
-    
-    const response = await fetch(finalUrl, {
-      method: 'GET',
-      headers: {
-        'X-MEXC-APIKEY': apiKey,
-        'Content-Type': 'application/json'
-      }
-    })
-    
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error('MEXC API HTTP Error:', response.status, errorText)
-      throw new Error(`MEXC API error: ${response.status} - ${errorText}`)
-    }
-    
-    const data = await response.json()
-    console.log('MEXC API Response:', JSON.stringify(data, null, 2))
-    
-    // MEXC returns { code: 0, data: { assets: [...] } } on success
-    if (data.code !== 0 && data.code !== '0') {
-      throw new Error(`MEXC API error: ${data.msg || data.message || 'Unknown error'}`)
-    }
-    
-    const assets = data.data?.assets || []
-    
-    if (!assets || assets.length === 0) {
-      return {
-        exchange: 'mexc',
-        totalBalance: 0,
-        availableBalance: 0,
-        lockedBalance: 0,
-        assets: [],
-        lastUpdated: new Date().toISOString(),
-        status: 'connected',
-        note: 'Account has no balances'
-      }
-    }
-    
-    let totalBalance = 0
-    let availableBalance = 0
-    let lockedBalance = 0
-    const parsedAssets: any[] = []
-    
-    // Process MEXC assets
-    // MEXC format: { asset: "BTC", free: "1.5", frozen: "0.5", ... }
-    for (const asset of assets) {
-      const free = parseFloat(asset.free || asset.available || '0')
-      const locked = parseFloat(asset.frozen || asset.locked || '0')
-      const total = free + locked
-      
-      const assetSymbol = asset.asset || asset.currency || asset.coin || ''
-      
-      // Only include assets with non-zero balance
-      if (total > 0 || free > 0 || locked > 0) {
-        totalBalance += total
-        availableBalance += free
-        lockedBalance += locked
-        
-        parsedAssets.push({
-          asset: assetSymbol,
-          free,
-          locked,
-          total
+    for (const endpointPath of endpointsToTry) {
+      try {
+        const url = `${baseUrl}${endpointPath}?timestamp=${timestamp}&signature=${signature}`
+        response = await fetch(url, {
+          method: 'GET',
+          headers: headers
         })
+        
+        if (!response.ok) {
+          continue
+        }
+        
+        data = await response.json()
+        
+        if (data.code === 200 && data.data) {
+          const assets: any[] = []
+          let totalBalance = 0
+          let availableBalance = 0
+          let lockedBalance = 0
+          
+          if (data.data.balances && Array.isArray(data.data.balances)) {
+            data.data.balances.forEach((balance: any) => {
+              const free = parseFloat(balance.free || '0')
+              const locked = parseFloat(balance.locked || '0')
+              const total = free + locked
+              
+              if (total > 0) {
+                assets.push({
+                  asset: balance.asset || balance.coin || '',
+                  free: free,
+                  locked: locked,
+                  total: total
+                })
+                
+                if ((balance.asset || '').toUpperCase() === 'USDT') {
+                  totalBalance += total
+                  availableBalance += free
+                  lockedBalance += locked
+                }
+              }
+            })
+          }
+          
+          if (totalBalance === 0 && assets.length > 0) {
+            assets.forEach(asset => {
+              totalBalance += asset.total
+              availableBalance += asset.free
+              lockedBalance += asset.locked
+            })
+          }
+          
+          return {
+            exchange: 'mexc',
+            totalBalance: totalBalance,
+            availableBalance: availableBalance,
+            lockedBalance: lockedBalance,
+            assets: assets,
+            lastUpdated: new Date().toISOString(),
+            status: 'connected'
+          }
+        } else if (data.balances && Array.isArray(data.balances)) {
+          const assets: any[] = []
+          let totalBalance = 0
+          let availableBalance = 0
+          let lockedBalance = 0
+          
+          data.balances.forEach((balance: any) => {
+            const free = parseFloat(balance.free || '0')
+            const locked = parseFloat(balance.locked || '0')
+            const total = free + locked
+            
+            if (total > 0) {
+              assets.push({
+                asset: balance.asset || balance.coin || '',
+                free: free,
+                locked: locked,
+                total: total
+              })
+              
+              if ((balance.asset || '').toUpperCase() === 'USDT') {
+                totalBalance += total
+                availableBalance += free
+                lockedBalance += locked
+              }
+            }
+          })
+          
+          if (totalBalance === 0 && assets.length > 0) {
+            assets.forEach(asset => {
+              totalBalance += asset.total
+              availableBalance += asset.free
+              lockedBalance += asset.locked
+            })
+          }
+          
+          return {
+            exchange: 'mexc',
+            totalBalance: totalBalance,
+            availableBalance: availableBalance,
+            lockedBalance: lockedBalance,
+            assets: assets,
+            lastUpdated: new Date().toISOString(),
+            status: 'connected'
+          }
+        }
+      } catch (endpointErr: any) {
+        continue
       }
     }
     
-    console.log(`MEXC Final balances - Total: ${totalBalance}, Available: ${availableBalance}, Locked: ${lockedBalance}`)
-    
-    return {
-      exchange: 'mexc',
-      totalBalance,
-      availableBalance,
-      lockedBalance,
-      assets: parsedAssets,
-      lastUpdated: new Date().toISOString(),
-      status: 'connected'
-    }
+    throw new Error(`MEXC API returned error: ${data?.msg || data?.message || 'Unknown error'}`)
   } catch (error: any) {
     console.error('MEXC balance fetch error:', error)
     return {
@@ -847,8 +858,7 @@ async function fetchMEXCBalance(apiKey: string, apiSecret: string) {
   }
 }
 
-// Helper function to create MEXC signature
-async function createMEXCSignature(message: string, secret: string): Promise<string> {
+async function createHMACSignature(message: string, secret: string): Promise<string> {
   const encoder = new TextEncoder()
   const keyData = encoder.encode(secret)
   const messageData = encoder.encode(message)
@@ -864,7 +874,9 @@ async function createMEXCSignature(message: string, secret: string): Promise<str
   const signature = await crypto.subtle.sign('HMAC', cryptoKey, messageData)
   const hashArray = Array.from(new Uint8Array(signature))
   // MEXC expects lowercase hex string
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toLowerCase()
+  const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toLowerCase()
+  
+  return hashHex
 }
 
 // Helper function to create Bitunix signature using HMAC-SHA256 (same as bot-executor)
