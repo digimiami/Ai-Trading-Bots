@@ -13239,6 +13239,149 @@ serve(async (req) => {
           })
         }
 
+      case 'manual_order':
+        {
+          try {
+            const body = await req.json();
+            const { userId, order } = body;
+
+            if (!userId || !order) {
+              return new Response(JSON.stringify({ error: 'Missing userId or order details' }), {
+                status: 400,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              });
+            }
+
+            // Verify user is admin or the order is for their own account
+            if (user?.id !== userId && user?.role !== 'admin') {
+              return new Response(JSON.stringify({ error: 'Unauthorized: Only admins can place orders for other users' }), {
+                status: 403,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              });
+            }
+
+            console.log(`📋 Manual order request: ${order.exchange} ${order.symbol} ${order.side} ${order.amount} @ ${order.price || 'MARKET'}`);
+
+            // Create executor instance
+            const executor = new BotExecutor(supabaseClient, user);
+
+            // Get API keys for the user
+            const serviceRoleClient = createClient(
+              Deno.env.get('SUPABASE_URL') ?? '',
+              Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+            );
+
+            const { data: apiKeys, error: apiKeysError } = await serviceRoleClient
+              .from('api_keys')
+              .select('api_key, api_secret, passphrase')
+              .eq('user_id', userId)
+              .eq('exchange', order.exchange)
+              .eq('is_active', true)
+              .eq('is_testnet', false)
+              .single();
+
+            if (apiKeysError || !apiKeys) {
+              return new Response(JSON.stringify({ 
+                error: `API keys not found for user ${userId} on exchange ${order.exchange}. Please configure API keys first.` 
+              }), {
+                status: 400,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              });
+            }
+
+            // Create a minimal bot object for order placement
+            const tempBot = {
+              id: `manual-${Date.now()}`,
+              user_id: userId,
+              exchange: order.exchange,
+              symbol: order.symbol,
+              trading_type: order.tradingType || 'spot',
+              timeframe: order.timeframe || '1h',
+              leverage: parseInt(order.leverage) || 1
+            };
+
+            // Create a trade signal object
+            const tradeSignal = {
+              side: order.side,
+              symbol: order.symbol,
+              price: order.price || null,
+              amount: order.amount,
+              orderType: order.orderType || 'market'
+            };
+
+            // Place the order using the appropriate exchange method
+            let orderResult;
+            if (order.exchange === 'bybit') {
+              orderResult = await executor['placeBybitOrder'](
+                apiKeys.api_key,
+                apiKeys.api_secret,
+                order.symbol,
+                order.side,
+                order.amount,
+                order.price || 0,
+                order.tradingType || 'spot',
+                tempBot,
+                tradeSignal
+              );
+            } else if (order.exchange === 'okx') {
+              orderResult = await executor['placeOKXOrder'](
+                apiKeys.api_key,
+                apiKeys.api_secret,
+                apiKeys.passphrase || '',
+                order.symbol,
+                order.side,
+                order.amount,
+                order.price || 0
+              );
+            } else if (order.exchange === 'bitunix') {
+              orderResult = await executor['placeBitunixOrder'](
+                apiKeys.api_key,
+                apiKeys.api_secret,
+                order.symbol,
+                order.side,
+                order.amount,
+                order.price || 0,
+                order.tradingType || 'spot',
+                tempBot
+              );
+            } else if (order.exchange === 'mexc') {
+              orderResult = await executor['placeMEXCOrder'](
+                apiKeys.api_key,
+                apiKeys.api_secret,
+                order.symbol,
+                order.side,
+                order.amount,
+                order.price || 0,
+                order.tradingType || 'spot',
+                tempBot
+              );
+            } else {
+              return new Response(JSON.stringify({ error: `Unsupported exchange: ${order.exchange}` }), {
+                status: 400,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              });
+            }
+
+            return new Response(JSON.stringify({
+              success: true,
+              orderId: orderResult.orderId,
+              message: 'Order placed successfully',
+              result: orderResult
+            }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+
+          } catch (error: any) {
+            console.error('Manual order error:', error);
+            return new Response(JSON.stringify({ 
+              error: error.message || 'Failed to place manual order' 
+            }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+        }
+
       default:
         return new Response(JSON.stringify({ error: 'Invalid action' }), {
           status: 400,

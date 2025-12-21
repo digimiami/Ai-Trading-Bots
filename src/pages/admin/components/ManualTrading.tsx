@@ -43,6 +43,8 @@ interface OrderForm {
   amount: string
   price: string
   tradingType: 'spot' | 'futures' | 'linear'
+  timeframe: string
+  leverage: string
 }
 
 export default function ManualTrading() {
@@ -64,7 +66,9 @@ export default function ManualTrading() {
     orderType: 'market',
     amount: '',
     price: '',
-    tradingType: 'spot'
+    tradingType: 'spot',
+    timeframe: '1h',
+    leverage: '1'
   })
 
   const [filters, setFilters] = useState({
@@ -200,29 +204,7 @@ export default function ManualTrading() {
         throw new Error(`User does not have API keys configured for ${orderForm.exchange}. Please configure API keys first.`)
       }
 
-      // Create a temporary bot for the manual order
-      // This allows us to use the existing bot-executor logic
-      const { data: tempBot, error: botError } = await supabase
-        .from('trading_bots')
-        .insert({
-          user_id: orderForm.userId,
-          name: `[MANUAL] ${orderForm.symbol} ${orderForm.side.toUpperCase()}`,
-          exchange: orderForm.exchange,
-          symbol: orderForm.symbol.toUpperCase(),
-          trading_type: orderForm.tradingType,
-          status: 'running',
-          paper_trading: false,
-          strategy: {},
-          strategy_config: {}
-        })
-        .select()
-        .single()
-
-      if (botError) {
-        throw new Error(`Failed to create temporary bot: ${botError.message}`)
-      }
-
-      // Create a manual trade signal for the bot-executor
+      // Get session for API calls
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
         throw new Error('Not authenticated')
@@ -230,59 +212,7 @@ export default function ManualTrading() {
 
       const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co'
       
-      // Create manual trade signal in database
-      const tradeSignal = {
-        bot_id: tempBot.id,
-        signal_type: 'manual',
-        side: orderForm.side,
-        symbol: orderForm.symbol.toUpperCase(),
-        price: orderForm.orderType === 'limit' ? parseFloat(orderForm.price) : null,
-        amount: parseFloat(orderForm.amount),
-        timestamp: new Date().toISOString(),
-        source: 'admin_manual'
-      }
-
-      const { error: signalError } = await supabase
-        .from('manual_trade_signals')
-        .insert(tradeSignal)
-        .select()
-        .single()
-
-      if (signalError) {
-        // If table doesn't exist, try alternative approach
-        console.warn('Manual trade signals table may not exist, trying direct execution:', signalError)
-        
-        // Call bot-executor directly with execute_bot
-        const response = await fetch(`${supabaseUrl}/functions/v1/bot-executor`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            action: 'execute_bot',
-            botId: tempBot.id
-          }),
-        })
-
-        if (!response.ok) {
-          const errorText = await response.text()
-          throw new Error(`Failed to execute bot: ${errorText}`)
-        }
-
-        const result = await response.json()
-        
-        // Delete temporary bot
-        await supabase
-          .from('trading_bots')
-          .delete()
-          .eq('id', tempBot.id)
-
-        alert(`✅ Order execution initiated!\n\nBot ID: ${tempBot.id}\nSymbol: ${orderForm.symbol}\nSide: ${orderForm.side}\nAmount: ${orderForm.amount}\n\nCheck the bot logs for order details.`)
-        return
-      }
-
-      // If signal was created, execute the bot
+      // Call bot-executor with manual_order action to place order directly
       const response = await fetch(`${supabaseUrl}/functions/v1/bot-executor`, {
         method: 'POST',
         headers: {
@@ -290,28 +220,41 @@ export default function ManualTrading() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          action: 'execute_bot',
-          botId: tempBot.id
+          action: 'manual_order',
+          userId: orderForm.userId,
+          order: {
+            exchange: orderForm.exchange,
+            symbol: orderForm.symbol.toUpperCase(),
+            side: orderForm.side,
+            amount: parseFloat(orderForm.amount),
+            price: orderForm.orderType === 'limit' ? parseFloat(orderForm.price) : null,
+            orderType: orderForm.orderType,
+            tradingType: orderForm.tradingType,
+            timeframe: orderForm.timeframe,
+            leverage: parseInt(orderForm.leverage) || 1
+          }
         }),
       })
 
       if (!response.ok) {
         const errorText = await response.text()
-        throw new Error(`Failed to execute bot: ${errorText}`)
+        let errorMessage = `Failed to place order: ${errorText}`
+        try {
+          const errorData = JSON.parse(errorText)
+          errorMessage = errorData.error || errorData.message || errorMessage
+        } catch {
+          // Use errorText as is
+        }
+        throw new Error(errorMessage)
       }
 
       const result = await response.json()
 
-      // Delete temporary bot after a delay
-      setTimeout(async () => {
-        await supabase
-          .from('trading_bots')
-          .delete()
-          .eq('id', tempBot.id)
-      }, 5000)
+      if (result.error) {
+        throw new Error(result.error)
+      }
 
-      // Note: The order execution happens asynchronously
-      // Check bot logs or positions for order confirmation
+      alert(`✅ Order placed successfully!\n\nOrder ID: ${result.orderId || 'N/A'}\nSymbol: ${orderForm.symbol}\nSide: ${orderForm.side}\nAmount: ${orderForm.amount}\nPrice: ${orderForm.orderType === 'limit' ? orderForm.price : 'Market'}`)
       
       // Reset form
       setOrderForm({
@@ -322,7 +265,9 @@ export default function ManualTrading() {
         orderType: 'market',
         amount: '',
         price: '',
-        tradingType: 'spot'
+        tradingType: 'spot',
+        timeframe: '1h',
+        leverage: '1'
       })
 
       // Refresh positions
@@ -407,10 +352,10 @@ export default function ManualTrading() {
       <div className="flex gap-2 border-b border-gray-700">
         <button
           onClick={() => setActiveTab('place-order')}
-          className={`px-4 py-2 font-medium transition-colors ${
+            className={`px-4 py-2 font-medium transition-colors ${
             activeTab === 'place-order'
-              ? 'text-blue-400 border-b-2 border-blue-400'
-              : 'text-gray-400 hover:text-gray-300'
+              ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
+              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
           }`}
         >
           <i className="ri-add-circle-line mr-2"></i>
@@ -418,10 +363,10 @@ export default function ManualTrading() {
         </button>
         <button
           onClick={() => setActiveTab('positions')}
-          className={`px-4 py-2 font-medium transition-colors ${
+            className={`px-4 py-2 font-medium transition-colors ${
             activeTab === 'positions'
-              ? 'text-blue-400 border-b-2 border-blue-400'
-              : 'text-gray-400 hover:text-gray-300'
+              ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
+              : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300'
           }`}
         >
           <i className="ri-file-list-line mr-2"></i>
@@ -432,19 +377,19 @@ export default function ManualTrading() {
       {/* Place Order Tab */}
       {activeTab === 'place-order' && (
         <Card>
-          <h2 className="text-2xl font-bold text-white mb-6">Manual Order Placement</h2>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Manual Order Placement</h2>
           
           <form onSubmit={handlePlaceOrder} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* User Selection */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   User <span className="text-red-400">*</span>
                 </label>
                 <select
                   value={orderForm.userId}
                   onChange={(e) => setOrderForm({ ...orderForm, userId: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 >
                   <option value="">Select a user...</option>
@@ -458,13 +403,13 @@ export default function ManualTrading() {
 
               {/* Exchange Selection */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Exchange <span className="text-red-400">*</span>
                 </label>
                 <select
                   value={orderForm.exchange}
                   onChange={(e) => setOrderForm({ ...orderForm, exchange: e.target.value as any })}
-                  className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 >
                   <option value="bybit">Bybit</option>
@@ -476,14 +421,14 @@ export default function ManualTrading() {
 
               {/* Symbol */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Symbol <span className="text-red-400">*</span> (e.g., BTCUSDT)
                 </label>
                 <input
                   type="text"
                   value={orderForm.symbol}
                   onChange={(e) => setOrderForm({ ...orderForm, symbol: e.target.value.toUpperCase() })}
-                  className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="BTCUSDT"
                   required
                 />
@@ -491,13 +436,13 @@ export default function ManualTrading() {
 
               {/* Trading Type */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Trading Type <span className="text-red-400">*</span>
                 </label>
                 <select
                   value={orderForm.tradingType}
                   onChange={(e) => setOrderForm({ ...orderForm, tradingType: e.target.value as any })}
-                  className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 >
                   <option value="spot">Spot</option>
@@ -508,13 +453,13 @@ export default function ManualTrading() {
 
               {/* Side */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Side <span className="text-red-400">*</span>
                 </label>
                 <select
                   value={orderForm.side}
                   onChange={(e) => setOrderForm({ ...orderForm, side: e.target.value as any })}
-                  className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 >
                   <option value="buy">Buy / Long</option>
@@ -526,13 +471,13 @@ export default function ManualTrading() {
 
               {/* Order Type */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Order Type <span className="text-red-400">*</span>
                 </label>
                 <select
                   value={orderForm.orderType}
                   onChange={(e) => setOrderForm({ ...orderForm, orderType: e.target.value as any })}
-                  className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 >
                   <option value="market">Market</option>
@@ -542,7 +487,7 @@ export default function ManualTrading() {
 
               {/* Amount */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Amount <span className="text-red-400">*</span>
                 </label>
                 <input
@@ -550,7 +495,7 @@ export default function ManualTrading() {
                   step="any"
                   value={orderForm.amount}
                   onChange={(e) => setOrderForm({ ...orderForm, amount: e.target.value })}
-                  className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="0.001"
                   required
                 />
@@ -559,7 +504,7 @@ export default function ManualTrading() {
               {/* Price (only for limit orders) */}
               {orderForm.orderType === 'limit' && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Price <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -567,12 +512,53 @@ export default function ManualTrading() {
                     step="any"
                     value={orderForm.price}
                     onChange={(e) => setOrderForm({ ...orderForm, price: e.target.value })}
-                    className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     placeholder="50000"
                     required
                   />
                 </div>
               )}
+
+              {/* Timeframe */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Timeframe <span className="text-red-400">*</span>
+                </label>
+                <select
+                  value={orderForm.timeframe}
+                  onChange={(e) => setOrderForm({ ...orderForm, timeframe: e.target.value })}
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                >
+                  <option value="1m">1m</option>
+                  <option value="5m">5m</option>
+                  <option value="15m">15m</option>
+                  <option value="30m">30m</option>
+                  <option value="1h">1h</option>
+                  <option value="2h">2h</option>
+                  <option value="4h">4h</option>
+                  <option value="1d">1d</option>
+                  <option value="1w">1w</option>
+                </select>
+              </div>
+
+              {/* Leverage */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Leverage <span className="text-red-400">*</span>
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={orderForm.leverage}
+                  onChange={(e) => setOrderForm({ ...orderForm, leverage: e.target.value })}
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="1"
+                  required
+                />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Default: 1 (no leverage)</p>
+              </div>
             </div>
 
             {error && (
@@ -609,14 +595,14 @@ export default function ManualTrading() {
           <Card>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Exchange</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Exchange</label>
                 <select
                   value={filters.exchange}
                   onChange={(e) => {
                     setFilters({ ...filters, exchange: e.target.value })
                     setTimeout(() => fetchOpenPositions(), 100)
                   }}
-                  className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg"
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg"
                 >
                   <option value="all">All Exchanges</option>
                   <option value="bybit">Bybit</option>
@@ -627,14 +613,14 @@ export default function ManualTrading() {
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">User</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">User</label>
                 <select
                   value={filters.userId}
                   onChange={(e) => {
                     setFilters({ ...filters, userId: e.target.value })
                     setTimeout(() => fetchOpenPositions(), 100)
                   }}
-                  className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg"
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg"
                 >
                   <option value="all">All Users</option>
                   {users.map((u) => (
@@ -646,7 +632,7 @@ export default function ManualTrading() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Symbol</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Symbol</label>
                 <input
                   type="text"
                   value={filters.symbol}
@@ -654,7 +640,7 @@ export default function ManualTrading() {
                     setFilters({ ...filters, symbol: e.target.value })
                     setTimeout(() => fetchOpenPositions(), 100)
                   }}
-                  className="w-full px-3 py-2 bg-gray-800 text-white border border-gray-700 rounded-lg"
+                  className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg"
                   placeholder="BTCUSDT"
                 />
               </div>
@@ -682,14 +668,14 @@ export default function ManualTrading() {
 
             {loading ? (
               <div className="text-center py-8">
-                <i className="ri-loader-4-line animate-spin text-3xl text-gray-400"></i>
-                <p className="mt-4 text-gray-400">Loading positions...</p>
+                <i className="ri-loader-4-line animate-spin text-3xl text-gray-600 dark:text-gray-400"></i>
+                <p className="mt-4 text-gray-700 dark:text-gray-400">Loading positions...</p>
               </div>
             ) : filteredPositions.length === 0 ? (
               <div className="text-center py-12">
                 <i className="ri-file-list-line text-6xl text-gray-600 mb-4"></i>
-                <p className="text-gray-400 text-lg mb-2">No open positions found</p>
-                <p className="text-gray-500 text-sm">
+                <p className="text-gray-700 dark:text-gray-400 text-lg mb-2">No open positions found</p>
+                <p className="text-gray-600 dark:text-gray-500 text-sm">
                   {filters.exchange !== 'all' || filters.userId !== 'all' || filters.symbol
                     ? 'Try adjusting your filters'
                     : 'Open positions will appear here'}
@@ -700,16 +686,16 @@ export default function ManualTrading() {
                 <table className="w-full text-left">
                   <thead>
                     <tr className="border-b border-gray-700">
-                      <th className="pb-3 text-gray-400 font-semibold">User</th>
-                      <th className="pb-3 text-gray-400 font-semibold">Symbol</th>
-                      <th className="pb-3 text-gray-400 font-semibold">Exchange</th>
-                      <th className="pb-3 text-gray-400 font-semibold">Side</th>
-                      <th className="pb-3 text-gray-400 font-semibold">Entry Price</th>
-                      <th className="pb-3 text-gray-400 font-semibold">Size</th>
-                      <th className="pb-3 text-gray-400 font-semibold">PnL</th>
-                      <th className="pb-3 text-gray-400 font-semibold">Status</th>
-                      <th className="pb-3 text-gray-400 font-semibold">Opened</th>
-                      <th className="pb-3 text-gray-400 font-semibold">Actions</th>
+                      <th className="pb-3 text-gray-700 dark:text-gray-400 font-semibold">User</th>
+                      <th className="pb-3 text-gray-700 dark:text-gray-400 font-semibold">Symbol</th>
+                      <th className="pb-3 text-gray-700 dark:text-gray-400 font-semibold">Exchange</th>
+                      <th className="pb-3 text-gray-700 dark:text-gray-400 font-semibold">Side</th>
+                      <th className="pb-3 text-gray-700 dark:text-gray-400 font-semibold">Entry Price</th>
+                      <th className="pb-3 text-gray-700 dark:text-gray-400 font-semibold">Size</th>
+                      <th className="pb-3 text-gray-700 dark:text-gray-400 font-semibold">PnL</th>
+                      <th className="pb-3 text-gray-700 dark:text-gray-400 font-semibold">Status</th>
+                      <th className="pb-3 text-gray-700 dark:text-gray-400 font-semibold">Opened</th>
+                      <th className="pb-3 text-gray-700 dark:text-gray-400 font-semibold">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -745,7 +731,7 @@ export default function ManualTrading() {
                             {position.status}
                           </span>
                         </td>
-                        <td className="py-3 text-gray-300 text-sm">
+                        <td className="py-3 text-gray-700 dark:text-gray-300 text-sm">
                           {new Date(position.created_at).toLocaleDateString()}
                         </td>
                         <td className="py-3">
