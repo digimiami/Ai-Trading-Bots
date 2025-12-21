@@ -13430,9 +13430,18 @@ serve(async (req) => {
 
             console.log(`✅ Final quantity after constraints: ${finalQuantity} (min: ${quantityConstraints.min}, max: ${quantityConstraints.max}, stepSize: ${steps.stepSize})`);
 
+            // Normalize side: convert 'long'/'short' to 'buy'/'sell' for Bybit API
+            const normalizedSide = (() => {
+              const sideLower = (order.side || '').toLowerCase();
+              if (sideLower === 'long') return 'buy';
+              if (sideLower === 'short') return 'sell';
+              return sideLower; // 'buy' or 'sell' (already lowercase)
+            })();
+            console.log(`🔄 Side normalization: ${order.side} → ${normalizedSide}`);
+
             // Create a trade signal object
             const tradeSignal = {
-              side: order.side,
+              side: normalizedSide,
               symbol: order.symbol,
               price: order.price || null,
               amount: finalQuantity, // Use converted quantity
@@ -13440,14 +13449,14 @@ serve(async (req) => {
             };
 
             // Place the order using the public manual order method with DECRYPTED keys
-            // Pass quantity (not USDT amount) to placeManualOrder
+            // Pass quantity (not USDT amount) and normalized side to placeManualOrder
             const orderResult = await executor.placeManualOrder(
               decryptedApiKey,
               decryptedApiSecret,
               decryptedPassphrase,
               order.exchange,
               order.symbol,
-              order.side,
+              normalizedSide, // Use normalized side (buy/sell, not long/short)
               finalQuantity, // Use converted quantity, not USDT amount
               order.price || 0,
               order.tradingType || 'spot',
