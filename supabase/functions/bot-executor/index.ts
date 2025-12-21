@@ -13370,7 +13370,7 @@ serve(async (req) => {
               has_passphrase: !!decryptedPassphrase
             });
 
-            // Create a minimal bot object for order placement
+            // Create a minimal bot object for order placement (including SL/TP for futures/linear)
             const tempBot = {
               id: `manual-${Date.now()}`,
               user_id: userId,
@@ -13378,7 +13378,10 @@ serve(async (req) => {
               symbol: order.symbol,
               trading_type: order.tradingType || 'spot',
               timeframe: order.timeframe || '1h',
-              leverage: parseInt(order.leverage) || 1
+              leverage: parseInt(order.leverage) || 1,
+              // Add SL/TP if provided (for futures/linear orders)
+              stop_loss: order.stopLoss || null,
+              take_profit: order.takeProfit || null
             };
 
             // Convert USDT amount to quantity
@@ -13487,6 +13490,46 @@ serve(async (req) => {
               order.tradingType || 'spot',
               tempBot
             );
+
+            // Set SL/TP for futures/linear orders if provided
+            if ((order.tradingType === 'futures' || order.tradingType === 'linear') && 
+                order.exchange === 'bybit' && 
+                order.stopLoss && order.takeProfit && 
+                orderResult.orderId) {
+              try {
+                console.log(`🛡️ Setting SL/TP for manual order: SL=${order.stopLoss}%, TP=${order.takeProfit}%`);
+                
+                // Small delay to allow position to update after order fills
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // Get actual position entry price from Bybit (using internal method access)
+                // Note: Using bracket notation to access private method - this works in JavaScript runtime
+                const getEntryPrice = (executor as any).getBybitPositionEntryPrice.bind(executor);
+                const entryPrice = await getEntryPrice(decryptedApiKey, decryptedApiSecret, order.symbol);
+                
+                if (entryPrice && entryPrice > 0) {
+                  // Capitalize side for setBybitSLTP
+                  const capitalizedSide = normalizedSide.charAt(0).toUpperCase() + normalizedSide.slice(1).toLowerCase();
+                  
+                  // Create trade signal with SL/TP percentages (setBybitSLTP will calculate actual prices from bot.stop_loss/take_profit)
+                  const slTpTradeSignal = {
+                    ...tradeSignal,
+                    // setBybitSLTP will use bot.stop_loss and bot.take_profit percentages from tempBot
+                  };
+                  
+                  // Call setBybitSLTP using internal method access
+                  const setSLTP = (executor as any).setBybitSLTP.bind(executor);
+                  await setSLTP(decryptedApiKey, decryptedApiSecret, order.symbol, capitalizedSide, entryPrice, tempBot, slTpTradeSignal);
+                  console.log(`✅ SL/TP set successfully for manual order`);
+                } else {
+                  console.warn('⚠️ Could not fetch position entry price, skipping SL/TP (position may have been closed)');
+                }
+              } catch (slTpError: any) {
+                // Log error but don't fail the order - order was placed successfully
+                console.error('⚠️ Failed to set SL/TP for manual order:', slTpError);
+                // Continue - order was placed successfully, just SL/TP failed
+              }
+            }
 
             return new Response(JSON.stringify({
               success: true,

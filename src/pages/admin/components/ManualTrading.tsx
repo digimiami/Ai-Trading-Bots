@@ -45,6 +45,8 @@ interface OrderForm {
   tradingType: 'spot' | 'futures' | 'linear'
   timeframe: string
   leverage: string
+  stopLoss: string
+  takeProfit: string
 }
 
 export default function ManualTrading() {
@@ -68,7 +70,9 @@ export default function ManualTrading() {
     price: '',
     tradingType: 'spot',
     timeframe: '1h',
-    leverage: '1'
+    leverage: '1',
+    stopLoss: '2.0',
+    takeProfit: '4.0'
   })
 
   const [filters, setFilters] = useState({
@@ -231,7 +235,9 @@ export default function ManualTrading() {
             orderType: orderForm.orderType,
             tradingType: orderForm.tradingType,
             timeframe: orderForm.timeframe,
-            leverage: parseInt(orderForm.leverage) || 1
+            leverage: parseInt(orderForm.leverage) || 1,
+            stopLoss: (orderForm.tradingType === 'futures' || orderForm.tradingType === 'linear') ? parseFloat(orderForm.stopLoss) : null,
+            takeProfit: (orderForm.tradingType === 'futures' || orderForm.tradingType === 'linear') ? parseFloat(orderForm.takeProfit) : null
           }
         }),
       })
@@ -267,7 +273,9 @@ export default function ManualTrading() {
         price: '',
         tradingType: 'spot',
         timeframe: '1h',
-        leverage: '1'
+        leverage: '1',
+        stopLoss: '2.0',
+        takeProfit: '4.0'
       })
 
       // Refresh positions
@@ -562,6 +570,48 @@ export default function ManualTrading() {
                 />
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Default: 1 (no leverage)</p>
               </div>
+
+              {/* Stop Loss (only for futures/linear) */}
+              {(orderForm.tradingType === 'futures' || orderForm.tradingType === 'linear') && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Stop Loss (%) <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0.1"
+                    max="50"
+                    value={orderForm.stopLoss}
+                    onChange={(e) => setOrderForm({ ...orderForm, stopLoss: e.target.value })}
+                    className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="2.0"
+                    required
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Default: 2.0% (e.g., 2.0 = 2% below entry for long, 2% above for short)</p>
+                </div>
+              )}
+
+              {/* Take Profit (only for futures/linear) */}
+              {(orderForm.tradingType === 'futures' || orderForm.tradingType === 'linear') && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Take Profit (%) <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min="0.1"
+                    max="100"
+                    value={orderForm.takeProfit}
+                    onChange={(e) => setOrderForm({ ...orderForm, takeProfit: e.target.value })}
+                    className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="4.0"
+                    required
+                  />
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Default: 4.0% (e.g., 4.0 = 4% above entry for long, 4% below for short)</p>
+                </div>
+              )}
             </div>
 
             {error && (
