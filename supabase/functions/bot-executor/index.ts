@@ -13292,7 +13292,7 @@ serve(async (req) => {
 
             const { data: apiKeys, error: apiKeysError } = await serviceRoleClient
               .from('api_keys')
-              .select('api_key, api_secret, passphrase')
+              .select('api_key, api_secret, passphrase, is_testnet')
               .eq('user_id', userId)
               .eq('exchange', order.exchange)
               .eq('is_active', true)
@@ -13301,7 +13301,7 @@ serve(async (req) => {
 
             if (apiKeysError || !apiKeys) {
               return new Response(JSON.stringify({ 
-                error: `API keys not found for user ${userId} on exchange ${order.exchange}. Please configure API keys first.` 
+                error: `API keys not found for user ${userId} on exchange ${order.exchange}. Please configure mainnet API keys in your account settings first. Note: Manual trading uses mainnet only.` 
               }), {
                 status: 400,
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
