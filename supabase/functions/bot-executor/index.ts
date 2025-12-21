@@ -6072,6 +6072,25 @@ class BotExecutor {
     }
   }
 
+  // Public method for manual order placement (used by admin manual trading)
+  public async placeManualOrder(apiKey: string, apiSecret: string, passphrase: string | null, exchange: string, symbol: string, side: string, amount: number, price: number, tradingType: string, bot: any = null): Promise<any> {
+    try {
+      if (exchange === 'bybit') {
+        return await this.placeBybitOrder(apiKey, apiSecret, symbol, side, amount, price, tradingType, bot, null);
+      } else if (exchange === 'okx') {
+        return await this.placeOKXOrder(apiKey, apiSecret, passphrase || '', symbol, side, amount, price);
+      } else if (exchange === 'bitunix') {
+        return await this.placeBitunixOrder(apiKey, apiSecret, symbol, side, amount, price, tradingType, bot);
+      } else if (exchange === 'mexc') {
+        return await this.placeMEXCOrder(apiKey, apiSecret, symbol, side, amount, price, tradingType, bot);
+      }
+      throw new Error(`Unsupported exchange: ${exchange}`);
+    } catch (error) {
+      console.error('Manual order placement error:', error);
+      throw error;
+    }
+  }
+
   private async placeOrder(bot: any, tradeSignal: any, amount: number, price: number): Promise<any> {
     try {
       // CRITICAL: Use bot owner's user_id for API keys, not the executor's user (which might be admin)
@@ -13309,58 +13328,19 @@ serve(async (req) => {
               orderType: order.orderType || 'market'
             };
 
-            // Place the order using the appropriate exchange method
-            let orderResult;
-            if (order.exchange === 'bybit') {
-              orderResult = await executor['placeBybitOrder'](
-                apiKeys.api_key,
-                apiKeys.api_secret,
-                order.symbol,
-                order.side,
-                order.amount,
-                order.price || 0,
-                order.tradingType || 'spot',
-                tempBot,
-                tradeSignal
-              );
-            } else if (order.exchange === 'okx') {
-              orderResult = await executor['placeOKXOrder'](
-                apiKeys.api_key,
-                apiKeys.api_secret,
-                apiKeys.passphrase || '',
-                order.symbol,
-                order.side,
-                order.amount,
-                order.price || 0
-              );
-            } else if (order.exchange === 'bitunix') {
-              orderResult = await executor['placeBitunixOrder'](
-                apiKeys.api_key,
-                apiKeys.api_secret,
-                order.symbol,
-                order.side,
-                order.amount,
-                order.price || 0,
-                order.tradingType || 'spot',
-                tempBot
-              );
-            } else if (order.exchange === 'mexc') {
-              orderResult = await executor['placeMEXCOrder'](
-                apiKeys.api_key,
-                apiKeys.api_secret,
-                order.symbol,
-                order.side,
-                order.amount,
-                order.price || 0,
-                order.tradingType || 'spot',
-                tempBot
-              );
-            } else {
-              return new Response(JSON.stringify({ error: `Unsupported exchange: ${order.exchange}` }), {
-                status: 400,
-                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-              });
-            }
+            // Place the order using the public manual order method
+            const orderResult = await executor.placeManualOrder(
+              apiKeys.api_key,
+              apiKeys.api_secret,
+              apiKeys.passphrase || null,
+              order.exchange,
+              order.symbol,
+              order.side,
+              order.amount,
+              order.price || 0,
+              order.tradingType || 'spot',
+              tempBot
+            );
 
             return new Response(JSON.stringify({
               success: true,
