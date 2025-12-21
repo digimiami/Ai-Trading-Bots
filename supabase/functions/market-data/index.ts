@@ -6,6 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Max-Age': '86400',
 }
 
 // Rate limiting
@@ -508,9 +509,9 @@ function calculateFlows(ticker: any, prevPrice: number): { inflow: number; outfl
 }
 
 serve(async (req) => {
-  // Handle CORS preflight
+  // Handle CORS preflight - must be first and always succeed
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders, status: 204 })
+    return new Response('ok', { headers: corsHeaders })
   }
   
   // Rate limiting
@@ -684,9 +685,7 @@ serve(async (req) => {
       const vwap = calculateVWAP(klines)
       const atr = calculateATR(klines)
       const rsi = calculateRSI(klines)
-      // Fetch ticker first, then pass to getMarketCap to avoid redundant call
-      const tickers = await fetchTickers([symbol])
-      const ticker = tickers.find(t => t.symbol === symbol)
+      // Pass ticker to getMarketCap to avoid redundant call
       const marketCap = await getMarketCap(symbol, price, ticker)
       const flows = calculateFlows(ticker, prevPrice)
       
@@ -821,7 +820,6 @@ serve(async (req) => {
       JSON.stringify({ error: 'Invalid action. Use ?action=all, ?action=symbol&symbol=BTCUSDT, ?action=technical&symbol=BTCUSDT&timeframe=1D, or ?action=alerts' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
-    
   } catch (error: any) {
     console.error('Market data error:', error)
     return new Response(

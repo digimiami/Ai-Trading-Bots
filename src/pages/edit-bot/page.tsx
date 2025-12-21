@@ -14,7 +14,7 @@ export default function EditBotPage() {
   const { bots, updateBot } = useBots();
   const [formData, setFormData] = useState({
     name: '',
-    exchange: 'bybit' as 'bybit' | 'okx',
+    exchange: 'bybit' as 'bybit' | 'okx' | 'bitunix' | 'mexc',
     tradingType: 'spot' as 'spot' | 'futures',
     symbol: 'BTCUSDT',
     timeframe: '1h' as '1m' | '3m' | '5m' | '15m' | '30m' | '45m' | '1h' | '2h' | '3h' | '4h' | '5h' | '6h' | '7h' | '8h' | '9h' | '10h' | '12h' | '1d' | '1w' | '1M',
@@ -296,6 +296,7 @@ export default function EditBotPage() {
                       <option value="bybit">Bybit</option>
                       <option value="okx">OKX</option>
                       <option value="bitunix">Bitunix</option>
+                      <option value="mexc">MEXC</option>
                     </select>
                   </div>
 

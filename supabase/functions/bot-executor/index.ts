@@ -6212,6 +6212,10 @@ class BotExecutor {
           }
         }
         return await this.placeBitunixOrder(apiKey, apiSecret, bot.symbol, tradeSignal.side, amount, price, tradingType, bot);
+      } else if (bot.exchange === 'mexc') {
+        // TODO: Add balance check for MEXC (similar to Bybit/Bitunix)
+        // For now, MEXC will place orders without balance check (like OKX)
+        return await this.placeMEXCOrder(apiKey, apiSecret, bot.symbol, tradeSignal.side, amount, price, tradingType, bot);
       }
       
       throw new Error(`Unsupported exchange: ${bot.exchange}`);
@@ -9055,26 +9059,48 @@ class BotExecutor {
       const orderSide = side.toUpperCase() === 'BUY' || side.toUpperCase() === 'LONG' ? 'BUY' : 'SELL';
       const orderType = price > 0 ? 'LIMIT' : 'MARKET';
       
-      // Build request body
-      const orderBody: any = {
+      // Determine endpoint based on trading type
+      // Spot: /api/v3/order
+      // Futures: /api/v1/futures/order (or /api/v1/private/futures/order)
+      const isFutures = tradingType === 'futures' || tradingType === 'linear';
+      const endpoint = isFutures ? '/api/v1/private/futures/order' : '/api/v3/order';
+      
+      console.log(`   Using ${isFutures ? 'FUTURES' : 'SPOT'} endpoint: ${endpoint}`);
+      
+      // MEXC signature: HMAC_SHA256(sorted query parameters)
+      // Parameters must be sorted alphabetically: quantity, recvWindow, side, symbol, timestamp, type (and price if LIMIT)
+      const recvWindow = '5000';
+      const queryParams: Record<string, string> = {
         symbol: symbolUpper,
         side: orderSide,
         type: orderType,
-        quantity: amount.toString()
+        quantity: amount.toString(),
+        recvWindow: recvWindow,
+        timestamp: timestamp
       };
       
       if (orderType === 'LIMIT' && price > 0) {
-        orderBody.price = price.toString();
-        orderBody.timeInForce = 'GTC'; // Good Till Cancel
+        queryParams.price = price.toString();
       }
       
-      // MEXC signature: HMAC_SHA256(queryString + timestamp, secretKey)
-      // For POST requests, queryString is empty, so signature = HMAC_SHA256(timestamp, secretKey)
-      const queryString = '';
-      const signaturePayload = queryString + timestamp;
-      const signature = await this.createHMACSignature(signaturePayload, apiSecret);
+      // For futures, might need additional parameters like positionSide, leverage, etc.
+      if (isFutures) {
+        // MEXC futures might require positionSide (LONG/SHORT)
+        const positionSide = orderSide === 'BUY' ? 'LONG' : 'SHORT';
+        queryParams.positionSide = positionSide;
+        // Note: Leverage might need to be set separately via account settings
+      }
       
-      console.log(`   Signature payload: ${signaturePayload}`);
+      // Sort parameters alphabetically for signature
+      const sortedParams = Object.keys(queryParams)
+        .sort()
+        .map(key => `${key}=${queryParams[key]}`)
+        .join('&');
+      
+      // Generate signature from sorted query string
+      const signature = await this.createHMACSignature(sortedParams, apiSecret);
+      
+      console.log(`   Sorted params for signature: ${sortedParams}`);
       console.log(`   Generated signature: ${signature}`);
       
       // MEXC API headers
@@ -9083,16 +9109,54 @@ class BotExecutor {
         'Content-Type': 'application/json'
       };
       
-      // MEXC order endpoint
-      const orderUrl = `${baseUrl}/api/v3/order?timestamp=${timestamp}&signature=${signature}`;
+      // MEXC order endpoint - parameters go in query string, not body
+      const queryString = `${sortedParams}&signature=${signature}`;
+      const orderUrl = `${baseUrl}${endpoint}?${queryString}`;
       
-      console.log(`📤 Placing MEXC ${orderType} order: ${orderSide} ${amount} ${symbolUpper} @ ${price > 0 ? price : 'MARKET'}`);
+      console.log(`📤 Placing MEXC ${isFutures ? 'FUTURES' : 'SPOT'} ${orderType} order: ${orderSide} ${amount} ${symbolUpper} @ ${price > 0 ? price : 'MARKET'}`);
+      console.log(`   Full URL (without signature): ${baseUrl}${endpoint}?${sortedParams}&signature=***`);
       
-      const response = await fetch(orderUrl, {
+      // MEXC POST accepts parameters in query string, not body
+      let response = await fetch(orderUrl, {
         method: 'POST',
-        headers: headers,
-        body: JSON.stringify(orderBody)
+        headers: headers
       });
+      
+      // If futures endpoint fails, try alternative endpoints
+      if (!response.ok && isFutures) {
+        const errorText = await response.text();
+        console.warn(`⚠️ MEXC futures endpoint failed, trying alternatives...`);
+        
+        // Try alternative futures endpoints
+        const alternativeEndpoints = [
+          '/api/v1/futures/order',
+          '/api/v1/private/futures/order',
+          '/api/v3/order' // Fallback to spot endpoint (might work for some futures symbols)
+        ];
+        
+        for (const altEndpoint of alternativeEndpoints) {
+          if (altEndpoint === endpoint) continue; // Skip the one we already tried
+          
+          try {
+            const altQueryString = `${sortedParams}&signature=${signature}`;
+            const altOrderUrl = `${baseUrl}${altEndpoint}?${altQueryString}`;
+            console.log(`   Trying alternative endpoint: ${altEndpoint}`);
+            
+            response = await fetch(altOrderUrl, {
+              method: 'POST',
+              headers: headers
+            });
+            
+            if (response.ok) {
+              console.log(`✅ Success with alternative endpoint: ${altEndpoint}`);
+              break; // Success, exit loop
+            }
+          } catch (altError) {
+            console.warn(`   Alternative endpoint ${altEndpoint} also failed:`, altError);
+            continue;
+          }
+        }
+      }
       
       if (!response.ok) {
         const errorText = await response.text();
@@ -9100,21 +9164,44 @@ class BotExecutor {
         throw new Error(`MEXC API error: HTTP ${response.status} - ${errorText.substring(0, 200)}`);
       }
       
-      const data = await response.json();
-      console.log(`📥 MEXC order response:`, JSON.stringify(data).substring(0, 300));
+      const responseText = await response.text();
+      console.log(`📥 MEXC order raw response:`, responseText.substring(0, 500));
       
-      // MEXC response format: { orderId: "...", ... } or { code: 200, data: {...} }
-      if (data.orderId || (data.code === 200 && data.data)) {
-        const orderId = data.orderId || data.data?.orderId || data.data?.id;
+      let data: any;
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error(`❌ Failed to parse MEXC response as JSON:`, parseError);
+        console.error(`   Response text:`, responseText);
+        throw new Error(`MEXC API returned invalid JSON: ${responseText.substring(0, 200)}`);
+      }
+      
+      console.log(`📥 MEXC order parsed response:`, JSON.stringify(data, null, 2));
+      
+      // Check for error codes first
+      if (data.code && data.code !== 200 && data.code !== 0) {
+        const errorMsg = data.msg || data.message || `MEXC API error code: ${data.code}`;
+        console.error(`❌ MEXC order failed with code ${data.code}:`, errorMsg);
+        throw new Error(`MEXC order failed (Code ${data.code}): ${errorMsg}`);
+      }
+      
+      // MEXC response format: { orderId: number, symbol: string, status: string, ... }
+      // orderId can be a number or string
+      const orderId = data.orderId || data.data?.orderId || data.data?.id;
+      
+      if (orderId) {
         console.log(`✅ MEXC order placed successfully: Order ID ${orderId}`);
         return {
-          orderId: orderId,
+          orderId: String(orderId), // Ensure orderId is a string
           status: data.status || 'NEW',
           exchange: 'mexc',
           response: data
         };
       } else {
-        throw new Error(`MEXC order failed: ${data.msg || data.message || JSON.stringify(data)}`);
+        // Log full response for debugging
+        console.error(`❌ MEXC order response missing orderId. Full response:`, JSON.stringify(data, null, 2));
+        const errorMsg = data.msg || data.message || data.error || `Unknown error: ${JSON.stringify(data)}`;
+        throw new Error(`MEXC order failed: ${errorMsg}`);
       }
     } catch (error: any) {
       console.error('❌ MEXC order placement error:', error);
