@@ -13261,7 +13261,7 @@ serve(async (req) => {
       case 'manual_order':
         {
           try {
-            const body = await req.json();
+            // Body is already parsed above, use it directly
             const { userId, order } = body;
 
             if (!userId || !order) {
