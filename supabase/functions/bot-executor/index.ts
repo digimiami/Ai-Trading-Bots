@@ -6545,23 +6545,35 @@ class BotExecutor {
       // marketUnit: numeric 0 = baseCoin, 1 = quoteCoin (or can omit for buy orders)
       // For futures/linear, always use qty in base currency
       if (bybitCategory === 'spot') {
-        // Recalculate order value using potentially adjusted quantity
-        const orderValue = parseFloat(formattedQty) * currentMarketPrice;
         const minOrderValue = this.getMinimumOrderValue(symbol, bybitCategory);
         
         // For buy orders, use quoteCoin (USDT amount) - this is the default
         // For sell orders, use baseCoin (base currency quantity) - this is the default
         if (capitalizedSide === 'Buy') {
           // Buy orders: marketUnit=1 means qty is in USDT (quote currency)
-          // Ensure order value meets minimum requirement (with small buffer for rounding)
-          const finalOrderValue = Math.max(orderValue, minOrderValue * 1.01);
+          // For manual orders, 'amount' parameter may already be in USDT (not converted to quantity)
+          // Check if amount is reasonable for USDT (typically >= 10) vs quantity (could be very small like 0.001)
+          // If amount >= 10 and orderValue would be > amount * 10, then amount is likely already in USDT
+          const calculatedOrderValue = parseFloat(formattedQty) * currentMarketPrice;
+          const isLikelyUSDTAmount = amount >= 10 && calculatedOrderValue > (amount * 10);
+          let finalOrderValue: number;
+          
+          if (isLikelyUSDTAmount) {
+            // Amount is already in USDT, use it directly (skip quantity conversion)
+            finalOrderValue = Math.max(amount, minOrderValue * 1.01);
+            console.log(`💰 Spot BUY order (USDT amount provided): Using $${amount} USDT directly (skipped quantity conversion)`);
+          } else {
+            // Amount is in base currency quantity, use calculated order value
+            finalOrderValue = Math.max(calculatedOrderValue, minOrderValue * 1.01);
+            console.log(`💰 Spot BUY order (quantity provided): Base qty: ${formattedQty}, Price: $${currentMarketPrice}, Order value: $${calculatedOrderValue.toFixed(2)}`);
+          }
+          
           requestBody.marketUnit = 1; // 1 = quoteCoin (USDT amount)
           requestBody.qty = finalOrderValue.toFixed(2); // Order value in USDT with 2 decimal places
           
           console.log(`💰 Spot BUY order: marketUnit=1 (quoteCoin/USDT), qty=$${finalOrderValue.toFixed(2)} USDT`);
-          console.log(`   Base qty: ${formattedQty}, Price: $${currentMarketPrice}, Order value: $${orderValue.toFixed(2)}`);
-          if (finalOrderValue > orderValue) {
-            console.log(`   ⚠️ Adjusted order value from $${orderValue.toFixed(2)} to $${finalOrderValue.toFixed(2)} to meet minimum $${minOrderValue}`);
+          if (finalOrderValue > (isLikelyUSDTAmount ? amount : calculatedOrderValue)) {
+            console.log(`   ⚠️ Adjusted order value to $${finalOrderValue.toFixed(2)} to meet minimum $${minOrderValue}`);
           }
         } else {
           // Sell orders: marketUnit=0 means qty is in base currency
@@ -13396,40 +13408,6 @@ serve(async (req) => {
               }
             }
 
-            // Convert USDT amount to quantity
-            const usdtAmount = parseFloat(order.amount);
-            let quantity = usdtAmount / priceForConversion;
-            console.log(`💱 Converting ${usdtAmount} USDT to quantity at price ${priceForConversion}: ${quantity}`);
-
-            // Apply quantity constraints and step sizing (same as regular orders)
-            const quantityConstraints = getQuantityConstraints(order.symbol);
-            const steps = getSymbolSteps(order.symbol);
-
-            // Apply step size rounding
-            let finalQuantity = quantity;
-            if (steps.stepSize > 0) {
-              finalQuantity = Math.floor(finalQuantity / steps.stepSize) * steps.stepSize;
-            }
-
-            // Clamp to min/max constraints
-            finalQuantity = Math.max(quantityConstraints.min, Math.min(quantityConstraints.max, finalQuantity));
-
-            // Ensure we don't exceed max (Bybit rejects quantities equal to max)
-            if (finalQuantity >= quantityConstraints.max) {
-              if (steps.stepSize > 0) {
-                const maxSteps = Math.floor(quantityConstraints.max / steps.stepSize);
-                if ((quantityConstraints.max % steps.stepSize) === 0) {
-                  finalQuantity = (maxSteps - 1) * steps.stepSize;
-                } else {
-                  finalQuantity = maxSteps * steps.stepSize;
-                }
-              } else {
-                finalQuantity = quantityConstraints.max - Math.max(1, quantityConstraints.max * 0.01);
-              }
-            }
-
-            console.log(`✅ Final quantity after constraints: ${finalQuantity} (min: ${quantityConstraints.min}, max: ${quantityConstraints.max}, stepSize: ${steps.stepSize})`);
-
             // Normalize side: convert 'long'/'short' to 'buy'/'sell' for Bybit API
             const normalizedSide = (() => {
               const sideLower = (order.side || '').toLowerCase();
@@ -13439,17 +13417,64 @@ serve(async (req) => {
             })();
             console.log(`🔄 Side normalization: ${order.side} → ${normalizedSide}`);
 
+            const usdtAmount = parseFloat(order.amount);
+            const isSpotBuy = (order.tradingType || 'spot') === 'spot' && normalizedSide === 'buy';
+            
+            let amountToUse: number;
+            
+            if (isSpotBuy && order.orderType === 'market') {
+              // For spot market buy orders, pass USDT amount directly
+              // placeBybitOrder will use marketUnit=1 and set qty to this USDT amount
+              amountToUse = usdtAmount;
+              console.log(`💰 Spot market BUY: Using USDT amount directly: $${usdtAmount} (marketUnit=1 will be set)`);
+            } else {
+              // For limit orders, sell orders, or futures orders, convert USDT to quantity
+              let quantity = usdtAmount / priceForConversion;
+              console.log(`💱 Converting ${usdtAmount} USDT to quantity at price ${priceForConversion}: ${quantity}`);
+
+              // Apply quantity constraints and step sizing (same as regular orders)
+              const quantityConstraints = getQuantityConstraints(order.symbol);
+              const steps = getSymbolSteps(order.symbol);
+
+              // Apply step size rounding
+              let finalQuantity = quantity;
+              if (steps.stepSize > 0) {
+                finalQuantity = Math.floor(finalQuantity / steps.stepSize) * steps.stepSize;
+              }
+
+              // Clamp to min/max constraints
+              finalQuantity = Math.max(quantityConstraints.min, Math.min(quantityConstraints.max, finalQuantity));
+
+              // Ensure we don't exceed max (Bybit rejects quantities equal to max)
+              if (finalQuantity >= quantityConstraints.max) {
+                if (steps.stepSize > 0) {
+                  const maxSteps = Math.floor(quantityConstraints.max / steps.stepSize);
+                  if ((quantityConstraints.max % steps.stepSize) === 0) {
+                    finalQuantity = (maxSteps - 1) * steps.stepSize;
+                  } else {
+                    finalQuantity = maxSteps * steps.stepSize;
+                  }
+                } else {
+                  finalQuantity = quantityConstraints.max - Math.max(1, quantityConstraints.max * 0.01);
+                }
+              }
+
+              console.log(`✅ Final quantity after constraints: ${finalQuantity} (min: ${quantityConstraints.min}, max: ${quantityConstraints.max}, stepSize: ${steps.stepSize})`);
+              amountToUse = finalQuantity;
+            }
+
             // Create a trade signal object
             const tradeSignal = {
               side: normalizedSide,
               symbol: order.symbol,
               price: order.price || null,
-              amount: finalQuantity, // Use converted quantity
+              amount: amountToUse,
               orderType: order.orderType || 'market'
             };
 
             // Place the order using the public manual order method with DECRYPTED keys
-            // Pass quantity (not USDT amount) and normalized side to placeManualOrder
+            // For spot buy orders: pass USDT amount (placeBybitOrder will use marketUnit=1)
+            // For other orders: pass quantity
             const orderResult = await executor.placeManualOrder(
               decryptedApiKey,
               decryptedApiSecret,
@@ -13457,7 +13482,7 @@ serve(async (req) => {
               order.exchange,
               order.symbol,
               normalizedSide, // Use normalized side (buy/sell, not long/short)
-              finalQuantity, // Use converted quantity, not USDT amount
+              amountToUse, // USDT amount for spot buy, quantity for others
               order.price || 0,
               order.tradingType || 'spot',
               tempBot
