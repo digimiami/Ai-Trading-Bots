@@ -13300,6 +13300,12 @@ serve(async (req) => {
               .single();
 
             if (apiKeysError || !apiKeys) {
+              console.error(`❌ API keys not found for manual order:`, {
+                userId,
+                exchange: order.exchange,
+                error: apiKeysError,
+                query: { user_id: userId, exchange: order.exchange, is_active: true, is_testnet: false }
+              });
               return new Response(JSON.stringify({ 
                 error: `API keys not found for user ${userId} on exchange ${order.exchange}. Please configure mainnet API keys in your account settings first. Note: Manual trading uses mainnet only.` 
               }), {
@@ -13307,6 +13313,50 @@ serve(async (req) => {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
               });
             }
+
+            // Decrypt API keys before use (same as regular bot orders)
+            let decryptedApiKey: string;
+            let decryptedApiSecret: string;
+            let decryptedPassphrase: string | null = null;
+            
+            try {
+              decryptedApiKey = atob(apiKeys.api_key); // Base64 decode
+              decryptedApiSecret = atob(apiKeys.api_secret); // Base64 decode
+              
+              // Validate decrypted keys
+              if (!decryptedApiKey || decryptedApiKey.length < 10) {
+                throw new Error('API key appears to be invalid (too short or empty after decryption)');
+              }
+              if (!decryptedApiSecret || decryptedApiSecret.length < 10) {
+                throw new Error('API secret appears to be invalid (too short or empty after decryption)');
+              }
+              
+              if (apiKeys.passphrase) {
+                decryptedPassphrase = atob(apiKeys.passphrase);
+              }
+              
+              console.log(`🔑 API keys decrypted successfully for manual order`);
+              console.log(`   API Key length: ${decryptedApiKey.length}, preview: ${decryptedApiKey.substring(0, 8)}...`);
+              console.log(`   API Secret length: ${decryptedApiSecret.length}`);
+            } catch (decryptError: any) {
+              console.error(`❌ Failed to decrypt API keys for manual order:`, decryptError);
+              return new Response(JSON.stringify({ 
+                error: `Failed to decrypt API keys. Please re-enter your ${order.exchange} API keys in your account settings. Error: ${decryptError?.message || decryptError}` 
+              }), {
+                status: 400,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              });
+            }
+
+            // Log API key info for debugging (partial key only for security)
+            console.log(`🔑 Using API keys for manual order:`, {
+              userId,
+              exchange: order.exchange,
+              is_testnet: apiKeys.is_testnet,
+              api_key_preview: decryptedApiKey.substring(0, 8) + '...',
+              has_secret: !!decryptedApiSecret,
+              has_passphrase: !!decryptedPassphrase
+            });
 
             // Create a minimal bot object for order placement
             const tempBot = {
@@ -13328,11 +13378,11 @@ serve(async (req) => {
               orderType: order.orderType || 'market'
             };
 
-            // Place the order using the public manual order method
+            // Place the order using the public manual order method with DECRYPTED keys
             const orderResult = await executor.placeManualOrder(
-              apiKeys.api_key,
-              apiKeys.api_secret,
-              apiKeys.passphrase || null,
+              decryptedApiKey,
+              decryptedApiSecret,
+              decryptedPassphrase,
               order.exchange,
               order.symbol,
               order.side,
