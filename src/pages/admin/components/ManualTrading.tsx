@@ -485,10 +485,10 @@ export default function ManualTrading() {
                 </select>
               </div>
 
-              {/* Amount */}
+              {/* Amount (USDT) */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Amount <span className="text-red-400">*</span>
+                  Amount (USDT) <span className="text-red-400">*</span>
                 </label>
                 <input
                   type="number"
@@ -496,9 +496,12 @@ export default function ManualTrading() {
                   value={orderForm.amount}
                   onChange={(e) => setOrderForm({ ...orderForm, amount: e.target.value })}
                   className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="0.001"
+                  placeholder="100"
                   required
                 />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Enter the USDT amount to trade (will be converted to quantity automatically)
+                </p>
               </div>
 
               {/* Price (only for limit orders) */}

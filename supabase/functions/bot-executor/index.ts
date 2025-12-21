@@ -13369,16 +13369,78 @@ serve(async (req) => {
               leverage: parseInt(order.leverage) || 1
             };
 
+            // Convert USDT amount to quantity
+            // For limit orders, use the limit price; for market orders, fetch current price
+            let priceForConversion: number;
+            if (order.orderType === 'limit' && order.price) {
+              priceForConversion = parseFloat(order.price);
+              console.log(`💰 Using limit price for conversion: ${priceForConversion}`);
+            } else {
+              // Fetch current market price for conversion
+              console.log(`📊 Fetching current price for ${order.symbol} (${order.tradingType || 'spot'})...`);
+              try {
+                priceForConversion = await MarketDataFetcher.fetchPrice(
+                  order.symbol,
+                  order.exchange,
+                  order.tradingType || 'spot'
+                );
+                console.log(`✅ Current price: $${priceForConversion}`);
+              } catch (priceError: any) {
+                console.error(`❌ Failed to fetch price:`, priceError);
+                return new Response(JSON.stringify({ 
+                  error: `Failed to fetch current price for ${order.symbol}. Please try a limit order with a specific price, or check that the symbol is valid. Error: ${priceError?.message || priceError}` 
+                }), {
+                  status: 400,
+                  headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+                });
+              }
+            }
+
+            // Convert USDT amount to quantity
+            const usdtAmount = parseFloat(order.amount);
+            let quantity = usdtAmount / priceForConversion;
+            console.log(`💱 Converting ${usdtAmount} USDT to quantity at price ${priceForConversion}: ${quantity}`);
+
+            // Apply quantity constraints and step sizing (same as regular orders)
+            const quantityConstraints = getQuantityConstraints(order.symbol);
+            const steps = getSymbolSteps(order.symbol);
+
+            // Apply step size rounding
+            let finalQuantity = quantity;
+            if (steps.stepSize > 0) {
+              finalQuantity = Math.floor(finalQuantity / steps.stepSize) * steps.stepSize;
+            }
+
+            // Clamp to min/max constraints
+            finalQuantity = Math.max(quantityConstraints.min, Math.min(quantityConstraints.max, finalQuantity));
+
+            // Ensure we don't exceed max (Bybit rejects quantities equal to max)
+            if (finalQuantity >= quantityConstraints.max) {
+              if (steps.stepSize > 0) {
+                const maxSteps = Math.floor(quantityConstraints.max / steps.stepSize);
+                if ((quantityConstraints.max % steps.stepSize) === 0) {
+                  finalQuantity = (maxSteps - 1) * steps.stepSize;
+                } else {
+                  finalQuantity = maxSteps * steps.stepSize;
+                }
+              } else {
+                finalQuantity = quantityConstraints.max - Math.max(1, quantityConstraints.max * 0.01);
+              }
+            }
+
+            console.log(`✅ Final quantity after constraints: ${finalQuantity} (min: ${quantityConstraints.min}, max: ${quantityConstraints.max}, stepSize: ${steps.stepSize})`);
+
             // Create a trade signal object
             const tradeSignal = {
               side: order.side,
               symbol: order.symbol,
               price: order.price || null,
-              amount: order.amount,
+              amount: finalQuantity, // Use converted quantity
               orderType: order.orderType || 'market'
             };
 
             // Place the order using the public manual order method with DECRYPTED keys
+            // Pass quantity (not USDT amount) to placeManualOrder
             const orderResult = await executor.placeManualOrder(
               decryptedApiKey,
               decryptedApiSecret,
@@ -13386,7 +13448,7 @@ serve(async (req) => {
               order.exchange,
               order.symbol,
               order.side,
-              order.amount,
+              finalQuantity, // Use converted quantity, not USDT amount
               order.price || 0,
               order.tradingType || 'spot',
               tempBot
