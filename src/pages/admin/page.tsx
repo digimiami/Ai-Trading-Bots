@@ -17,6 +17,7 @@ import SubscriptionManagement from './components/SubscriptionManagement';
 import PopupManager from './components/PopupManager';
 import EmailCenter from './components/EmailCenter';
 import FunnelManager from './components/FunnelManager';
+import ManualTrading from './components/ManualTrading';
 
 interface User {
   id: string;
@@ -956,6 +957,7 @@ export default function AdminPage() {
     { id: 'subscriptions', label: 'Subscriptions', icon: 'ri-wallet-line' },
     { id: 'popups', label: 'Popup Manager', icon: 'ri-notification-line' },
     { id: 'funnels', label: 'Funnel Manager', icon: 'ri-stack-line' },
+    { id: 'manual-trading', label: 'Manual Trading', icon: 'ri-exchange-funds-line' },
     { id: 'overview', label: 'Overview', icon: 'ri-dashboard-line' },
     { id: 'users', label: 'Users', icon: 'ri-user-line' },
     { id: 'bots', label: 'Trading Bots', icon: 'ri-robot-line' },
@@ -2580,6 +2582,11 @@ export default function AdminPage() {
         {/* Webhook Test Tab */}
         {activeTab === 'webhook-test' && (
           <WebhookTestPage />
+        )}
+
+        {/* Manual Trading Tab */}
+        {activeTab === 'manual-trading' && (
+          <ManualTrading />
         )}
 
         {/* Create User Modal */}
