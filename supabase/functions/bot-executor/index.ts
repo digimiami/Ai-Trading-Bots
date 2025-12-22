@@ -2444,6 +2444,24 @@ interface TradingBot {
 
 // Bot execution engine
 class BotExecutor {
+  // Helper function to build Bybit API headers safely (ensures all values are strings)
+  private buildBybitHeaders(apiKey: string, timestamp: string, recvWindow: string, signature: string, contentType: string = 'application/json'): Record<string, string> {
+    // Ensure all values are strings (required for Request API)
+    const headers: Record<string, string> = {
+      'Content-Type': String(contentType || 'application/json'),
+      'X-BAPI-API-KEY': String(apiKey || ''),
+      'X-BAPI-TIMESTAMP': String(timestamp || ''),
+      'X-BAPI-RECV-WINDOW': String(recvWindow || ''),
+      'X-BAPI-SIGN': String(signature || ''),
+    };
+    
+    // Validate critical header values are not empty
+    if (!headers['X-BAPI-API-KEY'] || !headers['X-BAPI-TIMESTAMP'] || !headers['X-BAPI-SIGN']) {
+      throw new Error(`Invalid Bybit header values: apiKey=${!!apiKey}, timestamp=${!!timestamp}, signature=${!!signature}`);
+    }
+    
+    return headers;
+  }
   private supabaseClient: any;
   private user: any;
   
@@ -6675,15 +6693,23 @@ class BotExecutor {
             await new Promise(resolve => setTimeout(resolve, delayMs));
           }
           
+          // Ensure all header values are strings (required for Request API)
+          const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+            'X-BAPI-API-KEY': String(apiKey || ''),
+            'X-BAPI-TIMESTAMP': String(timestamp || ''),
+            'X-BAPI-RECV-WINDOW': String(recvWindow || ''),
+            'X-BAPI-SIGN': String(signature || ''),
+          };
+          
+          // Validate header values are not empty
+          if (!headers['X-BAPI-API-KEY'] || !headers['X-BAPI-TIMESTAMP'] || !headers['X-BAPI-SIGN']) {
+            throw new Error(`Invalid header values: apiKey=${!!apiKey}, timestamp=${!!timestamp}, signature=${!!signature}`);
+          }
+          
           response = await fetch(`${domain}/v5/order/create`, {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-BAPI-API-KEY': apiKey,
-              'X-BAPI-TIMESTAMP': timestamp,
-              'X-BAPI-RECV-WINDOW': recvWindow,
-              'X-BAPI-SIGN': signature,
-            },
+            headers: headers,
             body: JSON.stringify(requestBody),
             signal: AbortSignal.timeout(15000) // 15 second timeout
           });
@@ -7074,12 +7100,7 @@ class BotExecutor {
             console.log(`🔄 Checking balance via ${domain}...`);
             response = await fetch(`${domain}/v5/account/wallet-balance?${queryParams}`, {
               method: 'GET',
-              headers: {
-                'X-BAPI-API-KEY': apiKey,
-                'X-BAPI-TIMESTAMP': timestamp,
-                'X-BAPI-RECV-WINDOW': recvWindow,
-                'X-BAPI-SIGN': signature,
-              },
+              headers: this.buildBybitHeaders(apiKey, timestamp, recvWindow, signature),
             });
             
             // Check content-type before parsing JSON
@@ -7252,14 +7273,9 @@ class BotExecutor {
             console.log(`🔄 Checking spot ${coinToCheck} balance via ${domain}...`);
             response = await fetch(`${domain}/v5/account/wallet-balance?${queryParams}`, {
               method: 'GET',
-              headers: {
-                'X-BAPI-API-KEY': apiKey,
-                'X-BAPI-TIMESTAMP': timestamp,
-                'X-BAPI-RECV-WINDOW': recvWindow,
-                'X-BAPI-SIGN': signature,
-              },
+              headers: this.buildBybitHeaders(apiKey, timestamp, recvWindow, signature),
             });
-            
+
             // Check content-type before parsing JSON
             const contentType = response.headers.get('content-type') || '';
             if (!contentType.includes('application/json')) {
@@ -7650,12 +7666,7 @@ class BotExecutor {
       
       const response = await fetch(`${baseUrl}/v5/position/list?${queryParams}`, {
         method: 'GET',
-        headers: {
-          'X-BAPI-API-KEY': apiKey,
-          'X-BAPI-TIMESTAMP': timestamp,
-          'X-BAPI-RECV-WINDOW': recvWindow,
-          'X-BAPI-SIGN': signature,
-        },
+        headers: this.buildBybitHeaders(apiKey, timestamp, recvWindow, signature),
       });
       
       const data = await response.json();
@@ -7681,12 +7692,7 @@ class BotExecutor {
       
       const retryResponse = await fetch(`${baseUrl}/v5/position/list?${queryParams}`, {
         method: 'GET',
-        headers: {
-          'X-BAPI-API-KEY': apiKey,
-          'X-BAPI-TIMESTAMP': retryTimestamp,
-          'X-BAPI-RECV-WINDOW': recvWindow,
-          'X-BAPI-SIGN': retrySig,
-        },
+        headers: this.buildBybitHeaders(apiKey, retryTimestamp, recvWindow, retrySig),
       });
       
       const retryData = await retryResponse.json();
@@ -7721,12 +7727,7 @@ class BotExecutor {
       
       const positionResponse = await fetch(`${baseUrl}/v5/position/list?${positionQuery}`, {
         method: 'GET',
-        headers: {
-          'X-BAPI-API-KEY': apiKey,
-          'X-BAPI-TIMESTAMP': timestamp,
-          'X-BAPI-RECV-WINDOW': recvWindow,
-          'X-BAPI-SIGN': positionSig,
-        },
+        headers: this.buildBybitHeaders(apiKey, timestamp, recvWindow, positionSig),
       });
       
       const positionData = await positionResponse.json();
@@ -7813,12 +7814,7 @@ class BotExecutor {
         
         const retryPositionResponse = await fetch(`${baseUrl}/v5/position/list?${retryPositionQuery}`, {
           method: 'GET',
-          headers: {
-            'X-BAPI-API-KEY': apiKey,
-            'X-BAPI-TIMESTAMP': retryTimestamp,
-            'X-BAPI-RECV-WINDOW': recvWindow,
-            'X-BAPI-SIGN': retryPositionSig,
-          },
+          headers: this.buildBybitHeaders(apiKey, retryTimestamp, recvWindow, retryPositionSig),
         });
         
         const retryPositionData = await retryPositionResponse.json();
@@ -8055,12 +8051,7 @@ class BotExecutor {
       
       const finalCheckResponse = await fetch(`${baseUrl}/v5/position/list?${finalCheckQuery}`, {
         method: 'GET',
-        headers: {
-          'X-BAPI-API-KEY': apiKey,
-          'X-BAPI-TIMESTAMP': finalCheckTimestamp,
-          'X-BAPI-RECV-WINDOW': recvWindow,
-          'X-BAPI-SIGN': finalCheckSig,
-        },
+        headers: this.buildBybitHeaders(apiKey, finalCheckTimestamp, recvWindow, finalCheckSig),
       });
       
       const finalCheckData = await finalCheckResponse.json();
@@ -8172,13 +8163,7 @@ class BotExecutor {
       
       const response = await fetch(`${baseUrl}/v5/position/trading-stop`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-BAPI-API-KEY': apiKey,
-          'X-BAPI-TIMESTAMP': timestamp,
-          'X-BAPI-RECV-WINDOW': recvWindow,
-          'X-BAPI-SIGN': signature,
-        },
+        headers: this.buildBybitHeaders(apiKey, timestamp, recvWindow, signature),
         body: JSON.stringify(requestBody),
       });
       
@@ -8265,12 +8250,7 @@ class BotExecutor {
           
           const closeCheckResponse = await fetch(`${baseUrl}/v5/position/list?${closeCheckQuery}`, {
             method: 'GET',
-            headers: {
-              'X-BAPI-API-KEY': apiKey,
-              'X-BAPI-TIMESTAMP': closeCheckTimestamp,
-              'X-BAPI-RECV-WINDOW': recvWindow,
-              'X-BAPI-SIGN': closeCheckSig,
-            },
+            headers: this.buildBybitHeaders(apiKey, closeCheckTimestamp, recvWindow, closeCheckSig),
           });
           
           const closeCheckData = await closeCheckResponse.json();
@@ -8350,13 +8330,7 @@ class BotExecutor {
               
               const closeOrderResponse = await fetch(`${baseUrl}/v5/order/create`, {
                 method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'X-BAPI-API-KEY': apiKey,
-                  'X-BAPI-TIMESTAMP': closeTimestamp,
-                  'X-BAPI-RECV-WINDOW': closeRecvWindow,
-                  'X-BAPI-SIGN': closeSig,
-                },
+                headers: this.buildBybitHeaders(apiKey, closeTimestamp, closeRecvWindow, closeSig),
                 body: JSON.stringify(closeOrderBody),
               });
               
@@ -9640,12 +9614,7 @@ class BotExecutor {
       
       const response = await fetch(`${baseUrl}/v5/position/list?${queryParams}`, {
         method: 'GET',
-        headers: {
-          'X-BAPI-API-KEY': apiKeys.api_key,
-          'X-BAPI-TIMESTAMP': timestamp,
-          'X-BAPI-RECV-WINDOW': recvWindow,
-          'X-BAPI-SIGN': signature,
-        },
+        headers: this.buildBybitHeaders(String(apiKeys.api_key || ''), timestamp, recvWindow, String(signature || '')),
       });
       
       if (!response.ok) {
@@ -10669,12 +10638,7 @@ class BotExecutor {
                   try {
                     const response = await fetch(`${domain}/v5/account/wallet-balance?${queryParams}`, {
                       method: 'GET',
-                      headers: {
-                        'X-BAPI-API-KEY': apiKeys.api_key,
-                        'X-BAPI-TIMESTAMP': timestamp,
-                        'X-BAPI-RECV-WINDOW': recvWindow,
-                        'X-BAPI-SIGN': signature,
-                      },
+                      headers: this.buildBybitHeaders(String(apiKeys.api_key || ''), timestamp, recvWindow, String(signature || '')),
                     });
                     
                     if (response.ok) {
@@ -10706,12 +10670,7 @@ class BotExecutor {
                   try {
                     const response = await fetch(`${domain}/v5/account/wallet-balance?${queryParams}`, {
                       method: 'GET',
-                      headers: {
-                        'X-BAPI-API-KEY': apiKeys.api_key,
-                        'X-BAPI-TIMESTAMP': timestamp,
-                        'X-BAPI-RECV-WINDOW': recvWindow,
-                        'X-BAPI-SIGN': signature,
-                      },
+                      headers: this.buildBybitHeaders(String(apiKeys.api_key || ''), timestamp, recvWindow, String(signature || '')),
                     });
                     
                     if (response.ok) {
@@ -10872,12 +10831,7 @@ class BotExecutor {
                   try {
                     const response = await fetch(`${domain}/v5/account/wallet-balance?${queryParams}`, {
                       method: 'GET',
-                      headers: {
-                        'X-BAPI-API-KEY': apiKeys.api_key,
-                        'X-BAPI-TIMESTAMP': timestamp,
-                        'X-BAPI-RECV-WINDOW': recvWindow,
-                        'X-BAPI-SIGN': signature,
-                      },
+                      headers: this.buildBybitHeaders(String(apiKeys.api_key || ''), timestamp, recvWindow, String(signature || '')),
                     });
                     
                     if (response.ok) {
@@ -10909,12 +10863,7 @@ class BotExecutor {
                   try {
                     const response = await fetch(`${domain}/v5/account/wallet-balance?${queryParams}`, {
                       method: 'GET',
-                      headers: {
-                        'X-BAPI-API-KEY': apiKeys.api_key,
-                        'X-BAPI-TIMESTAMP': timestamp,
-                        'X-BAPI-RECV-WINDOW': recvWindow,
-                        'X-BAPI-SIGN': signature,
-                      },
+                      headers: this.buildBybitHeaders(String(apiKeys.api_key || ''), timestamp, recvWindow, String(signature || '')),
                     });
                     
                     if (response.ok) {
