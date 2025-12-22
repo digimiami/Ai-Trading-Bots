@@ -8604,7 +8604,7 @@ class BotExecutor {
       // Bitunix order parameters per official API documentation (updated per support feedback)
       // IMPORTANT: Bitunix Futures API requires STRING values, not numeric codes!
       // side: "BUY" or "SELL" (not 1 or 2)
-      // type: "LIMIT" or "MARKET" (not 1 or 2)
+      // orderType: "LIMIT" or "MARKET" (not 1 or 2) - NOTE: parameter name is "orderType", not "type"
       // tradeSide: "OPEN" or "CLOSE" (required for futures, especially when hedge mode is enabled)
       // IMPORTANT: Bitunix futures API uses 'qty' parameter, not 'volume'
       const sideString = side.toUpperCase() === 'SELL' ? 'SELL' : 'BUY'; // String: "BUY" or "SELL"
@@ -8613,7 +8613,7 @@ class BotExecutor {
       const orderParams: any = {
         symbol: symbol.toUpperCase(),
         side: sideString, // String: "BUY" or "SELL"
-        type: orderTypeString, // String: "LIMIT" or "MARKET"
+        orderType: orderTypeString, // String: "LIMIT" or "MARKET" (NOTE: parameter name is "orderType", not "type")
         qty: amount.toString(), // Bitunix futures API uses 'qty', not 'volume'
       };
       
@@ -8622,7 +8622,7 @@ class BotExecutor {
         orderParams.tradeSide = 'OPEN'; // "OPEN" for opening new positions, "CLOSE" for closing
       }
       
-      // Add price for limit orders (required for type="LIMIT", optional for type="MARKET")
+      // Add price for limit orders (required for orderType="LIMIT", optional for orderType="MARKET")
       if (orderTypeString === 'LIMIT' && price && price > 0) {
         orderParams.price = price.toString();
       }
@@ -8743,13 +8743,13 @@ class BotExecutor {
                 code2ErrorCount++;
                 totalAttempts++;
                 console.log(`   ⚠️ System error (Code: 2) from ${baseUrl}${requestPath}, trying alternative parameter format...`);
-                console.log(`   📋 Original request: symbol=${symbol}, side=${sideString}, type=${orderTypeString}, qty=${amount}, price=${price}`);
+                console.log(`   📋 Original request: symbol=${symbol}, side=${sideString}, orderType=${orderTypeString}, qty=${amount}, price=${price}`);
                 
                 // Try alternative parameter names: 'volume' instead of 'qty' (for spot or older API versions)
                 const altOrderParams: any = {
                   symbol: symbol.toUpperCase(),
                   side: sideString, // Keep string format
-                  type: orderTypeString, // Keep string format
+                  orderType: orderTypeString, // Keep string format (use "orderType", not "type")
                   volume: amount.toString(), // Try 'volume' as alternative
                 };
                 
@@ -8824,7 +8824,7 @@ class BotExecutor {
                 const altOrderParams2: any = {
                   symbol: symbol.toUpperCase(),
                   side: sideString, // Keep string format
-                  type: orderTypeString, // Keep string format
+                  orderType: orderTypeString, // Keep string format (use "orderType", not "type")
                   quantity: amount.toString(), // Try 'quantity'
                 };
                 
@@ -8900,7 +8900,7 @@ class BotExecutor {
                   const marketOrderParams: any = {
                     symbol: symbol.toUpperCase(),
                     side: sideString, // Keep string format
-                    type: 'MARKET', // String: "MARKET"
+                    orderType: 'MARKET', // String: "MARKET" (use "orderType", not "type")
                     qty: amount.toString(),
                   };
                   
@@ -9047,7 +9047,7 @@ class BotExecutor {
           `Bitunix Order Placement Diagnostic:\n` +
           `- Symbol: ${symbol}\n` +
           `- Side: ${sideString} (${side})\n` +
-          `- Type: ${orderTypeString} (${(price && price > 0) ? 'Limit' : 'Market'})\n` +
+          `- OrderType: ${orderTypeString} (${(price && price > 0) ? 'Limit' : 'Market'})\n` +
           `- Quantity: ${amount}\n` +
           `- Price: ${price || 'N/A'}\n` +
           `- Trading Type: ${tradingType} (${marketType})\n` +

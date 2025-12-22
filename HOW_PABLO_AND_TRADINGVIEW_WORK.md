@@ -396,3 +396,4 @@ After trade execution:
 **Database** → Trade recorded, P&L calculated, logs updated
 
 This integration allows you to leverage TradingView's powerful charting and strategy tools while using Pablo AI Trading for automated execution on cryptocurrency exchanges.
+
