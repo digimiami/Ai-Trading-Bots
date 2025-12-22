@@ -8627,23 +8627,29 @@ class BotExecutor {
       let code2ErrorCount = 0;
       let totalAttempts = 0;
       
-      // Bitunix order parameters per official API documentation
-      // IMPORTANT: Bitunix uses NUMERIC codes, not strings!
-      // side: 1 = Sell, 2 = Buy
-      // type: 1 = Limit, 2 = Market
+      // Bitunix order parameters per official API documentation (updated per support feedback)
+      // IMPORTANT: Bitunix Futures API requires STRING values, not numeric codes!
+      // side: "BUY" or "SELL" (not 1 or 2)
+      // type: "LIMIT" or "MARKET" (not 1 or 2)
+      // tradeSide: "OPEN" or "CLOSE" (required for futures, especially when hedge mode is enabled)
       // IMPORTANT: Bitunix futures API uses 'qty' parameter, not 'volume'
-      const sideCode = side.toUpperCase() === 'SELL' ? 1 : 2; // 1 = Sell, 2 = Buy
-      const orderTypeCode = (price && price > 0) ? 1 : 2; // 1 = Limit, 2 = Market
+      const sideString = side.toUpperCase() === 'SELL' ? 'SELL' : 'BUY'; // String: "BUY" or "SELL"
+      const orderTypeString = (price && price > 0) ? 'LIMIT' : 'MARKET'; // String: "LIMIT" or "MARKET"
       
       const orderParams: any = {
         symbol: symbol.toUpperCase(),
-        side: sideCode, // Numeric: 1 = Sell, 2 = Buy
-        type: orderTypeCode, // Numeric: 1 = Limit, 2 = Market
+        side: sideString, // String: "BUY" or "SELL"
+        type: orderTypeString, // String: "LIMIT" or "MARKET"
         qty: amount.toString(), // Bitunix futures API uses 'qty', not 'volume'
       };
       
-      // Add price for limit orders (required for type=1, optional for type=2)
-      if (orderTypeCode === 1 && price && price > 0) {
+      // Add tradeSide for futures trading (required, especially when hedge mode is enabled)
+      if (marketType === 'futures') {
+        orderParams.tradeSide = 'OPEN'; // "OPEN" for opening new positions, "CLOSE" for closing
+      }
+      
+      // Add price for limit orders (required for type="LIMIT", optional for type="MARKET")
+      if (orderTypeString === 'LIMIT' && price && price > 0) {
         orderParams.price = price.toString();
       }
       
@@ -8762,17 +8768,22 @@ class BotExecutor {
                 code2ErrorCount++;
                 totalAttempts++;
                 console.log(`   ⚠️ System error (Code: 2) from ${baseUrl}${requestPath}, trying alternative parameter format...`);
-                console.log(`   📋 Original request: symbol=${symbol}, side=${sideCode}, type=${orderTypeCode}, qty=${amount}, price=${price}`);
+                console.log(`   📋 Original request: symbol=${symbol}, side=${sideString}, type=${orderTypeString}, qty=${amount}, price=${price}`);
                 
                 // Try alternative parameter names: 'volume' instead of 'qty' (for spot or older API versions)
                 const altOrderParams: any = {
                   symbol: symbol.toUpperCase(),
-                  side: sideCode,
-                  type: orderTypeCode,
+                  side: sideString, // Keep string format
+                  type: orderTypeString, // Keep string format
                   volume: amount.toString(), // Try 'volume' as alternative
                 };
                 
-                if (orderTypeCode === 1 && price && price > 0) {
+                // Add tradeSide for futures
+                if (marketType === 'futures') {
+                  altOrderParams.tradeSide = 'OPEN';
+                }
+                
+                if (orderTypeString === 'LIMIT' && price && price > 0) {
                   altOrderParams.price = price.toString();
                 }
                 
@@ -8837,12 +8848,17 @@ class BotExecutor {
                 // If alternative format failed, try with 'quantity' parameter
                 const altOrderParams2: any = {
                   symbol: symbol.toUpperCase(),
-                  side: sideCode,
-                  type: orderTypeCode,
+                  side: sideString, // Keep string format
+                  type: orderTypeString, // Keep string format
                   quantity: amount.toString(), // Try 'quantity'
                 };
                 
-                if (orderTypeCode === 1 && price && price > 0) {
+                // Add tradeSide for futures
+                if (marketType === 'futures') {
+                  altOrderParams2.tradeSide = 'OPEN';
+                }
+                
+                if (orderTypeString === 'LIMIT' && price && price > 0) {
                   altOrderParams2.price = price.toString();
                 }
                 
@@ -8904,14 +8920,19 @@ class BotExecutor {
                 }
                 
                 // If limit order failed, try market order as last resort (market orders have fewer requirements)
-                if (orderTypeCode === 1 && price && price > 0) {
+                if (orderTypeString === 'LIMIT' && price && price > 0) {
                   console.log(`   🔄 Trying market order format (no price required)...`);
                   const marketOrderParams: any = {
                     symbol: symbol.toUpperCase(),
-                    side: sideCode,
-                    type: 2, // Market order
+                    side: sideString, // Keep string format
+                    type: 'MARKET', // String: "MARKET"
                     qty: amount.toString(),
                   };
+                  
+                  // Add tradeSide for futures
+                  if (marketType === 'futures') {
+                    marketOrderParams.tradeSide = 'OPEN';
+                  }
                   
                   const marketBodyString = JSON.stringify(marketOrderParams).replace(/\s+/g, '');
                   const marketSignature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, marketBodyString, apiSecret);
