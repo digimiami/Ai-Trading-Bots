@@ -8668,6 +8668,7 @@ class BotExecutor {
       
       console.log(`   Signature created using double SHA256`);
       console.log(`   Request body: ${bodyString}`);
+      console.log(`   Order parameters (parsed):`, JSON.stringify(orderParams, null, 2));
       
       // Try each base URL and endpoint combination
       let lastError: any = null;
@@ -9071,11 +9072,12 @@ class BotExecutor {
           `${lastError.message}\n\n` +
           `Bitunix Order Placement Diagnostic:\n` +
           `- Symbol: ${symbol}\n` +
-          `- Side: ${side} (code: ${side.toUpperCase() === 'SELL' ? 1 : 2})\n` +
-          `- Type: ${(price && price > 0) ? 'Limit' : 'Market'} (code: ${(price && price > 0) ? 1 : 2})\n` +
+          `- Side: ${sideString} (${side})\n` +
+          `- Type: ${orderTypeString} (${(price && price > 0) ? 'Limit' : 'Market'})\n` +
           `- Quantity: ${amount}\n` +
           `- Price: ${price || 'N/A'}\n` +
-          `- Trading Type: ${tradingType}\n` +
+          `- Trading Type: ${tradingType} (${marketType})\n` +
+          `${marketType === 'futures' ? `- Trade Side: OPEN\n` : ''}` +
           `- Code 2 errors: ${code2ErrorCount}/${totalAttempts} attempts\n` +
           `\nTroubleshooting:\n` +
           `1. Verify symbol ${symbol} is available for ${marketType} trading on Bitunix\n` +
