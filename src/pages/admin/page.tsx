@@ -513,6 +513,7 @@ export default function AdminPage() {
 
   const fetchUserSubscriptions = async () => {
     try {
+      // Fetch all subscriptions (not just active) to show current plan
       const { data, error } = await supabase
         .from('user_subscriptions')
         .select(`
@@ -522,7 +523,7 @@ export default function AdminPage() {
           expires_at,
           subscription_plans!user_subscriptions_plan_id_fkey(id, name, display_name, price_monthly_usd, max_bots)
         `)
-        .eq('status', 'active');
+        .order('created_at', { ascending: false });
 
       if (error) {
         console.error('Error fetching subscriptions:', error);
@@ -530,10 +531,14 @@ export default function AdminPage() {
       }
 
       const subscriptionsMap: Record<string, any> = {};
+      // Get the most recent subscription for each user
       (data || []).forEach((sub: any) => {
-        subscriptionsMap[sub.user_id] = sub;
+        if (!subscriptionsMap[sub.user_id]) {
+          subscriptionsMap[sub.user_id] = sub;
+        }
       });
       setUserSubscriptions(subscriptionsMap);
+      console.log('✅ Loaded user subscriptions:', Object.keys(subscriptionsMap).length);
     } catch (err) {
       console.error('Error fetching user subscriptions:', err);
     }
@@ -616,13 +621,14 @@ export default function AdminPage() {
       const { data, error } = await supabase
         .from('subscription_plans')
         .select('id, name, display_name, price_monthly_usd, max_bots')
+        .eq('is_active', true)
         .order('sort_order', { ascending: true })
       
       if (error) {
         console.error('Error fetching plans:', error)
         return
       }
-      console.log('Fetched plans:', data)
+      console.log('✅ Fetched plans:', data?.length || 0, 'plans')
       setAvailablePlans(data || [])
     } catch (err) {
       console.error('Error fetching plans:', err)
@@ -638,8 +644,12 @@ export default function AdminPage() {
 
   // Fetch user subscriptions when users tab is active
   useEffect(() => {
-    if (activeTab === 'users' && users.length > 0) {
-      fetchUserSubscriptions();
+    if (activeTab === 'users') {
+      if (users.length > 0) {
+        fetchUserSubscriptions();
+      }
+      // Always fetch plans when users tab is active
+      fetchAvailablePlans();
     }
   }, [activeTab, users.length]);
 
@@ -1316,13 +1326,13 @@ export default function AdminPage() {
                         </div>
                         <div>
                           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Subscription</label>
-                          <div className="flex gap-2">
+                          <div className="flex gap-2 items-center">
                             {userSubscriptions[user.id] ? (
-                              <span className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50 dark:bg-gray-900 dark:border-gray-700 text-gray-700 dark:text-gray-300">
+                              <span className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50 dark:bg-gray-900 dark:border-gray-700 text-gray-700 dark:text-gray-300 flex-shrink-0">
                                 {userSubscriptions[user.id]?.subscription_plans?.display_name || 'Unknown Plan'}
                               </span>
                             ) : (
-                              <span className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50 dark:bg-gray-900 dark:border-gray-700 text-gray-500 dark:text-gray-400">
+                              <span className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50 dark:bg-gray-900 dark:border-gray-700 text-gray-500 dark:text-gray-400 flex-shrink-0">
                                 No Subscription
                               </span>
                             )}
@@ -1333,11 +1343,14 @@ export default function AdminPage() {
                                   e.target.value = ''; // Reset select
                                 }
                               }}
-                              disabled={isActionLoading || upgradingSubscriptionUserId === user.id}
-                              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-900 dark:border-gray-700"
+                              disabled={isActionLoading || upgradingSubscriptionUserId === user.id || availablePlans.length === 0}
+                              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-900 dark:border-gray-700 min-w-[180px]"
                               defaultValue=""
+                              title={availablePlans.length === 0 ? "Loading plans..." : "Select a plan to upgrade"}
                             >
-                              <option value="">Upgrade to...</option>
+                              <option value="">
+                                {availablePlans.length === 0 ? "Loading plans..." : "Upgrade to..."}
+                              </option>
                               {availablePlans.map((plan) => (
                                 <option key={plan.id} value={plan.id}>
                                   {plan.display_name} {plan.price_monthly_usd ? `($${plan.price_monthly_usd}/mo)` : ''}
