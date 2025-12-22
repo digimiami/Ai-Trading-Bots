@@ -499,6 +499,67 @@ export default function AdminPage() {
     }
   };
 
+  const cloneBotToPabloReady = async () => {
+    if (!cloneBotIdInput.trim()) {
+      setCloneError('Please enter a bot ID');
+      return;
+    }
+
+    try {
+      setCloningBot(true);
+      setCloneError(null);
+
+      // Fetch the bot from trading_bots
+      const bot = await getBotById(cloneBotIdInput.trim());
+
+      if (!bot) {
+        setCloneError('Bot not found. Please check the bot ID.');
+        setCloningBot(false);
+        return;
+      }
+
+      // Map trading_bot fields to pablo_ready_bots fields
+      const pabloReadyBot = {
+        name: `${bot.name} (Clone)`,
+        description: `Cloned from bot ${bot.id}`,
+        exchange: bot.exchange || 'bybit',
+        symbol: bot.symbol || (bot.symbols && bot.symbols.length > 0 ? bot.symbols[0] : 'BTCUSDT'),
+        trading_type: bot.tradingType || 'futures',
+        leverage: bot.leverage || 1,
+        risk_level: bot.riskLevel || 'medium',
+        strategy: bot.strategy || {},
+        strategy_config: bot.strategyConfig || {},
+        trade_amount: bot.tradeAmount || 100,
+        stop_loss: bot.stopLoss || 2.0,
+        take_profit: bot.takeProfit || 4.0,
+        timeframe: bot.timeframe || '1h',
+        enabled: true,
+        featured: false,
+        order_index: 0,
+        created_by: user?.id || null
+      };
+
+      // Insert into pablo_ready_bots
+      const { error: insertError } = await supabase
+        .from('pablo_ready_bots')
+        .insert(pabloReadyBot);
+
+      if (insertError) {
+        throw insertError;
+      }
+
+      alert(`✅ Bot cloned successfully! "${pabloReadyBot.name}" has been added to Pablo Ready bots.`);
+      setShowCloneModal(false);
+      setCloneBotIdInput('');
+      await fetchPabloReadyBots();
+    } catch (err: any) {
+      console.error('Error cloning bot:', err);
+      setCloneError(err.message || 'Failed to clone bot. Please check the bot ID.');
+    } finally {
+      setCloningBot(false);
+    }
+  };
+
   const fetchLatestTrades = async () => {
     try {
       setLatestTradesLoading(true);
