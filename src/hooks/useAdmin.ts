@@ -237,6 +237,10 @@ export function useAdmin() {
     });
   };
 
+  const upgradeUserSubscription = async (userId: string, planId: string) => {
+    return await callAdminFunction('upgradeUserSubscription', { userId, planId });
+  };
+
   // Email Management Functions
   const sendEmail = async (emailData: {
     from: string;
@@ -523,6 +527,7 @@ export function useAdmin() {
     getInvitationCodes,
     generateInvitationCode,
     deleteUsersByDateRange,
+    upgradeUserSubscription,
     // Trading Bot Management
     getAllBots,
     adminControlBot,

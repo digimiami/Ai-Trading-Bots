@@ -129,7 +129,8 @@ export default function AdminPage() {
     sendPasswordResetLink,
     getTestPeriodSettings,
     updateTestPeriodSettings,
-    deleteUsersByDateRange
+    deleteUsersByDateRange,
+    upgradeUserSubscription
   } = useAdmin();
   
   const [activeTab, setActiveTab] = useState('overview');
@@ -172,6 +173,8 @@ export default function AdminPage() {
   });
   
   const [availablePlans, setAvailablePlans] = useState<any[]>([]);
+  const [userSubscriptions, setUserSubscriptions] = useState<Record<string, any>>({});
+  const [upgradingSubscriptionUserId, setUpgradingSubscriptionUserId] = useState<string | null>(null);
   
   const [newInvitation, setNewInvitation] = useState({
     email: '',
@@ -508,6 +511,34 @@ export default function AdminPage() {
     }
   };
 
+  const fetchUserSubscriptions = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('user_subscriptions')
+        .select(`
+          user_id,
+          plan_id,
+          status,
+          expires_at,
+          subscription_plans!user_subscriptions_plan_id_fkey(id, name, display_name, price_monthly_usd, max_bots)
+        `)
+        .eq('status', 'active');
+
+      if (error) {
+        console.error('Error fetching subscriptions:', error);
+        return;
+      }
+
+      const subscriptionsMap: Record<string, any> = {};
+      (data || []).forEach((sub: any) => {
+        subscriptionsMap[sub.user_id] = sub;
+      });
+      setUserSubscriptions(subscriptionsMap);
+    } catch (err) {
+      console.error('Error fetching user subscriptions:', err);
+    }
+  };
+
   const loadData = async () => {
     try {
       console.log('🔄 Loading admin data...');
@@ -567,6 +598,11 @@ export default function AdminPage() {
       if (activeTab === 'pablo-ready') {
         await fetchPabloReadyBots();
       }
+      
+      // Fetch user subscriptions if on users tab
+      if (activeTab === 'users') {
+        await fetchUserSubscriptions();
+      }
     } catch (error) {
       console.error('❌ Error loading admin data:', error);
       console.error('❌ Error details:', error.message);
@@ -593,12 +629,19 @@ export default function AdminPage() {
     }
   };
 
-  // Fetch plans when create user modal opens
+  // Fetch plans when create user modal opens or when users tab is active
   useEffect(() => {
-    if (showCreateUser) {
+    if (showCreateUser || activeTab === 'users') {
       fetchAvailablePlans();
     }
-  }, [showCreateUser]);
+  }, [showCreateUser, activeTab]);
+
+  // Fetch user subscriptions when users tab is active
+  useEffect(() => {
+    if (activeTab === 'users' && users.length > 0) {
+      fetchUserSubscriptions();
+    }
+  }, [activeTab, users.length]);
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -712,6 +755,41 @@ export default function AdminPage() {
       alert(`❌ Failed to generate password reset link: ${error?.message || error}`);
     } finally {
       setUserLoadingState(userId, false);
+    }
+  };
+
+  const handleUpgradeSubscription = async (userId: string, planId: string) => {
+    if (!planId) {
+      alert('❌ Please select a plan');
+      return;
+    }
+
+    const plan = availablePlans.find(p => p.id === planId);
+    const currentSub = userSubscriptions[userId];
+    const currentPlan = currentSub?.subscription_plans;
+    
+    const confirmMessage = currentSub
+      ? `Upgrade subscription from "${currentPlan?.display_name || 'Unknown'}" to "${plan?.display_name || 'Unknown'}"?`
+      : `Create subscription "${plan?.display_name || 'Unknown'}" for this user?`;
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    setUpgradingSubscriptionUserId(userId);
+    setUserLoadingState(userId, true);
+    try {
+      const result = await upgradeUserSubscription(userId, planId);
+      const action = result?.action || 'upgraded';
+      alert(`✅ User subscription ${action} successfully!`);
+      await fetchUserSubscriptions(); // Refresh subscriptions
+      await fetchAvailablePlans(); // Refresh plans
+    } catch (error: any) {
+      console.error('Error upgrading subscription:', error);
+      alert(`❌ Failed to upgrade subscription: ${error?.message || error}`);
+    } finally {
+      setUserLoadingState(userId, false);
+      setUpgradingSubscriptionUserId(null);
     }
   };
 
@@ -1235,6 +1313,38 @@ export default function AdminPage() {
                             <option value="suspended">Suspended</option>
                             <option value="disabled">Disabled</option>
                           </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Subscription</label>
+                          <div className="flex gap-2">
+                            {userSubscriptions[user.id] ? (
+                              <span className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50 dark:bg-gray-900 dark:border-gray-700 text-gray-700 dark:text-gray-300">
+                                {userSubscriptions[user.id]?.subscription_plans?.display_name || 'Unknown Plan'}
+                              </span>
+                            ) : (
+                              <span className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-gray-50 dark:bg-gray-900 dark:border-gray-700 text-gray-500 dark:text-gray-400">
+                                No Subscription
+                              </span>
+                            )}
+                            <select
+                              onChange={(e) => {
+                                if (e.target.value) {
+                                  handleUpgradeSubscription(user.id, e.target.value);
+                                  e.target.value = ''; // Reset select
+                                }
+                              }}
+                              disabled={isActionLoading || upgradingSubscriptionUserId === user.id}
+                              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-900 dark:border-gray-700"
+                              defaultValue=""
+                            >
+                              <option value="">Upgrade to...</option>
+                              {availablePlans.map((plan) => (
+                                <option key={plan.id} value={plan.id}>
+                                  {plan.display_name} {plan.price_monthly_usd ? `($${plan.price_monthly_usd}/mo)` : ''}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                         </div>
                         <div className="flex items-end gap-2">
                           <Button

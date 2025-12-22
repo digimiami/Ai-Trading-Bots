@@ -1442,6 +1442,179 @@ serve(async (req) => {
         }
       }
 
+      case 'upgradeUserSubscription': {
+        const { userId, planId } = params
+
+        if (!userId || !planId) {
+          return new Response(JSON.stringify({
+            error: 'userId and planId are required'
+          }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+
+        try {
+          // Find user's subscription
+          const { data: subscription, error: subError } = await supabaseClient
+            .from('user_subscriptions')
+            .select(`
+              *,
+              subscription_plans!user_subscriptions_plan_id_fkey(*),
+              users!user_subscriptions_user_id_fkey(email)
+            `)
+            .eq('user_id', userId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single()
+
+          // If no subscription exists, create one
+          if (subError || !subscription) {
+            // Fetch plan details
+            const { data: plan, error: planError } = await supabaseClient
+              .from('subscription_plans')
+              .select('*')
+              .eq('id', planId)
+              .single()
+
+            if (planError || !plan) {
+              return new Response(JSON.stringify({
+                error: 'Plan not found'
+              }), {
+                status: 404,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              })
+            }
+
+            // Create new subscription
+            const expiresAt = new Date()
+            expiresAt.setDate(expiresAt.getDate() + 30)
+
+            const { data: newSubscription, error: createError } = await supabaseClient
+              .from('user_subscriptions')
+              .insert({
+                user_id: userId,
+                plan_id: planId,
+                status: 'active',
+                expires_at: expiresAt.toISOString(),
+                started_at: new Date().toISOString()
+              })
+              .select(`
+                *,
+                subscription_plans!user_subscriptions_plan_id_fkey(*),
+                users!user_subscriptions_user_id_fkey(email)
+              `)
+              .single()
+
+            if (createError) {
+              console.error('Error creating subscription:', createError)
+              return new Response(JSON.stringify({
+                error: 'Failed to create subscription',
+                details: createError.message
+              }), {
+                status: 500,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              })
+            }
+
+            return new Response(JSON.stringify({
+              success: true,
+              message: 'Subscription created successfully',
+              subscription: newSubscription
+            }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          }
+
+          // Update existing subscription
+          const currentPlan = subscription.subscription_plans
+          const currentPlanId = subscription.plan_id
+
+          if (currentPlanId === planId) {
+            return new Response(JSON.stringify({
+              error: 'User is already on this plan'
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          }
+
+          // Fetch new plan details
+          const { data: newPlan, error: planError } = await supabaseClient
+            .from('subscription_plans')
+            .select('*')
+            .eq('id', planId)
+            .single()
+
+          if (planError || !newPlan) {
+            return new Response(JSON.stringify({
+              error: 'Plan not found'
+            }), {
+              status: 404,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          }
+
+          // Calculate expiration - preserve remaining time or set to 30 days from now
+          let expiresAt = new Date()
+          if (subscription.expires_at && new Date(subscription.expires_at) > new Date()) {
+            expiresAt = new Date(subscription.expires_at)
+          } else {
+            expiresAt.setDate(expiresAt.getDate() + 30)
+          }
+
+          // Update subscription
+          const { data: updatedSubscription, error: updateError } = await supabaseClient
+            .from('user_subscriptions')
+            .update({
+              plan_id: planId,
+              status: 'active',
+              expires_at: expiresAt.toISOString(),
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', subscription.id)
+            .select(`
+              *,
+              subscription_plans!user_subscriptions_plan_id_fkey(*),
+              users!user_subscriptions_user_id_fkey(email)
+            `)
+            .single()
+
+          if (updateError) {
+            console.error('Error updating subscription:', updateError)
+            return new Response(JSON.stringify({
+              error: 'Failed to update subscription',
+              details: updateError.message
+            }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          }
+
+          // Determine if upgrade or downgrade
+          const isUpgrade = (newPlan.price_monthly_usd || 0) > (currentPlan?.price_monthly_usd || 0)
+          const action = isUpgrade ? 'upgraded' : 'downgraded'
+
+          return new Response(JSON.stringify({
+            success: true,
+            message: `Subscription ${action} successfully`,
+            subscription: updatedSubscription,
+            action: action
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+
+        } catch (error: any) {
+          console.error('Error in upgradeUserSubscription:', error)
+          return new Response(JSON.stringify({
+            error: error?.message || 'Failed to upgrade subscription'
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
+      }
+
       default:
         return new Response(JSON.stringify({ error: 'Invalid action' }), {
           status: 400,
