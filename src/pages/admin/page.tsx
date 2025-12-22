@@ -8,6 +8,7 @@ import Card from '../../components/base/Card';
 import { useAuth } from '../../hooks/useAuth';
 import { useAdmin } from '../../hooks/useAdmin';
 import { useBotExecutor } from '../../hooks/useBotExecutor';
+import { useBots } from '../../hooks/useBots';
 import { useCryptoNews, type CryptoNewsArticle } from '../../hooks/useCryptoNews';
 import { supabase } from '../../lib/supabase';
 import WebhookTestPage from '../webhook-test/page';
@@ -107,6 +108,7 @@ export default function AdminPage() {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const { executeBot } = useBotExecutor();
+  const { getBotById } = useBots();
   const { 
     createUser, 
     generateInvitationCode, 
@@ -139,6 +141,10 @@ export default function AdminPage() {
   const [allBots, setAllBots] = useState<TradingBot[]>([]);
   const [pabloReadyBots, setPabloReadyBots] = useState<any[]>([]);
   const [pabloReadyLoading, setPabloReadyLoading] = useState(false);
+  const [showCloneModal, setShowCloneModal] = useState(false);
+  const [cloneBotIdInput, setCloneBotIdInput] = useState('');
+  const [cloningBot, setCloningBot] = useState(false);
+  const [cloneError, setCloneError] = useState<string | null>(null);
   const [editingBotId, setEditingBotId] = useState<string | null>(null);
   const [editingBotName, setEditingBotName] = useState<string>('');
   const [deletingBotId, setDeletingBotId] = useState<string | null>(null);
@@ -1742,15 +1748,25 @@ export default function AdminPage() {
                     Manage pre-configured bots available to all users
                   </p>
                 </div>
-                <Button
-                  onClick={fetchPabloReadyBots}
-                  variant="secondary"
-                  size="sm"
-                  disabled={pabloReadyLoading}
-                >
-                  <i className="ri-refresh-line mr-2"></i>
-                  Refresh
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => setShowCloneModal(true)}
+                    variant="primary"
+                    size="sm"
+                  >
+                    <i className="ri-file-copy-line mr-2"></i>
+                    Clone by ID
+                  </Button>
+                  <Button
+                    onClick={fetchPabloReadyBots}
+                    variant="secondary"
+                    size="sm"
+                    disabled={pabloReadyLoading}
+                  >
+                    <i className="ri-refresh-line mr-2"></i>
+                    Refresh
+                  </Button>
+                </div>
               </div>
 
               {pabloReadyLoading ? (
@@ -2162,6 +2178,98 @@ export default function AdminPage() {
                     >
                       <i className="ri-save-line mr-2"></i>
                       Save Changes
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          </div>
+        )}
+
+        {/* Clone Bot Modal */}
+        {showCloneModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <Card className="w-full max-w-md m-4">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
+                    Clone Bot to Pablo Ready
+                  </h3>
+                  <button
+                    onClick={() => {
+                      setShowCloneModal(false);
+                      setCloneBotIdInput('');
+                      setCloneError(null);
+                    }}
+                    className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+                  >
+                    <i className="ri-close-line text-2xl"></i>
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Bot ID
+                    </label>
+                    <input
+                      type="text"
+                      value={cloneBotIdInput}
+                      onChange={(e) => {
+                        setCloneBotIdInput(e.target.value);
+                        setCloneError(null);
+                      }}
+                      placeholder="Enter bot ID to clone..."
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-700 dark:text-white"
+                      disabled={cloningBot}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !cloningBot) {
+                          cloneBotToPabloReady();
+                        }
+                      }}
+                    />
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Enter the ID of a bot from the trading_bots table to clone it to Pablo Ready
+                    </p>
+                  </div>
+
+                  {cloneError && (
+                    <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                      <p className="text-sm text-red-600 dark:text-red-400">
+                        <i className="ri-error-warning-line mr-2"></i>
+                        {cloneError}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="flex gap-3">
+                    <Button
+                      onClick={cloneBotToPabloReady}
+                      disabled={cloningBot || !cloneBotIdInput.trim()}
+                      className="flex-1"
+                    >
+                      {cloningBot ? (
+                        <>
+                          <i className="ri-loader-4-line animate-spin mr-2"></i>
+                          Cloning...
+                        </>
+                      ) : (
+                        <>
+                          <i className="ri-file-copy-line mr-2"></i>
+                          Clone Bot
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setShowCloneModal(false);
+                        setCloneBotIdInput('');
+                        setCloneError(null);
+                      }}
+                      variant="secondary"
+                      disabled={cloningBot}
+                    >
+                      Cancel
                     </Button>
                   </div>
                 </div>
