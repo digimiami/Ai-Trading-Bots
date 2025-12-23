@@ -1818,15 +1818,15 @@ export default function AdminPage() {
                     <i className="ri-file-copy-line mr-2"></i>
                     Clone by ID
                   </Button>
-                  <Button
-                    onClick={fetchPabloReadyBots}
-                    variant="secondary"
-                    size="sm"
-                    disabled={pabloReadyLoading}
-                  >
-                    <i className="ri-refresh-line mr-2"></i>
-                    Refresh
-                  </Button>
+                <Button
+                  onClick={fetchPabloReadyBots}
+                  variant="secondary"
+                  size="sm"
+                  disabled={pabloReadyLoading}
+                >
+                  <i className="ri-refresh-line mr-2"></i>
+                  Refresh
+                </Button>
                 </div>
               </div>
 

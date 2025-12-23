@@ -442,93 +442,93 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string) {
     
     // Try each margin coin
     for (const marginCoin of marginCoinsToTry) {
-      try {
+        try {
         console.log(`Trying Bitunix: ${baseUrl}${endpointPath}?marginCoin=${marginCoin}`)
-        
-        // According to official Bitunix docs, signature uses double SHA256:
-        // digest = SHA256(nonce + timestamp + api-key + queryParams + body)
-        // sign = SHA256(digest + secretKey)
+          
+          // According to official Bitunix docs, signature uses double SHA256:
+          // digest = SHA256(nonce + timestamp + api-key + queryParams + body)
+          // sign = SHA256(digest + secretKey)
         // Query params format: sorted keys concatenated without separators
         // For marginCoin=USDT: queryParams = "marginCoinUSDT"
-        
-        const queryParams = `marginCoin${marginCoin}` // Sorted: marginCoin first, then value
-        const body = '' // Empty for GET request
-        
-        // Create signature using double SHA256 (official method)
-        const signature = await createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, body, apiSecret)
           
-        console.log('5. Signature input: nonce + timestamp + api-key + queryParams + body')
-        console.log('   nonce:', nonce)
-        console.log('   timestamp:', timestamp)
-        console.log('   api-key:', apiKey.substring(0, 10) + '...')
+        const queryParams = `marginCoin${marginCoin}` // Sorted: marginCoin first, then value
+          const body = '' // Empty for GET request
+          
+          // Create signature using double SHA256 (official method)
+          const signature = await createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, body, apiSecret)
+          
+          console.log('5. Signature input: nonce + timestamp + api-key + queryParams + body')
+          console.log('   nonce:', nonce)
+          console.log('   timestamp:', timestamp)
+          console.log('   api-key:', apiKey.substring(0, 10) + '...')
         console.log('   queryParams:', queryParams)
-        console.log('   body:', body || '(empty)')
-        console.log('6. Generated signature (double SHA256):', signature)
-        
-        // Headers according to official documentation
-        const headers: Record<string, string> = {
-          'api-key': String(apiKey),
-          'nonce': String(nonce),
-          'timestamp': String(timestamp),
-          'sign': String(signature),
-          'Content-Type': 'application/json'
-        }
-        
+          console.log('   body:', body || '(empty)')
+          console.log('6. Generated signature (double SHA256):', signature)
+          
+          // Headers according to official documentation
+          const headers: Record<string, string> = {
+            'api-key': String(apiKey),
+            'nonce': String(nonce),
+            'timestamp': String(timestamp),
+            'sign': String(signature),
+            'Content-Type': 'application/json'
+          }
+          
         // Make GET request with marginCoin query parameter
         const queryString = `marginCoin=${marginCoin}`
         response = await fetch(`${baseUrl}${endpointPath}?${queryString}`, {
-          method: 'GET',
-          headers: headers
-        })
-        
+            method: 'GET',
+            headers: headers
+          })
+          
         // Check if successful
-        if (response.ok) {
-          try {
+          if (response.ok) {
+            try {
             const responseData = await response.json()
-            if (responseData && responseData.code === 0) {
+              if (responseData && responseData.code === 0) {
               console.log(`✅ Success with marginCoin=${marginCoin}`)
               // Store response data for parsing
-              data = responseData
+                data = responseData
               // Break out of loop
-              break
-            } else if (responseData && responseData.code !== 0) {
-              // Got response but with error code
-              const errorMsg = responseData.msg || responseData.message || 'Unknown error'
+                break
+              } else if (responseData && responseData.code !== 0) {
+                // Got response but with error code
+                const errorMsg = responseData.msg || responseData.message || 'Unknown error'
               console.log(`Margin coin ${marginCoin} returned code ${responseData.code}: ${errorMsg}`)
-              lastError = new Error(`Bitunix API error: ${errorMsg} (Code: ${responseData.code})`)
+                lastError = new Error(`Bitunix API error: ${errorMsg} (Code: ${responseData.code})`)
               // Continue to next margin coin
+                continue
+              }
+            } catch (parseError) {
+            console.log(`Failed to parse response for marginCoin=${marginCoin}:`, parseError)
+              lastError = parseError
               continue
             }
-          } catch (parseError) {
-            console.log(`Failed to parse response for marginCoin=${marginCoin}:`, parseError)
-            lastError = parseError
-            continue
-          }
-        } else {
-          // HTTP error - try to get error message
-          try {
-            const errorText = await response.text()
-            console.log(`Margin coin ${marginCoin} returned ${response.status}: ${errorText}`)
-            // Try to parse as JSON for error details
+          } else {
+            // HTTP error - try to get error message
             try {
+              const errorText = await response.text()
+            console.log(`Margin coin ${marginCoin} returned ${response.status}: ${errorText}`)
+              // Try to parse as JSON for error details
+              try {
               const responseData = JSON.parse(errorText)
-              if (responseData.code !== undefined) {
-                const errorMsg = responseData.msg || responseData.message || errorText
-                lastError = new Error(`Bitunix API error: ${errorMsg} (Code: ${responseData.code})`)
-              } else {
+                if (responseData.code !== undefined) {
+                  const errorMsg = responseData.msg || responseData.message || errorText
+                  lastError = new Error(`Bitunix API error: ${errorMsg} (Code: ${responseData.code})`)
+                } else {
+                  lastError = new Error(`Bitunix API HTTP error: ${response.status} - ${errorText}`)
+                }
+              } catch {
                 lastError = new Error(`Bitunix API HTTP error: ${response.status} - ${errorText}`)
               }
             } catch {
-              lastError = new Error(`Bitunix API HTTP error: ${response.status} - ${errorText}`)
+              lastError = new Error(`Bitunix API HTTP error: ${response.status}`)
             }
-          } catch {
-            lastError = new Error(`Bitunix API HTTP error: ${response.status}`)
           }
-        }
-      } catch (err: any) {
+        } catch (err: any) {
         console.log(`Error trying marginCoin=${marginCoin}:`, err.message)
-        lastError = err
-        continue
+          lastError = err
+          continue
       }
     }
     

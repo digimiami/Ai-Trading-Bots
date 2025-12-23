@@ -1,3 +1,7 @@
+import { useState, useEffect, useCallback } from 'react';
+import { supabase } from '../../../lib/supabase';
+import { useAuth } from '../../../hooks/useAuth';
+import { useBots } from '../../../hooks/useBots';
 
 interface StatCardProps {
   title: string;
@@ -32,108 +36,230 @@ function StatCard({ title, value, change, changeType, icon }: StatCardProps) {
   );
 }
 
-import { useBots } from '../../../hooks/useBots';
-
 export default function StatsGrid() {
-  const { bots, loading } = useBots();
-  
-  // Calculate real stats from bots
-  const activeBots = bots.filter(bot => bot.status === 'running' || bot.status === 'active');
-  const totalPnL = bots.reduce((sum, bot) => sum + (bot.pnl || 0), 0);
-  const totalTrades = bots.reduce((sum, bot) => sum + (bot.totalTrades || 0), 0);
-  
-  // Calculate win rate
-  const botsWithTrades = bots.filter(bot => (bot.totalTrades || 0) > 0);
-  const avgWinRate = botsWithTrades.length > 0
-    ? botsWithTrades.reduce((sum, bot) => sum + (bot.winRate || 0), 0) / botsWithTrades.length
-    : 0;
-
-  // Calculate Win/Loss
-  const totalWins = bots.reduce((sum, bot) => sum + (bot.winTrades || 0), 0);
-  const totalLosses = bots.reduce((sum, bot) => sum + (bot.lossTrades || 0), 0);
-
-  // Calculate Total Fees (estimate from trades - 0.1% of volume or use bot.totalFees if available)
-  const totalFees = bots.reduce((sum, bot) => {
-    const botFees = (bot as any).totalFees || (bot as any).total_fees || (bot as any).fees || 0;
-    return sum + botFees;
-  }, 0);
-
-  // Calculate Max Drawdown
-  let maxDrawdown = 0;
-  let maxDrawdownPercentage = 0;
-  let peakPnL = 0;
-  let runningPnL = 0;
-  
-  // Sort bots by creation time and calculate cumulative drawdown
-  const sortedBots = [...bots].sort((a, b) => 
-    new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-  );
-  
-  sortedBots.forEach(bot => {
-    const botPnL = bot.pnl || 0;
-    runningPnL += botPnL;
-    if (runningPnL > peakPnL) {
-      peakPnL = runningPnL;
-    }
-    const drawdown = peakPnL - runningPnL;
-    if (drawdown > maxDrawdown) {
-      maxDrawdown = drawdown;
-      maxDrawdownPercentage = peakPnL > 0 ? (drawdown / peakPnL) * 100 : 0;
-    }
+  const { user } = useAuth();
+  const { bots } = useBots();
+  const [stats, setStats] = useState({
+    totalTrades: 0,
+    totalPnL: 0,
+    totalFees: 0,
+    winRate: 0,
+    totalWins: 0,
+    totalLosses: 0,
+    maxDrawdown: 0,
+    maxDrawdownPercentage: 0,
+    todayTrades: 0,
+    todayPnL: 0,
+    loading: true
   });
 
-  // Calculate today's change (simplified - you can enhance this)
-  const pnlChange = totalPnL > 0 ? '+' + (totalPnL * 0.1).toFixed(2) : (totalPnL * 0.1).toFixed(2);
-  const todayTrades = Math.floor(totalTrades * 0.15); // Approximate 15% are today's trades
+  const fetchRealTimeStats = useCallback(async () => {
+    if (!user?.id) {
+      setStats(prev => ({ ...prev, loading: false }));
+      return;
+    }
 
-  const stats = [
+    try {
+      // Get bot IDs for current user
+      const botIds = bots.map(bot => bot.id);
+      if (botIds.length === 0) {
+        setStats(prev => ({ ...prev, loading: false }));
+        return;
+      }
+
+      // Fetch real trades (all statuses, we'll filter later)
+      const { data: realTrades, error: realTradesError } = await supabase
+        .from('trades')
+        .select('id, status, pnl, fee, executed_at, created_at')
+        .eq('user_id', user.id)
+        .in('bot_id', botIds);
+
+      // Fetch paper trades (all statuses, we'll filter later)
+      const { data: paperTrades, error: paperTradesError } = await supabase
+        .from('paper_trading_trades')
+        .select('id, status, pnl, fee, executed_at, created_at')
+        .eq('user_id', user.id)
+        .in('bot_id', botIds);
+
+      if (realTradesError) console.error('Error fetching real trades:', realTradesError);
+      if (paperTradesError) console.error('Error fetching paper trades:', paperTradesError);
+
+      const allTrades = [
+        ...(realTrades || []),
+        ...(paperTrades || [])
+      ];
+
+      // Calculate stats from trades
+      const closedTrades = allTrades.filter(t => 
+        ['completed', 'closed', 'stopped', 'taken_profit'].includes(t.status?.toLowerCase() || '')
+      );
+
+      const totalTrades = allTrades.length;
+      const totalPnL = closedTrades.reduce((sum, t) => sum + (parseFloat(t.pnl || 0) || 0), 0);
+      const totalFees = allTrades.reduce((sum, t) => sum + (parseFloat(t.fee || 0) || 0), 0);
+      
+      const winningTrades = closedTrades.filter(t => (parseFloat(t.pnl || 0) || 0) > 0);
+      const losingTrades = closedTrades.filter(t => (parseFloat(t.pnl || 0) || 0) < 0);
+      const totalWins = winningTrades.length;
+      const totalLosses = losingTrades.length;
+      const winRate = closedTrades.length > 0 ? (totalWins / closedTrades.length) * 100 : 0;
+
+      // Calculate today's stats
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayTrades = allTrades.filter(t => {
+        const tradeDate = new Date(t.executed_at || t.created_at || 0);
+        return tradeDate >= today;
+      });
+      const todayPnL = todayTrades
+        .filter(t => ['completed', 'closed', 'stopped', 'taken_profit'].includes(t.status?.toLowerCase() || ''))
+        .reduce((sum, t) => sum + (parseFloat(t.pnl || 0) || 0), 0);
+
+      // Calculate max drawdown
+      let maxDrawdown = 0;
+      let maxDrawdownPercentage = 0;
+      let peakPnL = 0;
+      let runningPnL = 0;
+
+      // Sort trades by time and calculate drawdown
+      const sortedTrades = [...closedTrades].sort((a, b) => {
+        const dateA = new Date(a.executed_at || a.created_at || 0).getTime();
+        const dateB = new Date(b.executed_at || b.created_at || 0).getTime();
+        return dateA - dateB;
+      });
+
+      sortedTrades.forEach(trade => {
+        const tradePnL = parseFloat(trade.pnl || 0) || 0;
+        runningPnL += tradePnL;
+        if (runningPnL > peakPnL) {
+          peakPnL = runningPnL;
+        }
+        const drawdown = peakPnL - runningPnL;
+        if (drawdown > maxDrawdown) {
+          maxDrawdown = drawdown;
+          maxDrawdownPercentage = peakPnL > 0 ? (drawdown / peakPnL) * 100 : 0;
+        }
+      });
+
+      setStats({
+        totalTrades,
+        totalPnL,
+        totalFees,
+        winRate,
+        totalWins,
+        totalLosses,
+        maxDrawdown,
+        maxDrawdownPercentage,
+        todayTrades: todayTrades.length,
+        todayPnL,
+        loading: false
+      });
+    } catch (error) {
+      console.error('Error fetching real-time stats:', error);
+      setStats(prev => ({ ...prev, loading: false }));
+    }
+  }, [user?.id, bots]);
+
+  useEffect(() => {
+    if (!user?.id || bots.length === 0) {
+      setStats(prev => ({ ...prev, loading: false }));
+      return;
+    }
+
+    // Fetch stats initially
+    fetchRealTimeStats();
+
+    // Set up real-time subscription to trades
+    const tradesChannel = supabase
+      .channel('trades_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'trades',
+          filter: `user_id=eq.${user.id}`
+        },
+        () => {
+          console.log('🔄 Trade updated, refreshing stats...');
+          fetchRealTimeStats();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'paper_trading_trades',
+          filter: `user_id=eq.${user.id}`
+        },
+        () => {
+          console.log('🔄 Paper trade updated, refreshing stats...');
+          fetchRealTimeStats();
+        }
+      )
+      .subscribe();
+
+    // Auto-refresh every 10 seconds as backup
+    const refreshInterval = setInterval(fetchRealTimeStats, 10000);
+
+    return () => {
+      supabase.removeChannel(tradesChannel);
+      clearInterval(refreshInterval);
+    };
+  }, [user?.id, bots, fetchRealTimeStats]);
+
+  // Calculate today's change
+  const pnlChange = stats.todayPnL >= 0 ? `+${stats.todayPnL.toFixed(2)}` : stats.todayPnL.toFixed(2);
+
+  const statsData = [
     {
       title: 'Total PnL',
-      value: loading ? '...' : `$${totalPnL.toFixed(2)}`,
-      change: loading ? '...' : `${pnlChange}% today`,
-      changeType: totalPnL >= 0 ? 'positive' as const : 'negative' as const,
+      value: stats.loading ? '...' : `$${stats.totalPnL.toFixed(2)}`,
+      change: stats.loading ? '...' : `${pnlChange} today`,
+      changeType: stats.totalPnL >= 0 ? 'positive' as const : 'negative' as const,
       icon: 'ri-money-dollar-circle-line'
     },
     {
       title: 'Win Rate',
-      value: loading ? '...' : `${avgWinRate.toFixed(1)}%`,
-      change: loading ? '...' : 'Average across all bots',
-      changeType: avgWinRate >= 60 ? 'positive' as const : avgWinRate >= 50 ? 'neutral' as const : 'negative' as const,
+      value: stats.loading ? '...' : `${stats.winRate.toFixed(1)}%`,
+      change: stats.loading ? '...' : `${stats.totalWins}W / ${stats.totalLosses}L`,
+      changeType: stats.winRate >= 60 ? 'positive' as const : stats.winRate >= 50 ? 'neutral' as const : 'negative' as const,
       icon: 'ri-trophy-line'
     },
     {
       title: 'Total Trades',
-      value: loading ? '...' : totalTrades.toLocaleString(),
-      change: loading ? '...' : `${todayTrades} today`,
+      value: stats.loading ? '...' : stats.totalTrades.toLocaleString(),
+      change: stats.loading ? '...' : `${stats.todayTrades} today`,
       changeType: 'neutral' as const,
       icon: 'ri-exchange-line'
     },
     {
       title: 'Win/Loss',
-      value: loading ? '...' : `${totalWins}/${totalLosses}`,
-      change: loading ? '...' : `${totalWins > 0 ? '+' : ''}${totalWins - totalLosses} net`,
-      changeType: totalWins >= totalLosses ? 'positive' as const : 'negative' as const,
+      value: stats.loading ? '...' : `${stats.totalWins}/${stats.totalLosses}`,
+      change: stats.loading ? '...' : `${stats.totalWins > 0 ? '+' : ''}${stats.totalWins - stats.totalLosses} net`,
+      changeType: stats.totalWins >= stats.totalLosses ? 'positive' as const : 'negative' as const,
       icon: 'ri-bar-chart-box-line'
     },
     {
       title: 'Total Fees',
-      value: loading ? '...' : `$${Math.abs(totalFees).toFixed(2)}`,
-      change: loading ? '...' : 'Across all bots',
+      value: stats.loading ? '...' : `$${Math.abs(stats.totalFees).toFixed(2)}`,
+      change: stats.loading ? '...' : 'Real-time',
       changeType: 'negative' as const,
       icon: 'ri-hand-coin-line'
     },
     {
       title: 'Max Drawdown',
-      value: loading ? '...' : `$${maxDrawdown.toFixed(2)}`,
-      change: loading ? '...' : `${maxDrawdownPercentage.toFixed(1)}%`,
-      changeType: maxDrawdown > 0 ? 'negative' as const : 'neutral' as const,
+      value: stats.loading ? '...' : `$${stats.maxDrawdown.toFixed(2)}`,
+      change: stats.loading ? '...' : `${stats.maxDrawdownPercentage.toFixed(1)}%`,
+      changeType: stats.maxDrawdown > 0 ? 'negative' as const : 'neutral' as const,
       icon: 'ri-arrow-down-line'
     }
   ];
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-      {stats.map((stat, index) => (
+      {statsData.map((stat, index) => (
         <StatCard key={index} {...stat} />
       ))}
     </div>

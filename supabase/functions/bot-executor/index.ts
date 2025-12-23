@@ -9712,16 +9712,13 @@ class BotExecutor {
     // Calculate win rate & PnL from CLOSED trades only (realized performance)
     const { data: closedTrades } = await this.supabaseClient
       .from('trades')
-      .select('pnl, fee, executed_at')
+      .select('pnl, executed_at')
       .eq('bot_id', botId)
       .in('status', ['closed', 'completed'])
       .not('pnl', 'is', null)
       .order('executed_at', { ascending: false });
 
     const totalPnL = closedTrades?.reduce((sum, t) => sum + (parseFloat(t.pnl) || 0), 0) || 0;
-    
-    // Calculate total fees from closed trades
-    const totalFees = closedTrades?.reduce((sum, t) => sum + (parseFloat(t.fee || 0) || 0), 0) || 0;
 
     const profitableTrades = closedTrades?.filter(t => parseFloat(t.pnl || 0) > 0) || [];
     const losingTrades = closedTrades?.filter(t => parseFloat(t.pnl || 0) < 0) || [];
@@ -9757,7 +9754,7 @@ class BotExecutor {
     const tradeAmount = bot?.trade_amount ? Number(bot.trade_amount) : null;
 
     console.log(`📊 Win rate calculation (real): ${winTrades}/${totalClosedTrades} = ${newWinRate.toFixed(2)}%`);
-    console.log(`📊 Performance: Wins ${winTrades}, Losses ${lossTrades}, Trades ${totalTrades}, PnL $${totalPnL.toFixed(2)}, Fees $${totalFees.toFixed(2)}`);
+    console.log(`📊 Performance: Wins ${winTrades}, Losses ${lossTrades}, Trades ${totalTrades}, PnL $${totalPnL.toFixed(2)}`);
 
     await this.supabaseClient
       .from('trading_bots')
@@ -9766,9 +9763,6 @@ class BotExecutor {
         pnl: totalPnL,
         pnl_percentage: tradeAmount ? (totalPnL / tradeAmount) * 100 : 0,
         win_rate: newWinRate,
-        win_trades: winTrades,
-        loss_trades: lossTrades,
-        total_fees: totalFees,
         last_trade_at: TimeSync.getCurrentTimeISO(),
         updated_at: TimeSync.getCurrentTimeISO()
       })
@@ -12319,22 +12313,16 @@ class PaperTradingExecutor {
     // Calculate total PnL from all closed paper trades
     const { data: closedTrades } = await this.supabaseClient
       .from('paper_trading_trades')
-      .select('pnl, fees')
+      .select('pnl')
       .eq('bot_id', botId)
       .eq('status', 'closed')
       .not('pnl', 'is', null);
     
     const totalPnL = closedTrades?.reduce((sum, t) => sum + (parseFloat(t.pnl || 0) || 0), 0) || 0;
     
-    // Calculate total fees from closed paper trades
-    const totalFees = closedTrades?.reduce((sum, t) => sum + (parseFloat(t.fees || 0) || 0), 0) || 0;
-    
     const winningTrades = closedTrades?.filter(t => parseFloat(t.pnl || 0) > 0) || [];
-    const losingTrades = closedTrades?.filter(t => parseFloat(t.pnl || 0) < 0) || [];
-    const winTrades = winningTrades.length;
-    const lossTrades = losingTrades.length;
     const newWinRate = closedTrades && closedTrades.length > 0 
-      ? (winTrades / closedTrades.length) * 100 
+      ? (winningTrades.length / closedTrades.length) * 100 
       : (bot?.win_rate || 0);
 
     const totalTrades = Math.max(bot?.total_trades || 0, closedTrades?.length || 0);
@@ -12347,9 +12335,6 @@ class PaperTradingExecutor {
         pnl: totalPnL,
         pnl_percentage: tradeAmount ? (totalPnL / tradeAmount) * 100 : 0,
         win_rate: newWinRate,
-        win_trades: winTrades,
-        loss_trades: lossTrades,
-        total_fees: totalFees,
         last_trade_at: TimeSync.getCurrentTimeISO(),
         updated_at: TimeSync.getCurrentTimeISO()
       })
