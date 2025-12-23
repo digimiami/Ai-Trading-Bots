@@ -9651,7 +9651,12 @@ class BotExecutor {
           // Position closed on exchange, close in database
           const currentPrice = parseFloat(exchangePos?.markPrice || exchangePos?.lastPrice || dbPos.current_price || 0);
           if (currentPrice > 0) {
-            await this.trackPositionClose(bot, { id: dbPos.trade_id, side: dbPos.side }, currentPrice, 'exchange_sync');
+            try {
+              await this.trackPositionClose(bot, { id: dbPos.trade_id, side: dbPos.side }, currentPrice, 'exchange_sync');
+            } catch (closeError: any) {
+              console.error(`   ❌ Failed to close position ${dbPos.id}: ${closeError.message || closeError}`);
+              // Continue with other positions even if one fails
+            }
           }
         } else {
           // Update position with current price and unrealized PnL
@@ -12854,7 +12859,7 @@ serve(async (req) => {
             await Promise.race([
               executor.executeBot(singleBot),
               new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Bot execution timeout after 25000ms')), 25000)
+                setTimeout(() => reject(new Error('Bot execution timeout after 40000ms')), 40000)
               )
             ]);
             const duration = Date.now() - startTime;
@@ -13055,7 +13060,7 @@ serve(async (req) => {
         const BATCH_SIZE = 3; // Increased from 2 to 3 (better throughput while staying safe)
         const BATCH_DELAY_MS = 300; // Reduced from 500ms to 300ms (faster processing)
         const MAX_EXECUTION_TIME_MS = 50000; // Reduced from 100s to 50s (prevent CPU timeout)
-        const PER_BOT_TIMEOUT_MS = 25000; // Increased to 25s per bot to handle API retries, position updates, and paper trading operations
+        const PER_BOT_TIMEOUT_MS = 40000; // Increased to 40s per bot to handle API retries, position updates, paper trading operations, and bots with many positions
         const MAX_BOTS_PER_CYCLE = 5; // Reduced from 30 to 5 (better distribution across cycles)
         const executionStartTime = Date.now();
         const results: Array<PromiseSettledResult<any>> = [];
