@@ -60,49 +60,98 @@ export default function StatsGrid() {
     }
 
     try {
-      // Get bot IDs for current user
+      // Get bot IDs for current user (if any)
       const botIds = bots.map(bot => bot.id);
-      if (botIds.length === 0) {
-        setStats(prev => ({ ...prev, loading: false }));
-        return;
+      
+      console.log('📊 Fetching stats for user:', user.id, 'with', botIds.length, 'bots');
+
+      // Build query for real trades - fetch all trades for user, optionally filter by bot_id
+      let realTradesQuery = supabase
+        .from('trades')
+        .select('id, status, pnl, fee, executed_at, created_at, bot_id')
+        .eq('user_id', user.id);
+      
+      // Only filter by bot_id if we have bots, otherwise get all user trades
+      if (botIds.length > 0) {
+        realTradesQuery = realTradesQuery.in('bot_id', botIds);
       }
 
-      // Fetch real trades (all statuses, we'll filter later)
-      const { data: realTrades, error: realTradesError } = await supabase
-        .from('trades')
-        .select('id, status, pnl, fee, executed_at, created_at')
-        .eq('user_id', user.id)
-        .in('bot_id', botIds);
+      const { data: realTrades, error: realTradesError } = await realTradesQuery;
 
-      // Fetch paper trades (all statuses, we'll filter later)
-      const { data: paperTrades, error: paperTradesError } = await supabase
+      // Build query for paper trades - fetch all trades for user, optionally filter by bot_id
+      let paperTradesQuery = supabase
         .from('paper_trading_trades')
-        .select('id, status, pnl, fee, executed_at, created_at')
-        .eq('user_id', user.id)
-        .in('bot_id', botIds);
+        .select('id, status, pnl, fee, executed_at, created_at, bot_id')
+        .eq('user_id', user.id);
+      
+      // Only filter by bot_id if we have bots, otherwise get all user trades
+      if (botIds.length > 0) {
+        paperTradesQuery = paperTradesQuery.in('bot_id', botIds);
+      }
 
-      if (realTradesError) console.error('Error fetching real trades:', realTradesError);
-      if (paperTradesError) console.error('Error fetching paper trades:', paperTradesError);
+      const { data: paperTrades, error: paperTradesError } = await paperTradesQuery;
+
+      if (realTradesError) {
+        console.error('❌ Error fetching real trades:', realTradesError);
+      } else {
+        console.log('✅ Fetched', realTrades?.length || 0, 'real trades');
+      }
+      
+      if (paperTradesError) {
+        console.error('❌ Error fetching paper trades:', paperTradesError);
+      } else {
+        console.log('✅ Fetched', paperTrades?.length || 0, 'paper trades');
+      }
 
       const allTrades = [
         ...(realTrades || []),
         ...(paperTrades || [])
       ];
 
+      console.log('📊 Total trades found:', allTrades.length, '(real:', realTrades?.length || 0, ', paper:', paperTrades?.length || 0, ')');
+
       // Calculate stats from trades
-      const closedTrades = allTrades.filter(t => 
-        ['completed', 'closed', 'stopped', 'taken_profit'].includes(t.status?.toLowerCase() || '')
-      );
+      const closedTrades = allTrades.filter(t => {
+        const status = (t.status || '').toLowerCase();
+        return ['completed', 'closed', 'stopped', 'taken_profit', 'filled'].includes(status);
+      });
+
+      console.log('📊 Closed trades:', closedTrades.length, 'out of', allTrades.length);
 
       const totalTrades = allTrades.length;
-      const totalPnL = closedTrades.reduce((sum, t) => sum + (parseFloat(t.pnl || 0) || 0), 0);
-      const totalFees = allTrades.reduce((sum, t) => sum + (parseFloat(t.fee || 0) || 0), 0);
       
-      const winningTrades = closedTrades.filter(t => (parseFloat(t.pnl || 0) || 0) > 0);
-      const losingTrades = closedTrades.filter(t => (parseFloat(t.pnl || 0) || 0) < 0);
+      // Calculate PnL - handle both numeric and string values
+      const totalPnL = closedTrades.reduce((sum, t) => {
+        const pnl = typeof t.pnl === 'number' ? t.pnl : parseFloat(t.pnl || '0') || 0;
+        return sum + pnl;
+      }, 0);
+      
+      // Calculate fees - handle both numeric and string values
+      const totalFees = allTrades.reduce((sum, t) => {
+        const fee = typeof t.fee === 'number' ? t.fee : parseFloat(t.fee || '0') || 0;
+        return sum + fee;
+      }, 0);
+      
+      const winningTrades = closedTrades.filter(t => {
+        const pnl = typeof t.pnl === 'number' ? t.pnl : parseFloat(t.pnl || '0') || 0;
+        return pnl > 0;
+      });
+      const losingTrades = closedTrades.filter(t => {
+        const pnl = typeof t.pnl === 'number' ? t.pnl : parseFloat(t.pnl || '0') || 0;
+        return pnl < 0;
+      });
       const totalWins = winningTrades.length;
       const totalLosses = losingTrades.length;
       const winRate = closedTrades.length > 0 ? (totalWins / closedTrades.length) * 100 : 0;
+
+      console.log('📊 Stats calculated:', {
+        totalTrades,
+        totalPnL: totalPnL.toFixed(2),
+        totalFees: totalFees.toFixed(2),
+        winRate: winRate.toFixed(1) + '%',
+        wins: totalWins,
+        losses: totalLosses
+      });
 
       // Calculate today's stats
       const today = new Date();
@@ -112,8 +161,11 @@ export default function StatsGrid() {
         return tradeDate >= today;
       });
       const todayPnL = todayTrades
-        .filter(t => ['completed', 'closed', 'stopped', 'taken_profit'].includes(t.status?.toLowerCase() || ''))
-        .reduce((sum, t) => sum + (parseFloat(t.pnl || 0) || 0), 0);
+        .filter(t => ['completed', 'closed', 'stopped', 'taken_profit', 'filled'].includes(t.status?.toLowerCase() || ''))
+        .reduce((sum, t) => {
+          const pnl = typeof t.pnl === 'number' ? t.pnl : parseFloat(t.pnl || '0') || 0;
+          return sum + pnl;
+        }, 0);
 
       // Calculate max drawdown
       let maxDrawdown = 0;
@@ -129,7 +181,7 @@ export default function StatsGrid() {
       });
 
       sortedTrades.forEach(trade => {
-        const tradePnL = parseFloat(trade.pnl || 0) || 0;
+        const tradePnL = typeof trade.pnl === 'number' ? trade.pnl : parseFloat(trade.pnl || '0') || 0;
         runningPnL += tradePnL;
         if (runningPnL > peakPnL) {
           peakPnL = runningPnL;
@@ -161,12 +213,12 @@ export default function StatsGrid() {
   }, [user?.id, bots]);
 
   useEffect(() => {
-    if (!user?.id || bots.length === 0) {
+    if (!user?.id) {
       setStats(prev => ({ ...prev, loading: false }));
       return;
     }
 
-    // Fetch stats initially
+    // Fetch stats initially (even if no bots, to show any existing trades)
     fetchRealTimeStats();
 
     // Set up real-time subscription to trades
@@ -200,8 +252,8 @@ export default function StatsGrid() {
       )
       .subscribe();
 
-    // Auto-refresh every 10 seconds as backup
-    const refreshInterval = setInterval(fetchRealTimeStats, 10000);
+    // Auto-refresh every 5 seconds for real-time updates
+    const refreshInterval = setInterval(fetchRealTimeStats, 5000);
 
     return () => {
       supabase.removeChannel(tradesChannel);
