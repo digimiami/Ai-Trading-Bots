@@ -81,6 +81,8 @@ export default function EmailCenter() {
   const [currentPage, setCurrentPage] = useState(0);
   const [totalEmails, setTotalEmails] = useState(0);
   const emailsPerPage = 20;
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewMode, setPreviewMode] = useState<'compose' | 'broadcast'>('compose');
 
   useEffect(() => {
     loadMailboxes();
@@ -726,6 +728,18 @@ ${email.text_body || email.html_body?.replace(/<[^>]*>/g, '') || ''}
               </div>
               <div className="flex gap-3">
                 <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setPreviewMode('compose');
+                    setShowPreview(true);
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <i className="ri-eye-line"></i>
+                  Preview
+                </Button>
+                <Button
                   type="submit"
                   variant="primary"
                   disabled={sending || !composeForm.from}
@@ -895,6 +909,18 @@ ${email.text_body || email.html_body?.replace(/<[^>]*>/g, '') || ''}
                 </div>
               )}
               <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setPreviewMode('broadcast');
+                    setShowPreview(true);
+                  }}
+                  className="flex items-center gap-2"
+                >
+                  <i className="ri-eye-line"></i>
+                  Preview
+                </Button>
                 <Button
                   type="submit"
                   variant="primary"
@@ -1083,6 +1109,188 @@ ${email.text_body || email.html_body?.replace(/<[^>]*>/g, '') || ''}
           >
             Next
           </Button>
+        </div>
+      )}
+
+      {/* Preview Modal */}
+      {showPreview && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">Email Preview</h3>
+              <button
+                onClick={() => setShowPreview(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <i className="ri-close-line text-2xl"></i>
+              </button>
+            </div>
+            
+            {/* Preview Content */}
+            <div className="space-y-4">
+              {/* Email Headers */}
+              <div className="border-b pb-4">
+                <div className="space-y-2 text-sm">
+                  <div>
+                    <span className="font-medium text-gray-700">From:</span>{' '}
+                    <span className="text-gray-900">
+                      {previewMode === 'compose' ? composeForm.from : broadcastForm.from}
+                    </span>
+                  </div>
+                  {previewMode === 'compose' && (
+                    <>
+                      <div>
+                        <span className="font-medium text-gray-700">To:</span>{' '}
+                        <span className="text-gray-900">{composeForm.to || '(not set)'}</span>
+                      </div>
+                      {composeForm.cc && (
+                        <div>
+                          <span className="font-medium text-gray-700">CC:</span>{' '}
+                          <span className="text-gray-900">{composeForm.cc}</span>
+                        </div>
+                      )}
+                      {composeForm.bcc && (
+                        <div>
+                          <span className="font-medium text-gray-700">BCC:</span>{' '}
+                          <span className="text-gray-900">{composeForm.bcc}</span>
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {previewMode === 'broadcast' && (
+                    <div>
+                      <span className="font-medium text-gray-700">To:</span>{' '}
+                      <span className="text-gray-900">
+                        {broadcastForm.sendToAll 
+                          ? `All Active Users (${users.filter(u => u.status === 'active').length} users)`
+                          : `${broadcastForm.selectedUserIds.length} Selected User(s)`
+                        }
+                      </span>
+                    </div>
+                  )}
+                  <div>
+                    <span className="font-medium text-gray-700">Subject:</span>{' '}
+                    <span className="text-gray-900">
+                      {previewMode === 'compose' ? composeForm.subject : broadcastForm.subject}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Email Body Preview */}
+              <div className="border rounded-lg p-4 bg-white min-h-[300px]">
+                <div className="mb-2 text-xs text-gray-500 font-medium">HTML Preview:</div>
+                {previewMode === 'compose' ? (
+                  composeForm.html ? (
+                    <div
+                      className="prose max-w-none"
+                      dangerouslySetInnerHTML={{ __html: composeForm.html }}
+                    />
+                  ) : composeForm.text ? (
+                    <div className="whitespace-pre-wrap text-gray-800">
+                      {composeForm.text}
+                    </div>
+                  ) : (
+                    <div className="text-gray-400 italic">No content to preview</div>
+                  )
+                ) : (
+                  broadcastForm.html ? (
+                    <div
+                      className="prose max-w-none"
+                      dangerouslySetInnerHTML={{ __html: broadcastForm.html }}
+                    />
+                  ) : broadcastForm.text ? (
+                    <div className="whitespace-pre-wrap text-gray-800">
+                      {broadcastForm.text}
+                    </div>
+                  ) : (
+                    <div className="text-gray-400 italic">No content to preview</div>
+                  )
+                )}
+              </div>
+
+              {/* Fallback Text Preview */}
+              {(previewMode === 'compose' ? composeForm.text : broadcastForm.text) && (
+                <div className="border rounded-lg p-4 bg-gray-50">
+                  <div className="mb-2 text-xs text-gray-500 font-medium">Text Fallback (for email clients that don't support HTML):</div>
+                  <div className="whitespace-pre-wrap text-gray-800 text-sm">
+                    {previewMode === 'compose' ? composeForm.text : broadcastForm.text}
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-4 border-t">
+                <Button
+                  variant="secondary"
+                  onClick={() => setShowPreview(false)}
+                  className="flex-1"
+                >
+                  Close Preview
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={async () => {
+                    setShowPreview(false);
+                    // Small delay to allow modal to close
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    
+                    if (previewMode === 'compose') {
+                      // Create a synthetic submit event
+                      const event = new Event('submit', { bubbles: true, cancelable: true });
+                      const form = document.querySelector('form');
+                      if (form) {
+                        form.dispatchEvent(event);
+                      }
+                    } else {
+                      // For broadcast, trigger the broadcast handler
+                      if (!broadcastForm.from || !broadcastForm.subject) {
+                        alert('Please fill in From and Subject fields');
+                        return;
+                      }
+                      if (!broadcastForm.sendToAll && broadcastForm.selectedUserIds.length === 0 && broadcastForm.selectedUserEmails.length === 0) {
+                        alert('Please select recipients or choose "Send to All Users"');
+                        return;
+                      }
+
+                      setBroadcasting(true);
+                      try {
+                        const result = await broadcastEmail({
+                          from: broadcastForm.from,
+                          subject: broadcastForm.subject,
+                          html: broadcastForm.html,
+                          text: broadcastForm.text,
+                          sendToAll: broadcastForm.sendToAll,
+                          userIds: broadcastForm.sendToAll ? undefined : broadcastForm.selectedUserIds.length > 0 ? broadcastForm.selectedUserIds : undefined,
+                          userEmails: broadcastForm.sendToAll ? undefined : broadcastForm.selectedUserEmails.length > 0 ? broadcastForm.selectedUserEmails : undefined
+                        });
+                        alert(`✅ Broadcast completed! ${result.results?.sent || 0} sent, ${result.results?.failed || 0} failed`);
+                        setShowBroadcast(false);
+                        setBroadcastForm({
+                          from: mailboxes.find(m => m.is_active)?.email_address || '',
+                          subject: '',
+                          html: '',
+                          text: '',
+                          sendToAll: false,
+                          selectedUserIds: [],
+                          selectedUserEmails: []
+                        });
+                        loadEmails();
+                      } catch (err: any) {
+                        alert(`❌ Failed to broadcast email: ${err.message}`);
+                      } finally {
+                        setBroadcasting(false);
+                      }
+                    }
+                  }}
+                  className="flex-1"
+                >
+                  <i className="ri-send-plane-line mr-2"></i>
+                  Send Now
+                </Button>
+              </div>
+            </div>
+          </Card>
         </div>
       )}
     </div>
