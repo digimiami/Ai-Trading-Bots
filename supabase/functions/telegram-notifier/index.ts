@@ -418,7 +418,15 @@ serve(async (req) => {
         
         if (!config) {
           console.warn('⚠️ No Telegram config found for user_id:', user.id);
-          throw new Error('Telegram not configured. Please configure Telegram in Settings → Notifications.')
+          // For cron jobs/automated notifications, gracefully skip instead of throwing error
+          return new Response(
+            JSON.stringify({ 
+              success: false, 
+              skipped: true,
+              message: 'Telegram not configured. Notification skipped.'
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
         }
         
         console.log(`✅ Telegram config found for user_id: ${user.id}, enabled: ${config.enabled}`);
