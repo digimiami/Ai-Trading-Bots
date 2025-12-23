@@ -226,6 +226,67 @@ export default function MessagesPage() {
     return date.toLocaleDateString()
   }
 
+  // Helper function to detect if content is HTML
+  const isHtmlContent = (content: string): boolean => {
+    if (!content || typeof content !== 'string') return false
+    
+    // Remove leading/trailing whitespace for detection
+    const trimmed = content.trim()
+    
+    // Most aggressive check: if it contains any HTML tag pattern, treat as HTML
+    // This catches: <div, <span, <p, <h1, etc. even with whitespace
+    const anyHtmlTag = /<[a-z]+[\s>]/i.test(trimmed) || /<\/[a-z]+>/i.test(trimmed)
+    if (anyHtmlTag) {
+      return true
+    }
+    
+    // Check for HTML comments (like <!-- Header -->)
+    if (trimmed.includes('<!--') && trimmed.includes('-->')) {
+      return true
+    }
+    
+    // Check for style attributes (common in HTML emails) - even without tags
+    if (/style\s*=\s*["']/i.test(trimmed)) {
+      return true
+    }
+    
+    // Check for HTML structure patterns
+    const htmlStructurePattern = /<(div|span|p|h[1-6]|a|img|table|tr|td|ul|ol|li|body|html|head)[\s>]/i
+    if (htmlStructurePattern.test(trimmed)) {
+      return true
+    }
+    
+    // Check for common HTML entities (if combined with other HTML indicators)
+    const htmlEntityPattern = /&(nbsp|amp|lt|gt|quot|#\d+);/i
+    if (htmlEntityPattern.test(trimmed)) {
+      // If it has entities AND looks like HTML structure, it's HTML
+      if (anyHtmlTag || htmlStructurePattern.test(trimmed)) {
+        return true
+      }
+    }
+    
+    return false
+  }
+
+  // Helper function to strip HTML for preview
+  const stripHtmlForPreview = (html: string): string => {
+    if (!html) return ''
+    // Remove HTML tags
+    let text = html.replace(/<[^>]*>/g, '')
+    // Remove HTML comments
+    text = text.replace(/<!--[\s\S]*?-->/g, '')
+    // Decode common HTML entities
+    text = text.replace(/&nbsp;/g, ' ')
+    text = text.replace(/&amp;/g, '&')
+    text = text.replace(/&lt;/g, '<')
+    text = text.replace(/&gt;/g, '>')
+    text = text.replace(/&quot;/g, '"')
+    text = text.replace(/&#39;/g, "'")
+    // Clean up extra whitespace
+    text = text.replace(/\s+/g, ' ').trim()
+    return text || '(HTML message - click to view)'
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       <Navigation />
