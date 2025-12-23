@@ -395,6 +395,30 @@ export const useBots = () => {
       return;
     }
     fetchBots();
+    
+    // Set up real-time subscription to refresh bots when they're updated
+    const channel = supabase
+      .channel('trading_bots_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'trading_bots',
+          filter: `user_id=eq.${user.id}`
+        },
+        (payload) => {
+          console.log('🔄 Bot updated in real-time:', payload.eventType, payload.new);
+          // Refresh bots when any bot is updated (INSERT, UPDATE, DELETE)
+          fetchBots();
+        }
+      )
+      .subscribe();
+
+    // Cleanup subscription on unmount
+    return () => {
+      supabase.removeChannel(channel);
+    };
     // Re-fetch when the signed-in user changes
   }, [authLoading, user?.id]);
 

@@ -221,16 +221,17 @@ serve(async (req) => {
 
           const totalTrades = Math.max(bot.total_trades ?? 0, stats.totalTrades);
           const closedTrades = stats.closedTrades;
-          const winTrades = stats.winTrades;
-          const lossTrades = stats.lossTrades;
+          // Use stored values from database first, fallback to calculated stats
+          const winTrades = bot.win_trades ?? stats.winTrades ?? 0;
+          const lossTrades = bot.loss_trades ?? stats.lossTrades ?? 0;
           const realizedPnl = stats.hasClosed ? stats.pnl : (bot.pnl ?? 0);
-          const totalFees = stats.totalFees || (bot.total_fees ?? 0);
+          const totalFees = bot.total_fees ?? stats.totalFees ?? 0;
           const maxDrawdown = stats.maxDrawdown || (bot.max_drawdown ?? 0);
           
-          // Calculate win rate from closed trades, or use bot's stored value if no closed trades
-          const winRate = closedTrades > 0
+          // Use stored win_rate from database first, calculate only if missing
+          const winRate = bot.win_rate ?? (closedTrades > 0
             ? (winTrades / closedTrades) * 100
-            : (bot.win_rate ?? 0);
+            : 0);
 
           // Calculate drawdown percentage based on peak equity
           const drawdownPercentage = stats.peakEquity > 0
