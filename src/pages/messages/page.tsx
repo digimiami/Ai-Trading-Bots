@@ -345,29 +345,36 @@ export default function MessagesPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between mb-2">
                     <label className="block text-sm font-medium">Message</label>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 bg-gray-100 dark:bg-gray-800 px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600">
                       <input
                         type="checkbox"
                         id="useHtml"
                         checked={useHtml}
                         onChange={(e) => setUseHtml(e.target.checked)}
-                        className="w-4 h-4"
+                        className="w-4 h-4 text-blue-600 focus:ring-blue-500"
                       />
-                      <label htmlFor="useHtml" className="text-sm text-gray-600 dark:text-gray-400">
+                      <label htmlFor="useHtml" className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">
+                        <i className="ri-code-line mr-1"></i>
                         Use HTML
                       </label>
                     </div>
                   </div>
                   {useHtml ? (
-                    <textarea
-                      value={composeHtml}
-                      onChange={(e) => setComposeHtml(e.target.value)}
-                      placeholder="Enter HTML content here..."
-                      rows={12}
-                      className="w-full px-3 py-2 border rounded-lg dark:bg-gray-800 dark:border-gray-700 font-mono text-sm"
-                    />
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-3 py-1.5 rounded border border-blue-200 dark:border-blue-800">
+                        <i className="ri-code-line"></i>
+                        <span className="font-medium">HTML Mode Active</span>
+                      </div>
+                      <textarea
+                        value={composeHtml}
+                        onChange={(e) => setComposeHtml(e.target.value)}
+                        placeholder="Enter HTML content here... (e.g., &lt;h1&gt;Hello&lt;/h1&gt;&lt;p&gt;This is HTML&lt;/p&gt;)"
+                        rows={12}
+                        className="w-full px-3 py-2 border-2 border-blue-300 dark:border-blue-700 rounded-lg dark:bg-gray-800 font-mono text-sm focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
                   ) : (
                     <textarea
                       value={composeBody}
@@ -404,18 +411,18 @@ export default function MessagesPage() {
                   )}
                 </div>
 
-                <div className="flex gap-3">
+                <div className="flex gap-3 pt-2">
                   <Button 
                     onClick={() => setShowPreview(true)} 
                     variant="secondary"
-                    className="flex items-center gap-2"
+                    className="flex items-center gap-2 px-4 py-2"
                   >
-                    <i className="ri-eye-line"></i>
+                    <i className="ri-eye-line text-lg"></i>
                     Preview
                   </Button>
                   <Button 
                     onClick={handleSendMessage} 
-                    className="flex-1" 
+                    className="flex-1 px-4 py-2" 
                     disabled={uploading}
                   >
                     <i className="ri-send-plane-fill mr-2"></i>
