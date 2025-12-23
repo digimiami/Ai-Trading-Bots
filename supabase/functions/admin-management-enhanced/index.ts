@@ -91,6 +91,7 @@ serve(async (req) => {
       // Existing user management functions
       case 'getUsers': {
         try {
+        // First, get all users from the users table
         const { data: users, error: usersError } = await supabaseClient
           .from('users')
             .select('id, email, role, status, status_updated_at, created_at')
@@ -106,6 +107,57 @@ serve(async (req) => {
               status: 500,
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             })
+          }
+
+          // Get all auth users to find any missing from users table
+          // This ensures users who signed up but the trigger didn't fire will appear
+          try {
+            const { data: { users: authUsers }, error: authError } = await supabaseClient.auth.admin.listUsers()
+            
+            if (!authError && authUsers) {
+              const existingUserIds = new Set((users || []).map((u: any) => u.id))
+              
+              // Find auth users that don't have entries in users table
+              const missingUsers = authUsers.filter(authUser => !existingUserIds.has(authUser.id))
+              
+              if (missingUsers.length > 0) {
+                console.log(`📝 Found ${missingUsers.length} auth users without entries in users table. Creating missing entries...`)
+                
+                // Create missing user entries
+                const usersToInsert = missingUsers.map(authUser => ({
+                  id: authUser.id,
+                  email: authUser.email || '',
+                  name: authUser.user_metadata?.name || authUser.email?.split('@')[0] || 'User',
+                  role: authUser.app_metadata?.role || 'user',
+                  status: 'active',
+                  status_updated_at: new Date().toISOString(),
+                  created_at: authUser.created_at || new Date().toISOString()
+                }))
+                
+                const { error: insertError } = await supabaseClient
+                  .from('users')
+                  .insert(usersToInsert)
+                
+                if (insertError) {
+                  console.error('Error creating missing user entries:', insertError)
+                } else {
+                  console.log(`✅ Created ${usersToInsert.length} missing user entries`)
+                  // Re-fetch users to include the newly created ones
+                  const { data: updatedUsers } = await supabaseClient
+                    .from('users')
+                    .select('id, email, role, status, status_updated_at, created_at')
+                    .order('created_at', { ascending: false })
+                  
+                  if (updatedUsers) {
+                    users.length = 0
+                    users.push(...updatedUsers)
+                  }
+                }
+              }
+            }
+          } catch (authCheckError) {
+            console.warn('Could not check auth users for missing entries:', authCheckError)
+            // Continue with existing users even if auth check fails
           }
           
           const usersWithStats = await Promise.all(
