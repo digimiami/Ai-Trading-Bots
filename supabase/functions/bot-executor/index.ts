@@ -9544,13 +9544,12 @@ class BotExecutor {
         })
         .eq('id', position.id);
       
-      // Update trade with PnL and exit price
+      // Update trade with PnL and fees (exit_price column doesn't exist in trades table)
       await this.supabaseClient
         .from('trades')
         .update({
           pnl: realizedPnL,
-          fees: totalFees,
-          exit_price: exitPrice,
+          fee: totalFees, // Note: column is 'fee' (singular), not 'fees'
           status: 'closed',
           updated_at: TimeSync.getCurrentTimeISO()
         })
