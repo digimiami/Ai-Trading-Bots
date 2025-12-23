@@ -461,16 +461,25 @@ export default function MessagesPage() {
                   </div>
                 </div>
 
-                {selectedMessage.body && selectedMessage.body.trim().startsWith('<') && selectedMessage.body.includes('>') ? (
-                  <div 
-                    className="prose max-w-none dark:prose-invert"
-                    dangerouslySetInnerHTML={{ __html: selectedMessage.body }}
-                  />
-                ) : (
-                  <div className="prose dark:prose-invert whitespace-pre-wrap">
-                    {selectedMessage.body}
-                  </div>
-                )}
+                {(() => {
+                  const body = selectedMessage.body || '';
+                  
+                  if (isHtmlContent(body)) {
+                    return (
+                      <div 
+                        className="prose max-w-none dark:prose-invert"
+                        style={{ wordBreak: 'break-word' }}
+                        dangerouslySetInnerHTML={{ __html: body }}
+                      />
+                    );
+                  } else {
+                    return (
+                      <div className="prose dark:prose-invert whitespace-pre-wrap" style={{ wordBreak: 'break-word' }}>
+                        {body}
+                      </div>
+                    );
+                  }
+                })()}
 
                 {selectedMessage.attachments && (() => {
                   const atts = typeof selectedMessage.attachments === 'string' 
@@ -582,7 +591,13 @@ export default function MessagesPage() {
                               {message.subject || '(No subject)'}
                             </div>
                             <div className="text-sm text-gray-500 dark:text-gray-400 line-clamp-2">
-                              {message.body}
+                              {(() => {
+                                const body = message.body || '';
+                                if (isHtmlContent(body)) {
+                                  return stripHtmlForPreview(body);
+                                }
+                                return body;
+                              })()}
                             </div>
                             {message.attachments && (() => {
                               const atts = typeof message.attachments === 'string' 
