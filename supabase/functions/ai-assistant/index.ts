@@ -348,14 +348,58 @@ serve(async (req) => {
       }
     ];
 
-    // Build conversation messages
-    const messages = [
-      {
-        role: 'system',
-        content: `You are an expert AI Trading Assistant for the Pablo AI Trading Platform. Your role is to help users understand bot settings, trading strategies, risk management, and platform features.
+    // Helper function to estimate tokens (rough estimate: ~0.75 tokens per character for English)
+    function estimateTokens(text: string): number {
+      return Math.ceil(text.length * 0.75);
+    }
 
-${knowledgeBase}
-${botsContextText}
+    // Helper function to truncate text to fit within token limit
+    function truncateText(text: string, maxTokens: number): string {
+      const maxChars = Math.floor(maxTokens / 0.75);
+      if (text.length <= maxChars) return text;
+      return text.substring(0, maxChars - 100) + '... [truncated]';
+    }
+
+    // Limit conversation history to prevent token overflow
+    // Keep only the most recent messages, truncating if necessary
+    const MAX_CONVERSATION_HISTORY_MESSAGES = 5; // Reduced from 10
+    const MAX_MESSAGE_LENGTH = 2000; // Max characters per message in history
+    
+    let limitedHistory = conversationHistory
+      .slice(-MAX_CONVERSATION_HISTORY_MESSAGES)
+      .map((msg: any) => {
+        const content = msg.content || '';
+        const truncatedContent = content.length > MAX_MESSAGE_LENGTH 
+          ? content.substring(0, MAX_MESSAGE_LENGTH) + '... [truncated]'
+          : content;
+        return {
+          role: msg.role,
+          content: truncatedContent
+        };
+      });
+
+    // Limit bots context - only include essential info for first 10 bots
+    const MAX_BOTS_IN_CONTEXT = 10;
+    let limitedBotsContext = botsContextText;
+    if (botsContext.length > MAX_BOTS_IN_CONTEXT) {
+      const limitedBots = botsContext.slice(0, MAX_BOTS_IN_CONTEXT);
+      limitedBotsContext = `\n\n## USER'S CURRENT BOTS (${botsContext.length} total, showing first ${MAX_BOTS_IN_CONTEXT}):\n` +
+        limitedBots.map((bot: any, idx: number) => {
+          const strategy = typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy;
+          // Simplify strategy representation
+          const strategyStr = typeof strategy === 'object' ? JSON.stringify(strategy).substring(0, 200) : String(strategy);
+          return `${idx + 1}. **${bot.name}** (ID: ${bot.id})
+   - Exchange: ${bot.exchange}, Symbol: ${bot.symbol}, Timeframe: ${bot.timeframe || '1h'}
+   - Leverage: ${bot.leverage || 1}x, Risk: ${bot.risk_level || 'medium'}
+   - Trade Amount: ${bot.trade_amount || 100} USDT
+   - Stop Loss: ${bot.stop_loss || 2.0}%, Take Profit: ${bot.take_profit || 4.0}%
+   - Strategy: ${strategyStr.substring(0, 150)}...
+   - Status: ${bot.status}, PnL: ${bot.pnl || 0} USDT, Win Rate: ${bot.win_rate || 0}%`;
+        }).join('\n\n');
+    }
+
+    // Build system message with truncated knowledge base if needed
+    const systemMessageBase = `You are an expert AI Trading Assistant for the Pablo AI Trading Platform. Your role is to help users understand bot settings, trading strategies, risk management, and platform features.
 
 IMPORTANT GUIDELINES:
 1. Be helpful, clear, and concise
@@ -371,17 +415,56 @@ IMPORTANT GUIDELINES:
 11. When creating bots, use sensible defaults based on risk level (low risk = conservative, high risk = aggressive)
 12. Reference user's existing bots when making recommendations to avoid duplicates or conflicts
 13. When user asks to change settings, enable/disable notifications, or modify preferences, use the update_user_settings function
-14. Always preserve existing settings when updating - only modify the specific fields the user requests`
+14. Always preserve existing settings when updating - only modify the specific fields the user requests`;
+
+    // Estimate tokens for the full system message
+    const MAX_CONTEXT_TOKENS = 120000; // Leave some buffer below 128K limit
+    const MAX_FUNCTIONS_TOKENS = 1000; // Reserve for function definitions
+    const MAX_MESSAGES_TOKENS = MAX_CONTEXT_TOKENS - MAX_FUNCTIONS_TOKENS;
+    
+    // Build initial system message
+    let systemMessage = `${systemMessageBase}\n\n${knowledgeBase}\n${limitedBotsContext}`;
+    
+    // Estimate tokens for all messages
+    let estimatedTokens = estimateTokens(systemMessage);
+    for (const msg of limitedHistory) {
+      estimatedTokens += estimateTokens(JSON.stringify(msg));
+    }
+    estimatedTokens += estimateTokens(message + attachmentContext);
+    estimatedTokens += MAX_FUNCTIONS_TOKENS; // Add function tokens estimate
+
+    // If we're over the limit, truncate knowledge base
+    if (estimatedTokens > MAX_CONTEXT_TOKENS) {
+      const excessTokens = estimatedTokens - MAX_CONTEXT_TOKENS;
+      const excessChars = Math.floor(excessTokens / 0.75);
+      const currentKnowledgeBaseLength = knowledgeBase.length;
+      const targetKnowledgeBaseLength = Math.max(5000, currentKnowledgeBaseLength - excessChars - 1000); // Keep at least 5K chars
+      
+      if (targetKnowledgeBaseLength < currentKnowledgeBaseLength) {
+        console.warn(`⚠️ Token limit approaching. Truncating knowledge base from ${currentKnowledgeBaseLength} to ${targetKnowledgeBaseLength} chars`);
+        const truncatedKnowledgeBase = knowledgeBase.substring(0, targetKnowledgeBaseLength) + '\n\n[Knowledge base truncated due to token limits. Core information retained.]';
+        systemMessage = `${systemMessageBase}\n\n${truncatedKnowledgeBase}\n${limitedBotsContext}`;
+      }
+    }
+
+    // Build conversation messages
+    const messages = [
+      {
+        role: 'system',
+        content: systemMessage
       },
-      ...conversationHistory.map((msg: any) => ({
-        role: msg.role,
-        content: msg.content
-      })),
+      ...limitedHistory,
       {
         role: 'user',
         content: message + attachmentContext
       }
     ];
+
+    // Final token check - log warning if still high
+    const finalEstimatedTokens = estimateTokens(JSON.stringify(messages)) + MAX_FUNCTIONS_TOKENS;
+    if (finalEstimatedTokens > 100000) {
+      console.warn(`⚠️ High token count detected: ~${Math.round(finalEstimatedTokens/1000)}K tokens. Model limit: 128K`);
+    }
 
     // Call AI API with function calling support
     let aiResponse = '';
@@ -413,6 +496,14 @@ IMPORTANT GUIDELINES:
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       console.error('AI API error:', response.status, errorData);
+      
+      // Provide helpful error message for token limit errors
+      if (errorData.error?.message?.includes('maximum context length') || errorData.error?.message?.includes('tokens')) {
+        const errorMsg = errorData.error.message || 'Token limit exceeded';
+        console.error(`❌ Token limit error. Estimated tokens: ~${Math.round(finalEstimatedTokens/1000)}K`);
+        throw new Error(`AI API error: ${response.status} - ${errorMsg}. The conversation or context is too long. Please try a shorter message or start a new conversation.`);
+      }
+      
       throw new Error(`AI API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
     }
 
@@ -494,6 +585,59 @@ IMPORTANT GUIDELINES:
       
       messages.push(...toolResults);
       
+      // Check token count before second API call and truncate if needed
+      let secondCallEstimatedTokens = estimateTokens(JSON.stringify(messages));
+      if (secondCallEstimatedTokens > MAX_CONTEXT_TOKENS) {
+        console.warn(`⚠️ Second API call token count high: ~${Math.round(secondCallEstimatedTokens/1000)}K tokens. Truncating conversation history...`);
+        
+        // Keep system message and recent messages, remove older history
+        const systemMsg = messages[0];
+        const assistantMsg = messages[messages.length - toolResults.length - 1];
+        const userMsg = messages[messages.length - toolResults.length - 2];
+        
+        // Keep only the most recent 3 history messages + current interaction
+        const recentHistory = messages.slice(1, messages.length - toolResults.length - 2);
+        const limitedRecentHistory = recentHistory.slice(-3);
+        
+        // Rebuild messages array with limited history
+        const truncatedMessages = [
+          systemMsg,
+          ...limitedRecentHistory,
+          userMsg,
+          assistantMsg,
+          ...toolResults
+        ];
+        
+        const truncatedTokens = estimateTokens(JSON.stringify(truncatedMessages));
+        if (truncatedTokens <= MAX_CONTEXT_TOKENS) {
+          messages.length = 0;
+          messages.push(...truncatedMessages);
+          console.log(`✅ Truncated messages from ~${Math.round(secondCallEstimatedTokens/1000)}K to ~${Math.round(truncatedTokens/1000)}K tokens`);
+        } else {
+          // If still too large, truncate tool results
+          console.warn(`⚠️ Still over limit after truncation. Limiting tool result sizes...`);
+          const truncatedToolResults = toolResults.map((tr: any) => {
+            const content = tr.content || '';
+            const maxToolResultLength = 500; // Limit each tool result to 500 chars
+            return {
+              ...tr,
+              content: content.length > maxToolResultLength 
+                ? content.substring(0, maxToolResultLength) + '... [truncated]'
+                : content
+            };
+          });
+          
+          messages.length = 0;
+          messages.push(
+            systemMsg,
+            ...limitedRecentHistory,
+            userMsg,
+            assistantMsg,
+            ...truncatedToolResults
+          );
+        }
+      }
+      
       response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -510,6 +654,15 @@ IMPORTANT GUIDELINES:
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        
+        // Provide helpful error message for token limit errors
+        if (errorData.error?.message?.includes('maximum context length') || errorData.error?.message?.includes('tokens')) {
+          const errorMsg = errorData.error.message || 'Token limit exceeded';
+          const currentTokens = estimateTokens(JSON.stringify(messages));
+          console.error(`❌ Token limit error on second call. Estimated tokens: ~${Math.round(currentTokens/1000)}K`);
+          throw new Error(`AI API error: ${response.status} - ${errorMsg}. The conversation context is too long. Please try starting a new conversation.`);
+        }
+        
         throw new Error(`AI API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
       }
       
