@@ -240,9 +240,9 @@ serve(async (req) => {
           .from('telegram_config')
           .select('*')
           .eq('user_id', user.id)
-          .single()
+          .maybeSingle()
 
-        if (error && error.code !== 'PGRST116') {
+        if (error) {
           throw error
         }
 
@@ -337,9 +337,14 @@ serve(async (req) => {
           .from('telegram_config')
           .select('*')
           .eq('user_id', user.id)
-          .single()
+          .maybeSingle()
 
-        if (configError || !config) {
+        if (configError) {
+          console.error('❌ Telegram config query error:', configError);
+          throw new Error(`Telegram not configured: ${configError.message || 'Failed to fetch config'}`)
+        }
+
+        if (!config) {
           throw new Error('Telegram not configured. Please add your bot token and chat ID.')
         }
 
@@ -404,11 +409,11 @@ serve(async (req) => {
           .from('telegram_config')
           .select('*')
           .eq('user_id', user.id)
-          .single()
+          .maybeSingle()
 
         if (configError) {
           console.error('❌ Telegram config query error:', configError);
-          throw new Error(`Telegram not configured: ${configError.message || 'No config found for this user'}`)
+          throw new Error(`Telegram not configured: ${configError.message || 'Failed to fetch config'}`)
         }
         
         if (!config) {
