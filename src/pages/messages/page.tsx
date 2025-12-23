@@ -21,6 +21,9 @@ export default function MessagesPage() {
   const [composeRecipient, setComposeRecipient] = useState('')
   const [composeSubject, setComposeSubject] = useState('')
   const [composeBody, setComposeBody] = useState('')
+  const [composeHtml, setComposeHtml] = useState('')
+  const [useHtml, setUseHtml] = useState(false)
+  const [showPreview, setShowPreview] = useState(false)
   const [isBroadcast, setIsBroadcast] = useState(false)
   const [userSearchResults, setUserSearchResults] = useState<User[]>([])
   const [searchingUsers, setSearchingUsers] = useState(false)
@@ -135,8 +138,12 @@ export default function MessagesPage() {
   }
 
   const handleSendMessage = async () => {
-    if (!composeBody.trim()) {
+    if (!useHtml && !composeBody.trim()) {
       alert('Message body is required')
+      return
+    }
+    if (useHtml && !composeHtml.trim()) {
+      alert('HTML message body is required')
       return
     }
 
@@ -158,7 +165,7 @@ export default function MessagesPage() {
         recipientId: selectedRecipient?.id,
         recipientUsername: !selectedRecipient ? composeRecipient : undefined,
         subject: composeSubject || undefined,
-        body: composeBody,
+        body: useHtml ? composeHtml : composeBody,
         isBroadcast: isAdmin && isBroadcast,
         attachments: uploadedAttachments.length > 0 ? uploadedAttachments : undefined
       })
@@ -167,6 +174,8 @@ export default function MessagesPage() {
       setComposeRecipient('')
       setComposeSubject('')
       setComposeBody('')
+      setComposeHtml('')
+      setUseHtml(false)
       setSelectedRecipient(null)
       setIsBroadcast(false)
       setUserSearchResults([])
@@ -336,14 +345,38 @@ export default function MessagesPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-medium">Message</label>
-                  <textarea
-                    value={composeBody}
-                    onChange={(e) => setComposeBody(e.target.value)}
-                    placeholder="Type your message here..."
-                    rows={10}
-                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-800 dark:border-gray-700"
-                  />
+                  <div className="flex items-center justify-between">
+                    <label className="block text-sm font-medium">Message</label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="useHtml"
+                        checked={useHtml}
+                        onChange={(e) => setUseHtml(e.target.checked)}
+                        className="w-4 h-4"
+                      />
+                      <label htmlFor="useHtml" className="text-sm text-gray-600 dark:text-gray-400">
+                        Use HTML
+                      </label>
+                    </div>
+                  </div>
+                  {useHtml ? (
+                    <textarea
+                      value={composeHtml}
+                      onChange={(e) => setComposeHtml(e.target.value)}
+                      placeholder="Enter HTML content here..."
+                      rows={12}
+                      className="w-full px-3 py-2 border rounded-lg dark:bg-gray-800 dark:border-gray-700 font-mono text-sm"
+                    />
+                  ) : (
+                    <textarea
+                      value={composeBody}
+                      onChange={(e) => setComposeBody(e.target.value)}
+                      placeholder="Type your message here..."
+                      rows={10}
+                      className="w-full px-3 py-2 border rounded-lg dark:bg-gray-800 dark:border-gray-700"
+                    />
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -371,10 +404,24 @@ export default function MessagesPage() {
                   )}
                 </div>
 
-                <Button onClick={handleSendMessage} className="w-full" disabled={uploading}>
-                  <i className="ri-send-plane-fill mr-2"></i>
-                  {uploading ? 'Sending...' : 'Send Message'}
-                </Button>
+                <div className="flex gap-3">
+                  <Button 
+                    onClick={() => setShowPreview(true)} 
+                    variant="secondary"
+                    className="flex items-center gap-2"
+                  >
+                    <i className="ri-eye-line"></i>
+                    Preview
+                  </Button>
+                  <Button 
+                    onClick={handleSendMessage} 
+                    className="flex-1" 
+                    disabled={uploading}
+                  >
+                    <i className="ri-send-plane-fill mr-2"></i>
+                    {uploading ? 'Sending...' : 'Send Message'}
+                  </Button>
+                </div>
               </div>
             ) : selectedMessage ? (
               <div className="space-y-4">
@@ -407,9 +454,16 @@ export default function MessagesPage() {
                   </div>
                 </div>
 
-                <div className="prose dark:prose-invert whitespace-pre-wrap">
-                  {selectedMessage.body}
-                </div>
+                {selectedMessage.body && selectedMessage.body.trim().startsWith('<') && selectedMessage.body.includes('>') ? (
+                  <div 
+                    className="prose max-w-none dark:prose-invert"
+                    dangerouslySetInnerHTML={{ __html: selectedMessage.body }}
+                  />
+                ) : (
+                  <div className="prose dark:prose-invert whitespace-pre-wrap">
+                    {selectedMessage.body}
+                  </div>
+                )}
 
                 {selectedMessage.attachments && (() => {
                   const atts = typeof selectedMessage.attachments === 'string' 
@@ -559,6 +613,116 @@ export default function MessagesPage() {
           </Card>
         </div>
       </div>
+
+      {/* Preview Modal */}
+      {showPreview && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-4xl max-h-[90vh] overflow-y-auto p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">Message Preview</h3>
+              <button
+                onClick={() => setShowPreview(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <i className="ri-close-line text-2xl"></i>
+              </button>
+            </div>
+            
+            {/* Preview Content */}
+            <div className="space-y-4">
+              {/* Message Headers */}
+              <div className="border-b pb-4">
+                <div className="space-y-2 text-sm">
+                  {!isBroadcast && (
+                    <div>
+                      <span className="font-medium text-gray-700 dark:text-gray-300">To:</span>{' '}
+                      <span className="text-gray-900 dark:text-gray-100">
+                        {selectedRecipient ? `${selectedRecipient.name} (${selectedRecipient.email})` : composeRecipient || '(not set)'}
+                      </span>
+                    </div>
+                  )}
+                  {isBroadcast && (
+                    <div>
+                      <span className="font-medium text-gray-700 dark:text-gray-300">To:</span>{' '}
+                      <span className="text-gray-900 dark:text-gray-100">All Users (Broadcast)</span>
+                    </div>
+                  )}
+                  {composeSubject && (
+                    <div>
+                      <span className="font-medium text-gray-700 dark:text-gray-300">Subject:</span>{' '}
+                      <span className="text-gray-900 dark:text-gray-100">{composeSubject}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Message Body Preview */}
+              <div className="border rounded-lg p-4 bg-white dark:bg-gray-800 min-h-[300px]">
+                <div className="mb-2 text-xs text-gray-500 dark:text-gray-400 font-medium">
+                  {useHtml ? 'HTML Preview:' : 'Message Preview:'}
+                </div>
+                {useHtml ? (
+                  composeHtml ? (
+                    <div
+                      className="prose max-w-none dark:prose-invert"
+                      dangerouslySetInnerHTML={{ __html: composeHtml }}
+                    />
+                  ) : (
+                    <div className="text-gray-400 italic">No HTML content to preview</div>
+                  )
+                ) : (
+                  composeBody ? (
+                    <div className="whitespace-pre-wrap text-gray-800 dark:text-gray-200">
+                      {composeBody}
+                    </div>
+                  ) : (
+                    <div className="text-gray-400 italic">No content to preview</div>
+                  )
+                )}
+              </div>
+
+              {/* Attachments Preview */}
+              {attachments.length > 0 && (
+                <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-900">
+                  <div className="mb-2 text-xs text-gray-500 dark:text-gray-400 font-medium">Attachments:</div>
+                  <div className="space-y-1">
+                    {attachments.map((file, index) => (
+                      <div key={index} className="text-sm text-gray-700 dark:text-gray-300">
+                        <i className="ri-attachment-line mr-1"></i>
+                        {file.name} ({(file.size / 1024).toFixed(2)} KB)
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-4 border-t">
+                <Button
+                  variant="secondary"
+                  onClick={() => setShowPreview(false)}
+                  className="flex-1"
+                >
+                  Close Preview
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={async () => {
+                    setShowPreview(false);
+                    // Small delay to allow modal to close
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    await handleSendMessage();
+                  }}
+                  className="flex-1"
+                >
+                  <i className="ri-send-plane-line mr-2"></i>
+                  Send Now
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }
