@@ -529,7 +529,12 @@ export default function MessagesPage() {
                     return (
                       <div 
                         className="prose max-w-none dark:prose-invert"
-                        style={{ wordBreak: 'break-word' }}
+                        style={{ 
+                          wordBreak: 'break-word',
+                          padding: '20px',
+                          backgroundColor: '#f9fafb',
+                          borderRadius: '8px'
+                        }}
                         dangerouslySetInnerHTML={{ __html: body }}
                       />
                     );
