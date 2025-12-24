@@ -32,7 +32,7 @@ interface FuturesPairShareCardProps {
 export default function FuturesPairShareCard({ pair, suggestedSettings, isOpen, onClose }: FuturesPairShareCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState(false);
-  const logoUrl = 'https://dkawxgwdqiirgmmjbvhc.supabase.co/storage/v1/object/public/profile-images/logo.png';
+  const logoUrl = 'https://dkawxgwdqiirgmmjbvhc.supabase.co/storage/v1/object/public/message-attachments/pablobots-logo.jpeg';
   const shareUrl = 'https://pablobots.com';
 
   const handleDownload = async () => {

@@ -349,7 +349,7 @@ export default function AuthPage() {
       <Card className="w-full max-w-md p-8">
         <div className="flex justify-center mb-6">
           <img 
-            src="https://dkawxgwdqiirgmmjbvhc.supabase.co/storage/v1/object/public/profile-images/logo.png" 
+            src="https://dkawxgwdqiirgmmjbvhc.supabase.co/storage/v1/object/public/message-attachments/pablobots-logo.jpeg" 
             alt="Pablo Logo" 
             className="h-16 w-16 sm:h-20 sm:w-20 object-contain"
           />
