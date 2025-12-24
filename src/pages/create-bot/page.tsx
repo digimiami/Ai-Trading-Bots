@@ -281,7 +281,11 @@ export default function CreateBotPage() {
                 // Pair-Based Win Rate Calculation
                 enable_pair_win_rate: false,
                 pair_win_rate_min_trades: 3,
-                pair_win_rate_update_frequency: 'realtime'
+                pair_win_rate_update_frequency: 'realtime',
+                // Advanced Features
+                enable_auto_rebalancing: false,
+                enable_funding_rate_filter: false,
+                enable_volatility_pause: false
               };
               setAdvancedConfig({ ...defaultConfig, ...parsedConfig } as AdvancedStrategyConfig);
             }
@@ -380,7 +384,11 @@ export default function CreateBotPage() {
           // Pair-Based Win Rate Calculation
           enable_pair_win_rate: false,
           pair_win_rate_min_trades: 3,
-          pair_win_rate_update_frequency: 'realtime'
+          pair_win_rate_update_frequency: 'realtime',
+          // Advanced Features
+          enable_auto_rebalancing: false,
+          enable_funding_rate_filter: false,
+          enable_volatility_pause: false
         }
   );
   
@@ -2270,75 +2278,120 @@ All settings have been applied to your bot configuration.`;
                     </div>
                   </div>
 
-                  {/* Advanced Features - System Level */}
+                  {/* Advanced Features */}
                   <div className="border-l-4 border-indigo-500 pl-4 mt-6">
                     <h3 className="text-md font-semibold text-gray-800 mb-3">⚙️ Advanced Features</h3>
                     <p className="text-sm text-gray-600 mb-4">
-                      System-level features that are automatically enabled and managed by the platform.
+                      Additional advanced features to enhance your trading strategy.
                     </p>
                     
                     <div className="space-y-4">
                       {/* Auto-Rebalancing (Combo) */}
                       <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-4">
-                        <div className="flex items-start gap-3">
-                          <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <i className="ri-refresh-line text-indigo-600 text-lg"></i>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-start gap-3 flex-1">
+                            <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                              <i className="ri-refresh-line text-indigo-600 text-lg"></i>
+                            </div>
+                            <div className="flex-1">
+                              <h4 className="font-semibold text-gray-900 mb-1">
+                                Auto-Rebalancing (Combo)
+                              </h4>
+                              <p className="text-xs text-gray-600">
+                                Automatically rebalances your portfolio across multiple positions to maintain optimal risk distribution.
+                              </p>
+                            </div>
                           </div>
-                          <div className="flex-1">
-                            <h4 className="font-semibold text-gray-900 mb-1">
-                              Auto-Rebalancing (Combo)
-                            </h4>
-                            <p className="text-xs text-gray-600 mb-2">
-                              Automatically rebalances your portfolio across multiple positions to maintain optimal risk distribution.
-                            </p>
-                            <p className="text-xs text-indigo-700 font-medium">
-                              <i className="ri-information-line mr-1"></i>
-                              Not configured directly in bot settings - managed automatically by the system.
-                            </p>
-                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer ml-4">
+                            <input
+                              type="checkbox"
+                              checked={advancedConfig.enable_auto_rebalancing || false}
+                              onChange={(e) => setAdvancedConfig(prev => ({ ...prev, enable_auto_rebalancing: e.target.checked } as any))}
+                              className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                          </label>
                         </div>
+                        {advancedConfig.enable_auto_rebalancing && (
+                          <div className="mt-3 p-3 bg-white rounded border border-indigo-200">
+                            <p className="text-xs text-indigo-700">
+                              <i className="ri-information-line mr-1"></i>
+                              The bot will automatically rebalance positions to maintain optimal risk distribution across your portfolio.
+                            </p>
+                          </div>
+                        )}
                       </div>
 
                       {/* Funding Rate Filter */}
                       <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-lg p-4">
-                        <div className="flex items-start gap-3">
-                          <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <i className="ri-percent-line text-blue-600 text-lg"></i>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-start gap-3 flex-1">
+                            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                              <i className="ri-percent-line text-blue-600 text-lg"></i>
+                            </div>
+                            <div className="flex-1">
+                              <h4 className="font-semibold text-gray-900 mb-1">
+                                Funding Rate Filter
+                              </h4>
+                              <p className="text-xs text-gray-600">
+                                Filters trades based on funding rates to avoid unfavorable positions during high funding cost periods.
+                              </p>
+                            </div>
                           </div>
-                          <div className="flex-1">
-                            <h4 className="font-semibold text-gray-900 mb-1">
-                              Funding Rate Filter
-                            </h4>
-                            <p className="text-xs text-gray-600 mb-2">
-                              Filters trades based on funding rates to avoid unfavorable positions during high funding cost periods.
-                            </p>
-                            <p className="text-xs text-blue-700 font-medium">
-                              <i className="ri-information-line mr-1"></i>
-                              Not configured directly in bot settings - managed automatically by the system.
-                            </p>
-                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer ml-4">
+                            <input
+                              type="checkbox"
+                              checked={advancedConfig.enable_funding_rate_filter || false}
+                              onChange={(e) => setAdvancedConfig(prev => ({ ...prev, enable_funding_rate_filter: e.target.checked } as any))}
+                              className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                          </label>
                         </div>
+                        {advancedConfig.enable_funding_rate_filter && (
+                          <div className="mt-3 p-3 bg-white rounded border border-blue-200">
+                            <p className="text-xs text-blue-700">
+                              <i className="ri-information-line mr-1"></i>
+                              The bot will filter out trades when funding rates are unfavorable, helping to reduce costs and improve profitability.
+                            </p>
+                          </div>
+                        )}
                       </div>
 
                       {/* Volatility Pause */}
                       <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-lg p-4">
-                        <div className="flex items-start gap-3">
-                          <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <i className="ri-pause-circle-line text-amber-600 text-lg"></i>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-start gap-3 flex-1">
+                            <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                              <i className="ri-pause-circle-line text-amber-600 text-lg"></i>
+                            </div>
+                            <div className="flex-1">
+                              <h4 className="font-semibold text-gray-900 mb-1">
+                                Volatility Pause
+                              </h4>
+                              <p className="text-xs text-gray-600">
+                                Automatically pauses trading during extreme volatility to protect your capital from sudden market movements.
+                              </p>
+                            </div>
                           </div>
-                          <div className="flex-1">
-                            <h4 className="font-semibold text-gray-900 mb-1">
-                              Volatility Pause
-                            </h4>
-                            <p className="text-xs text-gray-600 mb-2">
-                              Automatically pauses trading during extreme volatility to protect your capital from sudden market movements.
-                            </p>
-                            <p className="text-xs text-amber-700 font-medium">
-                              <i className="ri-information-line mr-1"></i>
-                              Not configured directly in bot settings - managed automatically by the system.
-                            </p>
-                          </div>
+                          <label className="relative inline-flex items-center cursor-pointer ml-4">
+                            <input
+                              type="checkbox"
+                              checked={advancedConfig.enable_volatility_pause || false}
+                              onChange={(e) => setAdvancedConfig(prev => ({ ...prev, enable_volatility_pause: e.target.checked } as any))}
+                              className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-amber-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-600"></div>
+                          </label>
                         </div>
+                        {advancedConfig.enable_volatility_pause && (
+                          <div className="mt-3 p-3 bg-white rounded border border-amber-200">
+                            <p className="text-xs text-amber-700">
+                              <i className="ri-information-line mr-1"></i>
+                              The bot will automatically pause trading when volatility exceeds safe thresholds, protecting your capital from sudden market movements.
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
