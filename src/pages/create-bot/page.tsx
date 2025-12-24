@@ -2270,6 +2270,79 @@ All settings have been applied to your bot configuration.`;
                     </div>
                   </div>
 
+                  {/* Advanced Features - System Level */}
+                  <div className="border-l-4 border-indigo-500 pl-4 mt-6">
+                    <h3 className="text-md font-semibold text-gray-800 mb-3">⚙️ Advanced Features</h3>
+                    <p className="text-sm text-gray-600 mb-4">
+                      System-level features that are automatically enabled and managed by the platform.
+                    </p>
+                    
+                    <div className="space-y-4">
+                      {/* Auto-Rebalancing (Combo) */}
+                      <div className="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg p-4">
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <i className="ri-refresh-line text-indigo-600 text-lg"></i>
+                          </div>
+                          <div className="flex-1">
+                            <h4 className="font-semibold text-gray-900 mb-1">
+                              Auto-Rebalancing (Combo)
+                            </h4>
+                            <p className="text-xs text-gray-600 mb-2">
+                              Automatically rebalances your portfolio across multiple positions to maintain optimal risk distribution.
+                            </p>
+                            <p className="text-xs text-indigo-700 font-medium">
+                              <i className="ri-information-line mr-1"></i>
+                              Not configured directly in bot settings - managed automatically by the system.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Funding Rate Filter */}
+                      <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-lg p-4">
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <i className="ri-percent-line text-blue-600 text-lg"></i>
+                          </div>
+                          <div className="flex-1">
+                            <h4 className="font-semibold text-gray-900 mb-1">
+                              Funding Rate Filter
+                            </h4>
+                            <p className="text-xs text-gray-600 mb-2">
+                              Filters trades based on funding rates to avoid unfavorable positions during high funding cost periods.
+                            </p>
+                            <p className="text-xs text-blue-700 font-medium">
+                              <i className="ri-information-line mr-1"></i>
+                              Not configured directly in bot settings - managed automatically by the system.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Volatility Pause */}
+                      <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-lg p-4">
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <i className="ri-pause-circle-line text-amber-600 text-lg"></i>
+                          </div>
+                          <div className="flex-1">
+                            <h4 className="font-semibold text-gray-900 mb-1">
+                              Volatility Pause
+                            </h4>
+                            <p className="text-xs text-gray-600 mb-2">
+                              Automatically pauses trading during extreme volatility to protect your capital from sudden market movements.
+                            </p>
+                            <p className="text-xs text-amber-700 font-medium">
+                              <i className="ri-information-line mr-1"></i>
+                              Not configured directly in bot settings - managed automatically by the system.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Quick Presets */}
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                     <h4 className="font-semibold text-blue-900 mb-3">⚡ Quick Presets</h4>
