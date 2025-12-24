@@ -554,7 +554,6 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string) {
       // or requires different permissions. Since orders work, we'll return a "connected" status
       // but with zero balance, indicating the API key is valid but balance fetching isn't available
       const errorText = lastError?.message || (data ? `${data.msg || data.message} (Code: ${data.code})` : 'All endpoints failed')
-      const triedEndpoints = endpointsToTry.join(', ')
       console.warn('Bitunix API Error - Account endpoint not available:', errorText)
       console.log('⚠️ Bitunix account balance endpoint not available, but API key is valid (orders work). Returning connected status with zero balance.')
       
@@ -573,24 +572,42 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string) {
     }
     
     console.log('Bitunix API Response:', JSON.stringify(data, null, 2))
+    console.log('Bitunix Response Data:', JSON.stringify(data.data, null, 2))
     
     // Parse Bitunix balance response
-    // According to docs, response format: { code: 0, msg: "success", data: [...] }
-    // Data may be array or object depending on endpoint
+    // According to docs, response format: { code: 0, msg: "success", data: {...} }
+    // The data field can be an object with account info or an array
     const responseData = data.data || {}
     
     // Handle different response formats
     let assets: any[] = []
     if (Array.isArray(responseData)) {
       assets = responseData
+      console.log('Bitunix: Response data is an array with', responseData.length, 'items')
     } else if (responseData.assets) {
       assets = responseData.assets
+      console.log('Bitunix: Found assets array with', responseData.assets.length, 'items')
     } else if (responseData.balances) {
       assets = responseData.balances
-    } else if (responseData.coin || responseData.balance !== undefined) {
-      // Single asset response
+      console.log('Bitunix: Found balances array with', responseData.balances.length, 'items')
+    } else if (responseData.marginCoin || responseData.available !== undefined || responseData.frozen !== undefined || responseData.margin !== undefined) {
+      // Single asset response - this is the futures account format
+      // Format: { marginCoin: "USDT", available: "1000", frozen: "0", margin: "10", ... }
       assets = [responseData]
+      console.log('Bitunix: Single asset response found:', responseData.marginCoin || 'unknown')
+    } else if (responseData.coin || responseData.balance !== undefined) {
+      // Single asset response (alternative format)
+      assets = [responseData]
+      console.log('Bitunix: Single asset response (alternative format)')
+    } else {
+      console.log('Bitunix: Unknown response format, attempting to parse as single object')
+      // Try to parse the entire data object as a single asset
+      if (Object.keys(responseData).length > 0) {
+        assets = [responseData]
+      }
     }
+    
+    console.log('Bitunix: Parsed assets array length:', assets.length)
     
     let totalBalance = 0
     let availableBalance = 0
@@ -603,19 +620,38 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string) {
     // available = available balance, frozen = locked in orders, margin = locked in positions
     // total = available + frozen + margin
     for (const asset of assets) {
+      console.log('Processing Bitunix asset:', JSON.stringify(asset, null, 2))
+      
       // Official Bitunix futures account response format
-      const available = parseFloat(asset.available || '0')
-      const frozen = parseFloat(asset.frozen || '0')
-      const margin = parseFloat(asset.margin || '0')
-      const total = available + frozen + margin // Total balance
+      // Also check for alternative field names
+      const available = parseFloat(asset.available || asset.availableBalance || asset.free || '0')
+      const frozen = parseFloat(asset.frozen || asset.locked || '0')
+      const margin = parseFloat(asset.margin || asset.used || '0')
+      
+      // Also check for total balance fields
+      const walletBalance = parseFloat(asset.walletBalance || asset.totalBalance || asset.balance || '0')
+      const currencyEquity = parseFloat(asset.currencyEquity || asset.equity || '0')
+      
+      // Calculate total: prefer walletBalance/currencyEquity if available, otherwise sum
+      let total = 0
+      if (walletBalance > 0) {
+        total = walletBalance
+      } else if (currencyEquity > 0) {
+        total = currencyEquity
+      } else {
+        total = available + frozen + margin // Total balance
+      }
+      
       const locked = frozen + margin // Total locked (orders + positions)
       const free = available // Available balance
       
       // Get asset symbol (marginCoin in futures account response)
-      const assetSymbol = asset.marginCoin || asset.asset || asset.coin || asset.currency || asset.symbol || ''
+      const assetSymbol = asset.marginCoin || asset.asset || asset.coin || asset.currency || asset.symbol || 'USDT'
       
-      // Only include assets with non-zero balance
-      if (total > 0 || free > 0 || locked > 0) {
+      console.log(`Bitunix asset ${assetSymbol}: available=${available}, frozen=${frozen}, margin=${margin}, total=${total}, walletBalance=${walletBalance}, currencyEquity=${currencyEquity}`)
+      
+      // Include assets with non-zero balance (check all possible fields)
+      if (total > 0 || free > 0 || locked > 0 || walletBalance > 0 || currencyEquity > 0) {
         totalBalance += total
         availableBalance += free
         lockedBalance += locked
@@ -626,12 +662,19 @@ async function fetchBitunixBalance(apiKey: string, apiSecret: string) {
           locked,
           total
         })
+        
+        console.log(`✅ Added Bitunix asset ${assetSymbol}: total=${total}, available=${free}, locked=${locked}`)
+      } else {
+        console.log(`⚠️ Skipping Bitunix asset ${assetSymbol}: all balances are zero`)
       }
     }
     
+    console.log(`Bitunix final totals: totalBalance=${totalBalance}, availableBalance=${availableBalance}, lockedBalance=${lockedBalance}, assets count=${parsedAssets.length}`)
+    
     // If no assets found but response is successful, account might be empty
     if (parsedAssets.length === 0 && data.code === 0) {
-      console.log('Bitunix account exists but has no balances')
+      console.log('⚠️ Bitunix account exists but has no balances - response was successful but no assets found')
+      console.log('Full response data:', JSON.stringify(data, null, 2))
     }
     
     return {
