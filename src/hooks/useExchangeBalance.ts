@@ -6,6 +6,7 @@ export interface ExchangeBalance {
   totalBalance: number
   availableBalance: number
   lockedBalance: number
+  unrealizedPnL?: number
   assets: Array<{
     asset: string
     free: number

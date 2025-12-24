@@ -190,19 +190,32 @@ export default function ExchangeBalanceDisplay({ balances }: ExchangeBalanceProp
                   {formatBalance(balance.totalBalance)}
                 </p>
                 {(() => {
+                  // For Bybit, show unrealized PnL if available, otherwise show today's realized PnL
+                  const isBybit = balance.exchange.toLowerCase() === 'bybit';
+                  const unrealizedPnL = balance.unrealizedPnL ?? 0;
                   const todayPnL = todayPnLByExchange[balance.exchange.toLowerCase()] || 0;
-                  if (loadingPnL) {
+                  
+                  if (isBybit && unrealizedPnL !== undefined && unrealizedPnL !== 0) {
+                    // Show unrealized PnL for Bybit
+                    return (
+                      <p className={`text-sm font-medium ${unrealizedPnL >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                        Unrealized PnL: {unrealizedPnL >= 0 ? '+' : ''}{formatBalance(unrealizedPnL)}
+                      </p>
+                    );
+                  } else if (loadingPnL) {
                     return (
                       <p className="text-sm text-gray-500 dark:text-gray-400">
                         Today PnL: Loading...
                       </p>
                     );
+                  } else {
+                    // Show today's realized PnL for other exchanges or if unrealized is 0
+                    return (
+                      <p className={`text-sm font-medium ${todayPnL >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                        Today PnL: {todayPnL >= 0 ? '+' : ''}{formatBalance(todayPnL)}
+                      </p>
+                    );
                   }
-                  return (
-                    <p className={`text-sm font-medium ${todayPnL >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                      Today PnL: {todayPnL >= 0 ? '+' : ''}{formatBalance(todayPnL)}
-                    </p>
-                  );
                 })()}
                 <p className="text-sm text-gray-500 dark:text-gray-400">
                   Available: {formatBalance(balance.availableBalance)}

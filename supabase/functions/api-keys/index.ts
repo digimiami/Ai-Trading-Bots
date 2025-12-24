@@ -175,40 +175,49 @@ async function fetchBybitBalance(apiKey: string, apiSecret: string) {
     const coins = account.coin || []
     console.log('Number of coins:', coins.length)
     
-    // Try to use total wallet balance first (more reliable)
-    if (account.totalWalletBalance && parseFloat(account.totalWalletBalance) > 0) {
-      console.log('Using totalWalletBalance:', account.totalWalletBalance)
-      
-      // Still process coins for asset breakdown
-      for (const coin of coins) {
-        const free = parseFloat(coin.free || '0')
-        const locked = parseFloat(coin.locked || '0')
-        const total = free + locked
+      // Try to use total wallet balance first (more reliable)
+      if (account.totalWalletBalance && parseFloat(account.totalWalletBalance) > 0) {
+        console.log('Using totalWalletBalance:', account.totalWalletBalance)
+        console.log('Total Equity:', account.totalEquity)
         
-        console.log(`Coin: ${coin.coin}, Free: ${free}, Locked: ${locked}, Total: ${total}`)
+        // Calculate unrealized PnL: totalEquity - totalWalletBalance
+        const totalWalletBalance = parseFloat(account.totalWalletBalance || '0')
+        const totalEquity = parseFloat(account.totalEquity || account.totalWalletBalance || '0')
+        const unrealizedPnL = totalEquity - totalWalletBalance
         
-        if (total > 0) {
-          assets.push({
-            asset: coin.coin,
-            free,
-            locked,
-            total
-          })
+        console.log('Calculated Unrealized PnL:', unrealizedPnL)
+        
+        // Still process coins for asset breakdown
+        for (const coin of coins) {
+          const free = parseFloat(coin.free || '0')
+          const locked = parseFloat(coin.locked || '0')
+          const total = free + locked
+          
+          console.log(`Coin: ${coin.coin}, Free: ${free}, Locked: ${locked}, Total: ${total}`)
+          
+          if (total > 0) {
+            assets.push({
+              asset: coin.coin,
+              free,
+              locked,
+              total
+            })
+          }
+        }
+        
+        return {
+          exchange: 'bybit',
+          totalBalance: totalWalletBalance,
+          availableBalance: parseFloat(account.totalAvailableBalance || account.totalWalletBalance || '0'),
+          lockedBalance: totalWalletBalance - parseFloat(account.totalAvailableBalance || account.totalWalletBalance || '0'),
+          unrealizedPnL: unrealizedPnL,
+          assets,
+          lastUpdated: new Date().toISOString(),
+          status: 'connected',
+          accountType: 'UNIFIED',
+          note: 'Using totalWalletBalance'
         }
       }
-      
-      return {
-        exchange: 'bybit',
-        totalBalance: parseFloat(account.totalWalletBalance),
-        availableBalance: parseFloat(account.totalWalletBalance),
-        lockedBalance: 0,
-        assets,
-        lastUpdated: new Date().toISOString(),
-        status: 'connected',
-        accountType: 'UNIFIED',
-        note: 'Using totalWalletBalance'
-      }
-    }
     
     // Fallback to coin-by-coin calculation if totalWalletBalance not available
     console.log('totalWalletBalance not available, calculating from coins...')
@@ -234,11 +243,18 @@ async function fetchBybitBalance(apiKey: string, apiSecret: string) {
     
     console.log(`Final balances - Total: ${totalBalance}, Available: ${availableBalance}, Locked: ${lockedBalance}`)
     
+    // Calculate unrealized PnL if totalEquity is available
+    const totalEquity = parseFloat(account.totalEquity || account.totalWalletBalance || '0')
+    const unrealizedPnL = totalEquity - totalBalance
+    
+    console.log('Total Equity:', totalEquity, 'Unrealized PnL:', unrealizedPnL)
+    
     return {
       exchange: 'bybit',
       totalBalance,
       availableBalance,
       lockedBalance,
+      unrealizedPnL: unrealizedPnL,
       assets,
       lastUpdated: new Date().toISOString(),
       status: 'connected'
