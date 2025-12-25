@@ -11984,20 +11984,40 @@ class PaperTradingExecutor {
       const currentBalance = parseFloat(account.balance || 0);
       
       // Calculate total unrealized PnL from all open positions (first pass to get prices)
+      // OPTIMIZATION: Fetch prices in parallel for faster execution
       const positionPrices = new Map<string, number>();
       let totalUnrealizedPnL = 0;
-      for (const position of positions) {
-        const currentPrice = await MarketDataFetcher.fetchPrice(
-          position.symbol,
-          position.exchange,
-          position.trading_type
-        );
-        if (currentPrice && currentPrice > 0) {
-          positionPrices.set(position.id, currentPrice);
+      
+      // Group positions by symbol/exchange to reduce API calls
+      const priceFetchPromises = positions.map(async (position) => {
+        try {
+          const currentPrice = await MarketDataFetcher.fetchPrice(
+            position.symbol,
+            position.exchange,
+            position.trading_type
+          );
+          if (currentPrice && currentPrice > 0) {
+            positionPrices.set(position.id, currentPrice);
+            return { positionId: position.id, price: currentPrice, position };
+          }
+          return null;
+        } catch (error) {
+          console.warn(`⚠️ Failed to fetch price for ${position.symbol}:`, error);
+          return null;
+        }
+      });
+      
+      // Wait for all price fetches in parallel (much faster than sequential)
+      const priceResults = await Promise.allSettled(priceFetchPromises);
+      
+      // Calculate total unrealized PnL from fetched prices
+      for (const result of priceResults) {
+        if (result.status === 'fulfilled' && result.value) {
+          const { position, price } = result.value;
           if (position.side === 'long') {
-            totalUnrealizedPnL += (currentPrice - parseFloat(position.entry_price)) * parseFloat(position.quantity) * position.leverage;
+            totalUnrealizedPnL += (price - parseFloat(position.entry_price)) * parseFloat(position.quantity) * position.leverage;
           } else {
-            totalUnrealizedPnL += (parseFloat(position.entry_price) - currentPrice) * parseFloat(position.quantity) * position.leverage;
+            totalUnrealizedPnL += (parseFloat(position.entry_price) - price) * parseFloat(position.quantity) * position.leverage;
           }
         }
       }
@@ -13083,7 +13103,7 @@ serve(async (req) => {
             await Promise.race([
               executor.executeBot(singleBot),
               new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Bot execution timeout after 50000ms')), 50000)
+                setTimeout(() => reject(new Error('Bot execution timeout after 60000ms')), 60000)
               )
             ]);
             const duration = Date.now() - startTime;
@@ -13283,8 +13303,8 @@ serve(async (req) => {
         // Optimized for scalability: smaller batches, faster timeouts, better distribution
         const BATCH_SIZE = 3; // Increased from 2 to 3 (better throughput while staying safe)
         const BATCH_DELAY_MS = 300; // Reduced from 500ms to 300ms (faster processing)
-        const MAX_EXECUTION_TIME_MS = 50000; // Reduced from 100s to 50s (prevent CPU timeout)
-        const PER_BOT_TIMEOUT_MS = 50000; // Increased to 50s per bot to handle API retries, position updates, paper trading operations, and bots with many positions
+        const MAX_EXECUTION_TIME_MS = 55000; // Increased to 55s to allow more bots to complete (prevent CPU timeout but allow more processing)
+        const PER_BOT_TIMEOUT_MS = 60000; // Increased to 60s per bot to handle API retries, position updates, paper trading operations, and bots with many positions
         const MAX_BOTS_PER_CYCLE = 5; // Reduced from 30 to 5 (better distribution across cycles)
         const executionStartTime = Date.now();
         const results: Array<PromiseSettledResult<any>> = [];
