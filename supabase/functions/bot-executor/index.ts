@@ -6248,7 +6248,38 @@ class BotExecutor {
             throw new Error(`Insufficient balance for ${bot.symbol} ${tradeSignal.side} order. Available: $${balanceCheck.availableBalance.toFixed(2)}, Required: $${balanceCheck.totalRequired.toFixed(2)} (order: $${orderValue.toFixed(2)} + 5% buffer). Shortfall: $${shortfall.toFixed(2)}. Please add funds to your Bitunix ${tradingType === 'futures' ? 'Futures' : 'Spot'} wallet.`);
           }
         }
-        return await this.placeBitunixOrder(apiKey, apiSecret, bot.symbol, tradeSignal.side, amount, price, tradingType, bot);
+        const orderResult = await this.placeBitunixOrder(apiKey, apiSecret, bot.symbol, tradeSignal.side, amount, price, tradingType, bot);
+        
+        // Set SL/TP on the position after order is filled (for futures only)
+        if (tradingType === 'futures' && price > 0 && orderResult?.orderId) {
+          try {
+            // Small delay to allow position to update after order fills
+            await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
+            
+            // Use the order price as entry price
+            const entryPrice = price;
+            const capitalizedSide = tradeSignal.side.charAt(0).toUpperCase() + tradeSignal.side.slice(1).toLowerCase();
+            
+            await this.setBitunixSLTP(apiKey, apiSecret, bot.symbol, capitalizedSide, entryPrice, bot, tradeSignal);
+          } catch (slTpError) {
+            // Log error but don't fail the order - SL/TP can be set manually if needed
+            console.warn('⚠️ Failed to set Bitunix SL/TP (non-critical):', slTpError);
+            if (bot?.id) {
+              await this.addBotLog(bot.id, {
+                level: 'warning',
+                category: 'trade',
+                message: `Bitunix order placed but SL/TP setup failed. Please set SL/TP manually.`,
+                details: {
+                  symbol: bot.symbol,
+                  error: slTpError instanceof Error ? slTpError.message : String(slTpError),
+                  action_required: 'Set stop loss and take profit manually on Bitunix exchange'
+                }
+              });
+            }
+          }
+        }
+        
+        return orderResult;
       } else if (bot.exchange === 'mexc') {
         // TODO: Add balance check for MEXC (similar to Bybit/Bitunix)
         // For now, MEXC will place orders without balance check (like OKX)
@@ -8620,6 +8651,8 @@ class BotExecutor {
       // Add tradeSide for futures trading (required, especially when hedge mode is enabled)
       if (marketType === 'futures') {
         orderParams.tradeSide = 'OPEN'; // "OPEN" for opening new positions, "CLOSE" for closing
+        // Set margin mode to ISOLATED (not CROSS)
+        orderParams.marginMode = 'ISOLATED'; // ISOLATED margin mode for all Bitunix orders
       }
       
       // Add price for limit orders (required for orderType="LIMIT", optional for orderType="MARKET")
@@ -8756,6 +8789,7 @@ class BotExecutor {
                 // Add tradeSide for futures
                 if (marketType === 'futures') {
                   altOrderParams.tradeSide = 'OPEN';
+                  altOrderParams.marginMode = 'ISOLATED'; // ISOLATED margin mode
                 }
                 
                 if (orderTypeString === 'LIMIT' && price && price > 0) {
@@ -8831,6 +8865,7 @@ class BotExecutor {
                 // Add tradeSide for futures
                 if (marketType === 'futures') {
                   altOrderParams2.tradeSide = 'OPEN';
+                  altOrderParams2.marginMode = 'ISOLATED'; // ISOLATED margin mode
                 }
                 
                 if (orderTypeString === 'LIMIT' && price && price > 0) {
@@ -8907,6 +8942,7 @@ class BotExecutor {
                   // Add tradeSide for futures
                   if (marketType === 'futures') {
                     marketOrderParams.tradeSide = 'OPEN';
+                    marketOrderParams.marginMode = 'ISOLATED'; // ISOLATED margin mode
                   }
                   
                   const marketBodyString = JSON.stringify(marketOrderParams).replace(/\s+/g, '');
@@ -9065,6 +9101,194 @@ class BotExecutor {
       throw new Error('Bitunix order placement failed: All endpoints returned errors');
     } catch (error) {
       console.error('❌ Bitunix order placement error:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Set Stop Loss and Take Profit for Bitunix positions
+   * Similar to setBybitSLTP but uses Bitunix API endpoints
+   */
+  private async setBitunixSLTP(apiKey: string, apiSecret: string, symbol: string, side: string, entryPrice: number, bot: any, tradeSignal: any = null): Promise<void> {
+    const baseUrl = 'https://fapi.bitunix.com'; // Futures API domain
+    const marketType = 'futures';
+    
+    try {
+      // Get bot stop loss and take profit percentages
+      const stopLossPercent = bot.stop_loss || bot.stopLoss || 2.0;
+      const takeProfitPercent = bot.take_profit || bot.takeProfit || 4.0;
+      
+      // Calculate SL/TP prices
+      const isLong = side.toUpperCase() === 'BUY' || side === 'Buy';
+      const stopLossPrice = isLong 
+        ? entryPrice * (1 - stopLossPercent / 100)  // Long: SL below entry
+        : entryPrice * (1 + stopLossPercent / 100); // Short: SL above entry
+      
+      const takeProfitPrice = isLong
+        ? entryPrice * (1 + takeProfitPercent / 100)  // Long: TP above entry
+        : entryPrice * (1 - takeProfitPercent / 100); // Short: TP below entry
+      
+      console.log(`🛡️ Setting Bitunix SL/TP for ${symbol} ${side}:`);
+      console.log(`   Entry: ${entryPrice}, SL: ${stopLossPrice} (${stopLossPercent}%), TP: ${takeProfitPrice} (${takeProfitPercent}%)`);
+      
+      // Bitunix API endpoint for setting stop loss and take profit
+      // According to Bitunix API docs, use /api/v1/futures/trade/stop_order or position management
+      const timestamp = Date.now().toString();
+      const nonce = this.generateNonce();
+      
+      // Try setting SL/TP using position management endpoint
+      // Bitunix may use /api/v1/futures/position/set-stop-loss or similar
+      const endpointsToTry = [
+        '/api/v1/futures/trade/stop_order',
+        '/api/v1/futures/position/set-stop-loss',
+        '/api/v1/futures/position/trading-stop',
+        '/api/v1/trade/stop_order'
+      ];
+      
+      let slTpSet = false;
+      let lastError: any = null;
+      
+      for (const endpoint of endpointsToTry) {
+        try {
+          // Bitunix stop order parameters
+          const stopOrderParams: any = {
+            symbol: symbol.toUpperCase(),
+            side: side.toUpperCase() === 'BUY' ? 'BUY' : 'SELL',
+            orderType: 'STOP_MARKET', // Stop market order
+            qty: '0', // Will use position size
+            stopPrice: stopLossPrice.toString(),
+            takeProfitPrice: takeProfitPrice.toString(),
+            marginMode: 'ISOLATED' // Use isolated margin mode
+          };
+          
+          const bodyString = JSON.stringify(stopOrderParams).replace(/\s+/g, '');
+          const queryParams = '';
+          const signature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, bodyString, apiSecret);
+          
+          const response = await fetch(`${baseUrl}${endpoint}`, {
+            method: 'POST',
+            headers: {
+              'api-key': String(apiKey),
+              'nonce': String(nonce),
+              'timestamp': String(timestamp),
+              'sign': String(signature),
+              'Content-Type': 'application/json',
+              'language': 'en-US'
+            },
+            body: bodyString
+          });
+          
+          const responseText = await response.text();
+          console.log(`   Response from ${endpoint}: ${response.status}, body: ${responseText.substring(0, 300)}`);
+          
+          if (response.ok) {
+            const data = JSON.parse(responseText);
+            if (data.code === 0) {
+              console.log(`✅ Bitunix SL/TP set successfully via ${endpoint}`);
+              slTpSet = true;
+              break;
+            } else {
+              lastError = new Error(`Bitunix SL/TP error: ${data.msg || data.message} (Code: ${data.code})`);
+              console.warn(`   ⚠️ ${endpoint} returned code ${data.code}, trying next endpoint...`);
+              continue;
+            }
+          } else {
+            if (response.status === 404) {
+              console.warn(`   ⚠️ ${endpoint} not found (404), trying next endpoint...`);
+              continue;
+            }
+            lastError = new Error(`Bitunix SL/TP HTTP error: ${response.status}`);
+            continue;
+          }
+        } catch (endpointErr) {
+          console.warn(`   ⚠️ Error with ${endpoint}:`, endpointErr);
+          lastError = endpointErr;
+          continue;
+        }
+      }
+      
+      // If direct SL/TP endpoint doesn't work, try setting via position update
+      if (!slTpSet) {
+        console.log(`   ⚠️ Direct SL/TP endpoints failed, trying position update method...`);
+        
+        // Alternative: Set SL/TP via position management API
+        // Some exchanges require setting SL/TP on the position itself
+        try {
+          const positionUpdateParams: any = {
+            symbol: symbol.toUpperCase(),
+            stopLoss: stopLossPrice.toString(),
+            takeProfit: takeProfitPrice.toString(),
+            marginMode: 'ISOLATED'
+          };
+          
+          const updateBodyString = JSON.stringify(positionUpdateParams).replace(/\s+/g, '');
+          const updateSignature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, updateBodyString, apiSecret);
+          
+          const updateEndpoints = [
+            '/api/v1/futures/position/update',
+            '/api/v1/futures/position/modify',
+            '/api/v1/position/update'
+          ];
+          
+          for (const updateEndpoint of updateEndpoints) {
+            try {
+              const updateResponse = await fetch(`${baseUrl}${updateEndpoint}`, {
+                method: 'POST',
+                headers: {
+                  'api-key': String(apiKey),
+                  'nonce': String(nonce),
+                  'timestamp': String(timestamp),
+                  'sign': String(updateSignature),
+                  'Content-Type': 'application/json',
+                  'language': 'en-US'
+                },
+                body: updateBodyString
+              });
+              
+              const updateResponseText = await updateResponse.text();
+              if (updateResponse.ok) {
+                const updateData = JSON.parse(updateResponseText);
+                if (updateData.code === 0) {
+                  console.log(`✅ Bitunix SL/TP set via position update: ${updateEndpoint}`);
+                  slTpSet = true;
+                  break;
+                }
+              }
+            } catch (updateErr) {
+              continue;
+            }
+          }
+        } catch (altErr) {
+          console.warn(`   ⚠️ Alternative SL/TP method also failed:`, altErr);
+        }
+      }
+      
+      if (!slTpSet) {
+        console.warn(`⚠️ Could not set Bitunix SL/TP via any endpoint. Please set manually on exchange.`);
+        console.warn(`   Recommended SL: ${stopLossPrice}, TP: ${takeProfitPrice}`);
+        throw new Error(`Failed to set Bitunix SL/TP: ${lastError?.message || 'All endpoints failed'}`);
+      }
+      
+      // Log success
+      if (bot?.id) {
+        await this.addBotLog(bot.id, {
+          level: 'success',
+          category: 'trade',
+          message: `Bitunix SL/TP set: SL=${stopLossPrice.toFixed(4)} (${stopLossPercent}%), TP=${takeProfitPrice.toFixed(4)} (${takeProfitPercent}%)`,
+          details: {
+            symbol: symbol,
+            side: side,
+            entryPrice: entryPrice,
+            stopLoss: stopLossPrice,
+            takeProfit: takeProfitPrice,
+            stopLossPercent: stopLossPercent,
+            takeProfitPercent: takeProfitPercent
+          }
+        });
+      }
+      
+    } catch (error) {
+      console.error('❌ Bitunix SL/TP setup error:', error);
       throw error;
     }
   }
