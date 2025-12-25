@@ -668,6 +668,9 @@ class MarketDataFetcher {
     marketType: ''
   };
   
+  // Promise-based lock to prevent concurrent cache fetches (prevents race conditions)
+  private static cacheFetchLocks: Map<string, Promise<any[] | null>> = new Map();
+  
   private static readonly CACHE_TTL_MS = 300000; // Cache for 5 minutes (increased from 5s to reduce egress - ticker lists don't change frequently)
   
   // Helper function to get cached tickers or fetch new ones
@@ -683,64 +686,82 @@ class MarketDataFetcher {
       return this.tickersCache.data;
     }
     
-    // Cache expired or missing - fetch new data
+    // Check if there's already a fetch in progress for this cache key (prevent race conditions)
+    const existingLock = this.cacheFetchLocks.get(cacheKey);
+    if (existingLock) {
+      console.log(`⏳ Waiting for existing cache fetch for ${cacheKey}...`);
+      return await existingLock;
+    }
+    
+    // Cache expired or missing - fetch new data (with lock to prevent concurrent fetches)
     console.log(`🔄 Cache expired or missing, fetching fresh tickers data...`);
     
-    try {
-      const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
-      if (supabaseUrl && category === 'linear') {
-        // Use futures-pairs proxy for linear category
-        const futuresPairsUrl = `${supabaseUrl}/functions/v1/futures-pairs?action=tickers&exchange=${exchange}`;
-        const futuresPairsResponse = await fetch(futuresPairsUrl, {
+    const fetchPromise = (async () => {
+      try {
+        const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
+        if (supabaseUrl && category === 'linear') {
+          // Use futures-pairs proxy for linear category
+          const futuresPairsUrl = `${supabaseUrl}/functions/v1/futures-pairs?action=tickers&exchange=${exchange}`;
+          const futuresPairsResponse = await fetch(futuresPairsUrl, {
+            signal: AbortSignal.timeout(10000)
+          });
+          
+          if (futuresPairsResponse.ok) {
+            const futuresPairsData = await futuresPairsResponse.json();
+            
+            if (futuresPairsData.retCode === 0 && futuresPairsData.result?.list) {
+              // Update cache
+              this.tickersCache = {
+                data: futuresPairsData.result.list,
+                timestamp: now,
+                category: cacheKey
+              };
+              console.log(`✅ Cached ${futuresPairsData.result.list.length} tickers for ${cacheKey}`);
+              return futuresPairsData.result.list;
+            }
+          }
+        }
+        
+        // Fallback: Direct API call
+        const allTickersUrl = `https://api.bybit.com/v5/market/tickers?category=${category}`;
+        const allTickersResponse = await fetch(allTickersUrl, {
           signal: AbortSignal.timeout(10000)
         });
         
-        if (futuresPairsResponse.ok) {
-          const futuresPairsData = await futuresPairsResponse.json();
+        if (allTickersResponse.ok) {
+          const allTickersData = await allTickersResponse.json();
           
-          if (futuresPairsData.retCode === 0 && futuresPairsData.result?.list) {
+          if (allTickersData.retCode === 0 && allTickersData.result?.list) {
             // Update cache
             this.tickersCache = {
-              data: futuresPairsData.result.list,
+              data: allTickersData.result.list,
               timestamp: now,
               category: cacheKey
             };
-            console.log(`✅ Cached ${futuresPairsData.result.list.length} tickers for ${cacheKey}`);
-            return futuresPairsData.result.list;
+            console.log(`✅ Cached ${allTickersData.result.list.length} tickers for ${cacheKey} (direct API)`);
+            return allTickersData.result.list;
           }
         }
-      }
-      
-      // Fallback: Direct API call
-      const allTickersUrl = `https://api.bybit.com/v5/market/tickers?category=${category}`;
-      const allTickersResponse = await fetch(allTickersUrl, {
-        signal: AbortSignal.timeout(10000)
-      });
-      
-      if (allTickersResponse.ok) {
-        const allTickersData = await allTickersResponse.json();
         
-        if (allTickersData.retCode === 0 && allTickersData.result?.list) {
-          // Update cache
-          this.tickersCache = {
-            data: allTickersData.result.list,
-            timestamp: now,
-            category: cacheKey
-          };
-          console.log(`✅ Cached ${allTickersData.result.list.length} tickers for ${cacheKey} (direct API)`);
-          return allTickersData.result.list;
+        return null;
+      } catch (error) {
+        console.warn(`⚠️ Failed to fetch tickers for cache:`, error);
+        // Return cached data even if expired (better than nothing)
+        if (this.tickersCache.data) {
+          console.log(`📦 Using expired cache as fallback`);
+          return this.tickersCache.data;
         }
+        return null;
+      } finally {
+        // Remove lock when done (success or failure)
+        this.cacheFetchLocks.delete(cacheKey);
       }
-    } catch (error) {
-      console.warn(`⚠️ Failed to fetch tickers for cache:`, error);
-      // Return cached data even if expired (better than nothing)
-      if (this.tickersCache.data) {
-        console.log(`📦 Using expired cache as fallback`);
-        return this.tickersCache.data;
-      }
-    }
+    })();
     
-    return null;
+    // Store the promise as a lock
+    this.cacheFetchLocks.set(cacheKey, fetchPromise);
+    
+    return await fetchPromise;
   }
   
   // Helper function to normalize symbol formats (e.g., 1000PEPEUSDT <-> PEPEUSDT, 10000SATSUSDT <-> SATSUSDT)
@@ -11984,11 +12005,30 @@ class PaperTradingExecutor {
       const currentBalance = parseFloat(account.balance || 0);
       
       // Calculate total unrealized PnL from all open positions (first pass to get prices)
-      // OPTIMIZATION: Fetch prices in parallel for faster execution
+      // OPTIMIZATION: Pre-warm ticker cache to prevent race conditions when fetching prices in parallel
+      const uniqueExchangeCategories = new Set<string>();
+      for (const position of positions) {
+        const category = position.trading_type === 'futures' ? 'linear' : 'spot';
+        const cacheKey = `${position.exchange}-${category}`;
+        uniqueExchangeCategories.add(cacheKey);
+      }
+      
+      // Pre-fetch tickers for all unique exchange/category combinations (prevents race conditions)
+      const cacheWarmPromises = Array.from(uniqueExchangeCategories).map(async (cacheKey) => {
+        const [exchange, category] = cacheKey.split('-');
+        try {
+          // This will fetch and cache tickers if needed, or use existing cache
+          await MarketDataFetcher.fetchPrice('BTCUSDT', exchange, category === 'linear' ? 'futures' : 'spot');
+        } catch (error) {
+          console.warn(`⚠️ Failed to warm cache for ${cacheKey}:`, error);
+        }
+      });
+      await Promise.allSettled(cacheWarmPromises);
+      
+      // Now fetch prices in parallel (cache is already warmed, so no race conditions)
       const positionPrices = new Map<string, number>();
       let totalUnrealizedPnL = 0;
       
-      // Group positions by symbol/exchange to reduce API calls
       const priceFetchPromises = positions.map(async (position) => {
         try {
           const currentPrice = await MarketDataFetcher.fetchPrice(
@@ -12007,7 +12047,7 @@ class PaperTradingExecutor {
         }
       });
       
-      // Wait for all price fetches in parallel (much faster than sequential)
+      // Wait for all price fetches in parallel (cache is pre-warmed, so this is fast)
       const priceResults = await Promise.allSettled(priceFetchPromises);
       
       // Calculate total unrealized PnL from fetched prices
