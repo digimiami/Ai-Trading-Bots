@@ -345,6 +345,94 @@ serve(async (req) => {
             }
           }
         }
+      },
+      {
+        name: 'check_bot_positions',
+        description: 'Check open positions for a bot on the exchange. Use this when user asks about positions, open trades, current holdings, or what positions are open.',
+        parameters: {
+          type: 'object',
+          properties: {
+            botId: {
+              type: 'string',
+              description: 'ID of the bot to check positions for'
+            }
+          },
+          required: ['botId']
+        }
+      },
+      {
+        name: 'close_bot_position',
+        description: 'Close an open position for a bot on the exchange. Use this when user asks to close a position, exit a trade, or manually close a trade.',
+        parameters: {
+          type: 'object',
+          properties: {
+            botId: {
+              type: 'string',
+              description: 'ID of the bot whose position should be closed'
+            },
+            tradeId: {
+              type: 'string',
+              description: 'ID of the specific trade/position to close (optional, will close all open positions for bot if not provided)'
+            }
+          },
+          required: ['botId']
+        }
+      },
+      {
+        name: 'get_bot_logs',
+        description: 'Get detailed activity logs for a bot. Use this when user asks about bot logs, execution history, what the bot has been doing, or recent bot activity.',
+        parameters: {
+          type: 'object',
+          properties: {
+            botId: {
+              type: 'string',
+              description: 'ID of the bot to get logs for'
+            },
+            limit: {
+              type: 'number',
+              description: 'Number of logs to retrieve (default: 50, max: 200)'
+            }
+          },
+          required: ['botId']
+        }
+      },
+      {
+        name: 'check_exchange_balance',
+        description: 'Check the current balance on an exchange for a bot. Use this when user asks about balance, available funds, account status, or how much money is available.',
+        parameters: {
+          type: 'object',
+          properties: {
+            botId: {
+              type: 'string',
+              description: 'ID of the bot to check balance for'
+            }
+          },
+          required: ['botId']
+        }
+      },
+      {
+        name: 'get_market_data',
+        description: 'Get real-time market data (price, RSI, ADX) for a trading pair. Use this when user asks about current price, market conditions, or technical indicators.',
+        parameters: {
+          type: 'object',
+          properties: {
+            symbol: {
+              type: 'string',
+              description: 'Trading pair symbol (e.g., BTCUSDT, ETHUSDT)'
+            },
+            exchange: {
+              type: 'string',
+              enum: ['bybit', 'okx', 'bitunix', 'mexc'],
+              description: 'Exchange to get data from (default: bybit)'
+            },
+            tradingType: {
+              type: 'string',
+              enum: ['spot', 'futures'],
+              description: 'Trading type (default: futures)'
+            }
+          },
+          required: ['symbol']
+        }
       }
     ];
 
@@ -547,6 +635,21 @@ IMPORTANT GUIDELINES:
           } else if (functionName === 'update_user_settings') {
             result = await executeUpdateUserSettings(supabaseServiceClient, user.id, functionArgs);
             actions.push({ type: 'update_user_settings', result });
+          } else if (functionName === 'check_bot_positions') {
+            result = await executeCheckBotPositions(supabaseServiceClient, user.id, functionArgs.botId);
+            actions.push({ type: 'check_bot_positions', result });
+          } else if (functionName === 'close_bot_position') {
+            result = await executeCloseBotPosition(supabaseServiceClient, user.id, functionArgs);
+            actions.push({ type: 'close_bot_position', result });
+          } else if (functionName === 'get_bot_logs') {
+            result = await executeGetBotLogs(supabaseServiceClient, user.id, functionArgs.botId, functionArgs.limit);
+            actions.push({ type: 'get_bot_logs', result });
+          } else if (functionName === 'check_exchange_balance') {
+            result = await executeCheckExchangeBalance(supabaseServiceClient, user.id, functionArgs.botId);
+            actions.push({ type: 'check_exchange_balance', result });
+          } else if (functionName === 'get_market_data') {
+            result = await executeGetMarketData(functionArgs.symbol, functionArgs.exchange, functionArgs.tradingType);
+            actions.push({ type: 'get_market_data', result });
           } else {
             result = { success: false, error: `Unknown function: ${functionName}` };
           }
@@ -1237,6 +1340,337 @@ async function executeUpdateUserSettings(supabaseClient: any, userId: string, pa
   } catch (error: any) {
     console.error('Error in executeUpdateUserSettings:', error);
     return { success: false, error: error.message || 'Failed to update user settings' };
+  }
+}
+
+// Check bot positions on exchange
+async function executeCheckBotPositions(supabaseClient: any, userId: string, botId: string) {
+  try {
+    // Verify bot belongs to user
+    const { data: bot, error: botError } = await supabaseClient
+      .from('trading_bots')
+      .select('id, name, exchange, trading_type, symbol, user_id, paper_trading')
+      .eq('id', botId)
+      .eq('user_id', userId)
+      .single();
+
+    if (botError || !bot) {
+      return { success: false, error: 'Bot not found or access denied' };
+    }
+
+    // For paper trading, check paper_trading_positions table
+    if (bot.paper_trading) {
+      const { data: positions, error: posError } = await supabaseClient
+        .from('paper_trading_positions')
+        .select('*')
+        .eq('bot_id', botId)
+        .eq('user_id', userId)
+        .eq('status', 'open');
+
+      if (posError) {
+        return { success: false, error: posError.message || 'Failed to fetch paper positions' };
+      }
+
+      return {
+        success: true,
+        positions: positions || [],
+        count: positions?.length || 0,
+        type: 'paper'
+      };
+    }
+
+    // For real trading, check trades table for open positions
+    const { data: openTrades, error: tradesError } = await supabaseClient
+      .from('trades')
+      .select('*')
+      .eq('bot_id', botId)
+      .eq('user_id', userId)
+      .in('status', ['open', 'pending', 'filled'])
+      .order('created_at', { ascending: false });
+
+    if (tradesError) {
+      return { success: false, error: tradesError.message || 'Failed to fetch positions' };
+    }
+
+    return {
+      success: true,
+      positions: openTrades || [],
+      count: openTrades?.length || 0,
+      type: 'real'
+    };
+  } catch (error: any) {
+    console.error('Error in executeCheckBotPositions:', error);
+    return { success: false, error: error.message || 'Failed to check bot positions' };
+  }
+}
+
+// Close bot position
+async function executeCloseBotPosition(supabaseClient: any, userId: string, params: any) {
+  try {
+    const { botId, tradeId } = params;
+
+    // Verify bot belongs to user
+    const { data: bot, error: botError } = await supabaseClient
+      .from('trading_bots')
+      .select('id, name, exchange, trading_type, symbol, user_id, paper_trading')
+      .eq('id', botId)
+      .eq('user_id', userId)
+      .single();
+
+    if (botError || !bot) {
+      return { success: false, error: 'Bot not found or access denied' };
+    }
+
+    // If tradeId is provided, close that specific trade
+    if (tradeId) {
+      const { data: trade, error: tradeError } = await supabaseClient
+        .from('trades')
+        .select('*')
+        .eq('id', tradeId)
+        .eq('bot_id', botId)
+        .eq('user_id', userId)
+        .single();
+
+      if (tradeError || !trade) {
+        return { success: false, error: 'Trade not found or access denied' };
+      }
+
+      // Call risk-management function to close position
+      const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+      const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+      const riskManagementUrl = `${supabaseUrl}/functions/v1/risk-management`;
+
+      const closeResponse = await fetch(riskManagementUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${serviceRoleKey}`,
+          'apikey': serviceRoleKey
+        },
+        body: JSON.stringify({
+          action: 'close-position',
+          tradeId: tradeId,
+          reason: 'Closed via AI Assistant'
+        })
+      });
+
+      if (!closeResponse.ok) {
+        const errorData = await closeResponse.json().catch(() => ({}));
+        return { success: false, error: errorData.error || 'Failed to close position' };
+      }
+
+      const closeData = await closeResponse.json();
+      return {
+        success: true,
+        message: 'Position closed successfully',
+        tradeId: tradeId,
+        details: closeData
+      };
+    }
+
+    // If no tradeId, close all open positions for the bot
+    const { data: openTrades, error: tradesError } = await supabaseClient
+      .from('trades')
+      .select('id')
+      .eq('bot_id', botId)
+      .eq('user_id', userId)
+      .in('status', ['open', 'pending', 'filled']);
+
+    if (tradesError) {
+      return { success: false, error: tradesError.message || 'Failed to fetch open trades' };
+    }
+
+    if (!openTrades || openTrades.length === 0) {
+      return { success: true, message: 'No open positions to close', closed: 0 };
+    }
+
+    // Close all open positions
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const riskManagementUrl = `${supabaseUrl}/functions/v1/risk-management`;
+
+    const closeResults = [];
+    for (const trade of openTrades) {
+      try {
+        const closeResponse = await fetch(riskManagementUrl, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${serviceRoleKey}`,
+            'apikey': serviceRoleKey
+          },
+          body: JSON.stringify({
+            action: 'close-position',
+            tradeId: trade.id,
+            reason: 'Closed via AI Assistant (bulk close)'
+          })
+        });
+
+        if (closeResponse.ok) {
+          closeResults.push({ tradeId: trade.id, success: true });
+        } else {
+          closeResults.push({ tradeId: trade.id, success: false });
+        }
+      } catch (err) {
+        closeResults.push({ tradeId: trade.id, success: false, error: err.message });
+      }
+    }
+
+    const successCount = closeResults.filter(r => r.success).length;
+    return {
+      success: successCount > 0,
+      message: `Closed ${successCount} of ${openTrades.length} positions`,
+      closed: successCount,
+      total: openTrades.length,
+      results: closeResults
+    };
+  } catch (error: any) {
+    console.error('Error in executeCloseBotPosition:', error);
+    return { success: false, error: error.message || 'Failed to close position' };
+  }
+}
+
+// Get bot logs
+async function executeGetBotLogs(supabaseClient: any, userId: string, botId: string, limit: number = 50) {
+  try {
+    // Verify bot belongs to user
+    const { data: bot, error: botError } = await supabaseClient
+      .from('trading_bots')
+      .select('id, name, user_id')
+      .eq('id', botId)
+      .eq('user_id', userId)
+      .single();
+
+    if (botError || !bot) {
+      return { success: false, error: 'Bot not found or access denied' };
+    }
+
+    // Fetch bot activity logs
+    const maxLimit = Math.min(limit || 50, 200); // Cap at 200
+    const { data: logs, error: logsError } = await supabaseClient
+      .from('bot_activity_logs')
+      .select('*')
+      .eq('bot_id', botId)
+      .order('timestamp', { ascending: false })
+      .limit(maxLimit);
+
+    if (logsError) {
+      return { success: false, error: logsError.message || 'Failed to fetch bot logs' };
+    }
+
+    return {
+      success: true,
+      logs: logs || [],
+      count: logs?.length || 0,
+      botName: bot.name
+    };
+  } catch (error: any) {
+    console.error('Error in executeGetBotLogs:', error);
+    return { success: false, error: error.message || 'Failed to get bot logs' };
+  }
+}
+
+// Check exchange balance
+async function executeCheckExchangeBalance(supabaseClient: any, userId: string, botId: string) {
+  try {
+    // Verify bot belongs to user
+    const { data: bot, error: botError } = await supabaseClient
+      .from('trading_bots')
+      .select('id, name, exchange, user_id, paper_trading')
+      .eq('id', botId)
+      .eq('user_id', userId)
+      .single();
+
+    if (botError || !bot) {
+      return { success: false, error: 'Bot not found or access denied' };
+    }
+
+    // For paper trading, check paper account balance
+    if (bot.paper_trading) {
+      const { data: account, error: accountError } = await supabaseClient
+        .from('paper_trading_accounts')
+        .select('balance, equity')
+        .eq('user_id', userId)
+        .single();
+
+      if (accountError) {
+        return { success: false, error: accountError.message || 'Failed to fetch paper account balance' };
+      }
+
+      return {
+        success: true,
+        balance: parseFloat(account.balance || 0),
+        equity: parseFloat(account.equity || account.balance || 0),
+        type: 'paper',
+        exchange: bot.exchange
+      };
+    }
+
+    // For real trading, we need to call bot-executor to get balance from exchange
+    // First, get API keys
+    const { data: apiKeys, error: apiError } = await supabaseClient
+      .from('api_keys')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('exchange', bot.exchange)
+      .single();
+
+    if (apiError || !apiKeys) {
+      return { 
+        success: false, 
+        error: `API keys not configured for ${bot.exchange}. Please configure API keys in settings.` 
+      };
+    }
+
+    // Call bot-executor to check balance (we'll need to implement this endpoint or use existing logic)
+    // For now, return a message that balance check requires API access
+    return {
+      success: true,
+      message: 'Balance check requires direct exchange API access',
+      exchange: bot.exchange,
+      apiKeysConfigured: true,
+      note: 'Real-time balance can be checked via the exchange directly or through the bot-executor function'
+    };
+  } catch (error: any) {
+    console.error('Error in executeCheckExchangeBalance:', error);
+    return { success: false, error: error.message || 'Failed to check exchange balance' };
+  }
+}
+
+// Get market data
+async function executeGetMarketData(symbol: string, exchange: string = 'bybit', tradingType: string = 'futures') {
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const botExecutorUrl = `${supabaseUrl}/functions/v1/bot-executor?action=market-data&symbol=${symbol}&exchange=${exchange}&tradingType=${tradingType}`;
+
+    const response = await fetch(botExecutorUrl, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      return { success: false, error: errorData.error || 'Failed to fetch market data' };
+    }
+
+    const data = await response.json();
+    return {
+      success: true,
+      marketData: {
+        symbol: data.symbol || symbol,
+        exchange: data.exchange || exchange,
+        tradingType: data.tradingType || tradingType,
+        price: data.price,
+        rsi: data.rsi,
+        adx: data.adx,
+        timestamp: data.timestamp
+      }
+    };
+  } catch (error: any) {
+    console.error('Error in executeGetMarketData:', error);
+    return { success: false, error: error.message || 'Failed to get market data' };
   }
 }
 
