@@ -526,105 +526,227 @@ serve(async (req) => {
                   throw decryptError;
                 }
                 
-                // Use the SAME method as api-keys function (which works correctly for dashboard)
-                const baseUrl = apiKeys.is_testnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com';
-                
-                const timestamp = Date.now().toString();
-                const recvWindow = '5000';
-                
-                // Create signature using the SAME method as api-keys function
-                const createSignature = async (payload: string, secret: string): Promise<string> => {
-                  const encoder = new TextEncoder();
-                  const keyData = encoder.encode(secret);
-                  const messageData = encoder.encode(payload);
-                  const cryptoKey = await crypto.subtle.importKey(
-                    'raw',
-                    keyData,
-                    { name: 'HMAC', hash: 'SHA-256' },
-                    false,
-                    ['sign']
-                  );
-                  const signature = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
-                  const hashArray = Array.from(new Uint8Array(signature));
-                  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-                };
-                
-                // Use UNIFIED account type (same as dashboard)
-                const params = {
-                  api_key: decryptedApiKey, // Use DECRYPTED key
-                  accountType: 'UNIFIED',
-                  recv_window: recvWindow,
-                  timestamp: timestamp
-                };
-                
-                // Sort parameters alphabetically (same as api-keys)
-                const sortedParams = Object.keys(params)
-                  .sort()
-                  .map(key => `${key}=${params[key]}`)
-                  .join('&');
-                
-                // Create signature string (same as api-keys)
-                const signatureString = timestamp + decryptedApiKey + recvWindow + sortedParams; // Use DECRYPTED key
-                const signature = await createSignature(signatureString, decryptedApiSecret); // Use DECRYPTED secret
-                
-                const finalUrl = `${baseUrl}/v5/account/wallet-balance?${sortedParams}`;
-                
-                try {
-                  console.log(`🔍 Fetching balance from: ${finalUrl}`);
-                  const response = await fetch(finalUrl, {
-                    method: 'GET',
-                    headers: {
-                      'X-BAPI-API-KEY': decryptedApiKey, // Use DECRYPTED key
-                      'X-BAPI-SIGN': signature,
-                      'X-BAPI-TIMESTAMP': timestamp,
-                      'X-BAPI-RECV-WINDOW': recvWindow,
-                      'Content-Type': 'application/json',
-                    }
-                  });
+                if (exchange === 'bitunix') {
+                  // Bitunix balance fetching
+                  const marketType = tradingType === 'futures' || tradingType === 'linear' ? 'futures' : 'spot';
+                  const baseUrls = marketType === 'futures'
+                    ? ['https://fapi.bitunix.com']
+                    : ['https://api.bitunix.com'];
                   
-                  if (!response.ok) {
-                    const errorText = await response.text();
-                    console.error(`❌ Bybit API HTTP Error: ${response.status}`, errorText);
-                    balanceFetchError = `HTTP ${response.status}: ${errorText.substring(0, 100)}`;
-                  } else {
-                    const data = await response.json();
-                    console.log(`📊 Bybit API Response:`, JSON.stringify(data, null, 2));
-                    
-                    if (data.retCode !== 0) {
-                      console.error(`❌ Bybit API Error: ${data.retCode} - ${data.retMsg}`);
-                      balanceFetchError = `API Error ${data.retCode}: ${data.retMsg}`;
-                    } else if (data.result?.list?.[0]) {
-                      const account = data.result.list[0];
-                      console.log(`📊 Account data:`, JSON.stringify(account, null, 2));
-                      
-                      // Use totalWalletBalance (same as dashboard) - this is what shows $784.02
-                      if (account.totalWalletBalance && parseFloat(account.totalWalletBalance) > 0) {
-                        accountBalance = parseFloat(account.totalWalletBalance);
-                        console.log(`✅ Found available balance: $${accountBalance.toFixed(2)}`);
-                      } else {
-                        // Fallback: calculate from coins
-                        const coins = account.coin || [];
-                        let calculatedBalance = 0;
-                        for (const coin of coins) {
-                          const free = parseFloat(coin.free || '0');
-                          calculatedBalance += free;
+                  const timestamp = Date.now().toString();
+                  const nonce = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+                  
+                  // Bitunix signature function (double SHA256)
+                  const createBitunixSignature = async (nonce: string, timestamp: string, apiKey: string, queryParams: string, body: string, secretKey: string): Promise<string> => {
+                    const encoder = new TextEncoder();
+                    // digest = SHA256(nonce + timestamp + api-key + queryParams + body)
+                    const digestPayload = nonce + timestamp + apiKey + queryParams + body;
+                    const digestData = encoder.encode(digestPayload);
+                    const digestHash = await crypto.subtle.digest('SHA-256', digestData);
+                    // sign = SHA256(digest + secretKey)
+                    const signPayload = Array.from(new Uint8Array(digestHash)).map(b => b.toString(16).padStart(2, '0')).join('') + secretKey;
+                    const signData = encoder.encode(signPayload);
+                    const signHash = await crypto.subtle.digest('SHA-256', signData);
+                    return Array.from(new Uint8Array(signHash)).map(b => b.toString(16).padStart(2, '0')).join('');
+                  };
+                  
+                  // Try account balance endpoints
+                  const endpointsToTry = marketType === 'futures'
+                    ? [
+                        { path: '/api/v1/futures/account', params: 'marginCoin=USDT' },
+                        { path: '/api/v1/account', params: '' },
+                        { path: '/api/v1/account/balance', params: '' },
+                      ]
+                    : [
+                        { path: '/api/v1/spot/account', params: '' },
+                        { path: '/api/v1/account', params: '' },
+                        { path: '/api/v1/account/balance', params: '' },
+                      ];
+                  
+                  let balanceFetched = false;
+                  for (const baseUrl of baseUrls) {
+                    for (const endpoint of endpointsToTry) {
+                      try {
+                        const queryParams = endpoint.params;
+                        const body = '';
+                        const signature = await createBitunixSignature(nonce, timestamp, decryptedApiKey, queryParams, body, decryptedApiSecret);
+                        
+                        const url = queryParams ? `${baseUrl}${endpoint.path}?${queryParams}` : `${baseUrl}${endpoint.path}`;
+                        const response = await fetch(url, {
+                          method: 'GET',
+                          headers: {
+                            'api-key': decryptedApiKey,
+                            'nonce': nonce,
+                            'timestamp': timestamp,
+                            'sign': signature,
+                            'Content-Type': 'application/json'
+                          }
+                        });
+                        
+                        if (response.ok) {
+                          const data = await response.json();
+                          if (data && data.code === 0) {
+                            const responseData = data.data || {};
+                            let assets: any[] = [];
+                            
+                            if (Array.isArray(responseData)) {
+                              assets = responseData;
+                            } else if (responseData.assets) {
+                              assets = responseData.assets;
+                            } else if (responseData.balances) {
+                              assets = responseData.balances;
+                            } else if (responseData.coin || responseData.balance !== undefined) {
+                              assets = [responseData];
+                            }
+                            
+                            // Calculate total balance
+                            if (marketType === 'futures') {
+                              // For futures, sum total equity
+                              let totalEquity = 0;
+                              for (const asset of assets) {
+                                const equity = parseFloat(
+                                  asset.totalEquity ||
+                                  asset.equity ||
+                                  asset.balance ||
+                                  asset.total ||
+                                  '0'
+                                );
+                                totalEquity += equity;
+                              }
+                              accountBalance = totalEquity;
+                              console.log(`✅ Bitunix Futures balance: $${accountBalance.toFixed(2)}`);
+                            } else {
+                              // For spot, find USDT balance
+                              const usdtAsset = assets.find((a: any) => {
+                                const assetSymbol = (a.asset || a.coin || a.currency || '').toUpperCase();
+                                return assetSymbol === 'USDT';
+                              });
+                              accountBalance = usdtAsset ? parseFloat(
+                                usdtAsset.available ||
+                                usdtAsset.free ||
+                                usdtAsset.balance ||
+                                '0'
+                              ) : 0;
+                              console.log(`✅ Bitunix Spot balance: $${accountBalance.toFixed(2)}`);
+                            }
+                            balanceFetched = true;
+                            break;
+                          }
                         }
-                        if (calculatedBalance > 0) {
-                          accountBalance = calculatedBalance;
-                          console.log(`✅ Calculated balance from coins: $${accountBalance.toFixed(2)}`);
-                        } else {
-                          console.warn(`⚠️ No balance found in account data`);
-                          balanceFetchError = 'No balance data in account';
-                        }
+                      } catch (err: any) {
+                        console.warn(`⚠️ Bitunix balance fetch error for ${baseUrl}${endpoint.path}:`, err.message);
+                        continue;
                       }
-                    } else {
-                      console.warn(`⚠️ No account data in response`);
-                      balanceFetchError = 'No account data found';
                     }
+                    if (balanceFetched) break;
                   }
-                } catch (fetchError: any) {
-                  console.error(`❌ Failed to fetch balance:`, fetchError);
-                  balanceFetchError = fetchError?.message || String(fetchError);
+                  
+                  if (!balanceFetched) {
+                    balanceFetchError = 'Failed to fetch Bitunix balance from all endpoints';
+                    console.warn(`⚠️ ${balanceFetchError}`);
+                  }
+                } else {
+                  // Bybit balance fetching (existing code)
+                  // Use the SAME method as api-keys function (which works correctly for dashboard)
+                  const baseUrl = apiKeys.is_testnet ? 'https://api-testnet.bybit.com' : 'https://api.bybit.com';
+                  
+                  const timestamp = Date.now().toString();
+                  const recvWindow = '5000';
+                  
+                  // Create signature using the SAME method as api-keys function
+                  const createSignature = async (payload: string, secret: string): Promise<string> => {
+                    const encoder = new TextEncoder();
+                    const keyData = encoder.encode(secret);
+                    const messageData = encoder.encode(payload);
+                    const cryptoKey = await crypto.subtle.importKey(
+                      'raw',
+                      keyData,
+                      { name: 'HMAC', hash: 'SHA-256' },
+                      false,
+                      ['sign']
+                    );
+                    const signature = await crypto.subtle.sign('HMAC', cryptoKey, messageData);
+                    const hashArray = Array.from(new Uint8Array(signature));
+                    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+                  };
+                  
+                  // Use UNIFIED account type (same as dashboard)
+                  const params = {
+                    api_key: decryptedApiKey, // Use DECRYPTED key
+                    accountType: 'UNIFIED',
+                    recv_window: recvWindow,
+                    timestamp: timestamp
+                  };
+                  
+                  // Sort parameters alphabetically (same as api-keys)
+                  const sortedParams = Object.keys(params)
+                    .sort()
+                    .map(key => `${key}=${params[key]}`)
+                    .join('&');
+                  
+                  // Create signature string (same as api-keys)
+                  const signatureString = timestamp + decryptedApiKey + recvWindow + sortedParams; // Use DECRYPTED key
+                  const signature = await createSignature(signatureString, decryptedApiSecret); // Use DECRYPTED secret
+                  
+                  const finalUrl = `${baseUrl}/v5/account/wallet-balance?${sortedParams}`;
+                  
+                  try {
+                    console.log(`🔍 Fetching balance from: ${finalUrl}`);
+                    const response = await fetch(finalUrl, {
+                      method: 'GET',
+                      headers: {
+                        'X-BAPI-API-KEY': decryptedApiKey, // Use DECRYPTED key
+                        'X-BAPI-SIGN': signature,
+                        'X-BAPI-TIMESTAMP': timestamp,
+                        'X-BAPI-RECV-WINDOW': recvWindow,
+                        'Content-Type': 'application/json',
+                      }
+                    });
+                    
+                    if (!response.ok) {
+                      const errorText = await response.text();
+                      console.error(`❌ Bybit API HTTP Error: ${response.status}`, errorText);
+                      balanceFetchError = `HTTP ${response.status}: ${errorText.substring(0, 100)}`;
+                    } else {
+                      const data = await response.json();
+                      console.log(`📊 Bybit API Response:`, JSON.stringify(data, null, 2));
+                      
+                      if (data.retCode !== 0) {
+                        console.error(`❌ Bybit API Error: ${data.retCode} - ${data.retMsg}`);
+                        balanceFetchError = `API Error ${data.retCode}: ${data.retMsg}`;
+                      } else if (data.result?.list?.[0]) {
+                        const account = data.result.list[0];
+                        console.log(`📊 Account data:`, JSON.stringify(account, null, 2));
+                        
+                        // Use totalWalletBalance (same as dashboard) - this is what shows $784.02
+                        if (account.totalWalletBalance && parseFloat(account.totalWalletBalance) > 0) {
+                          accountBalance = parseFloat(account.totalWalletBalance);
+                          console.log(`✅ Found available balance: $${accountBalance.toFixed(2)}`);
+                        } else {
+                          // Fallback: calculate from coins
+                          const coins = account.coin || [];
+                          let calculatedBalance = 0;
+                          for (const coin of coins) {
+                            const free = parseFloat(coin.free || '0');
+                            calculatedBalance += free;
+                          }
+                          if (calculatedBalance > 0) {
+                            accountBalance = calculatedBalance;
+                            console.log(`✅ Calculated balance from coins: $${accountBalance.toFixed(2)}`);
+                          } else {
+                            console.warn(`⚠️ No balance found in account data`);
+                            balanceFetchError = 'No balance data in account';
+                          }
+                        }
+                      } else {
+                        console.warn(`⚠️ No account data in response`);
+                        balanceFetchError = 'No account data found';
+                      }
+                    }
+                  } catch (fetchError: any) {
+                    console.error(`❌ Failed to fetch balance:`, fetchError);
+                    balanceFetchError = fetchError?.message || String(fetchError);
+                  }
                 }
               } else {
                 balanceFetchError = `No active API keys found for user ${user.id} on exchange ${exchange}`;

@@ -8659,8 +8659,9 @@ class BotExecutor {
       // orderType: "LIMIT" or "MARKET" (not 1 or 2) - NOTE: parameter name is "orderType", not "type"
       // tradeSide: "OPEN" or "CLOSE" (required for futures, especially when hedge mode is enabled)
       // IMPORTANT: Bitunix futures API uses 'qty' parameter, not 'volume'
+      // CRITICAL: Trading bots should ALWAYS use MARKET orders for immediate execution
       const sideString = side.toUpperCase() === 'SELL' ? 'SELL' : 'BUY'; // String: "BUY" or "SELL"
-      const orderTypeString = (price && price > 0) ? 'LIMIT' : 'MARKET'; // String: "LIMIT" or "MARKET"
+      const orderTypeString = 'MARKET'; // Always use MARKET orders for trading bots (immediate execution)
       
       const orderParams: any = {
         symbol: symbol.toUpperCase(),
@@ -8676,10 +8677,8 @@ class BotExecutor {
         orderParams.marginMode = 'ISOLATED'; // ISOLATED margin mode for all Bitunix orders
       }
       
-      // Add price for limit orders (required for orderType="LIMIT", optional for orderType="MARKET")
-      if (orderTypeString === 'LIMIT' && price && price > 0) {
-        orderParams.price = price.toString();
-      }
+      // MARKET orders don't require price parameter (price is determined by market)
+      // Only LIMIT orders need price, but we're always using MARKET for trading bots
       
       // Keep 'volume' as fallback for older API versions or spot trading
       
@@ -9104,7 +9103,7 @@ class BotExecutor {
           `Bitunix Order Placement Diagnostic:\n` +
           `- Symbol: ${symbol}\n` +
           `- Side: ${sideString} (${side})\n` +
-          `- OrderType: ${orderTypeString} (${(price && price > 0) ? 'Limit' : 'Market'})\n` +
+          `- OrderType: ${orderTypeString} (Market - always used for trading bots)\n` +
           `- Quantity: ${amount}\n` +
           `- Price: ${price || 'N/A'}\n` +
           `- Trading Type: ${tradingType} (${marketType})\n` +
