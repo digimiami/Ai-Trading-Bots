@@ -2831,8 +2831,8 @@ class BotExecutor {
             message: `📝 [PAPER] Cooldown active: ${cooldownCheck.reason}`,
             details: { ...cooldownCheck, paper_trading: true }
           });
-          // Update paper positions but don't trade
-          await paperExecutor.updatePaperPositions(bot.id);
+          // Update paper positions but don't trade (with 20s time budget)
+          await paperExecutor.updatePaperPositions(bot.id, Date.now(), 20000);
           return; // Stop execution - wait for cooldown
         }
         
@@ -2846,8 +2846,8 @@ class BotExecutor {
             message: `📝 [PAPER] Outside trading hours: ${tradingHoursCheck.reason}`,
             details: { ...tradingHoursCheck, paper_trading: true }
           });
-          // Update paper positions but don't trade
-          await paperExecutor.updatePaperPositions(bot.id);
+          // Update paper positions but don't trade (with 20s time budget)
+          await paperExecutor.updatePaperPositions(bot.id, Date.now(), 20000);
           return; // Stop execution - outside allowed hours
         }
         
@@ -2876,8 +2876,8 @@ class BotExecutor {
           });
         }
         
-        // Update existing paper positions
-        await paperExecutor.updatePaperPositions(bot.id);
+        // Update existing paper positions (with 20s time budget)
+        await paperExecutor.updatePaperPositions(bot.id, Date.now(), 20000);
         
         // ⚠️ CRITICAL: RETURN HERE - Don't execute real trades
         return;
@@ -5806,7 +5806,7 @@ class BotExecutor {
         // Create PaperTradingExecutor with bot's user_id (not executor's user)
         const paperExecutor = new PaperTradingExecutor(this.supabaseClient, { id: bot.user_id });
         await paperExecutor.executePaperTrade(botSnapshot, tradeSignal);
-        await paperExecutor.updatePaperPositions(bot.id);
+        await paperExecutor.updatePaperPositions(bot.id, Date.now(), 20000);
         console.log(`✅ PAPER trade executed successfully`);
       } else {
         console.log(`💵 Executing REAL trade for ${bot.symbol}...`);
@@ -11962,8 +11962,12 @@ class PaperTradingExecutor {
   }
   
   // Update paper positions with REAL market prices
-  async updatePaperPositions(botId?: string): Promise<void> {
+  async updatePaperPositions(botId?: string, startTime?: number, timeBudgetMs?: number): Promise<void> {
     try {
+      const updateStartTime = startTime || Date.now();
+      const availableTime = timeBudgetMs || 30000; // Default 30s budget if not specified
+      const TIME_PER_POSITION_MS = 2000; // Max 2s per position for expensive operations
+      
       let query = this.supabaseClient
         .from('paper_trading_positions')
         .select('*')
@@ -11977,6 +11981,14 @@ class PaperTradingExecutor {
       const { data: positions, error } = await query;
       
       if (error || !positions || positions.length === 0) return;
+      
+      // Check if we have enough time budget
+      const elapsed = Date.now() - updateStartTime;
+      const remainingTime = availableTime - elapsed;
+      if (remainingTime < 5000) {
+        console.warn(`⚠️ [PAPER] Skipping position updates: insufficient time budget (${remainingTime}ms remaining)`);
+        return;
+      }
       
       const botLogger = new BotExecutor(this.supabaseClient, this.user);
       
@@ -12134,10 +12146,16 @@ class PaperTradingExecutor {
         
         // ===== ADVANCED FEATURES IMPLEMENTATION =====
         
+        // Timeout check: Skip expensive operations if running low on time
+        const positionElapsed = Date.now() - updateStartTime;
+        const positionRemaining = availableTime - positionElapsed;
+        const skipExpensiveOps = positionRemaining < TIME_PER_POSITION_MS || (positions.length > 5 && positionRemaining < TIME_PER_POSITION_MS * 2);
+        
         // 1. TRAILING TAKE-PROFIT: Lock in profits as equity reaches new highs
-        if (enableTrailingTP && currentEquity >= newHighestEquity * 0.99) { // Within 1% of highest equity
+        // SKIP if time is running low (klines fetch is expensive)
+        if (enableTrailingTP && currentEquity >= newHighestEquity * 0.99 && !skipExpensiveOps) { // Within 1% of highest equity
           try {
-            // Fetch ATR for trailing distance calculation
+            // Fetch ATR for trailing distance calculation (EXPENSIVE - skip if low on time)
             const klines = await MarketDataFetcher.fetchKlines(position.symbol, position.exchange, '1h', 20);
             if (klines.length >= 14) {
               const highs = klines.map(k => k[2]);
