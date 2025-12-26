@@ -11010,7 +11010,12 @@ class BotExecutor {
         console.warn('⚠️ Telegram notification HTTP error:', response.status, errorText);
       } else {
         const result = await response.json();
-        console.log('✅ Telegram notification sent for trade:', trade.id, result);
+        if (result.skipped) {
+          // Only log skipped notifications at debug level to reduce log noise
+          console.log('ℹ️ Telegram notification skipped for trade:', trade.id, result.message || 'Not configured');
+        } else {
+          console.log('✅ Telegram notification sent for trade:', trade.id, result);
+        }
       }
     } catch (err) {
       console.warn('⚠️ Failed to send Telegram notification:', err);
@@ -11203,7 +11208,12 @@ class BotExecutor {
         console.warn('⚠️ Telegram notification HTTP error:', response.status, errorText);
       } else {
         const result = await response.json();
-        console.log('✅ Telegram notification sent for position close:', trade.id, result);
+        if (result.skipped) {
+          // Only log skipped notifications at info level (reduced verbosity)
+          console.log('ℹ️ Telegram notification skipped for position close:', trade.id, result.message || 'Not configured');
+        } else {
+          console.log('✅ Telegram notification sent for position close:', trade.id, result);
+        }
       }
     } catch (err) {
       console.warn('⚠️ Failed to send Telegram notification:', err);
@@ -11462,7 +11472,12 @@ class PaperTradingExecutor {
         console.warn('⚠️ Telegram notification HTTP error:', response.status, errorText);
       } else {
         const result = await response.json();
-        console.log('✅ Telegram notification sent for position close:', trade.id, result);
+        if (result.skipped) {
+          // Only log skipped notifications at info level (reduced verbosity)
+          console.log('ℹ️ Telegram notification skipped for position close:', trade.id, result.message || 'Not configured');
+        } else {
+          console.log('✅ Telegram notification sent for position close:', trade.id, result);
+        }
       }
     } catch (err) {
       console.warn('⚠️ Failed to send position close notification:', err);
