@@ -5745,13 +5745,40 @@ class BotExecutor {
     console.log(`   bot.paper_trading: ${bot.paper_trading}`);
     console.log(`   effectiveMode: ${effectiveMode}`);
 
+    // Create bot snapshot preserving ALL bot settings (leverage, SL/TP, etc.)
     const botSnapshot = { ...bot };
+    
+    // Ensure all bot settings are preserved (handle both snake_case and camelCase)
+    if (!botSnapshot.leverage && (bot.leverage || bot.leverage_ratio)) {
+      botSnapshot.leverage = bot.leverage || bot.leverage_ratio;
+    }
+    if (!botSnapshot.stop_loss && !botSnapshot.stopLoss) {
+      botSnapshot.stop_loss = bot.stop_loss || bot.stopLoss || 2.0;
+      botSnapshot.stopLoss = botSnapshot.stop_loss;
+    }
+    if (!botSnapshot.take_profit && !botSnapshot.takeProfit) {
+      botSnapshot.take_profit = bot.take_profit || bot.takeProfit || 4.0;
+      botSnapshot.takeProfit = botSnapshot.take_profit;
+    }
+    if (!botSnapshot.trade_amount && !botSnapshot.tradeAmount) {
+      botSnapshot.trade_amount = bot.trade_amount || bot.tradeAmount || 100;
+      botSnapshot.tradeAmount = botSnapshot.trade_amount;
+    }
+    
+    // Log bot settings to verify they're present
+    console.log(`📊 Bot settings for manual trade:`);
+    console.log(`   Leverage: ${botSnapshot.leverage || botSnapshot.leverage_ratio || 'NOT SET'}`);
+    console.log(`   Stop Loss: ${botSnapshot.stop_loss || botSnapshot.stopLoss || 'NOT SET'}%`);
+    console.log(`   Take Profit: ${botSnapshot.take_profit || botSnapshot.takeProfit || 'NOT SET'}%`);
+    console.log(`   Trade Amount: ${botSnapshot.trade_amount || botSnapshot.tradeAmount || 'NOT SET'}`);
+    
     const multiplier = params.sizeMultiplier ?? null;
     if (multiplier !== null && multiplier !== undefined) {
       const parsedMultiplier = Number(multiplier);
       if (Number.isFinite(parsedMultiplier) && parsedMultiplier > 0) {
-        const baseAmount = Number(bot.trade_amount || bot.tradeAmount || 100);
+        const baseAmount = Number(botSnapshot.trade_amount || botSnapshot.tradeAmount || 100);
         botSnapshot.trade_amount = baseAmount * parsedMultiplier;
+        botSnapshot.tradeAmount = botSnapshot.trade_amount;
         console.log(`💰 Size multiplier applied: ${parsedMultiplier}x (base: ${baseAmount}, adjusted: ${botSnapshot.trade_amount})`);
       }
     }
@@ -6269,34 +6296,415 @@ class BotExecutor {
             throw new Error(`Insufficient balance for ${bot.symbol} ${tradeSignal.side} order. Available: $${balanceCheck.availableBalance.toFixed(2)}, Required: $${balanceCheck.totalRequired.toFixed(2)} (order: $${orderValue.toFixed(2)} + 5% buffer). Shortfall: $${shortfall.toFixed(2)}. Please add funds to your Bitunix ${tradingType === 'futures' ? 'Futures' : 'Spot'} wallet.`);
           }
         }
-        const orderResult = await this.placeBitunixOrder(apiKey, apiSecret, bot.symbol, tradeSignal.side, amount, price, tradingType, bot);
         
-        // Set SL/TP on the position after order is filled (for futures only)
-        if (tradingType === 'futures' && price > 0 && orderResult?.orderId) {
+        // For futures, set leverage and margin mode BEFORE placing order (CRITICAL for Bitunix)
+        // MUST be verified before proceeding - ABORT if verification fails
+        if (tradingType === 'futures') {
+          const expectedLeverage = bot.leverage || 3;
+          const expectedMarginMode = 'ISOLATED';
+          
           try {
-            // Small delay to allow position to update after order fills
-            await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
+            console.log(`⚙️ Setting Bitunix account/symbol leverage and margin mode BEFORE order placement...`);
+            console.log(`   Symbol: ${bot.symbol}, Leverage: ${expectedLeverage}x, Margin Mode: ${expectedMarginMode}`);
             
-            // Use the order price as entry price
-            const entryPrice = price;
-            const capitalizedSide = tradeSignal.side.charAt(0).toUpperCase() + tradeSignal.side.slice(1).toLowerCase();
+            // Set at account/symbol level - this must be done BEFORE placing orders
+            await this.setBitunixAccountLeverageAndMarginMode(apiKey, apiSecret, bot.symbol, expectedLeverage, expectedMarginMode);
             
-            await this.setBitunixSLTP(apiKey, apiSecret, bot.symbol, capitalizedSide, entryPrice, bot, tradeSignal);
-          } catch (slTpError) {
-            // Log error but don't fail the order - SL/TP can be set manually if needed
-            console.warn('⚠️ Failed to set Bitunix SL/TP (non-critical):', slTpError);
+            // Wait a moment for settings to take effect
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Increased to 1 second
+            
+            // CRITICAL: Verify settings were applied - ABORT if verification fails
+            const accountSettings = await this.getBitunixAccountSettings(apiKey, apiSecret, bot.symbol);
+            if (!accountSettings) {
+              const errorMsg = `CRITICAL: Cannot verify Bitunix account leverage/margin mode. Order aborted to prevent using wrong settings (likely 20x Cross).`;
+              console.error(`❌ ${errorMsg}`);
+              if (bot?.id) {
+                await this.addBotLog(bot.id, {
+                  level: 'error',
+                  category: 'trade',
+                  message: errorMsg,
+                  details: {
+                    symbol: bot.symbol,
+                    expectedLeverage: expectedLeverage,
+                    expectedMarginMode: expectedMarginMode,
+                    action_required: 'URGENT: Manually set leverage to 3x and margin mode to ISOLATED on Bitunix account settings before placing orders'
+                  }
+                });
+              }
+              throw new Error(errorMsg);
+            }
+            
+            console.log(`📊 Account settings: Leverage: ${accountSettings.leverage}x, Margin Mode: ${accountSettings.marginMode}`);
+            
+            // Verify leverage matches expected value
+            if (accountSettings.leverage !== expectedLeverage) {
+              const errorMsg = `CRITICAL: Bitunix leverage verification failed. Expected ${expectedLeverage}x but got ${accountSettings.leverage}x. Order aborted to prevent using wrong leverage.`;
+              console.error(`❌ ${errorMsg}`);
+              if (bot?.id) {
+                await this.addBotLog(bot.id, {
+                  level: 'error',
+                  category: 'trade',
+                  message: errorMsg,
+                  details: {
+                    symbol: bot.symbol,
+                    expectedLeverage: expectedLeverage,
+                    actualLeverage: accountSettings.leverage,
+                    expectedMarginMode: expectedMarginMode,
+                    action_required: `URGENT: Manually set leverage to ${expectedLeverage}x on Bitunix account settings before placing orders`
+                  }
+                });
+              }
+              throw new Error(errorMsg);
+            }
+            
+            // Verify margin mode is ISOLATED (check both ISOLATED and ISOLATION formats)
+            const actualMarginMode = accountSettings.marginMode?.toUpperCase();
+            if (actualMarginMode !== 'ISOLATED' && actualMarginMode !== 'ISOLATION') {
+              const errorMsg = `CRITICAL: Bitunix margin mode verification failed. Expected ISOLATED but got ${accountSettings.marginMode}. Order aborted to prevent using Cross margin.`;
+              console.error(`❌ ${errorMsg}`);
+              if (bot?.id) {
+                await this.addBotLog(bot.id, {
+                  level: 'error',
+                  category: 'trade',
+                  message: errorMsg,
+                  details: {
+                    symbol: bot.symbol,
+                    expectedLeverage: expectedLeverage,
+                    actualLeverage: accountSettings.leverage,
+                    expectedMarginMode: expectedMarginMode,
+                    actualMarginMode: accountSettings.marginMode,
+                    action_required: 'URGENT: Manually set margin mode to ISOLATED on Bitunix account settings before placing orders'
+                  }
+                });
+              }
+              throw new Error(errorMsg);
+            }
+            
+            console.log(`✅ Account settings verified: ${accountSettings.leverage}x ${accountSettings.marginMode} - Proceeding with order`);
+          } catch (leverageError) {
+            // CRITICAL: If leverage/margin mode setting or verification fails, ABORT the order
+            const errorMsg = leverageError instanceof Error ? leverageError.message : String(leverageError);
+            console.error(`❌ CRITICAL: Bitunix leverage/margin mode setup failed. Order aborted.`);
+            console.error(`   Error: ${errorMsg}`);
+            
             if (bot?.id) {
               await this.addBotLog(bot.id, {
-                level: 'warning',
+                level: 'error',
                 category: 'trade',
-                message: `Bitunix order placed but SL/TP setup failed. Please set SL/TP manually.`,
+                message: `CRITICAL: Cannot set Bitunix account leverage/margin mode. Order aborted to prevent using wrong settings (20x Cross).`,
                 details: {
                   symbol: bot.symbol,
-                  error: slTpError instanceof Error ? slTpError.message : String(slTpError),
-                  action_required: 'Set stop loss and take profit manually on Bitunix exchange'
+                  error: errorMsg,
+                  expectedLeverage: expectedLeverage,
+                  expectedMarginMode: expectedMarginMode,
+                  action_required: `URGENT: Manually set leverage to ${expectedLeverage}x and margin mode to ISOLATED on Bitunix account settings before placing orders`
                 }
               });
             }
+            
+            // ABORT - throw error to prevent order placement
+            throw new Error(`CRITICAL: Cannot set Bitunix account leverage/margin mode. Order aborted to prevent using wrong settings (20x Cross). Error: ${errorMsg}`);
+          }
+        }
+        
+        const orderResult = await this.placeBitunixOrder(apiKey, apiSecret, bot.symbol, tradeSignal.side, amount, price, tradingType, bot);
+        
+        // CRITICAL: Extract positionId from order response if available
+        // Bitunix order response may contain positionId directly
+        let orderPositionId = null;
+        if (orderResult?.response?.data) {
+          const orderData = orderResult.response.data;
+          orderPositionId = orderData.positionId || orderData.position_id || orderData.positionID || 
+                           orderData.id || orderData.orderId;
+          if (orderPositionId) {
+            console.log(`📊 Found positionId in order response: ${orderPositionId}`);
+          }
+        }
+        
+        // Set leverage and margin mode on the position AFTER order is placed (for futures only)
+        if (tradingType === 'futures' && orderResult?.orderId) {
+          try {
+            // Wait for position to be established
+            console.log(`⏳ Waiting for Bitunix position to be established before setting leverage/margin mode...`);
+            await new Promise(resolve => setTimeout(resolve, 3000)); // Increased wait time
+            
+            // Retry getting position (position may take time to appear)
+            let positionInfo = null;
+            for (let retry = 0; retry < 5; retry++) {
+              positionInfo = await this.getBitunixPosition(apiKey, apiSecret, bot.symbol);
+              if (positionInfo && positionInfo.size > 0) {
+                break;
+              }
+              console.log(`   Position not found yet, retrying... (${retry + 1}/5)`);
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+            
+            if (positionInfo && positionInfo.size > 0) {
+              console.log(`📊 Current position: ${positionInfo.size} @ ${positionInfo.entryPrice}, Leverage: ${positionInfo.leverage}x, Margin: ${positionInfo.marginMode}`);
+              
+              // Always try to set if different from desired (even if account setting failed)
+              if (positionInfo.leverage !== (bot.leverage || 3) || positionInfo.marginMode !== 'ISOLATED') {
+                console.log(`⚙️ Updating position: Leverage ${positionInfo.leverage}x → ${bot.leverage || 3}x, Margin ${positionInfo.marginMode} → ISOLATED`);
+                
+                // Try multiple times with different approaches
+                let updateSuccess = false;
+                for (let attempt = 1; attempt <= 3; attempt++) {
+                  try {
+                    await this.setBitunixPositionLeverageAndMarginMode(apiKey, apiSecret, bot.symbol, bot.leverage || 3, 'ISOLATED');
+                    updateSuccess = true;
+                    break;
+                  } catch (updateError) {
+                    console.warn(`   ⚠️ Update attempt ${attempt}/3 failed:`, updateError);
+                    if (attempt < 3) {
+                      await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
+                  }
+                }
+                
+                // Verify it was set correctly
+                if (updateSuccess) {
+                  await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for update to take effect
+                  const updatedPosition = await this.getBitunixPosition(apiKey, apiSecret, bot.symbol);
+                  if (updatedPosition) {
+                    if (updatedPosition.leverage === (bot.leverage || 3) && updatedPosition.marginMode === 'ISOLATED') {
+                      console.log(`✅ Position leverage and margin mode updated successfully`);
+                    } else {
+                      console.warn(`⚠️ Position update may have failed. Current: ${updatedPosition.leverage}x ${updatedPosition.marginMode}, Expected: ${bot.leverage || 3}x ISOLATED`);
+                      if (bot?.id) {
+                        await this.addBotLog(bot.id, {
+                          level: 'warning',
+                          category: 'trade',
+                          message: `Position leverage/margin mode may not be correct. Current: ${updatedPosition.leverage}x ${updatedPosition.marginMode}, Expected: ${bot.leverage || 3}x ISOLATED`,
+                          details: {
+                            symbol: bot.symbol,
+                            currentLeverage: updatedPosition.leverage,
+                            currentMarginMode: updatedPosition.marginMode,
+                            expectedLeverage: bot.leverage || 3,
+                            expectedMarginMode: 'ISOLATED',
+                            action_required: 'Manually set leverage to 3x and margin mode to ISOLATED on Bitunix exchange'
+                          }
+                        });
+                      }
+                    }
+                  }
+                } else {
+                  console.error(`❌ Failed to update position leverage/margin mode after 3 attempts`);
+                  if (bot?.id) {
+                    await this.addBotLog(bot.id, {
+                      level: 'error',
+                      category: 'trade',
+                      message: `CRITICAL: Failed to update position leverage/margin mode after multiple attempts. Position may have wrong settings.`,
+                      details: {
+                        symbol: bot.symbol,
+                        currentLeverage: positionInfo.leverage,
+                        currentMarginMode: positionInfo.marginMode,
+                        expectedLeverage: bot.leverage || 3,
+                        expectedMarginMode: 'ISOLATED',
+                        action_required: 'URGENT: Manually set leverage to 3x and margin mode to ISOLATED on Bitunix exchange'
+                      }
+                    });
+                  }
+                }
+              } else {
+                console.log(`✅ Position already has correct leverage (${positionInfo.leverage}x) and margin mode (${positionInfo.marginMode})`);
+              }
+            } else {
+              console.warn(`⚠️ Position not found for ${bot.symbol} after retries - cannot set leverage/margin mode`);
+            }
+          } catch (posError) {
+            console.error('❌ Failed to set Bitunix position leverage/margin mode:', posError);
+            if (bot?.id) {
+              await this.addBotLog(bot.id, {
+                level: 'error',
+                category: 'trade',
+                message: `Failed to set position leverage/margin mode: ${posError instanceof Error ? posError.message : String(posError)}`,
+                details: {
+                  symbol: bot.symbol,
+                  error: posError instanceof Error ? posError.message : String(posError),
+                  action_required: 'Manually set leverage to 3x and margin mode to ISOLATED on Bitunix exchange'
+                }
+              });
+            }
+            // Don't throw - allow order to succeed even if position config fails
+          }
+        }
+        
+        // Set SL/TP on the position after order is filled (for futures only)
+        if (tradingType === 'futures' && orderResult?.orderId) {
+          try {
+            // Wait for position to be established after order fills
+            // Bitunix may need more time to process the position
+            console.log(`⏳ Waiting for Bitunix position to be established...`);
+            await new Promise(resolve => setTimeout(resolve, 5000)); // Increased to 5 seconds - positions can take time
+            
+            // Get entry price from order result, or use provided price, or fetch current market price
+            let entryPrice = price;
+            
+            // Try to get fill price from order result
+            if (orderResult?.avgPrice && parseFloat(orderResult.avgPrice) > 0) {
+              entryPrice = parseFloat(orderResult.avgPrice);
+              console.log(`📊 Using order fill price for SL/TP: ${entryPrice}`);
+            } else if (orderResult?.price && parseFloat(orderResult.price) > 0) {
+              entryPrice = parseFloat(orderResult.price);
+              console.log(`📊 Using order price for SL/TP: ${entryPrice}`);
+            } else if (price > 0) {
+              entryPrice = price;
+              console.log(`📊 Using provided price for SL/TP: ${entryPrice}`);
+            } else {
+              // Fetch current market price as fallback
+              try {
+                const currentPrice = await MarketDataFetcher.fetchPrice(bot.symbol, 'bitunix', tradingType);
+                if (currentPrice > 0) {
+                  entryPrice = currentPrice;
+                  console.log(`📊 Using current market price for SL/TP: ${entryPrice}`);
+                } else {
+                  throw new Error('Could not determine entry price for SL/TP calculation');
+                }
+              } catch (priceErr) {
+                throw new Error(`Could not fetch market price for SL/TP: ${priceErr instanceof Error ? priceErr.message : String(priceErr)}`);
+              }
+            }
+            
+            const capitalizedSide = tradeSignal.side.charAt(0).toUpperCase() + tradeSignal.side.slice(1).toLowerCase();
+            
+            // Verify position exists before setting SL/TP
+            // Wait longer for position to be established (Bitunix can be slow)
+            console.log(`⏳ Waiting for position to be established (may take up to 15 seconds)...`);
+            await new Promise(resolve => setTimeout(resolve, 5000)); // 5 second initial wait
+            
+            let positionInfo = await this.getBitunixPosition(apiKey, apiSecret, bot.symbol);
+            let retryCount = 0;
+            const maxRetries = 10; // Increased retries - positions can take time to appear
+            
+            // Retry getting position if not found immediately
+            while ((!positionInfo || positionInfo.size === 0) && retryCount < maxRetries) {
+              retryCount++;
+              console.log(`   ⏳ Position not found, retrying... (${retryCount}/${maxRetries})`);
+              // Progressive delay: 2s, 2s, 3s, 3s, 4s, 4s, 5s...
+              const delay = Math.min(2000 + Math.floor(retryCount / 2) * 1000, 5000);
+              await new Promise(resolve => setTimeout(resolve, delay));
+              positionInfo = await this.getBitunixPosition(apiKey, apiSecret, bot.symbol);
+            }
+            
+            if (positionInfo && positionInfo.size > 0) {
+              console.log(`📊 Position verified: ${positionInfo.size} @ ${positionInfo.entryPrice || entryPrice}`);
+              console.log(`🛡️ Setting Bitunix SL/TP for ${bot.symbol} ${capitalizedSide} at entry price: ${entryPrice}`);
+              
+              // Use actual entry price from position if available
+              const actualEntryPrice = positionInfo.entryPrice || entryPrice;
+              
+              // Set SL/TP with retries
+              let slTpSuccess = false;
+              for (let attempt = 1; attempt <= 3; attempt++) {
+                try {
+                  // Pass positionId from order response if we have it (helps with SL/TP setting)
+                  const slTpOrderResult = orderPositionId ? { ...orderResult, positionId: orderPositionId } : orderResult;
+                  
+                  await this.setBitunixSLTP(apiKey, apiSecret, bot.symbol, capitalizedSide, actualEntryPrice, bot, tradeSignal, slTpOrderResult);
+                  slTpSuccess = true;
+                  break;
+          } catch (slTpError) {
+                  console.warn(`   ⚠️ SL/TP attempt ${attempt}/3 failed:`, slTpError);
+                  if (attempt < 3) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                  }
+                }
+              }
+              
+              // Verify SL/TP was set with multiple checks
+              let verified = false;
+              for (let verifyAttempt = 1; verifyAttempt <= 3; verifyAttempt++) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                const updatedPosition = await this.getBitunixPosition(apiKey, apiSecret, bot.symbol);
+                if (updatedPosition) {
+                  const hasSL = !!(updatedPosition.stopLoss || updatedPosition.stop_loss);
+                  const hasTP = !!(updatedPosition.takeProfit || updatedPosition.take_profit);
+                  if (hasSL && hasTP) {
+                    console.log(`✅ SL/TP verified (attempt ${verifyAttempt}): SL=${updatedPosition.stopLoss || updatedPosition.stop_loss}, TP=${updatedPosition.takeProfit || updatedPosition.take_profit}`);
+                    verified = true;
+                    break;
+                  } else {
+                    console.warn(`   ⚠️ SL/TP verification attempt ${verifyAttempt} failed. SL: ${hasSL ? 'SET' : 'NOT SET'}, TP: ${hasTP ? 'SET' : 'NOT SET'}`);
+                  }
+                }
+              }
+              
+              if (!verified) {
+                console.error(`❌ CRITICAL: SL/TP verification failed after all attempts`);
+                const stopLossPercent = bot.stop_loss || bot.stopLoss || 2.0;
+                const takeProfitPercent = bot.take_profit || bot.takeProfit || 4.0;
+                const isLong = capitalizedSide.toUpperCase() === 'BUY';
+                const stopLossPrice = isLong 
+                  ? actualEntryPrice * (1 - stopLossPercent / 100)
+                  : actualEntryPrice * (1 + stopLossPercent / 100);
+                const takeProfitPrice = isLong
+                  ? actualEntryPrice * (1 + takeProfitPercent / 100)
+                  : actualEntryPrice * (1 - takeProfitPercent / 100);
+                
+            if (bot?.id) {
+              await this.addBotLog(bot.id, {
+                    level: 'error',
+                category: 'trade',
+                    message: `CRITICAL: SL/TP not set after multiple attempts. Position is UNPROTECTED.`,
+                    details: {
+                      symbol: bot.symbol,
+                      entryPrice: actualEntryPrice,
+                      stopLossPercent: stopLossPercent,
+                      takeProfitPercent: takeProfitPercent,
+                      calculatedStopLoss: stopLossPrice.toFixed(8),
+                      calculatedTakeProfit: takeProfitPrice.toFixed(8),
+                      action_required: 'URGENT: Manually set SL/TP on Bitunix exchange immediately to protect position',
+                      manualInstructions: `Go to Bitunix → Positions → ${bot.symbol} → TP/SL → Set SL: ${stopLossPrice.toFixed(4)}, TP: ${takeProfitPrice.toFixed(4)}`
+                    }
+                  });
+                }
+                // Throw error to ensure user knows SL/TP wasn't set
+                throw new Error(`CRITICAL: SL/TP not set for ${bot.symbol}. Position is UNPROTECTED. Please set manually: SL=${stopLossPrice.toFixed(4)}, TP=${takeProfitPrice.toFixed(4)}`);
+              }
+            } else {
+              console.error(`❌ Position not found for ${bot.symbol} after ${maxRetries} retries - cannot set SL/TP`);
+              throw new Error(`Position not found for ${bot.symbol} - cannot set SL/TP`);
+            }
+          } catch (slTpError) {
+            // Log error with full details for debugging
+            console.error('❌ CRITICAL: Failed to set Bitunix SL/TP:', slTpError);
+            console.error('   Error details:', slTpError instanceof Error ? slTpError.message : String(slTpError));
+            
+            // Calculate expected SL/TP for manual instructions
+            const stopLossPercent = bot.stop_loss || bot.stopLoss || 2.0;
+            const takeProfitPercent = bot.take_profit || bot.takeProfit || 4.0;
+            const isLong = tradeSignal.side.toUpperCase() === 'BUY';
+            let entryPrice = price;
+            if (orderResult?.avgPrice && parseFloat(orderResult.avgPrice) > 0) {
+              entryPrice = parseFloat(orderResult.avgPrice);
+            }
+            const stopLossPrice = isLong 
+              ? entryPrice * (1 - stopLossPercent / 100)
+              : entryPrice * (1 + stopLossPercent / 100);
+            const takeProfitPrice = isLong
+              ? entryPrice * (1 + takeProfitPercent / 100)
+              : entryPrice * (1 - takeProfitPercent / 100);
+            
+            if (bot?.id) {
+              await this.addBotLog(bot.id, {
+                level: 'error',
+                category: 'trade',
+                message: `CRITICAL: Bitunix order placed but SL/TP setup FAILED. Position is UNPROTECTED.`,
+                details: {
+                  symbol: bot.symbol,
+                  error: slTpError instanceof Error ? slTpError.message : String(slTpError),
+                  entryPrice: entryPrice,
+                  stopLossPercent: stopLossPercent,
+                  takeProfitPercent: takeProfitPercent,
+                  calculatedStopLoss: stopLossPrice.toFixed(8),
+                  calculatedTakeProfit: takeProfitPrice.toFixed(8),
+                  action_required: 'URGENT: Manually set SL/TP on Bitunix exchange immediately',
+                  manualInstructions: `Go to Bitunix → Positions → ${bot.symbol} → Click TP/SL → Set SL: ${stopLossPrice.toFixed(4)}, TP: ${takeProfitPrice.toFixed(4)}`
+                }
+              });
+            }
+            // Don't throw - allow order to succeed but log as critical error
+            console.error(`🚨 POSITION UNPROTECTED: SL/TP not set for ${bot.symbol}. Manual action REQUIRED.`);
           }
         }
         
@@ -8673,8 +9081,14 @@ class BotExecutor {
       // Add tradeSide for futures trading (required, especially when hedge mode is enabled)
       if (marketType === 'futures') {
         orderParams.tradeSide = 'OPEN'; // "OPEN" for opening new positions, "CLOSE" for closing
-        // Set margin mode to ISOLATED (not CROSS)
-        orderParams.marginMode = 'ISOLATED'; // ISOLATED margin mode for all Bitunix orders
+        
+        // CRITICAL: Do NOT add leverage, margin mode, or SL/TP to order parameters
+        // These cause Code 2 errors. Set them separately before/after order placement.
+        // Bitunix API requires minimal parameters for order placement:
+        // - symbol, side, orderType, qty, tradeSide (for futures)
+        // Everything else should be set via separate API calls
+        
+        console.log(`   📊 Order will use account default leverage/margin mode. Will set separately after order.`);
       }
       
       // MARKET orders don't require price parameter (price is determined by market)
@@ -8806,10 +9220,10 @@ class BotExecutor {
                   volume: amount.toString(), // Try 'volume' as alternative
                 };
                 
-                // Add tradeSide for futures
+                // Add tradeSide for futures (keep minimal - no margin mode in order)
                 if (marketType === 'futures') {
                   altOrderParams.tradeSide = 'OPEN';
-                  altOrderParams.marginMode = 'ISOLATED'; // ISOLATED margin mode
+                  // Do NOT add marginMode here - causes Code 2 errors
                 }
                 
                 if (orderTypeString === 'LIMIT' && price && price > 0) {
@@ -8882,10 +9296,10 @@ class BotExecutor {
                   quantity: amount.toString(), // Try 'quantity'
                 };
                 
-                // Add tradeSide for futures
+                // Add tradeSide for futures (keep minimal - no margin mode in order)
                 if (marketType === 'futures') {
                   altOrderParams2.tradeSide = 'OPEN';
-                  altOrderParams2.marginMode = 'ISOLATED'; // ISOLATED margin mode
+                  // Do NOT add marginMode here - causes Code 2 errors
                 }
                 
                 if (orderTypeString === 'LIMIT' && price && price > 0) {
@@ -8959,10 +9373,10 @@ class BotExecutor {
                     qty: amount.toString(),
                   };
                   
-                  // Add tradeSide for futures
+                  // Add tradeSide for futures (keep minimal - no margin mode in order)
                   if (marketType === 'futures') {
                     marketOrderParams.tradeSide = 'OPEN';
-                    marketOrderParams.marginMode = 'ISOLATED'; // ISOLATED margin mode
+                    // Do NOT add marginMode here - causes Code 2 errors
                   }
                   
                   const marketBodyString = JSON.stringify(marketOrderParams).replace(/\s+/g, '');
@@ -9129,61 +9543,407 @@ class BotExecutor {
    * Set Stop Loss and Take Profit for Bitunix positions
    * Similar to setBybitSLTP but uses Bitunix API endpoints
    */
-  private async setBitunixSLTP(apiKey: string, apiSecret: string, symbol: string, side: string, entryPrice: number, bot: any, tradeSignal: any = null): Promise<void> {
-    const baseUrl = 'https://fapi.bitunix.com'; // Futures API domain
-    const marketType = 'futures';
+  /**
+   * Get Bitunix account settings for a symbol (leverage and margin mode)
+   */
+  private async getBitunixAccountSettings(apiKey: string, apiSecret: string, symbol: string): Promise<any> {
+    const baseUrl = 'https://fapi.bitunix.com';
     
     try {
-      // Get bot stop loss and take profit percentages
-      const stopLossPercent = bot.stop_loss || bot.stopLoss || 2.0;
-      const takeProfitPercent = bot.take_profit || bot.takeProfit || 4.0;
+      const timestamp = Date.now().toString();
+      const nonce = this.generateNonce();
+      const queryParams = `symbol=${symbol.toUpperCase()}`;
+      const body = '';
+      const signature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, body, apiSecret);
       
-      // Calculate SL/TP prices
-      const isLong = side.toUpperCase() === 'BUY' || side === 'Buy';
-      const stopLossPrice = isLong 
-        ? entryPrice * (1 - stopLossPercent / 100)  // Long: SL below entry
-        : entryPrice * (1 + stopLossPercent / 100); // Short: SL above entry
+      // Try account info endpoint
+      const endpoints = [
+        `/api/v1/futures/account?marginCoin=USDT`,
+        `/api/v1/futures/account/info?symbol=${symbol.toUpperCase()}`,
+        `/api/v1/futures/account`,
+        `/api/v1/account/info`
+      ];
       
-      const takeProfitPrice = isLong
-        ? entryPrice * (1 + takeProfitPercent / 100)  // Long: TP above entry
-        : entryPrice * (1 - takeProfitPercent / 100); // Short: TP below entry
+      for (const endpoint of endpoints) {
+        try {
+          const response = await fetch(`${baseUrl}${endpoint}`, {
+            method: 'GET',
+            headers: {
+              'api-key': String(apiKey),
+              'nonce': String(nonce),
+              'timestamp': String(timestamp),
+              'sign': String(signature),
+              'Content-Type': 'application/json',
+              'language': 'en-US'
+            }
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.code === 0 && data.data) {
+              const account = data.data;
+              return {
+                leverage: parseFloat(account.leverage || account.leverageRatio || '20'),
+                marginMode: account.marginMode || account.tdMode || account.margin_mode || 'CROSS'
+              };
+            }
+          }
+        } catch (err) {
+          continue;
+        }
+      }
+      return null;
+    } catch (error) {
+      console.error('Error getting Bitunix account settings:', error);
+      return null;
+    }
+  }
+  
+  /**
+   * Set Bitunix account-level leverage and margin mode for a symbol
+   * This MUST be called BEFORE placing orders
+   */
+  private async setBitunixAccountLeverageAndMarginMode(apiKey: string, apiSecret: string, symbol: string, leverage: number, marginMode: string = 'ISOLATED'): Promise<void> {
+    const baseUrl = 'https://fapi.bitunix.com';
+    
+    try {
+      console.log(`⚙️ Setting Bitunix account leverage and margin mode for ${symbol}:`);
+      console.log(`   Leverage: ${leverage}x, Margin Mode: ${marginMode}`);
       
-      console.log(`🛡️ Setting Bitunix SL/TP for ${symbol} ${side}:`);
-      console.log(`   Entry: ${entryPrice}, SL: ${stopLossPrice} (${stopLossPercent}%), TP: ${takeProfitPrice} (${takeProfitPercent}%)`);
-      
-      // Bitunix API endpoint for setting stop loss and take profit
-      // According to Bitunix API docs, use /api/v1/futures/trade/stop_order or position management
       const timestamp = Date.now().toString();
       const nonce = this.generateNonce();
       
-      // Try setting SL/TP using position management endpoint
-      // Bitunix may use /api/v1/futures/position/set-stop-loss or similar
-      const endpointsToTry = [
-        '/api/v1/futures/trade/stop_order',
-        '/api/v1/futures/position/set-stop-loss',
-        '/api/v1/futures/position/trading-stop',
-        '/api/v1/trade/stop_order'
+      // Official Bitunix API endpoints (must be called separately):
+      // 1. POST /api/v1/futures/account/change_margin_mode - Required: symbol, marginMode, marginCoin
+      // 2. POST /api/v1/futures/account/change_leverage - Required: symbol, leverage
+      // Reference: https://openapidoc.bitunix.com
+      
+      // Extract margin coin from symbol (e.g., BTCUSDT -> USDT)
+      const marginCoin = symbol.toUpperCase().endsWith('USDT') ? 'USDT' : 
+                         symbol.toUpperCase().endsWith('USD') ? 'USD' : 'USDT';
+      
+      // Convert margin mode to API format: ISOLATED -> ISOLATION
+      const apiMarginMode = marginMode.toUpperCase() === 'ISOLATED' ? 'ISOLATION' : marginMode.toUpperCase();
+      
+      // Step 1: Set margin mode
+      console.log(`   Step 1: Setting margin mode to ${apiMarginMode} with marginCoin ${marginCoin}...`);
+      const marginModeEndpoints = [
+        '/api/v1/futures/account/change_margin_mode', // Official endpoint (with underscore)
+        '/api/v1/futures/account/change-margin-mode'  // Alternative (with hyphen)
       ];
       
-      let slTpSet = false;
+      let marginModeSet = false;
+      for (const endpoint of marginModeEndpoints) {
+        try {
+          // Per API docs: Required: symbol, marginMode, marginCoin
+          const params = {
+            symbol: symbol.toUpperCase(),
+            marginMode: apiMarginMode, // ISOLATION or CROSS (not ISOLATED)
+            marginCoin: marginCoin // REQUIRED: USDT, USD, etc.
+          };
+          
+          const bodyString = JSON.stringify(params).replace(/\s+/g, '');
+          const queryParams = '';
+          const signature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, bodyString, apiSecret);
+          
+          console.log(`   Trying: ${endpoint}`);
+          console.log(`   Body: ${bodyString}`);
+          
+          const response = await fetch(`${baseUrl}${endpoint}`, {
+            method: 'POST',
+            headers: {
+              'api-key': String(apiKey),
+              'nonce': String(nonce),
+              'timestamp': String(timestamp),
+              'sign': String(signature),
+              'Content-Type': 'application/json',
+              'language': 'en-US'
+            },
+            body: bodyString
+          });
+          
+          const responseText = await response.text();
+          console.log(`   Response: ${response.status}, ${responseText.substring(0, 200)}`);
+          
+          if (response.ok) {
+            const data = JSON.parse(responseText);
+            if (data.code === 0) {
+              console.log(`✅ Margin mode set to ${apiMarginMode} via ${endpoint}`);
+              marginModeSet = true;
+              break;
+            } else {
+              console.warn(`   Code ${data.code}: ${data.msg || data.message}`);
+              // If error says position/order exists, that's expected - continue to leverage
+              // Also check for common error codes that indicate position exists
+              if (data.msg && (data.msg.includes('position') || data.msg.includes('order') || data.msg.includes('exist'))) {
+                console.warn(`   ⚠️ Cannot change margin mode while position exists (Code: ${data.code}). Will set on position after order.`);
+                marginModeSet = true; // Mark as "handled" - will set on position
+                break;
+              }
+              // Some exchanges return success even if position exists - check code
+              if (data.code === 0 || data.code === 200) {
+                marginModeSet = true;
+                break;
+              }
+            }
+          }
+        } catch (err) {
+          console.warn(`   Error:`, err);
+        }
+      }
+      
+      // Step 2: Set leverage
+      console.log(`   Step 2: Setting leverage to ${leverage}x...`);
+      const leverageEndpoints = [
+        '/api/v1/futures/account/change_leverage', // Official endpoint (with underscore)
+        '/api/v1/futures/account/change-leverage'  // Alternative (with hyphen)
+      ];
+      
+      let leverageSet = false;
+      for (const endpoint of leverageEndpoints) {
+        try {
+          // Per API docs: leverage must be a string
+          const params = {
+            symbol: symbol.toUpperCase(),
+            leverage: String(leverage) // Must be string, not number
+          };
+          
+          const bodyString = JSON.stringify(params).replace(/\s+/g, '');
+          const queryParams = '';
+          const signature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, bodyString, apiSecret);
+          
+          console.log(`   Trying: ${endpoint}`);
+          console.log(`   Body: ${bodyString}`);
+          
+          const response = await fetch(`${baseUrl}${endpoint}`, {
+            method: 'POST',
+            headers: {
+              'api-key': String(apiKey),
+              'nonce': String(nonce),
+              'timestamp': String(timestamp),
+              'sign': String(signature),
+              'Content-Type': 'application/json',
+              'language': 'en-US'
+            },
+            body: bodyString
+          });
+          
+          const responseText = await response.text();
+          console.log(`   Response: ${response.status}, ${responseText.substring(0, 200)}`);
+          
+          if (response.ok) {
+            const data = JSON.parse(responseText);
+            if (data.code === 0 || data.code === 200) {
+              console.log(`✅ Leverage set to ${leverage}x via ${endpoint}`);
+              leverageSet = true;
+              break;
+            } else {
+              console.warn(`   Code ${data.code}: ${data.msg || data.message}`);
+              // If error says position/order exists, that's expected - continue
+              if (data.msg && (data.msg.includes('position') || data.msg.includes('order') || data.msg.includes('exist'))) {
+                console.warn(`   ⚠️ Cannot change leverage while position exists (Code: ${data.code}). Will set on position after order.`);
+                leverageSet = true; // Mark as "handled" - will set on position
+                break;
+              }
+            }
+          }
+        } catch (err) {
+          console.warn(`   Error:`, err);
+        }
+      }
+      
+      if (!marginModeSet || !leverageSet) {
+        const errors = [];
+        if (!marginModeSet) errors.push('margin mode');
+        if (!leverageSet) errors.push('leverage');
+        throw new Error(`Failed to set account ${errors.join(' and ')}. Will try on position after order placement.`);
+      }
+      
+    } catch (error) {
+      console.error('❌ Bitunix account leverage/margin setup error:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Get Bitunix position details
+   * Tries multiple endpoints: position/list (open positions) and position/pending (pending positions)
+   */
+  private async getBitunixPosition(apiKey: string, apiSecret: string, symbol: string): Promise<any> {
+    const baseUrl = 'https://fapi.bitunix.com';
+    
+    // Try multiple endpoints - positions might be in different states
+    const endpoints = [
+      '/api/v1/futures/position/list',      // Open positions
+      '/api/v1/futures/position/pending',   // Pending positions
+      '/api/v1/futures/position',            // All positions
+      '/api/v1/position/list'                // Alternative endpoint
+    ];
+    
+    for (const endpoint of endpoints) {
+      try {
+        const timestamp = Date.now().toString();
+        const nonce = this.generateNonce();
+        const queryParams = `symbol=${symbol.toUpperCase()}`;
+        const body = '';
+        const signature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, body, apiSecret);
+        
+        const response = await fetch(`${baseUrl}${endpoint}?${queryParams}`, {
+          method: 'GET',
+          headers: {
+            'api-key': String(apiKey),
+            'nonce': String(nonce),
+            'timestamp': String(timestamp),
+            'sign': String(signature),
+            'Content-Type': 'application/json',
+            'language': 'en-US'
+          }
+        });
+        
+        if (response.ok) {
+          const responseText = await response.text();
+          const data = JSON.parse(responseText);
+          
+          console.log(`📊 ${endpoint} response code: ${data.code}, has data: ${!!data.data}`);
+          
+          if (data.code === 0 && data.data) {
+            // Handle both array and object responses
+            let positions = [];
+            if (Array.isArray(data.data)) {
+              positions = data.data;
+            } else if (typeof data.data === 'object') {
+              // Try to find array in object
+              const possibleArrays = Object.values(data.data).filter(v => Array.isArray(v));
+              if (possibleArrays.length > 0) {
+                positions = possibleArrays[0];
+              } else {
+                // Single position object
+                positions = [data.data];
+              }
+            }
+            
+            if (positions.length > 0) {
+              // Find position with non-zero size
+              const position = positions.find(p => {
+                const size = parseFloat(p.size || p.holdVol || p.quantity || '0');
+                return size > 0;
+              }) || positions[0];
+              
+              // Log full position response for debugging
+              console.log(`📊 Bitunix position response keys:`, Object.keys(position));
+              console.log(`📊 Full position data:`, JSON.stringify(position).substring(0, 500));
+              
+              // Try multiple possible field names for positionId
+              const positionId = position.positionId || position.id || position.position_id || position.positionID || 
+                                position.pid || position.posId || position.pos_id;
+              
+              if (!positionId) {
+                console.warn(`⚠️ WARNING: positionId not found in position response. Available fields:`, Object.keys(position));
+              } else {
+                console.log(`✅ Found positionId: ${positionId}`);
+              }
+              
+              return {
+                positionId: positionId, // Position ID for TP/SL orders
+                size: parseFloat(position.size || position.holdVol || position.holdVol || position.quantity || '0'),
+                entryPrice: parseFloat(position.entryPrice || position.avgPrice || position.openPrice || position.entry_price || '0'),
+                leverage: parseFloat(position.leverage || position.leverageRatio || position.leverage_ratio || '20'),
+                marginMode: position.marginMode || position.tdMode || position.margin_mode || position.marginMode || 'CROSS',
+                stopLoss: position.stopLoss || position.stop_loss || position.stopPrice || position.slPrice || position.sl_price,
+                takeProfit: position.takeProfit || position.take_profit || position.tpPrice || position.tp_price,
+                side: position.side || position.positionSide || (parseFloat(position.size || position.holdVol || position.quantity || '0') > 0 ? 'BUY' : 'SELL'),
+                rawPosition: position // Include raw position for debugging
+              };
+            } else {
+              console.log(`   No positions found in ${endpoint} response`);
+            }
+          } else {
+            console.log(`   ${endpoint} returned code ${data.code}: ${data.msg || data.message}`);
+          }
+        } else {
+          console.log(`   ${endpoint} returned HTTP ${response.status}`);
+        }
+      } catch (error) {
+        console.warn(`   Error trying ${endpoint}:`, error);
+        continue; // Try next endpoint
+      }
+    }
+    
+    // If all endpoints failed, return null
+    console.warn(`⚠️ All position endpoints failed for ${symbol}`);
+    return null;
+  }
+  
+  /**
+   * Set leverage and margin mode on an existing Bitunix futures position
+   * This should be called AFTER the order is placed and position is created
+   */
+  private async setBitunixPositionLeverageAndMarginMode(apiKey: string, apiSecret: string, symbol: string, leverage: number, marginMode: string = 'ISOLATED'): Promise<void> {
+    const baseUrl = 'https://fapi.bitunix.com'; // Futures API domain
+    
+    try {
+      console.log(`⚙️ Setting Bitunix position leverage and margin mode for ${symbol}:`);
+      console.log(`   Leverage: ${leverage}x, Margin Mode: ${marginMode}`);
+      
+      const timestamp = Date.now().toString();
+      const nonce = this.generateNonce();
+      
+      // Bitunix API endpoints for setting leverage and margin mode on position
+      // Official API: POST /api/v1/futures/account/change_leverage and change_margin_mode
+      // These should work on position level too (with symbol parameter)
+      const endpointsToTry = [
+        // Try account-level endpoints first (they work per symbol)
+        '/api/v1/futures/account/change_leverage',     // Official: Change leverage (with underscore)
+        '/api/v1/futures/account/change-leverage',      // Alternative: Change leverage (with hyphen)
+        '/api/v1/futures/account/change_margin_mode',   // Official: Change margin mode (with underscore)
+        '/api/v1/futures/account/change-margin-mode',   // Alternative: Change margin mode (with hyphen)
+        // Try position-specific endpoints
+        '/api/v1/futures/position/change_leverage',     // Position-level leverage
+        '/api/v1/futures/position/change_margin_mode',  // Position-level margin mode
+        '/api/v1/futures/position/modify',              // Modify position
+        '/api/v1/futures/position/update'               // Update position
+      ];
+      
+      let success = false;
       let lastError: any = null;
       
       for (const endpoint of endpointsToTry) {
         try {
-          // Bitunix stop order parameters
-          const stopOrderParams: any = {
-            symbol: symbol.toUpperCase(),
-            side: side.toUpperCase() === 'BUY' ? 'BUY' : 'SELL',
-            orderType: 'STOP_MARKET', // Stop market order
-            qty: '0', // Will use position size
-            stopPrice: stopLossPrice.toString(),
-            takeProfitPrice: takeProfitPrice.toString(),
-            marginMode: 'ISOLATED' // Use isolated margin mode
-          };
+          // Bitunix position leverage and margin mode parameters
+          // Based on official API: these endpoints require symbol and the setting to change
+          let params: any = {};
           
-          const bodyString = JSON.stringify(stopOrderParams).replace(/\s+/g, '');
+          if (endpoint.includes('change_leverage') || endpoint.includes('change-leverage')) {
+            // Official API: POST /api/v1/futures/account/change_leverage
+            // Required: symbol, leverage
+            params = {
+              symbol: symbol.toUpperCase(),
+              leverage: leverage.toString()
+            };
+          } else if (endpoint.includes('change_margin_mode') || endpoint.includes('change-margin-mode')) {
+            // Official API: POST /api/v1/futures/account/change_margin_mode
+            // Required: symbol, marginMode
+            params = {
+              symbol: symbol.toUpperCase(),
+              marginMode: marginMode.toUpperCase() // ISOLATED or CROSS
+            };
+          } else {
+            // For other endpoints, try both settings
+            params = {
+              symbol: symbol.toUpperCase(),
+              leverage: leverage.toString(),
+              marginMode: marginMode.toUpperCase(),
+              tdMode: marginMode.toUpperCase(), // Alternative parameter name
+              margin_mode: marginMode.toUpperCase() // Another alternative
+            };
+          }
+          
+          const bodyString = JSON.stringify(params).replace(/\s+/g, '');
           const queryParams = '';
           const signature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, bodyString, apiSecret);
+          
+          console.log(`   Trying endpoint: ${endpoint}`);
+          console.log(`   Request body: ${bodyString}`);
           
           const response = await fetch(`${baseUrl}${endpoint}`, {
             method: 'POST',
@@ -9202,14 +9962,20 @@ class BotExecutor {
           console.log(`   Response from ${endpoint}: ${response.status}, body: ${responseText.substring(0, 300)}`);
           
           if (response.ok) {
-            const data = JSON.parse(responseText);
-            if (data.code === 0) {
-              console.log(`✅ Bitunix SL/TP set successfully via ${endpoint}`);
-              slTpSet = true;
-              break;
-            } else {
-              lastError = new Error(`Bitunix SL/TP error: ${data.msg || data.message} (Code: ${data.code})`);
-              console.warn(`   ⚠️ ${endpoint} returned code ${data.code}, trying next endpoint...`);
+            try {
+              const data = JSON.parse(responseText);
+              if (data.code === 0) {
+                console.log(`✅ Bitunix position leverage and margin mode set successfully via ${endpoint}`);
+                success = true;
+                break;
+              } else {
+                lastError = new Error(`Bitunix position leverage/margin error: ${data.msg || data.message} (Code: ${data.code})`);
+                console.warn(`   ⚠️ ${endpoint} returned code ${data.code}: ${data.msg || data.message}`);
+                // Continue to next endpoint
+                continue;
+              }
+            } catch (parseErr) {
+              console.warn(`   ⚠️ Failed to parse response from ${endpoint}:`, parseErr);
               continue;
             }
           } else {
@@ -9217,7 +9983,7 @@ class BotExecutor {
               console.warn(`   ⚠️ ${endpoint} not found (404), trying next endpoint...`);
               continue;
             }
-            lastError = new Error(`Bitunix SL/TP HTTP error: ${response.status}`);
+            lastError = new Error(`Bitunix position leverage/margin HTTP error: ${response.status} - ${responseText.substring(0, 200)}`);
             continue;
           }
         } catch (endpointErr) {
@@ -9227,55 +9993,947 @@ class BotExecutor {
         }
       }
       
-      // If direct SL/TP endpoint doesn't work, try setting via position update
-      if (!slTpSet) {
-        console.log(`   ⚠️ Direct SL/TP endpoints failed, trying position update method...`);
-        
-        // Alternative: Set SL/TP via position management API
-        // Some exchanges require setting SL/TP on the position itself
+      if (!success) {
+        console.warn(`⚠️ Could not set Bitunix position leverage/margin mode via API endpoints.`);
+        console.warn(`   Attempted leverage: ${leverage}x, margin mode: ${marginMode}`);
+        throw new Error(`Failed to set position leverage/margin: ${lastError?.message || 'All endpoints failed'}`);
+      }
+      
+    } catch (error) {
+      console.error('❌ Bitunix position leverage/margin setup error:', error);
+      throw error;
+    }
+  }
+  
+  /**
+   * Set leverage and margin mode for Bitunix futures position
+   * This should be called before placing the order to ensure correct settings
+   */
+  private async setBitunixLeverageAndMarginMode(apiKey: string, apiSecret: string, symbol: string, leverage: number, marginMode: string = 'ISOLATED'): Promise<void> {
+    const baseUrl = 'https://fapi.bitunix.com'; // Futures API domain
+    
+    try {
+      console.log(`⚙️ Setting Bitunix leverage and margin mode for ${symbol}:`);
+      console.log(`   Leverage: ${leverage}x, Margin Mode: ${marginMode}`);
+      
+      const timestamp = Date.now().toString();
+      const nonce = this.generateNonce();
+      
+      // Bitunix API endpoints for setting leverage and margin mode
+      const endpointsToTry = [
+        '/api/v1/futures/position/set-leverage',
+        '/api/v1/futures/account/set-leverage',
+        '/api/v1/futures/position/leverage',
+        '/api/v1/position/set-leverage'
+      ];
+      
+      let success = false;
+      let lastError: any = null;
+      
+      for (const endpoint of endpointsToTry) {
         try {
-          const positionUpdateParams: any = {
+          // Bitunix leverage and margin mode parameters
+          const params: any = {
             symbol: symbol.toUpperCase(),
-            stopLoss: stopLossPrice.toString(),
-            takeProfit: takeProfitPrice.toString(),
+            leverage: leverage.toString(),
+            marginMode: marginMode.toUpperCase(),
+            tdMode: marginMode.toUpperCase(), // Alternative parameter name
+            margin_mode: marginMode.toUpperCase() // Another alternative
+          };
+          
+          const bodyString = JSON.stringify(params).replace(/\s+/g, '');
+          const queryParams = '';
+          const signature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, bodyString, apiSecret);
+          
+          console.log(`   Trying endpoint: ${endpoint}`);
+          console.log(`   Request body: ${bodyString}`);
+          
+          const response = await fetch(`${baseUrl}${endpoint}`, {
+            method: 'POST',
+            headers: {
+              'api-key': String(apiKey),
+              'nonce': String(nonce),
+              'timestamp': String(timestamp),
+              'sign': String(signature),
+              'Content-Type': 'application/json',
+              'language': 'en-US'
+            },
+            body: bodyString
+          });
+          
+          const responseText = await response.text();
+          console.log(`   Response from ${endpoint}: ${response.status}, body: ${responseText.substring(0, 300)}`);
+          
+          if (response.ok) {
+            try {
+              const data = JSON.parse(responseText);
+              if (data.code === 0) {
+                console.log(`✅ Bitunix leverage and margin mode set successfully via ${endpoint}`);
+                success = true;
+                break;
+              } else {
+                lastError = new Error(`Bitunix leverage/margin error: ${data.msg || data.message} (Code: ${data.code})`);
+                console.warn(`   ⚠️ ${endpoint} returned code ${data.code}: ${data.msg || data.message}`);
+                // Continue to next endpoint
+                continue;
+              }
+            } catch (parseErr) {
+              console.warn(`   ⚠️ Failed to parse response from ${endpoint}:`, parseErr);
+              continue;
+            }
+          } else {
+            if (response.status === 404) {
+              console.warn(`   ⚠️ ${endpoint} not found (404), trying next endpoint...`);
+              continue;
+            }
+            lastError = new Error(`Bitunix leverage/margin HTTP error: ${response.status} - ${responseText.substring(0, 200)}`);
+            continue;
+          }
+        } catch (endpointErr) {
+          console.warn(`   ⚠️ Error with ${endpoint}:`, endpointErr);
+          lastError = endpointErr;
+          continue;
+        }
+      }
+      
+      if (!success) {
+        console.warn(`⚠️ Could not set Bitunix leverage/margin mode via API endpoints.`);
+        console.warn(`   This may be acceptable if Bitunix allows setting these in the order itself.`);
+        console.warn(`   Attempted leverage: ${leverage}x, margin mode: ${marginMode}`);
+        // Don't throw error - some exchanges allow setting these in the order
+      }
+      
+    } catch (error) {
+      console.error('❌ Bitunix leverage/margin setup error:', error);
+      // Don't throw - this is non-critical as some exchanges allow setting in order
+      console.warn('   Continuing with order placement - leverage/margin may be set in order parameters');
+    }
+  }
+  
+  private async setBitunixSLTP(apiKey: string, apiSecret: string, symbol: string, side: string, entryPrice: number, bot: any, tradeSignal: any = null, orderResult: any = null): Promise<void> {
+    const baseUrl = 'https://fapi.bitunix.com'; // Futures API domain
+    const marketType = 'futures';
+    
+    try {
+      // Get bot stop loss and take profit percentages
+      const stopLossPercent = bot.stop_loss || bot.stopLoss || 2.0;
+      const takeProfitPercent = bot.take_profit || bot.takeProfit || 4.0;
+      
+      // Calculate SL/TP prices based on percentage
+      const isLong = side.toUpperCase() === 'BUY' || side === 'Buy';
+      const stopLossPrice = isLong 
+        ? entryPrice * (1 - stopLossPercent / 100)  // Long: SL below entry
+        : entryPrice * (1 + stopLossPercent / 100); // Short: SL above entry
+      
+      const takeProfitPrice = isLong
+        ? entryPrice * (1 + takeProfitPercent / 100)  // Long: TP above entry
+        : entryPrice * (1 - takeProfitPercent / 100); // Short: TP below entry
+      
+      console.log(`🛡️ Setting Bitunix SL/TP for ${symbol} ${side}:`);
+      console.log(`   Entry: ${entryPrice}, SL: ${stopLossPrice.toFixed(4)} (${stopLossPercent}%), TP: ${takeProfitPrice.toFixed(4)} (${takeProfitPercent}%)`);
+      console.log(`   Margin Mode: ISOLATED, Order Type: MARKET`);
+      
+      // Wait for position to be established after order fills
+      // Bitunix may need time to process the position before SL/TP can be set
+      console.log(`⏳ Waiting for Bitunix position to be established before setting SL/TP...`);
+      await new Promise(resolve => setTimeout(resolve, 5000)); // Increased to 5 seconds - positions can take time
+      
+      // CRITICAL: Get positionId (required for TP/SL orders)
+      // First, try to get positionId from orderResult if available (fastest method)
+      let positionId = null;
+      if (orderResult?.positionId) {
+        positionId = String(orderResult.positionId);
+        console.log(`📊 Using positionId from orderResult: ${positionId}`);
+      } else if (orderResult?.response?.data) {
+        const orderData = orderResult.response.data;
+        positionId = orderData.positionId || orderData.position_id || orderData.positionID || 
+                     orderData.id || orderData.orderId;
+        if (positionId) {
+          positionId = String(positionId);
+          console.log(`📊 Using positionId from order response data: ${positionId}`);
+        }
+      }
+      
+      // If we don't have positionId from order, fetch position from API with retries
+      // Bitunix positions can take several seconds to appear - retry up to 10 times with 1-second delays
+      let positionInfo = null;
+      const maxRetries = 10;
+      if (!positionId) {
+        console.log(`📊 PositionId not in order response, fetching from position API with ${maxRetries} retries...`);
+        for (let retry = 0; retry < maxRetries; retry++) {
+          try {
+            positionInfo = await this.getBitunixPosition(apiKey, apiSecret, symbol);
+            if (positionInfo && positionInfo.size > 0) {
+              // Try multiple field names for positionId
+              positionId = positionInfo.positionId || 
+                          (positionInfo.rawPosition?.positionId) ||
+                          (positionInfo.rawPosition?.id) ||
+                          (positionInfo.rawPosition?.position_id) ||
+                          (positionInfo.rawPosition?.positionID);
+              
+              console.log(`📊 Position found: ${positionInfo.size} @ ${positionInfo.entryPrice}, PositionId: ${positionId || 'NOT FOUND'}`);
+              
+              // If still not found, try to get it from the raw position response
+              if (!positionId && positionInfo.rawPosition) {
+                console.log(`📊 Raw position keys:`, Object.keys(positionInfo.rawPosition));
+                // Log full position for debugging
+                console.log(`📊 Full position data:`, JSON.stringify(positionInfo.rawPosition).substring(0, 1000));
+                
+                // Try to extract positionId from any field that looks like an ID
+                for (const [key, value] of Object.entries(positionInfo.rawPosition)) {
+                  if (key.toLowerCase().includes('id') || key.toLowerCase().includes('position')) {
+                    if (value && (typeof value === 'string' || typeof value === 'number')) {
+                      positionId = String(value);
+                      console.log(`📊 Found positionId in field '${key}': ${positionId}`);
+                      break;
+                    }
+                  }
+                }
+              }
+              
+              if (positionId) {
+                break; // Found positionId, exit retry loop
+              } else {
+                console.warn(`   ⚠️ Position found but positionId not found (attempt ${retry + 1}/${maxRetries})`);
+              }
+            } else {
+              console.warn(`   ⚠️ Position not found yet (attempt ${retry + 1}/${maxRetries})`);
+            }
+          } catch (posErr) {
+            console.warn(`   ⚠️ Failed to get position (attempt ${retry + 1}/${maxRetries}):`, posErr);
+          }
+          
+          // Wait 1 second before next retry (as per requirements)
+          if (retry < maxRetries - 1) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        }
+      } else {
+        // We have positionId from order, but still fetch position info for entry price
+        positionInfo = await this.getBitunixPosition(apiKey, apiSecret, symbol);
+      }
+      
+      if (!positionId && (!positionInfo || positionInfo.size === 0)) {
+        // Try one more direct API call with detailed logging
+        console.error(`❌ Position not found after ${maxRetries} retries. Trying direct API call...`);
+        try {
+          const positionTimestamp = Date.now().toString();
+          const positionNonce = this.generateNonce();
+          const positionQueryParams = `symbol=${symbol.toUpperCase()}`;
+          const positionBody = '';
+          const positionSig = await this.createBitunixSignatureDoubleSHA256(positionNonce, positionTimestamp, apiKey, positionQueryParams, positionBody, apiSecret);
+          
+          const positionResponse = await fetch(`${baseUrl}/api/v1/futures/position/list?${positionQueryParams}`, {
+            method: 'GET',
+            headers: {
+              'api-key': String(apiKey),
+              'nonce': String(positionNonce),
+              'timestamp': String(positionTimestamp),
+              'sign': String(positionSig),
+              'Content-Type': 'application/json',
+              'language': 'en-US'
+            }
+          });
+          
+          const positionResponseText = await positionResponse.text();
+          console.error(`   Direct API call response: ${positionResponse.status}`);
+          console.error(`   Response body: ${positionResponseText.substring(0, 1000)}`);
+          
+          if (positionResponse.ok) {
+            const positionData = JSON.parse(positionResponseText);
+            console.error(`   Response code: ${positionData.code}`);
+            console.error(`   Has data: ${!!positionData.data}`);
+            if (positionData.data) {
+              console.error(`   Data type: ${Array.isArray(positionData.data) ? 'array' : typeof positionData.data}`);
+              if (Array.isArray(positionData.data)) {
+                console.error(`   Data length: ${positionData.data.length}`);
+              }
+            }
+          }
+        } catch (debugErr) {
+          console.error(`   Debug API call failed:`, debugErr);
+        }
+        
+        // If we still don't have positionId, try using orderId as fallback
+        if (!positionId && orderResult?.orderId) {
+          console.warn(`⚠️ Using orderId as positionId fallback: ${orderResult.orderId}`);
+          positionId = String(orderResult.orderId);
+        } else if (!positionId) {
+          throw new Error(`Position not found for ${symbol} after ${maxRetries} retries - cannot set SL/TP. The position may not have been created yet or the order may have failed.`);
+        }
+      }
+      
+      // Final check - positionId is required
+      if (!positionId) {
+        // Last resort: try orderId
+        if (orderResult?.orderId) {
+          console.warn(`⚠️ Final fallback: Using orderId as positionId: ${orderResult.orderId}`);
+          positionId = String(orderResult.orderId);
+        } else {
+          throw new Error(`positionId is required for TP/SL orders but could not be determined for ${symbol}. OrderId: ${orderResult?.orderId || 'N/A'}`);
+        }
+      }
+      
+      if (!positionId) {
+        // CRITICAL: positionId is required for Bitunix TP/SL orders
+        // Try one more time with direct API call and exhaustive field search
+        console.error(`❌ CRITICAL: positionId not found after all retries. Attempting final extraction...`);
+        try {
+          const positionTimestamp = Date.now().toString();
+          const positionNonce = this.generateNonce();
+          const positionQueryParams = `symbol=${symbol.toUpperCase()}`;
+          const positionBody = '';
+          const positionSig = await this.createBitunixSignatureDoubleSHA256(positionNonce, positionTimestamp, apiKey, positionQueryParams, positionBody, apiSecret);
+          
+          const positionResponse = await fetch(`${baseUrl}/api/v1/futures/position/list?${positionQueryParams}`, {
+            method: 'GET',
+            headers: {
+              'api-key': String(apiKey),
+              'nonce': String(positionNonce),
+              'timestamp': String(positionTimestamp),
+              'sign': String(positionSig),
+              'Content-Type': 'application/json',
+              'language': 'en-US'
+            }
+          });
+          
+          if (positionResponse.ok) {
+            const positionData = await positionResponse.json();
+            console.error(`   Final API call - Response code: ${positionData.code}`);
+            console.error(`   Has data: ${!!positionData.data}`);
+            
+            if (positionData.code === 0 && positionData.data) {
+              // Handle both array and object responses
+              let positions = [];
+              if (Array.isArray(positionData.data)) {
+                positions = positionData.data;
+              } else if (typeof positionData.data === 'object') {
+                const possibleArrays = Object.values(positionData.data).filter(v => Array.isArray(v));
+                if (possibleArrays.length > 0) {
+                  positions = possibleArrays[0];
+                } else {
+                  positions = [positionData.data];
+                }
+              }
+              
+              console.error(`   Found ${positions.length} position(s)`);
+              
+              if (positions.length > 0) {
+                const position = positions.find(p => {
+                  const size = parseFloat(p.size || p.holdVol || p.quantity || '0');
+                  return size > 0;
+                }) || positions[0];
+                
+                console.error(`   Position keys:`, Object.keys(position));
+                console.error(`   Full position:`, JSON.stringify(position).substring(0, 1000));
+                
+                // Try ALL possible field names - exhaustive search
+                const allFields = Object.keys(position);
+                for (const field of allFields) {
+                  const value = position[field];
+                  if (value && (typeof value === 'string' || typeof value === 'number')) {
+                    const fieldLower = field.toLowerCase();
+                    if (fieldLower.includes('id') || fieldLower.includes('position')) {
+                      positionId = String(value);
+                      console.error(`   ✅ Found potential positionId in field '${field}': ${positionId}`);
+                      break;
+                    }
+                  }
+                }
+                
+                // If still not found, try using orderId as positionId (some exchanges use this)
+                if (!positionId && orderResult?.orderId) {
+                  console.warn(`   ⚠️ Trying orderId as positionId: ${orderResult.orderId}`);
+                  positionId = String(orderResult.orderId);
+                }
+                
+                // Also try extracting from orderResult response data
+                if (!positionId && orderResult?.response?.data) {
+                  const orderData = orderResult.response.data;
+                  const orderDataId = orderData.positionId || orderData.id || orderData.position_id || orderData.orderId;
+                  if (orderDataId) {
+                    console.warn(`   ⚠️ Trying positionId from order response: ${orderDataId}`);
+                    positionId = String(orderDataId);
+                  }
+                }
+                
+                if (!positionId) {
+                  console.error(`❌ CRITICAL: positionId not found in position response after exhaustive search.`);
+                  console.error(`   Available fields:`, allFields);
+                  console.error(`   Position size: ${position.size || position.holdVol || position.quantity || '0'}`);
+                  throw new Error(`positionId is required for TP/SL orders but not found in position data. Available fields: ${allFields.join(', ')}`);
+                }
+              } else {
+                console.error(`   No positions found in response`);
+                throw new Error(`Position not found for ${symbol} - cannot set SL/TP`);
+              }
+            } else {
+              console.error(`   API returned code ${positionData.code}: ${positionData.msg || positionData.message}`);
+              throw new Error(`Position API returned code ${positionData.code}: ${positionData.msg || positionData.message}`);
+            }
+          } else {
+            console.error(`   Position API returned HTTP ${positionResponse.status}`);
+            throw new Error(`Position API returned HTTP ${positionResponse.status}`);
+          }
+        } catch (extractErr) {
+          console.error(`❌ CRITICAL: Could not extract positionId:`, extractErr);
+          throw new Error(`positionId is required for TP/SL orders but could not be extracted: ${extractErr instanceof Error ? extractErr.message : String(extractErr)}`);
+        }
+      }
+      
+      // Bitunix API endpoints for setting stop loss and take profit
+      // PRIMARY: Use /api/v1/futures/tpsl/place_tp_sl_order (symbol-based, more reliable)
+      // FALLBACK: Use /api/v1/futures/tpsl/position/place_order (position-based, requires positionId)
+      const timestamp = Date.now().toString();
+      const nonce = this.generateNonce();
+      
+      // PRIMARY endpoint: symbol-based (more reliable, doesn't require positionId)
+      const endpointsToTry = [
+        {
+          endpoint: '/api/v1/futures/tpsl/place_tp_sl_order',
+          params: {
+            symbol: symbol.toUpperCase(),
+            side: side.toUpperCase() === 'BUY' ? 'BUY' : 'SELL',
+            tpPrice: String(takeProfitPrice.toFixed(8)), // Must be string
+            slPrice: String(stopLossPrice.toFixed(8)), // Must be string
+            tpStopType: 'LAST_PRICE',
+            slStopType: 'LAST_PRICE'
+          },
+          description: 'Primary endpoint (symbol-based, more reliable)'
+        },
+        {
+          endpoint: '/api/v1/futures/tpsl/position/place_order',
+          params: {
+            symbol: symbol.toUpperCase(),
+            positionId: String(positionId || ''),
+            tpPrice: String(takeProfitPrice.toFixed(8)), // Must be string
+            slPrice: String(stopLossPrice.toFixed(8)), // Must be string
+            tpStopType: 'LAST_PRICE',
+            slStopType: 'LAST_PRICE'
+          },
+          description: 'Fallback endpoint (position-based, requires positionId)'
+        }
+      ];
+      
+      let slTpSuccess = false;
+      let lastError: any = null;
+      
+      for (const endpointConfig of endpointsToTry) {
+        try {
+          const slTpParams = endpointConfig.params;
+          
+          const bodyString = JSON.stringify(slTpParams).replace(/\s+/g, '');
+          const queryParams = '';
+          const signature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, bodyString, apiSecret);
+          
+          console.log(`   Trying endpoint: ${endpointConfig.endpoint} (${endpointConfig.description})`);
+          console.log(`   Request body: ${bodyString}`);
+          
+          const response = await fetch(`${baseUrl}${endpointConfig.endpoint}`, {
+            method: 'POST',
+            headers: {
+              'api-key': String(apiKey),
+              'nonce': String(nonce),
+              'timestamp': String(timestamp),
+              'sign': String(signature),
+              'Content-Type': 'application/json',
+              'language': 'en-US'
+            },
+            body: bodyString
+          });
+          
+          const responseText = await response.text();
+          console.log(`   Response: ${response.status}, body: ${responseText.substring(0, 500)}`);
+          
+          if (response.ok) {
+            try {
+              const data = JSON.parse(responseText);
+              if (data.code === 0 || data.code === 200) {
+                console.log(`✅ Bitunix SL/TP set successfully via ${endpointConfig.endpoint}`);
+                
+                // Log success
+                if (bot?.id) {
+                  await this.addBotLog(bot.id, {
+                    level: 'success',
+                    category: 'trade',
+                    message: `Bitunix SL/TP set: SL=${stopLossPrice.toFixed(4)} (${stopLossPercent}%), TP=${takeProfitPrice.toFixed(4)} (${takeProfitPercent}%)`,
+                    details: {
+                      symbol: symbol,
+                      side: side,
+                      entryPrice: entryPrice,
+                      stopLoss: stopLossPrice,
+                      takeProfit: takeProfitPrice,
+                      stopLossPercent: stopLossPercent,
+                      takeProfitPercent: takeProfitPercent,
+                      positionId: positionId,
+                      endpoint: endpointConfig.endpoint
+                    }
+                  });
+                }
+                slTpSuccess = true;
+                break; // Success! Exit loop
+              } else {
+                const errorMsg = data.msg || data.message || 'Unknown error';
+                console.warn(`   ⚠️ ${endpointConfig.endpoint} returned code ${data.code}: ${errorMsg}`);
+                lastError = new Error(`Bitunix SL/TP endpoint failed: ${errorMsg} (Code: ${data.code})`);
+                // Continue to next endpoint
+              }
+            } catch (parseError) {
+              console.warn(`   ⚠️ Failed to parse response:`, parseError);
+              lastError = new Error(`Bitunix SL/TP endpoint returned invalid response: ${responseText.substring(0, 200)}`);
+              // Continue to next endpoint
+            }
+          } else {
+            const errorText = responseText.substring(0, 500);
+            console.warn(`   ⚠️ HTTP ${response.status}: ${errorText}`);
+            lastError = new Error(`Bitunix SL/TP endpoint returned HTTP ${response.status}: ${errorText}`);
+            // Continue to next endpoint
+          }
+        } catch (endpointError) {
+          console.warn(`   ⚠️ Error trying ${endpointConfig.endpoint}:`, endpointError);
+          lastError = endpointError instanceof Error ? endpointError : new Error(String(endpointError));
+          // Continue to next endpoint
+        }
+      }
+      
+      if (!slTpSuccess) {
+        // All endpoints failed - log error with all details
+        const errorMsg = lastError?.message || 'All SL/TP endpoints failed';
+        console.error(`❌ CRITICAL: All Bitunix SL/TP endpoints failed`);
+        console.error(`   Last error: ${errorMsg}`);
+        
+        // CRITICAL: Log high-priority error to Supabase
+        if (bot?.id) {
+          await this.addBotLog(bot.id, {
+            level: 'error',
+            category: 'trade',
+            message: `CRITICAL: Bitunix order placed but SL/TP setup FAILED. Position is UNPROTECTED.`,
+            details: {
+              symbol: symbol,
+              side: side,
+              entryPrice: entryPrice,
+              stopLossPrice: stopLossPrice.toFixed(8),
+              takeProfitPrice: takeProfitPrice.toFixed(8),
+              stopLossPercent: stopLossPercent,
+              takeProfitPercent: takeProfitPercent,
+              positionId: positionId || 'NOT FOUND',
+              error: errorMsg,
+              endpointsTried: endpointsToTry.map(e => e.endpoint),
+              action_required: 'URGENT: Manually set SL/TP on Bitunix exchange immediately',
+              manualInstructions: `Go to Bitunix → Positions → ${symbol} → Click TP/SL → Set SL: ${stopLossPrice.toFixed(4)}, TP: ${takeProfitPrice.toFixed(4)}`,
+              calculatedStopLoss: stopLossPrice.toFixed(8),
+              calculatedTakeProfit: takeProfitPrice.toFixed(8)
+            }
+          });
+        }
+        
+        throw new Error(`CRITICAL: Bitunix order placed but SL/TP setup FAILED. Position is UNPROTECTED. ${errorMsg}`);
+      }
+      
+      // Fallback: If position-based SL/TP doesn't work, try placing TP and SL as separate conditional orders
+      // (This code should not be reached if the above succeeds, but kept as fallback)
+      if (false) {
+        console.log(`   ⚠️ Combined TP/SL endpoint failed, trying separate TP and SL conditional orders...`);
+        
+        try {
+          // Get position details for separate orders
+          let positionSize = positionInfo?.size?.toString() || '0';
+          let hasExistingSL = false;
+          let hasExistingTP = false;
+          
+          // Verify current SL/TP status from position
+          if (positionInfo) {
+            hasExistingSL = !!(positionInfo.stopLoss || positionInfo.stop_loss || positionInfo.stopPrice || positionInfo.slPrice);
+            hasExistingTP = !!(positionInfo.takeProfit || positionInfo.take_profit || positionInfo.tpPrice);
+            console.log(`   📊 Current position status: SL: ${hasExistingSL ? 'SET' : 'NOT SET'}, TP: ${hasExistingTP ? 'SET' : 'NOT SET'}`);
+          }
+          
+          // Try placing TP order separately using conditional order endpoint
+          if (!hasExistingTP) {
+            console.log(`   🟢 Placing Take Profit conditional order separately...`);
+            const tpOrderEndpoints = [
+              '/api/v1/futures/tp-sl/place',           // Place TP/SL order
+              '/api/v1/futures/trade/conditional-order', // Conditional order
+              '/api/v1/futures/trade/stop_order',      // Stop order
+              '/api/v1/trade/conditional-order',        // Shorter path
+              '/api/v1/trade/stop_order'                // Shortest path
+            ];
+            
+            for (const tpEndpoint of tpOrderEndpoints) {
+              try {
+                const tpOrderParams: any = {
+            symbol: symbol.toUpperCase(),
+                  side: isLong ? 'SELL' : 'BUY', // Opposite side for TP (closing position)
+                  orderType: 'MARKET',
+                  tpPrice: takeProfitPrice.toFixed(8), // TP trigger price
+                  tpOrderType: 'MARKET',
+                  tpStopType: 'LAST_PRICE',
+                  qty: positionSize !== '0' ? positionSize : (positionInfo?.size?.toString() || '0'),
             marginMode: 'ISOLATED'
           };
           
-          const updateBodyString = JSON.stringify(positionUpdateParams).replace(/\s+/g, '');
-          const updateSignature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, updateBodyString, apiSecret);
+                if (positionId) {
+                  tpOrderParams.positionId = String(positionId);
+                }
+                
+                const tpBodyString = JSON.stringify(tpOrderParams).replace(/\s+/g, '');
+                const tpQueryParams = '';
+                const tpSignature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, tpQueryParams, tpBodyString, apiSecret);
+                
+                console.log(`   Trying TP endpoint: ${tpEndpoint}`);
+                console.log(`   TP request body: ${tpBodyString}`);
+                
+                const tpResponse = await fetch(`${baseUrl}${tpEndpoint}`, {
+                  method: 'POST',
+                  headers: {
+                    'api-key': String(apiKey),
+                    'nonce': String(nonce),
+                    'timestamp': String(timestamp),
+                    'sign': String(tpSignature),
+                    'Content-Type': 'application/json',
+                    'language': 'en-US'
+                  },
+                  body: tpBodyString
+                });
+                
+                const tpResponseText = await tpResponse.text();
+                console.log(`   TP response: ${tpResponse.status}, body: ${tpResponseText.substring(0, 300)}`);
+                
+                if (tpResponse.ok) {
+                  const tpData = JSON.parse(tpResponseText);
+                  if (tpData.code === 0) {
+                    console.log(`✅ Bitunix Take Profit order placed via ${tpEndpoint}`);
+                    hasExistingTP = true;
+                    slTpSet = true;
+                    break;
+                  } else {
+                    console.warn(`   ⚠️ TP endpoint ${tpEndpoint} returned code ${tpData.code}: ${tpData.msg || tpData.message}`);
+                  }
+                }
+              } catch (tpErr) {
+                console.warn(`   ⚠️ Error with TP endpoint ${tpEndpoint}:`, tpErr);
+                continue;
+              }
+            }
+          }
           
-          const updateEndpoints = [
-            '/api/v1/futures/position/update',
-            '/api/v1/futures/position/modify',
-            '/api/v1/position/update'
-          ];
-          
-          for (const updateEndpoint of updateEndpoints) {
-            try {
-              const updateResponse = await fetch(`${baseUrl}${updateEndpoint}`, {
+          // Try placing SL order separately using conditional order endpoint
+          if (!hasExistingSL) {
+            console.log(`   🔴 Placing Stop Loss conditional order separately...`);
+            const slOrderEndpoints = [
+              '/api/v1/futures/tp-sl/place',           // Place TP/SL order
+              '/api/v1/futures/trade/conditional-order', // Conditional order
+              '/api/v1/futures/trade/stop_order',      // Stop order
+              '/api/v1/trade/conditional-order',        // Shorter path
+              '/api/v1/trade/stop_order'                // Shortest path
+            ];
+            
+            for (const slEndpoint of slOrderEndpoints) {
+              try {
+                const slOrderParams: any = {
+                  symbol: symbol.toUpperCase(),
+                  side: isLong ? 'SELL' : 'BUY', // Opposite side for SL (closing position)
+                  orderType: 'MARKET',
+                  slPrice: stopLossPrice.toFixed(8), // SL trigger price
+                  slOrderType: 'MARKET',
+                  slStopType: 'LAST_PRICE',
+                  qty: positionSize !== '0' ? positionSize : (positionInfo?.size?.toString() || '0'),
+                  marginMode: 'ISOLATED'
+                };
+                
+                if (positionId) {
+                  slOrderParams.positionId = String(positionId);
+                }
+                
+                const slBodyString = JSON.stringify(slOrderParams).replace(/\s+/g, '');
+                const slQueryParams = '';
+                const slSignature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, slQueryParams, slBodyString, apiSecret);
+                
+                console.log(`   Trying SL endpoint: ${slEndpoint}`);
+                console.log(`   SL request body: ${slBodyString}`);
+                
+                const slResponse = await fetch(`${baseUrl}${slEndpoint}`, {
                 method: 'POST',
                 headers: {
                   'api-key': String(apiKey),
                   'nonce': String(nonce),
                   'timestamp': String(timestamp),
-                  'sign': String(updateSignature),
+                    'sign': String(slSignature),
                   'Content-Type': 'application/json',
                   'language': 'en-US'
                 },
-                body: updateBodyString
-              });
-              
-              const updateResponseText = await updateResponse.text();
-              if (updateResponse.ok) {
-                const updateData = JSON.parse(updateResponseText);
-                if (updateData.code === 0) {
-                  console.log(`✅ Bitunix SL/TP set via position update: ${updateEndpoint}`);
+                  body: slBodyString
+                });
+                
+                const slResponseText = await slResponse.text();
+                console.log(`   SL response: ${slResponse.status}, body: ${slResponseText.substring(0, 300)}`);
+                
+                if (slResponse.ok) {
+                  const slData = JSON.parse(slResponseText);
+                  if (slData.code === 0) {
+                    console.log(`✅ Bitunix Stop Loss order placed via ${slEndpoint}`);
+                    hasExistingSL = true;
                   slTpSet = true;
                   break;
+                  } else {
+                    console.warn(`   ⚠️ SL endpoint ${slEndpoint} returned code ${slData.code}: ${slData.msg || slData.message}`);
                 }
               }
-            } catch (updateErr) {
+              } catch (slErr) {
+                console.warn(`   ⚠️ Error with SL endpoint ${slEndpoint}:`, slErr);
               continue;
+              }
+            }
+          }
+          
+          // If still not set, try the old method with position size
+          if (!hasExistingSL || !hasExistingTP) {
+            console.log(`   ⚠️ Separate TP/SL orders failed, trying alternative method...`);
+            
+            // Get position size if not already available
+            if (positionSize === '0') {
+              try {
+                const positionTimestamp = Date.now().toString();
+                const positionNonce = this.generateNonce();
+                const positionQueryParams = `symbol=${symbol.toUpperCase()}`;
+                const positionBody = '';
+                const positionSig = await this.createBitunixSignatureDoubleSHA256(positionNonce, positionTimestamp, apiKey, positionQueryParams, positionBody, apiSecret);
+                
+                const positionResponse = await fetch(`${baseUrl}/api/v1/futures/position/list?${positionQueryParams}`, {
+                  method: 'GET',
+                  headers: {
+                    'api-key': String(apiKey),
+                    'nonce': String(positionNonce),
+                    'timestamp': String(positionTimestamp),
+                    'sign': String(positionSig),
+                    'Content-Type': 'application/json',
+                    'language': 'en-US'
+                  }
+                });
+                
+                if (positionResponse.ok) {
+                  const positionData = await positionResponse.json();
+                  if (positionData.code === 0 && positionData.data && positionData.data.length > 0) {
+                    const position = positionData.data[0];
+                    positionSize = position.size || position.holdVol || position.holdVol || '0';
+                    hasExistingSL = !!(position.stopLoss || position.stop_loss || position.stopPrice);
+                    hasExistingTP = !!(position.takeProfit || position.take_profit || position.tpPrice);
+                    console.log(`   📊 Position size: ${positionSize}, SL: ${hasExistingSL ? 'SET' : 'NOT SET'}, TP: ${hasExistingTP ? 'SET' : 'NOT SET'}`);
+                  }
+                }
+              } catch (posErr) {
+                console.warn(`   ⚠️ Could not fetch position details:`, posErr);
+              }
+            }
+            
+            // Try setting SL separately if not set (fallback method)
+            if (!hasExistingSL) {
+              console.log(`   🔴 Setting Stop Loss separately...`);
+              const slEndpoints = [
+                '/api/v1/futures/position/set-stop-loss',
+                '/api/v1/futures/position/stop-loss',
+                '/api/v1/futures/trade/stop_order',
+                '/api/v1/trade/stop_order'
+              ];
+              
+              for (const slEndpoint of slEndpoints) {
+                try {
+                  const slParams: any = {
+                    symbol: symbol.toUpperCase(),
+                    stopLoss: stopLossPrice.toFixed(8),
+                    stop_loss: stopLossPrice.toFixed(8),
+                    stopPrice: stopLossPrice.toFixed(8),
+                    marginMode: 'ISOLATED',
+                    tdMode: 'ISOLATED'
+                  };
+                  
+                  const slBodyString = JSON.stringify(slParams).replace(/\s+/g, '');
+                  const slQueryParams = '';
+                  const slSignature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, slQueryParams, slBodyString, apiSecret);
+                  
+                  const slResponse = await fetch(`${baseUrl}${slEndpoint}`, {
+                    method: 'POST',
+                    headers: {
+                      'api-key': String(apiKey),
+                      'nonce': String(nonce),
+                      'timestamp': String(timestamp),
+                      'sign': String(slSignature),
+                      'Content-Type': 'application/json',
+                      'language': 'en-US'
+                    },
+                    body: slBodyString
+                  });
+                  
+                  const slResponseText = await slResponse.text();
+                  if (slResponse.ok) {
+                    const slData = JSON.parse(slResponseText);
+                    if (slData.code === 0) {
+                      console.log(`✅ Bitunix Stop Loss set successfully via ${slEndpoint}`);
+                      hasExistingSL = true;
+                      slTpSet = true;
+                      break;
+                    }
+                  }
+                } catch (slErr) {
+                  continue;
+                }
+              }
+            }
+            
+            // Try setting TP separately if not set (fallback method)
+            if (!hasExistingTP) {
+              console.log(`   🟢 Setting Take Profit separately...`);
+              const tpEndpoints = [
+                '/api/v1/futures/position/set-take-profit',
+                '/api/v1/futures/position/take-profit',
+                '/api/v1/futures/trade/stop_order',
+                '/api/v1/trade/stop_order'
+              ];
+              
+              for (const tpEndpoint of tpEndpoints) {
+                try {
+                  const tpParams: any = {
+                    symbol: symbol.toUpperCase(),
+                    takeProfit: takeProfitPrice.toFixed(8),
+                    take_profit: takeProfitPrice.toFixed(8),
+                    tpPrice: takeProfitPrice.toFixed(8),
+                    marginMode: 'ISOLATED',
+                    tdMode: 'ISOLATED'
+                  };
+                  
+                  const tpBodyString = JSON.stringify(tpParams).replace(/\s+/g, '');
+                  const tpQueryParams = '';
+                  const tpSignature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, tpQueryParams, tpBodyString, apiSecret);
+                  
+                  const tpResponse = await fetch(`${baseUrl}${tpEndpoint}`, {
+                    method: 'POST',
+                    headers: {
+                      'api-key': String(apiKey),
+                      'nonce': String(nonce),
+                      'timestamp': String(timestamp),
+                      'sign': String(tpSignature),
+                      'Content-Type': 'application/json',
+                      'language': 'en-US'
+                    },
+                    body: tpBodyString
+                  });
+                
+                const tpResponseText = await tpResponse.text();
+                if (tpResponse.ok) {
+                  const tpData = JSON.parse(tpResponseText);
+                  if (tpData.code === 0) {
+                    console.log(`✅ Bitunix Take Profit set successfully via ${tpEndpoint}`);
+                    hasExistingTP = true;
+                    slTpSet = true;
+                    break;
+                  }
+                }
+              } catch (tpErr) {
+                continue;
+              }
+            }
+          }
+          }
+          
+          // If still not set, try creating stop orders as last resort
+          if (!hasExistingSL || !hasExistingTP) {
+            console.log(`   ⚠️ Trying stop order method as last resort...`);
+            const stopOrderEndpoints = [
+              '/api/v1/futures/trade/stop_order',
+              '/api/v1/futures/trade/place_order',
+              '/api/v1/trade/stop_order'
+            ];
+            
+            // Create stop loss order if not set
+            if (!hasExistingSL && positionSize !== '0') {
+              for (const stopEndpoint of stopOrderEndpoints) {
+                try {
+                  const stopOrderParams: any = {
+                    symbol: symbol.toUpperCase(),
+                    side: isLong ? 'SELL' : 'BUY', // Opposite side for stop loss
+                    orderType: 'STOP_MARKET',
+                    qty: positionSize,
+                    stopPrice: stopLossPrice.toFixed(8),
+                    marginMode: 'ISOLATED'
+                  };
+                  
+                  const stopBodyString = JSON.stringify(stopOrderParams).replace(/\s+/g, '');
+                  const stopQueryParams = '';
+                  const stopSignature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, stopQueryParams, stopBodyString, apiSecret);
+                  
+                  const stopResponse = await fetch(`${baseUrl}${stopEndpoint}`, {
+                    method: 'POST',
+                    headers: {
+                      'api-key': String(apiKey),
+                      'nonce': String(nonce),
+                      'timestamp': String(timestamp),
+                      'sign': String(stopSignature),
+                      'Content-Type': 'application/json',
+                      'language': 'en-US'
+                    },
+                    body: stopBodyString
+                  });
+                  
+                  const stopResponseText = await stopResponse.text();
+                  if (stopResponse.ok) {
+                    const stopData = JSON.parse(stopResponseText);
+                    if (stopData.code === 0) {
+                      console.log(`✅ Bitunix Stop Loss order created via ${stopEndpoint}`);
+                      hasExistingSL = true;
+                      slTpSet = true;
+                      break;
+                    }
+                  }
+                } catch (stopErr) {
+                  continue;
+                }
+              }
+            }
+            
+            // Create take profit order if not set
+            if (!hasExistingTP && positionSize !== '0') {
+              for (const tpEndpoint of stopOrderEndpoints) {
+                try {
+                  const tpOrderParams: any = {
+                    symbol: symbol.toUpperCase(),
+                    side: isLong ? 'SELL' : 'BUY', // Opposite side for take profit
+                    orderType: 'TAKE_PROFIT_MARKET',
+                    qty: positionSize,
+                    stopPrice: takeProfitPrice.toFixed(8),
+                    marginMode: 'ISOLATED'
+                  };
+                  
+                  const tpBodyString = JSON.stringify(tpOrderParams).replace(/\s+/g, '');
+                  const tpQueryParams = '';
+                  const tpSignature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, tpQueryParams, tpBodyString, apiSecret);
+                  
+                  const tpResponse = await fetch(`${baseUrl}${tpEndpoint}`, {
+                    method: 'POST',
+                    headers: {
+                      'api-key': String(apiKey),
+                      'nonce': String(nonce),
+                      'timestamp': String(timestamp),
+                      'sign': String(tpSignature),
+                      'Content-Type': 'application/json',
+                      'language': 'en-US'
+                    },
+                    body: tpBodyString
+                  });
+                  
+                  const tpResponseText = await tpResponse.text();
+                  if (tpResponse.ok) {
+                    const tpData = JSON.parse(tpResponseText);
+                    if (tpData.code === 0) {
+                      console.log(`✅ Bitunix Take Profit order created via ${tpEndpoint}`);
+                      hasExistingTP = true;
+                      slTpSet = true;
+                      break;
+                    }
+                  }
+                } catch (tpErr) {
+                  continue;
+                }
+              }
             }
           }
         } catch (altErr) {
@@ -9283,29 +10941,6 @@ class BotExecutor {
         }
       }
       
-      if (!slTpSet) {
-        console.warn(`⚠️ Could not set Bitunix SL/TP via any endpoint. Please set manually on exchange.`);
-        console.warn(`   Recommended SL: ${stopLossPrice}, TP: ${takeProfitPrice}`);
-        throw new Error(`Failed to set Bitunix SL/TP: ${lastError?.message || 'All endpoints failed'}`);
-      }
-      
-      // Log success
-      if (bot?.id) {
-        await this.addBotLog(bot.id, {
-          level: 'success',
-          category: 'trade',
-          message: `Bitunix SL/TP set: SL=${stopLossPrice.toFixed(4)} (${stopLossPercent}%), TP=${takeProfitPrice.toFixed(4)} (${takeProfitPercent}%)`,
-          details: {
-            symbol: symbol,
-            side: side,
-            entryPrice: entryPrice,
-            stopLoss: stopLossPrice,
-            takeProfit: takeProfitPrice,
-            stopLossPercent: stopLossPercent,
-            takeProfitPercent: takeProfitPercent
-          }
-        });
-      }
       
     } catch (error) {
       console.error('❌ Bitunix SL/TP setup error:', error);
@@ -10862,85 +12497,148 @@ class BotExecutor {
           if (apiKeysResp.data && !apiKeysResp.error) {
             const apiKeys = apiKeysResp.data;
             const tradingType = bot.tradingType || bot.trading_type || 'futures';
+            const exchange = (bot.exchange || '').toLowerCase();
             
-            // Fetch available balance directly from Bybit API
             try {
-              // Always use mainnet
-              const baseDomains = ['https://api.bybit.com'];
-              
-              const timestamp = Date.now().toString();
-              const recvWindow = '5000';
-              const categoryMap: { [key: string]: string } = {
-                'spot': 'spot',
-                'futures': 'linear'
-              };
-              const bybitCategory = categoryMap[tradingType] || 'linear';
-              
-              // For futures/linear, get total equity (available balance)
-              if (bybitCategory === 'linear') {
-                const queryParams = `accountType=UNIFIED`;
-                const signaturePayload = timestamp + apiKeys.api_key + recvWindow + queryParams;
-                const signature = await this.createBybitSignature(signaturePayload, apiKeys.api_secret);
+              if (exchange === 'bitunix') {
+                // Fetch Bitunix balance
+                const baseUrl = tradingType === 'futures' ? 'https://fapi.bitunix.com' : 'https://api.bitunix.com';
+                const timestamp = Date.now().toString();
+                const nonce = this.generateNonce();
+                const queryParams = '';
+                const body = '';
+                const signature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKeys.api_key, queryParams, body, apiKeys.api_secret);
                 
-                for (const domain of baseDomains) {
+                // Try multiple endpoints
+                const endpoints = [
+                  '/api/v1/futures/account/list',
+                  '/api/v1/account/list',
+                  '/api/v1/futures/account',
+                  '/api/v1/account'
+                ];
+                
+                for (const endpoint of endpoints) {
                   try {
-                    const response = await fetch(`${domain}/v5/account/wallet-balance?${queryParams}`, {
+                    const response = await fetch(`${baseUrl}${endpoint}`, {
                       method: 'GET',
-                      headers: this.buildBybitHeaders(String(apiKeys.api_key || ''), timestamp, recvWindow, String(signature || '')),
+                      headers: {
+                        'api-key': String(apiKeys.api_key),
+                        'nonce': String(nonce),
+                        'timestamp': String(timestamp),
+                        'sign': String(signature),
+                        'Content-Type': 'application/json',
+                        'language': 'en-US'
+                      }
                     });
                     
                     if (response.ok) {
                       const data = await response.json();
-                      if (data.retCode === 0 && data.result?.list?.[0]) {
-                        const accountInfo = data.result.list[0];
-                        // Use totalAvailableBalance or totalEquity as available balance
-                        accountBalance = parseFloat(
-                          accountInfo.totalAvailableBalance || 
-                          accountInfo.totalEquity || 
-                          accountInfo.totalWalletBalance || 
-                          '0'
-                        );
-                        console.log(`📊 Real trading available balance (futures): $${accountBalance.toFixed(2)}`);
+                      if (data.code === 0 && data.data) {
+                        const assets = Array.isArray(data.data) ? data.data : (data.data.assets || []);
+                        if (tradingType === 'futures') {
+                          // For futures, sum total equity
+                          let totalEquity = 0;
+                          for (const asset of assets) {
+                            const equity = parseFloat(asset.totalEquity || asset.equity || asset.balance || asset.total || '0');
+                            totalEquity += equity;
+                          }
+                          accountBalance = totalEquity;
+                        } else {
+                          // For spot, find USDT balance
+                          const usdtAsset = assets.find((a: any) => {
+                            const assetSymbol = (a.asset || a.coin || a.currency || '').toUpperCase();
+                            return assetSymbol === 'USDT';
+                          });
+                          accountBalance = usdtAsset ? parseFloat(usdtAsset.available || usdtAsset.free || usdtAsset.balance || '0') : 0;
+                        }
+                        console.log(`📊 Bitunix available balance for notification: $${accountBalance.toFixed(2)}`);
                         break;
                       }
                     }
                   } catch (fetchError) {
-                    console.warn(`⚠️ Failed to fetch balance from ${domain}:`, fetchError);
+                    console.warn(`⚠️ Failed to fetch Bitunix balance from ${endpoint}:`, fetchError);
                   }
                 }
-              } else {
-                // For spot, get USDT available balance
-                const queryParams = `accountType=SPOT&coin=USDT`;
-                const signaturePayload = timestamp + apiKeys.api_key + recvWindow + queryParams;
-                const signature = await this.createBybitSignature(signaturePayload, apiKeys.api_secret);
+              } else if (exchange === 'bybit') {
+                // Fetch available balance directly from Bybit API
+                // Always use mainnet
+                const baseDomains = ['https://api.bybit.com'];
                 
-                for (const domain of baseDomains) {
-                  try {
-                    const response = await fetch(`${domain}/v5/account/wallet-balance?${queryParams}`, {
-                      method: 'GET',
-                      headers: this.buildBybitHeaders(String(apiKeys.api_key || ''), timestamp, recvWindow, String(signature || '')),
-                    });
-                    
-                    if (response.ok) {
-                      const data = await response.json();
-                      if (data.retCode === 0 && data.result?.list?.[0]?.coin?.[0]) {
-                        const wallet = data.result.list[0].coin[0];
-                        // Use availableToWithdraw or availableBalance
-                        accountBalance = parseFloat(
-                          wallet.availableToWithdraw || 
-                          wallet.availableBalance || 
-                          wallet.walletBalance || 
-                          '0'
-                        );
-                        console.log(`📊 Real trading available balance (spot): $${accountBalance.toFixed(2)}`);
-                        break;
+                const timestamp = Date.now().toString();
+                const recvWindow = '5000';
+                const categoryMap: { [key: string]: string } = {
+                  'spot': 'spot',
+                  'futures': 'linear'
+                };
+                const bybitCategory = categoryMap[tradingType] || 'linear';
+                
+                // For futures/linear, get total equity (available balance)
+                if (bybitCategory === 'linear') {
+                  const queryParams = `accountType=UNIFIED`;
+                  const signaturePayload = timestamp + apiKeys.api_key + recvWindow + queryParams;
+                  const signature = await this.createBybitSignature(signaturePayload, apiKeys.api_secret);
+                  
+                  for (const domain of baseDomains) {
+                    try {
+                      const response = await fetch(`${domain}/v5/account/wallet-balance?${queryParams}`, {
+                        method: 'GET',
+                        headers: this.buildBybitHeaders(String(apiKeys.api_key || ''), timestamp, recvWindow, String(signature || '')),
+                      });
+                      
+                      if (response.ok) {
+                        const data = await response.json();
+                        if (data.retCode === 0 && data.result?.list?.[0]) {
+                          const accountInfo = data.result.list[0];
+                          // Use totalAvailableBalance or totalEquity as available balance
+                          accountBalance = parseFloat(
+                            accountInfo.totalAvailableBalance || 
+                            accountInfo.totalEquity || 
+                            accountInfo.totalWalletBalance || 
+                            '0'
+                          );
+                          console.log(`📊 Real trading available balance (futures): $${accountBalance.toFixed(2)}`);
+                          break;
+                        }
                       }
+                    } catch (fetchError) {
+                      console.warn(`⚠️ Failed to fetch balance from ${domain}:`, fetchError);
                     }
-                  } catch (fetchError) {
-                    console.warn(`⚠️ Failed to fetch balance from ${domain}:`, fetchError);
+                  }
+                } else {
+                  // For spot, get USDT available balance
+                  const queryParams = `accountType=SPOT&coin=USDT`;
+                  const signaturePayload = timestamp + apiKeys.api_key + recvWindow + queryParams;
+                  const signature = await this.createBybitSignature(signaturePayload, apiKeys.api_secret);
+                  
+                  for (const domain of baseDomains) {
+                    try {
+                      const response = await fetch(`${domain}/v5/account/wallet-balance?${queryParams}`, {
+                        method: 'GET',
+                        headers: this.buildBybitHeaders(String(apiKeys.api_key || ''), timestamp, recvWindow, String(signature || '')),
+                      });
+                      
+                      if (response.ok) {
+                        const data = await response.json();
+                        if (data.retCode === 0 && data.result?.list?.[0]?.coin?.[0]) {
+                          const wallet = data.result.list[0].coin[0];
+                          // Use availableToWithdraw or availableBalance
+                          accountBalance = parseFloat(
+                            wallet.availableToWithdraw || 
+                            wallet.availableBalance || 
+                            wallet.walletBalance || 
+                            '0'
+                          );
+                          console.log(`📊 Real trading available balance (spot): $${accountBalance.toFixed(2)}`);
+                          break;
+                        }
+                      }
+                    } catch (fetchError) {
+                      console.warn(`⚠️ Failed to fetch balance from ${domain}:`, fetchError);
+                    }
                   }
                 }
               }
+              // Add other exchanges (OKX, MEXC) here if needed
             } catch (balanceError: any) {
               console.warn('⚠️ Failed to fetch available balance for Telegram notification:', balanceError?.message || balanceError);
               // Don't fail notification if balance fetch fails
@@ -11060,85 +12758,148 @@ class BotExecutor {
           if (apiKeysResp.data && !apiKeysResp.error) {
             const apiKeys = apiKeysResp.data;
             const tradingType = bot.tradingType || bot.trading_type || 'futures';
+            const exchange = (bot.exchange || '').toLowerCase();
             
-            // Fetch available balance directly from Bybit API
             try {
-              // Always use mainnet
-              const baseDomains = ['https://api.bybit.com'];
-              
-              const timestamp = Date.now().toString();
-              const recvWindow = '5000';
-              const categoryMap: { [key: string]: string } = {
-                'spot': 'spot',
-                'futures': 'linear'
-              };
-              const bybitCategory = categoryMap[tradingType] || 'linear';
-              
-              // For futures/linear, get total equity (available balance)
-              if (bybitCategory === 'linear') {
-                const queryParams = `accountType=UNIFIED`;
-                const signaturePayload = timestamp + apiKeys.api_key + recvWindow + queryParams;
-                const signature = await this.createBybitSignature(signaturePayload, apiKeys.api_secret);
+              if (exchange === 'bitunix') {
+                // Fetch Bitunix balance
+                const baseUrl = tradingType === 'futures' ? 'https://fapi.bitunix.com' : 'https://api.bitunix.com';
+                const timestamp = Date.now().toString();
+                const nonce = this.generateNonce();
+                const queryParams = '';
+                const body = '';
+                const signature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKeys.api_key, queryParams, body, apiKeys.api_secret);
                 
-                for (const domain of baseDomains) {
+                // Try multiple endpoints
+                const endpoints = [
+                  '/api/v1/futures/account/list',
+                  '/api/v1/account/list',
+                  '/api/v1/futures/account',
+                  '/api/v1/account'
+                ];
+                
+                for (const endpoint of endpoints) {
                   try {
-                    const response = await fetch(`${domain}/v5/account/wallet-balance?${queryParams}`, {
+                    const response = await fetch(`${baseUrl}${endpoint}`, {
                       method: 'GET',
-                      headers: this.buildBybitHeaders(String(apiKeys.api_key || ''), timestamp, recvWindow, String(signature || '')),
+                      headers: {
+                        'api-key': String(apiKeys.api_key),
+                        'nonce': String(nonce),
+                        'timestamp': String(timestamp),
+                        'sign': String(signature),
+                        'Content-Type': 'application/json',
+                        'language': 'en-US'
+                      }
                     });
                     
                     if (response.ok) {
                       const data = await response.json();
-                      if (data.retCode === 0 && data.result?.list?.[0]) {
-                        const accountInfo = data.result.list[0];
-                        // Use totalAvailableBalance or totalEquity as available balance
-                        accountBalance = parseFloat(
-                          accountInfo.totalAvailableBalance || 
-                          accountInfo.totalEquity || 
-                          accountInfo.totalWalletBalance || 
-                          '0'
-                        );
-                        console.log(`📊 Real trading available balance (futures): $${accountBalance.toFixed(2)}`);
+                      if (data.code === 0 && data.data) {
+                        const assets = Array.isArray(data.data) ? data.data : (data.data.assets || []);
+                        if (tradingType === 'futures') {
+                          // For futures, sum total equity
+                          let totalEquity = 0;
+                          for (const asset of assets) {
+                            const equity = parseFloat(asset.totalEquity || asset.equity || asset.balance || asset.total || '0');
+                            totalEquity += equity;
+                          }
+                          accountBalance = totalEquity;
+                        } else {
+                          // For spot, find USDT balance
+                          const usdtAsset = assets.find((a: any) => {
+                            const assetSymbol = (a.asset || a.coin || a.currency || '').toUpperCase();
+                            return assetSymbol === 'USDT';
+                          });
+                          accountBalance = usdtAsset ? parseFloat(usdtAsset.available || usdtAsset.free || usdtAsset.balance || '0') : 0;
+                        }
+                        console.log(`📊 Bitunix available balance for notification: $${accountBalance.toFixed(2)}`);
                         break;
                       }
                     }
                   } catch (fetchError) {
-                    console.warn(`⚠️ Failed to fetch balance from ${domain}:`, fetchError);
+                    console.warn(`⚠️ Failed to fetch Bitunix balance from ${endpoint}:`, fetchError);
                   }
                 }
-              } else {
-                // For spot, get USDT available balance
-                const queryParams = `accountType=SPOT&coin=USDT`;
-                const signaturePayload = timestamp + apiKeys.api_key + recvWindow + queryParams;
-                const signature = await this.createBybitSignature(signaturePayload, apiKeys.api_secret);
+              } else if (exchange === 'bybit') {
+                // Fetch available balance directly from Bybit API
+                // Always use mainnet
+                const baseDomains = ['https://api.bybit.com'];
                 
-                for (const domain of baseDomains) {
-                  try {
-                    const response = await fetch(`${domain}/v5/account/wallet-balance?${queryParams}`, {
-                      method: 'GET',
-                      headers: this.buildBybitHeaders(String(apiKeys.api_key || ''), timestamp, recvWindow, String(signature || '')),
-                    });
-                    
-                    if (response.ok) {
-                      const data = await response.json();
-                      if (data.retCode === 0 && data.result?.list?.[0]?.coin?.[0]) {
-                        const wallet = data.result.list[0].coin[0];
-                        // Use availableToWithdraw or availableBalance
-                        accountBalance = parseFloat(
-                          wallet.availableToWithdraw || 
-                          wallet.availableBalance || 
-                          wallet.walletBalance || 
-                          '0'
-                        );
-                        console.log(`📊 Real trading available balance (spot): $${accountBalance.toFixed(2)}`);
-                        break;
+                const timestamp = Date.now().toString();
+                const recvWindow = '5000';
+                const categoryMap: { [key: string]: string } = {
+                  'spot': 'spot',
+                  'futures': 'linear'
+                };
+                const bybitCategory = categoryMap[tradingType] || 'linear';
+                
+                // For futures/linear, get total equity (available balance)
+                if (bybitCategory === 'linear') {
+                  const queryParams = `accountType=UNIFIED`;
+                  const signaturePayload = timestamp + apiKeys.api_key + recvWindow + queryParams;
+                  const signature = await this.createBybitSignature(signaturePayload, apiKeys.api_secret);
+                  
+                  for (const domain of baseDomains) {
+                    try {
+                      const response = await fetch(`${domain}/v5/account/wallet-balance?${queryParams}`, {
+                        method: 'GET',
+                        headers: this.buildBybitHeaders(String(apiKeys.api_key || ''), timestamp, recvWindow, String(signature || '')),
+                      });
+                      
+                      if (response.ok) {
+                        const data = await response.json();
+                        if (data.retCode === 0 && data.result?.list?.[0]) {
+                          const accountInfo = data.result.list[0];
+                          // Use totalAvailableBalance or totalEquity as available balance
+                          accountBalance = parseFloat(
+                            accountInfo.totalAvailableBalance || 
+                            accountInfo.totalEquity || 
+                            accountInfo.totalWalletBalance || 
+                            '0'
+                          );
+                          console.log(`📊 Real trading available balance (futures): $${accountBalance.toFixed(2)}`);
+                          break;
+                        }
                       }
+                    } catch (fetchError) {
+                      console.warn(`⚠️ Failed to fetch balance from ${domain}:`, fetchError);
                     }
-                  } catch (fetchError) {
-                    console.warn(`⚠️ Failed to fetch balance from ${domain}:`, fetchError);
+                  }
+                } else {
+                  // For spot, get USDT available balance
+                  const queryParams = `accountType=SPOT&coin=USDT`;
+                  const signaturePayload = timestamp + apiKeys.api_key + recvWindow + queryParams;
+                  const signature = await this.createBybitSignature(signaturePayload, apiKeys.api_secret);
+                  
+                  for (const domain of baseDomains) {
+                    try {
+                      const response = await fetch(`${domain}/v5/account/wallet-balance?${queryParams}`, {
+                        method: 'GET',
+                        headers: this.buildBybitHeaders(String(apiKeys.api_key || ''), timestamp, recvWindow, String(signature || '')),
+                      });
+                      
+                      if (response.ok) {
+                        const data = await response.json();
+                        if (data.retCode === 0 && data.result?.list?.[0]?.coin?.[0]) {
+                          const wallet = data.result.list[0].coin[0];
+                          // Use availableToWithdraw or availableBalance
+                          accountBalance = parseFloat(
+                            wallet.availableToWithdraw || 
+                            wallet.availableBalance || 
+                            wallet.walletBalance || 
+                            '0'
+                          );
+                          console.log(`📊 Real trading available balance (spot): $${accountBalance.toFixed(2)}`);
+                          break;
+                        }
+                      }
+                    } catch (fetchError) {
+                      console.warn(`⚠️ Failed to fetch balance from ${domain}:`, fetchError);
+                    }
                   }
                 }
               }
+              // Add other exchanges (OKX, MEXC) here if needed
             } catch (balanceError: any) {
               console.warn('⚠️ Failed to fetch available balance for Telegram notification:', balanceError?.message || balanceError);
               // Don't fail notification if balance fetch fails

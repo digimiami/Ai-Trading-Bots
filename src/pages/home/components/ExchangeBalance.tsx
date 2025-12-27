@@ -23,12 +23,26 @@ export default function ExchangeBalanceDisplay({ balances }: ExchangeBalanceProp
         const todayEndStr = todayEnd.toISOString();
 
         // Fetch today's trades with PnL grouped by exchange
-        const { data: trades, error } = await supabase
+        // Query trades that were executed today OR created today (if executed_at is null)
+        // First, get trades with executed_at today
+        const { data: executedTrades, error: executedError } = await supabase
           .from('trades')
           .select('exchange, pnl')
           .gte('executed_at', todayStart)
           .lte('executed_at', todayEndStr)
-          .in('status', ['filled', 'completed', 'closed']);
+          .in('status', ['filled', 'completed', 'closed', 'stopped', 'taken_profit']);
+        
+        // Then, get trades created today but without executed_at (fallback)
+        const { data: createdTrades, error: createdError } = await supabase
+          .from('trades')
+          .select('exchange, pnl')
+          .is('executed_at', null)
+          .gte('created_at', todayStart)
+          .lte('created_at', todayEndStr)
+          .in('status', ['filled', 'completed', 'closed', 'stopped', 'taken_profit']);
+        
+        const error = executedError || createdError;
+        const trades = [...(executedTrades || []), ...(createdTrades || [])];
 
         if (error) {
           console.error('Error fetching today PnL:', error);
