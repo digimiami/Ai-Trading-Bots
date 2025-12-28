@@ -45,6 +45,8 @@ export default function BotsPage() {
   const [cloning, setCloning] = useState(false);
   const [sharingBotId, setSharingBotId] = useState<string | null>(null);
   const [expandedErrorBotId, setExpandedErrorBotId] = useState<string | null>(null);
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+  const [lastRefreshTime, setLastRefreshTime] = useState<Date>(new Date());
   const isWebhookView = viewMode === 'webhook';
   
   // Get trade limits for all bots
@@ -154,6 +156,46 @@ export default function BotsPage() {
       }
     });
   }, [isWebhookView, bots, webhookSignals, webhookSignalsLoading]);
+
+  // Auto-refresh bot stats every 30 seconds
+  useEffect(() => {
+    if (!autoRefreshEnabled || isWebhookView) {
+      return;
+    }
+
+    const refreshInterval = setInterval(async () => {
+      try {
+        setRefreshing(true);
+        console.log('🔄 Auto-refreshing bot stats...');
+        await fetchBots();
+        await refreshLimits();
+        setLastRefreshTime(new Date());
+      } catch (error) {
+        console.error('Error auto-refreshing bot stats:', error);
+      } finally {
+        setRefreshing(false);
+      }
+    }, 30000); // Refresh every 30 seconds
+
+    // Initial refresh after mount
+    const initialTimeout = setTimeout(async () => {
+      try {
+        setRefreshing(true);
+        await fetchBots();
+        await refreshLimits();
+        setLastRefreshTime(new Date());
+      } catch (error) {
+        console.error('Error initial bot stats refresh:', error);
+      } finally {
+        setRefreshing(false);
+      }
+    }, 2000); // Wait 2 seconds after mount
+
+    return () => {
+      clearInterval(refreshInterval);
+      clearTimeout(initialTimeout);
+    };
+  }, [autoRefreshEnabled, isWebhookView, fetchBots, refreshLimits]);
 
   /**
    * Builds the comprehensive TradingView webhook payload format for a bot.
@@ -540,6 +582,7 @@ export default function BotsPage() {
         await refreshLimits();
       }
       
+      setLastRefreshTime(new Date());
       alert(`Successfully refreshed statistics for ${data.updated || 0} bot(s)`);
     } catch (error) {
       console.error('Failed to refresh bot statistics:', error);
@@ -1073,6 +1116,22 @@ export default function BotsPage() {
                 <i className={`ri-refresh-line mr-1 ${refreshing ? 'animate-spin' : ''}`}></i>
                 {refreshing ? 'Refreshing...' : 'Refresh All Stats'}
               </Button>
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={autoRefreshEnabled}
+                    onChange={(e) => setAutoRefreshEnabled(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-700 dark:text-gray-300">Auto-refresh (30s)</span>
+                </label>
+                {lastRefreshTime && (
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    Last: {lastRefreshTime.toLocaleTimeString()}
+                  </span>
+                )}
+              </div>
               <Button
                 variant="secondary"
                 size="sm"
@@ -1129,6 +1188,11 @@ export default function BotsPage() {
                       icon: 'ri-refresh-line',
                       onClick: handleRefreshStats,
                       disabled: refreshing || loading,
+                    },
+                    {
+                      label: autoRefreshEnabled ? 'Disable Auto-refresh' : 'Enable Auto-refresh',
+                      icon: autoRefreshEnabled ? 'ri-pause-circle-line' : 'ri-play-circle-line',
+                      onClick: () => setAutoRefreshEnabled(!autoRefreshEnabled),
                     },
                     {
                       label: 'Pause All',
