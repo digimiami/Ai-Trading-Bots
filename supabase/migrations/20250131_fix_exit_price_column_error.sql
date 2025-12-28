@@ -1,7 +1,12 @@
--- Fix exit_price column error in trades table updates
+-- Fix exit_price and updated_at column errors in trades table updates
 -- Migration: 20250131_fix_exit_price_column_error.sql
 -- This ensures the trigger function doesn't try to update trades.exit_price which doesn't exist
 -- The trades table doesn't have an exit_price column - only trading_positions has it
+-- Also ensures updated_at column exists if it doesn't already
+
+-- Add updated_at column if it doesn't exist
+ALTER TABLE public.trades
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
 
 -- Drop and recreate the trigger function to ensure it's correct
 CREATE OR REPLACE FUNCTION update_bot_metrics_on_position_close()
@@ -98,13 +103,13 @@ BEGIN
     -- Also update the trades table if trade_id exists
     -- CRITICAL: Do NOT include exit_price - it doesn't exist in trades table
     -- Only trading_positions table has exit_price column
+    -- updated_at is handled by trigger if it exists
     IF NEW.trade_id IS NOT NULL THEN
       UPDATE trades
       SET 
         pnl = NEW.realized_pnl,
         fee = NEW.fees,
-        status = 'closed',
-        updated_at = NOW()
+        status = 'closed'
       WHERE id = NEW.trade_id;
     END IF;
   END IF;
