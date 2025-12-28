@@ -4,9 +4,25 @@
 -- The trades table doesn't have an exit_price column - only trading_positions has it
 -- Also ensures updated_at column exists if it doesn't already
 
--- Add updated_at column if it doesn't exist
+-- Add updated_at column if it doesn't exist (must be done before any triggers that use it)
 ALTER TABLE public.trades
   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+-- Ensure the trigger function exists for updated_at (create if it doesn't exist)
+CREATE OR REPLACE FUNCTION public.set_current_timestamp_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Recreate the trades timestamp trigger to ensure it works correctly
+DROP TRIGGER IF EXISTS trades_set_timestamp ON public.trades;
+CREATE TRIGGER trades_set_timestamp
+  BEFORE UPDATE ON public.trades
+  FOR EACH ROW
+  EXECUTE FUNCTION public.set_current_timestamp_updated_at();
 
 -- Drop and recreate the trigger function to ensure it's correct
 CREATE OR REPLACE FUNCTION update_bot_metrics_on_position_close()
