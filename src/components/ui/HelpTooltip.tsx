@@ -21,10 +21,10 @@ export default function HelpTooltip({ text, className = '' }: HelpTooltipProps) 
         <i className="ri-question-line text-sm"></i>
       </button>
       {isVisible && (
-        <div className="absolute z-50 w-64 p-3 text-xs text-white bg-gray-900 rounded-lg shadow-lg bottom-full left-1/2 transform -translate-x-1/2 mb-2">
+        <div className="absolute z-50 w-64 p-3 text-xs text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl bottom-full left-1/2 transform -translate-x-1/2 mb-2">
           <div className="whitespace-normal">{text}</div>
           <div className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1">
-            <div className="border-4 border-transparent border-t-gray-900"></div>
+            <div className="border-4 border-transparent border-t-white dark:border-t-gray-800"></div>
           </div>
         </div>
       )}
