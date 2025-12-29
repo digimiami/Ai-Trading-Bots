@@ -192,6 +192,50 @@ export default function BotsPage() {
     }
   };
 
+  const getSentiment = (rsi?: number, adx?: number) => {
+    if (rsi === undefined) return null;
+    
+    let label = "Neutral";
+    let color = "text-gray-500";
+    let bg = "bg-gray-100";
+    let icon = "ri-side-bar-line";
+    
+    if (rsi > 70) {
+      label = "Overbought (Bearish)";
+      color = "text-red-700";
+      bg = "bg-red-100";
+      icon = "ri-arrow-down-circle-line";
+    } else if (rsi < 30) {
+      label = "Oversold (Bullish)";
+      color = "text-green-700";
+      bg = "bg-green-100";
+      icon = "ri-arrow-up-circle-line";
+    } else if (rsi > 60) {
+      label = "Bullish Momentum";
+      color = "text-green-600";
+      bg = "bg-green-50";
+      icon = "ri-funds-line";
+    } else if (rsi < 40) {
+      label = "Bearish Momentum";
+      color = "text-red-600";
+      bg = "bg-red-50";
+      icon = "ri-funds-box-line";
+    }
+    
+    let trend = "";
+    if (adx !== undefined) {
+      if (adx > 35) {
+        trend = "Strong Trend";
+      } else if (adx > 25) {
+        trend = "Trending";
+      } else if (adx < 20) {
+        trend = "Ranging";
+      }
+    }
+    
+    return { label, color, bg, icon, trend };
+  };
+
   const getSignalStatusBadgeClasses = (status: string) => {
     switch ((status || '').toLowerCase()) {
       case 'completed':
@@ -1712,57 +1756,94 @@ export default function BotsPage() {
                             <p className="text-xs text-gray-700 mb-1">
                               {activityState.currentAction}
                             </p>
-                            {activityState.waitingFor && activityState.executionState === 'waiting' && (
+                            
+                            {/* Market Conditions - Always show if available */}
+                            {activityState.waitingDetails && (
+                              <div className="mt-2 pt-2 border-t border-gray-200">
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Market Analysis</span>
+                                  {(() => {
+                                    const sentiment = getSentiment(activityState.waitingDetails.currentRSI, activityState.waitingDetails.currentADX);
+                                    return sentiment && (
+                                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold flex items-center gap-1 ${sentiment.bg} ${sentiment.color}`}>
+                                        <i className={sentiment.icon}></i>
+                                        {sentiment.label}
+                                      </span>
+                                    );
+                                  })()}
+                                </div>
+                                
+                                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                                  {activityState.waitingDetails.currentRSI !== undefined && (
+                                    <div className="flex flex-col">
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-gray-500">RSI:</span>
+                                        <span className={`font-mono font-bold ${
+                                          activityState.waitingDetails.currentRSI > 70 ? 'text-red-600' :
+                                          activityState.waitingDetails.currentRSI < 30 ? 'text-green-600' :
+                                          'text-gray-900'
+                                        }`}>
+                                          {activityState.waitingDetails.currentRSI.toFixed(2)}
+                                        </span>
+                                      </div>
+                                      {activityState.waitingDetails.requiredRSI && (
+                                        <span className="text-[9px] text-gray-400 leading-tight">({activityState.waitingDetails.requiredRSI})</span>
+                                      )}
+                                    </div>
+                                  )}
+                                  
+                                  {activityState.waitingDetails.currentADX !== undefined && (
+                                    <div className="flex flex-col">
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-gray-500">ADX:</span>
+                                        <span className={`font-mono font-bold ${activityState.waitingDetails.currentADX > 25 ? 'text-blue-600' : 'text-gray-900'}`}>
+                                          {activityState.waitingDetails.currentADX.toFixed(2)}
+                                        </span>
+                                      </div>
+                                      {activityState.waitingDetails.requiredADX && (
+                                        <span className="text-[9px] text-gray-400 leading-tight">(need {activityState.waitingDetails.requiredADX})</span>
+                                      )}
+                                    </div>
+                                  )}
+                                  
+                                  {activityState.waitingDetails.currentPrice !== undefined && (
+                                    <div className="flex items-center justify-between col-span-2 py-0.5 px-1.5 bg-gray-100 rounded">
+                                      <span className="text-gray-500 font-medium">Price:</span>
+                                      <span className="font-mono font-bold text-gray-900">
+                                        ${activityState.waitingDetails.currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+                                      </span>
+                                    </div>
+                                  )}
+                                  
+                                  {activityState.waitingDetails.confidence !== undefined && (
+                                    <div className="col-span-2 mt-1">
+                                      <div className="flex items-center justify-between mb-1">
+                                        <span className="text-[10px] text-gray-500 font-medium">Signal Confidence:</span>
+                                        <span className="text-[10px] font-bold text-blue-600">{(activityState.waitingDetails.confidence * 100).toFixed(1)}%</span>
+                                      </div>
+                                      <div className="w-full bg-gray-200 rounded-full h-1">
+                                        <div 
+                                          className="bg-blue-600 h-1 rounded-full transition-all duration-500" 
+                                          style={{ width: `${activityState.waitingDetails.confidence * 100}%` }}
+                                        ></div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {activityState.waitingDetails.reason && activityState.executionState === 'waiting' && (
+                                  <p className="mt-2 text-[10px] text-gray-500 italic border-l-2 border-yellow-300 pl-2">
+                                    {activityState.waitingDetails.reason}
+                                  </p>
+                                )}
+                              </div>
+                            )}
+
+                            {activityState.waitingFor && activityState.executionState === 'waiting' && !activityState.waitingDetails && (
                               <div className="mt-2 space-y-1">
                                 <p className="text-xs text-gray-600 italic">
                                   💡 {activityState.waitingFor}
                                 </p>
-                                {activityState.waitingDetails && (
-                                  <div className="mt-2 pt-2 border-t border-gray-200 space-y-1">
-                                    {activityState.waitingDetails.reason && (
-                                      <p className="text-xs font-medium text-gray-700">
-                                        <i className="ri-information-line mr-1"></i>
-                                        {activityState.waitingDetails.reason}
-                                      </p>
-                                    )}
-                                    {(activityState.waitingDetails.currentRSI !== undefined || 
-                                      activityState.waitingDetails.currentADX !== undefined || 
-                                      activityState.waitingDetails.currentPrice !== undefined) && (
-                                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-                                        {activityState.waitingDetails.currentRSI !== undefined && (
-                                          <div>
-                                            <span className="text-gray-600">RSI:</span>
-                                            <span className="ml-1 font-medium">{activityState.waitingDetails.currentRSI.toFixed(2)}</span>
-                                            {activityState.waitingDetails.requiredRSI && (
-                                              <span className="text-gray-500 text-[10px] block mt-0.5">({activityState.waitingDetails.requiredRSI})</span>
-                                            )}
-                                          </div>
-                                        )}
-                                        {activityState.waitingDetails.currentADX !== undefined && (
-                                          <div>
-                                            <span className="text-gray-600">ADX:</span>
-                                            <span className="ml-1 font-medium">{activityState.waitingDetails.currentADX.toFixed(2)}</span>
-                                            {activityState.waitingDetails.requiredADX && (
-                                              <span className="text-gray-500 text-[10px] block mt-0.5">(need {activityState.waitingDetails.requiredADX})</span>
-                                            )}
-                                          </div>
-                                        )}
-                                        {activityState.waitingDetails.currentPrice !== undefined && (
-                                          <div>
-                                            <span className="text-gray-600">Price:</span>
-                                            <span className="ml-1 font-medium">${activityState.waitingDetails.currentPrice.toFixed(4)}</span>
-                                          </div>
-                                        )}
-                                        {activityState.waitingDetails.confidence !== undefined && (
-                                          <div>
-                                            <span className="text-gray-600">Confidence:</span>
-                                            <span className="ml-1 font-medium">{(activityState.waitingDetails.confidence * 100).toFixed(1)}%</span>
-                                          </div>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
                               </div>
                             )}
                             {activityState.hasError && activity.errorCount > 0 && (

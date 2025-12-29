@@ -191,10 +191,24 @@ export function useBotActivity(bots?: any[]) {
     
     const marketLog = logs.find(log => 
       (log.category === 'market' || log.category === 'strategy') &&
-      log.details?.marketData &&
+      (log.details?.marketData || log.details?.rsi !== undefined || log.details?.price !== undefined) &&
       (now - new Date(log.timestamp).getTime()) < fiveMinutesAgo
     );
     
+    // Extract market data from any recent log to ensure we have "current" conditions
+    const currentMarketDetails: any = {};
+    if (marketLog?.details) {
+      const marketData = marketLog.details.marketData || marketLog.details;
+      if (marketData) {
+        currentMarketDetails.currentRSI = marketData.rsi;
+        currentMarketDetails.currentADX = marketData.adx;
+        currentMarketDetails.currentPrice = marketData.price;
+      }
+      if (marketLog.details.rsi !== undefined) currentMarketDetails.currentRSI = marketLog.details.rsi;
+      if (marketLog.details.adx !== undefined) currentMarketDetails.currentADX = marketLog.details.adx;
+      if (marketLog.details.price !== undefined) currentMarketDetails.currentPrice = marketLog.details.price;
+    }
+
     if (message.includes('no trading signals detected') || 
         message.includes('no manual trade signals found') ||
         message.includes('no signal') ||
@@ -204,7 +218,7 @@ export function useBotActivity(bots?: any[]) {
         (strategyLog && strategyLog.details?.shouldTrade === false)) {
       
       // Extract waiting details from logs
-      const waitingDetails: any = {};
+      const waitingDetails: any = { ...currentMarketDetails };
       
       if (strategyLog?.details) {
         waitingDetails.reason = strategyLog.details.reason || 'Trading conditions not met';
@@ -214,31 +228,6 @@ export function useBotActivity(bots?: any[]) {
           waitingDetails.currentRSI = strategyLog.details.marketData.rsi;
           waitingDetails.currentADX = strategyLog.details.marketData.adx;
           waitingDetails.currentPrice = strategyLog.details.marketData.price;
-        }
-      } else if (marketLog?.details) {
-        // Try different formats for market data
-        const marketData = marketLog.details.marketData || marketLog.details;
-        if (marketData) {
-          waitingDetails.currentRSI = marketData.rsi;
-          waitingDetails.currentADX = marketData.adx;
-          waitingDetails.currentPrice = marketData.price;
-        }
-        // Also check if RSI/ADX are directly in details
-        if (marketLog.details.rsi !== undefined) waitingDetails.currentRSI = marketLog.details.rsi;
-        if (marketLog.details.adx !== undefined) waitingDetails.currentADX = marketLog.details.adx;
-        if (marketLog.details.price !== undefined) waitingDetails.currentPrice = marketLog.details.price;
-      }
-      
-      // Also check latest log for market data if not found yet
-      if (!waitingDetails.currentRSI && latestLog.details) {
-        const details = latestLog.details;
-        if (details.rsi !== undefined) waitingDetails.currentRSI = details.rsi;
-        if (details.adx !== undefined) waitingDetails.currentADX = details.adx;
-        if (details.price !== undefined) waitingDetails.currentPrice = details.price;
-        if (details.marketData) {
-          if (details.marketData.rsi !== undefined) waitingDetails.currentRSI = details.marketData.rsi;
-          if (details.marketData.adx !== undefined) waitingDetails.currentADX = details.marketData.adx;
-          if (details.marketData.price !== undefined) waitingDetails.currentPrice = details.marketData.price;
         }
       }
       
@@ -269,6 +258,7 @@ export function useBotActivity(bots?: any[]) {
       return {
         currentAction: 'Waiting for manual trade signal',
         waitingFor: 'TradingView webhook or manual signal',
+        waitingDetails: Object.keys(currentMarketDetails).length > 0 ? currentMarketDetails : undefined,
         executionState: 'waiting'
       };
     }
@@ -277,21 +267,24 @@ export function useBotActivity(bots?: any[]) {
     if (message.includes('executing') || message.includes('execution') || message.includes('starting execution')) {
       return {
         currentAction: latestLog.message,
-        executionState: 'executing'
+        executionState: 'executing',
+        waitingDetails: Object.keys(currentMarketDetails).length > 0 ? currentMarketDetails : undefined
       };
     }
     
     if (message.includes('analyzing') || message.includes('analysis') || message.includes('market data') || message.includes('rsi') || message.includes('adx')) {
       return {
         currentAction: latestLog.message,
-        executionState: 'analyzing'
+        executionState: 'analyzing',
+        waitingDetails: Object.keys(currentMarketDetails).length > 0 ? currentMarketDetails : undefined
       };
     }
     
     if (message.includes('trade') && (message.includes('placed') || message.includes('executed') || message.includes('opened') || message.includes('closed'))) {
       return {
         currentAction: latestLog.message,
-        executionState: 'executing'
+        executionState: 'executing',
+        waitingDetails: Object.keys(currentMarketDetails).length > 0 ? currentMarketDetails : undefined
       };
     }
     
@@ -299,7 +292,8 @@ export function useBotActivity(bots?: any[]) {
       return {
         currentAction: latestLog.message,
         waitingFor: message.includes('waiting') ? 'Market signal' : 'Next execution cycle',
-        executionState: 'waiting'
+        executionState: 'waiting',
+        waitingDetails: Object.keys(currentMarketDetails).length > 0 ? currentMarketDetails : undefined
       };
     }
 
@@ -321,7 +315,8 @@ export function useBotActivity(bots?: any[]) {
       return {
         currentAction: waitingMessage,
         waitingFor: botStatus === 'running' ? 'Market signal or strategy condition' : 'Bot to be started',
-        executionState: 'waiting'
+        executionState: 'waiting',
+        waitingDetails: Object.keys(currentMarketDetails).length > 0 ? currentMarketDetails : undefined
       };
     }
 
@@ -329,7 +324,8 @@ export function useBotActivity(bots?: any[]) {
       // Very recent activity
       return {
         currentAction: latestLog.message,
-        executionState: latestLog.category === 'trade' ? 'executing' : 'analyzing'
+        executionState: latestLog.category === 'trade' ? 'executing' : 'analyzing',
+        waitingDetails: Object.keys(currentMarketDetails).length > 0 ? currentMarketDetails : undefined
       };
     }
 
@@ -345,7 +341,8 @@ export function useBotActivity(bots?: any[]) {
     return {
       currentAction: latestLog.message,
       waitingFor: latestLog.category === 'market' ? 'Market conditions' : undefined,
-      executionState: executionStateMap[latestLog.category] || 'waiting'
+      executionState: executionStateMap[latestLog.category] || 'waiting',
+      waitingDetails: Object.keys(currentMarketDetails).length > 0 ? currentMarketDetails : undefined
     };
   };
 
