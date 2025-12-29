@@ -346,7 +346,7 @@ export default function CreateBotPage() {
           max_spread_bps: 3,
           
           // Risk & Exits
-          risk_per_trade_pct: 10.0,
+          risk_per_trade_pct: 1.5,
           daily_loss_limit_pct: 3.0,
           weekly_loss_limit_pct: 6.0,
           max_trades_per_day: 8,
