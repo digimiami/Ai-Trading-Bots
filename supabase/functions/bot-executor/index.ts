@@ -6207,13 +6207,14 @@ class BotExecutor {
           // Verify that a trade was actually created (for real mode)
           let tradeCreated = false;
           if (finalMode === 'real') {
-            // Check if a trade was created in the last 60 seconds (increased from 30s for slower DB commits)
+            // Check if a trade was created in the last 5 minutes (increased from 60s to handle clock skew)
             // Also check both created_at and executed_at fields
             // CRITICAL: Use bot owner's user_id when checking for trades
             const botOwnerUserId = bot.user_id || bot.userId;
-            const checkTime = new Date(Date.now() - 60000).toISOString();
+            const checkTime = new Date(Date.now() - 300000).toISOString(); // 5 minutes window
             
             console.log(`🔍 Verifying trade creation for bot ${bot.id}, owner ${botOwnerUserId}...`);
+            console.log(`   Time window: since ${checkTime}`);
             
             const { data: recentTrades, error: tradeCheckError } = await serviceRoleClient
               .from('trades')
@@ -6231,8 +6232,24 @@ class BotExecutor {
             tradeCreated = recentTrades && recentTrades.length > 0;
             
             if (!tradeCreated) {
+              // One last check: maybe it's under the executor's user ID?
+              const { data: executorTrades } = await serviceRoleClient
+                .from('trades')
+                .select('id, created_at, user_id')
+                .eq('bot_id', bot.id)
+                .eq('user_id', this.user.id)
+                .or(`created_at.gte.${checkTime},executed_at.gte.${checkTime}`)
+                .limit(1);
+              
+              if (executorTrades && executorTrades.length > 0) {
+                console.log(`✅ Trade found under executor user ID ${this.user.id} instead of bot owner ${botOwnerUserId}`);
+                tradeCreated = true;
+              }
+            }
+            
+            if (!tradeCreated) {
               console.warn(`⚠️ Manual trade signal ${signalId} completed but no trade was created in database`);
-              console.warn(`   Checked for trades in last 60 seconds for bot ${bot.id}`);
+              console.warn(`   Checked for trades in last 5 minutes for bot ${bot.id}`);
               console.warn(`   Recent trades found: ${recentTrades?.length || 0}`);
               if (recentTrades && recentTrades.length > 0) {
                 console.warn(`   Recent trades:`, JSON.stringify(recentTrades, null, 2));
@@ -6248,14 +6265,16 @@ class BotExecutor {
                   mode: finalMode,
                   bot_status: bot.status,
                   paper_trading: bot.paper_trading,
-                  check_time_window: '60 seconds',
+                  check_time_window: '5 minutes',
                   trades_found: recentTrades?.length || 0,
                   trade_check_error: tradeCheckError?.message || null,
+                  bot_owner_id: botOwnerUserId,
+                  executor_id: this.user.id,
                   timestamp: TimeSync.getCurrentTimeISO()
                 }
               });
             } else {
-              console.log(`✅ Trade verification passed: Found ${recentTrades.length} trade(s) created`);
+              console.log(`✅ Trade verification passed: Found trade(s) created`);
             }
           } else {
             // For paper trades, we don't check the trades table
