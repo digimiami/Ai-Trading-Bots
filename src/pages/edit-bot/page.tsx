@@ -7,6 +7,7 @@ import type { TradingStrategy, TradingBot, AdvancedStrategyConfig } from '../../
 import { useBots } from '../../hooks/useBots';
 import AutoOptimizer from '../../components/bot/AutoOptimizer';
 import { STRATEGY_PRESETS, type StrategyPreset } from '../../constants/strategyPresets';
+import HelpTooltip from '../../components/ui/HelpTooltip';
 
 export default function EditBotPage() {
   const navigate = useNavigate();
@@ -457,7 +458,97 @@ export default function EditBotPage() {
                       Target profit percentage before closing position
                     </p>
                   </div>
+                </div>
 
+                {/* Risk Management */}
+                <div className="border-l-4 border-red-500 pl-4 mt-6">
+                  <h3 className="text-md font-semibold text-gray-800 mb-3">🛡️ Risk Management</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                        Risk Per Trade: {advancedConfig.risk_per_trade_pct}%
+                        <HelpTooltip text="Percentage of account balance to risk on each trade. Lower values (0.25-0.5%) = conservative, safer. Higher values (1-2%) = aggressive, higher risk/reward. This controls position sizing based on stop loss distance." />
+                      </label>
+                      <input
+                        type="range"
+                        value={advancedConfig.risk_per_trade_pct}
+                        onChange={(e) => setAdvancedConfig(prev => ({ ...prev, risk_per_trade_pct: parseFloat(e.target.value) }))}
+                        className="w-full"
+                        min="0.25"
+                        max="10.0"
+                        step="0.25"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                        Daily Loss Limit: {advancedConfig.daily_loss_limit_pct}%
+                        <HelpTooltip text="Maximum percentage loss allowed per day before bot automatically pauses. Lower values (1-2%) = strict protection, higher values (5-10%) = more lenient. Bot will stop trading for the day if this limit is reached. Resets at midnight UTC." />
+                      </label>
+                      <input
+                        type="range"
+                        value={advancedConfig.daily_loss_limit_pct}
+                        onChange={(e) => setAdvancedConfig(prev => ({ ...prev, daily_loss_limit_pct: parseFloat(e.target.value) }))}
+                        className="w-full"
+                        min="1"
+                        max="10"
+                        step="0.5"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                        Max Trades/Day: {advancedConfig.max_trades_per_day}
+                        <HelpTooltip text="Maximum number of trades the bot can execute per day. Lower values (3-6) = conservative, prevents overtrading. Higher values (10-50) = more active trading. Helps control trading frequency and reduce risk from excessive trading. Resets at midnight UTC." />
+                      </label>
+                      <input
+                        type="range"
+                        value={advancedConfig.max_trades_per_day}
+                        onChange={(e) => setAdvancedConfig(prev => ({ ...prev, max_trades_per_day: parseInt(e.target.value) }))}
+                        className="w-full"
+                        min="1"
+                        max="200"
+                        step="1"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                        Weekly Loss Limit: {advancedConfig.weekly_loss_limit_pct}%
+                        <HelpTooltip text="Maximum percentage loss allowed per week before bot automatically pauses. Lower values (2-4%) = strict protection, higher values (8-15%) = more lenient. Bot will stop trading for the week if this limit is reached. Resets weekly on Monday UTC." />
+                      </label>
+                      <input
+                        type="range"
+                        value={advancedConfig.weekly_loss_limit_pct}
+                        onChange={(e) => setAdvancedConfig(prev => ({ ...prev, weekly_loss_limit_pct: parseFloat(e.target.value) }))}
+                        className="w-full"
+                        min="2"
+                        max="15"
+                        step="0.5"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Auto-pause if weekly loss exceeds</p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                        Max Concurrent Positions: {advancedConfig.max_concurrent}
+                        <HelpTooltip text="Maximum number of open positions the bot can have at the same time. Lower values (1-2) = conservative, less capital at risk. Higher values (3-5) = more positions, higher exposure. Prevents over-leveraging and helps manage risk across multiple trades." />
+                      </label>
+                      <input
+                        type="range"
+                        value={advancedConfig.max_concurrent}
+                        onChange={(e) => setAdvancedConfig(prev => ({ ...prev, max_concurrent: parseInt(e.target.value) }))}
+                        className="w-full"
+                        min="1"
+                        max="5"
+                        step="1"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Max open positions simultaneously</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <label className="block text-sm font-medium text-gray-700">
