@@ -2906,6 +2906,22 @@ class BotExecutor {
           }
         }
         
+        // 🛡️ SAFETY CHECKS FOR PAPER TRADING - Check before any trading
+        console.log(`🛡️ [PAPER] Checking safety limits for ${bot.name}...`);
+        const safetyCheck = await this.checkSafetyLimits(bot);
+        if (!safetyCheck.canTrade) {
+          console.warn(`⚠️ [PAPER] Trading blocked for ${bot.name}: ${safetyCheck.reason}`);
+          await this.addBotLog(bot.id, {
+            level: 'warning',
+            category: 'system',
+            message: `📝 [PAPER] Trading blocked: ${safetyCheck.reason}`,
+            details: { ...safetyCheck, paper_trading: true }
+          });
+          // Update paper positions but don't trade (with 20s time budget)
+          await paperExecutor.updatePaperPositions(bot.id, Date.now(), 20000);
+          return; // Stop execution
+        }
+
         const shouldTrade = await this.evaluateStrategy(strategy, { price: currentPrice, rsi, adx, mlPrediction }, bot);
         
         // Enhance decision with ML prediction if available
@@ -2973,7 +2989,21 @@ class BotExecutor {
         }
         
         if (shouldTrade.shouldTrade) {
-          await paperExecutor.executePaperTrade(bot, shouldTrade);
+          // Double check: don't open multiple positions for the same symbol/bot if not intended
+          const openPositions = await this.getOpenPositions(bot.id, true);
+          const maxConcurrent = this.getMaxConcurrent(bot);
+          
+          if (openPositions >= maxConcurrent) {
+            console.log(`⏸️ [PAPER] Max concurrent positions (${openPositions}/${maxConcurrent}) reached for ${bot.name}`);
+            await this.addBotLog(bot.id, {
+              level: 'info',
+              category: 'trade',
+              message: `📝 [PAPER] Signal ${shouldTrade.side.toUpperCase()} skipped: Max concurrent positions reached (${openPositions}/${maxConcurrent})`,
+              details: { ...shouldTrade, paper_trading: true, open_positions: openPositions, max_concurrent: maxConcurrent }
+            });
+          } else {
+            await paperExecutor.executePaperTrade(bot, shouldTrade);
+          }
         } else {
           await this.addBotLog(bot.id, {
             level: 'info',
@@ -3606,18 +3636,15 @@ class BotExecutor {
     }
     
     // 🚀 PAPER TRADING MODE: Check at the very beginning for ALL strategy types
-    // This ensures ALL paper trading bots trade immediately based on RSI alone
-    // (Not just super aggressive ones - this makes paper trading work for all bots)
+    // Use more balanced thresholds for paper trading to allow for neutral states
     const config = bot?.strategy_config || {};
-    const isSuperAggressive = config.immediate_execution === true || config.super_aggressive === true || 
-                              strategy.immediate_execution === true || strategy.super_aggressive === true ||
-                              config.immediate_trading === true; // Also check immediate_trading
     
     // For ALL paper trading bots, trade based on RSI alone (not just super aggressive ones)
     if (bot?.paper_trading === true) {
-      // For paper trading, trade based on RSI alone
-      const rsiOversold = config.rsi_oversold || strategy.rsiThreshold || 50;
-      const rsiOverbought = config.rsi_overbought || strategy.rsiThreshold || 50;
+      // For paper trading, trade based on RSI with reasonable buffers for "Neutral" state
+      // This prevents bots from opening positions every single time they run
+      const rsiOversold = config.rsi_oversold || strategy.rsiThreshold || 30; // Default 30 for paper
+      const rsiOverbought = config.rsi_overbought || strategy.rsiThreshold || 70; // Default 70 for paper
       
       if (rsi < rsiOversold) {
         // RSI oversold - BUY signal
@@ -3633,18 +3660,27 @@ class BotExecutor {
           takeProfit2: price * 1.05,
           indicators: { rsi, adx, price }
         };
-      } else {
-        // RSI >= oversold threshold - SELL signal
-        console.log(`📝 [PAPER TRADING] SELL signal: RSI ${rsi.toFixed(2)} >= ${rsiOversold}`);
+      } else if (rsi > rsiOverbought) {
+        // RSI overbought - SELL signal
+        console.log(`📝 [PAPER TRADING] SELL signal: RSI ${rsi.toFixed(2)} > ${rsiOverbought}`);
         return {
           shouldTrade: true,
           side: 'sell',
-          reason: `Paper Trading: RSI ${rsi.toFixed(2)} >= ${rsiOversold} (overbought/neutral)`,
+          reason: `Paper Trading: RSI ${rsi.toFixed(2)} > ${rsiOverbought} (overbought)`,
           confidence: 0.7,
           entryPrice: price,
           stopLoss: price * 1.02,
           takeProfit1: price * 0.98,
           takeProfit2: price * 0.95,
+          indicators: { rsi, adx, price }
+        };
+      } else {
+        // RSI neutral - NO signal
+        console.log(`📝 [PAPER TRADING] Neutral state: RSI ${rsi.toFixed(2)} is between ${rsiOversold} and ${rsiOverbought}`);
+        return {
+          shouldTrade: false,
+          reason: `Paper Trading: RSI ${rsi.toFixed(2)} is neutral (between ${rsiOversold} and ${rsiOverbought})`,
+          confidence: 0,
           indicators: { rsi, adx, price }
         };
       }
@@ -5943,6 +5979,23 @@ class BotExecutor {
         console.log(`📝 Executing PAPER trade for ${bot.symbol}...`);
         // Create PaperTradingExecutor with bot's user_id (not executor's user)
         const paperExecutor = new PaperTradingExecutor(this.supabaseClient, { id: bot.user_id });
+        
+        // Safety check for manual paper trades: don't open if max concurrent positions reached
+        const openPositions = await this.getOpenPositions(bot.id, true);
+        const maxConcurrent = this.getMaxConcurrent(bot);
+        
+        if (openPositions >= maxConcurrent) {
+          const errorMsg = `Manual PAPER trade skipped: Max concurrent positions reached (${openPositions}/${maxConcurrent})`;
+          console.warn(`⏸️ [PAPER] ${errorMsg}`);
+          await this.addBotLog(bot.id, {
+            level: 'warning',
+            category: 'trade',
+            message: errorMsg,
+            details: { ...tradeSignal, paper_trading: true, open_positions: openPositions, max_concurrent: maxConcurrent }
+          });
+          return { mode: 'paper' };
+        }
+        
         await paperExecutor.executePaperTrade(botSnapshot, tradeSignal);
         await paperExecutor.updatePaperPositions(bot.id, Date.now(), 20000);
         console.log(`✅ PAPER trade executed successfully`);
@@ -12843,8 +12896,10 @@ class BotExecutor {
    */
   private async checkSafetyLimits(bot: any): Promise<{ canTrade: boolean; reason: string; shouldPause: boolean }> {
     try {
+      const isPaperTrading = bot.paper_trading === true;
+
       // 0. Check subscription/trial limits FIRST (only for real trading, not paper trading)
-      if (bot.paper_trading !== true) {
+      if (!isPaperTrading) {
         try {
           const { data: tradeCheck, error: tradeCheckError } = await this.supabaseClient
             .rpc('can_user_trade', { 
@@ -12895,7 +12950,7 @@ class BotExecutor {
       }
 
       // 3. Max Consecutive Losses Check
-      const consecutiveLosses = await this.getConsecutiveLosses(bot.id);
+      const consecutiveLosses = await this.getConsecutiveLosses(bot.id, isPaperTrading);
       const maxConsecutiveLosses = this.getMaxConsecutiveLosses(bot);
       if (consecutiveLosses >= maxConsecutiveLosses) {
         return {
@@ -12906,7 +12961,7 @@ class BotExecutor {
       }
 
       // 4. Daily Loss Limit Check
-      const dailyLoss = await this.getDailyLoss(bot.id);
+      const dailyLoss = await this.getDailyLoss(bot.id, isPaperTrading);
       const dailyLossLimit = this.getDailyLossLimit(bot);
       if (dailyLoss >= dailyLossLimit) {
         return {
@@ -12917,7 +12972,7 @@ class BotExecutor {
       }
 
       // 5. Weekly Loss Limit Check
-      const weeklyLoss = await this.getWeeklyLoss(bot.id);
+      const weeklyLoss = await this.getWeeklyLoss(bot.id, isPaperTrading);
       const weeklyLossLimit = this.getWeeklyLossLimit(bot);
       if (weeklyLoss >= weeklyLossLimit) {
         return {
@@ -12928,7 +12983,7 @@ class BotExecutor {
       }
 
       // 6. Max Trades Per Day Check
-      const tradesToday = await this.getTradesToday(bot.id);
+      const tradesToday = await this.getTradesToday(bot.id, isPaperTrading);
       const maxTradesPerDay = this.getMaxTradesPerDay(bot);
       if (tradesToday >= maxTradesPerDay) {
         return {
@@ -12939,7 +12994,7 @@ class BotExecutor {
       }
 
       // 7. Max Concurrent Positions Check
-      const openPositions = await this.getOpenPositions(bot.id);
+      const openPositions = await this.getOpenPositions(bot.id, isPaperTrading);
       const maxConcurrent = this.getMaxConcurrent(bot);
       if (openPositions >= maxConcurrent) {
         return {
@@ -12955,7 +13010,7 @@ class BotExecutor {
         reason: 'All safety checks passed',
         shouldPause: false
       };
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error checking safety limits:', error);
       // If safety check fails, err on the side of caution
       return {
@@ -13004,10 +13059,11 @@ class BotExecutor {
   /**
    * Get consecutive losses for bot
    */
-  private async getConsecutiveLosses(botId: string): Promise<number> {
+  private async getConsecutiveLosses(botId: string, isPaperTrading: boolean = false): Promise<number> {
     try {
+      const tableName = isPaperTrading ? 'paper_trading_trades' : 'trades';
       const { data: recentTrades } = await this.supabaseClient
-        .from('trades')
+        .from(tableName)
         .select('pnl, outcome')
         .eq('bot_id', botId)
         .order('executed_at', { ascending: false })
@@ -13019,7 +13075,8 @@ class BotExecutor {
 
       let consecutiveLosses = 0;
       for (const trade of recentTrades) {
-        const isLoss = trade.pnl < 0 || trade.outcome === 'loss';
+        const pnl = parseFloat(trade.pnl || 0);
+        const isLoss = pnl < 0 || trade.outcome === 'loss';
         if (isLoss) {
           consecutiveLosses++;
         } else {
@@ -13037,8 +13094,9 @@ class BotExecutor {
   /**
    * Get daily loss for bot (last 24 hours, UTC timezone)
    */
-  private async getDailyLoss(botId: string): Promise<number> {
+  private async getDailyLoss(botId: string, isPaperTrading: boolean = false): Promise<number> {
     try {
+      const tableName = isPaperTrading ? 'paper_trading_trades' : 'trades';
       // Get today's date in UTC (start of day at 00:00:00 UTC)
       const now = new Date();
       const todayUTC = new Date(Date.UTC(
@@ -13050,7 +13108,7 @@ class BotExecutor {
       const todayISO = todayUTC.toISOString();
 
       const { data: trades } = await this.supabaseClient
-        .from('trades')
+        .from(tableName)
         .select('pnl')
         .eq('bot_id', botId)
         .gte('executed_at', todayISO)
@@ -13075,8 +13133,9 @@ class BotExecutor {
   /**
    * Get weekly loss for bot (last 7 days, UTC timezone)
    */
-  private async getWeeklyLoss(botId: string): Promise<number> {
+  private async getWeeklyLoss(botId: string, isPaperTrading: boolean = false): Promise<number> {
     try {
+      const tableName = isPaperTrading ? 'paper_trading_trades' : 'trades';
       // Get date 7 days ago in UTC (start of day at 00:00:00 UTC)
       const now = new Date();
       const weekAgoUTC = new Date(Date.UTC(
@@ -13088,7 +13147,7 @@ class BotExecutor {
       const weekAgoISO = weekAgoUTC.toISOString();
 
       const { data: trades } = await this.supabaseClient
-        .from('trades')
+        .from(tableName)
         .select('pnl')
         .eq('bot_id', botId)
         .gte('executed_at', weekAgoISO)
@@ -13113,8 +13172,9 @@ class BotExecutor {
   /**
    * Get number of trades today (UTC timezone)
    */
-  private async getTradesToday(botId: string): Promise<number> {
+  private async getTradesToday(botId: string, isPaperTrading: boolean = false): Promise<number> {
     try {
+      const tableName = isPaperTrading ? 'paper_trading_trades' : 'trades';
       // Get today's date in UTC (start of day at 00:00:00 UTC)
       const now = new Date();
       const todayUTC = new Date(Date.UTC(
@@ -13134,7 +13194,7 @@ class BotExecutor {
       // Check both executed_at (if exists) and created_at as fallback
       // Also ensure executed_at is NOT NULL to avoid counting old trades
       const { count, error } = await this.supabaseClient
-        .from('trades')
+        .from(tableName)
         .select('*', { count: 'exact', head: true })
         .eq('bot_id', botId)
         .not('executed_at', 'is', null) // Must have executed_at set
@@ -13143,10 +13203,10 @@ class BotExecutor {
         .in('status', ['filled', 'completed', 'closed']); // Only count executed trades
 
       if (error) {
-        console.warn('Error getting trades today:', error);
+        console.warn(`Error getting trades today from ${tableName}:`, error);
         // Fallback: try with created_at if executed_at doesn't work
         const { count: fallbackCount } = await this.supabaseClient
-          .from('trades')
+          .from(tableName)
           .select('*', { count: 'exact', head: true })
           .eq('bot_id', botId)
           .gte('created_at', todayISO)
@@ -13154,12 +13214,12 @@ class BotExecutor {
           .in('status', ['filled', 'completed', 'closed']);
         
         const tradeCount = fallbackCount || 0;
-        console.log(`📊 Trades today for bot ${botId}: ${tradeCount} (fallback using created_at, since ${todayISO})`);
+        console.log(`📊 Trades today for bot ${botId} (${isPaperTrading ? 'PAPER' : 'REAL'}): ${tradeCount} (fallback using created_at, since ${todayISO})`);
         return tradeCount;
       }
 
       const tradeCount = count || 0;
-      console.log(`📊 Trades today for bot ${botId}: ${tradeCount} (since ${todayISO}, before ${tomorrowISO})`);
+      console.log(`📊 Trades today for bot ${botId} (${isPaperTrading ? 'PAPER' : 'REAL'}): ${tradeCount} (since ${todayISO}, before ${tomorrowISO})`);
       
       return tradeCount;
     } catch (error) {
@@ -13171,17 +13231,20 @@ class BotExecutor {
   /**
    * Get number of open positions for bot
    */
-  private async getOpenPositions(botId: string): Promise<number> {
+  private async getOpenPositions(botId: string, isPaperTrading: boolean = false): Promise<number> {
     try {
+      const tableName = isPaperTrading ? 'paper_trading_positions' : 'trades';
+      const statusField = isPaperTrading ? 'status' : 'status'; // Both tables use 'status'
+      
       const { count } = await this.supabaseClient
-        .from('trades')
+        .from(tableName)
         .select('*', { count: 'exact', head: true })
         .eq('bot_id', botId)
         .in('status', ['open', 'pending']);
 
       return count || 0;
     } catch (error) {
-      console.warn('Error getting open positions:', error);
+      console.warn(`Error getting open positions from ${isPaperTrading ? 'paper_trading_positions' : 'trades'}:`, error);
       return 0;
     }
   }
@@ -14903,10 +14966,12 @@ class PaperTradingExecutor {
       for (const result of priceResults) {
         if (result.status === 'fulfilled' && result.value) {
           const { position, price } = result.value;
+          // quantity already includes leverage (total contract size)
+          // PnL = (price - entry_price) * quantity
           if (position.side === 'long') {
-            totalUnrealizedPnL += (price - parseFloat(position.entry_price)) * parseFloat(position.quantity) * position.leverage;
+            totalUnrealizedPnL += (price - parseFloat(position.entry_price)) * parseFloat(position.quantity);
           } else {
-            totalUnrealizedPnL += (parseFloat(position.entry_price) - price) * parseFloat(position.quantity) * position.leverage;
+            totalUnrealizedPnL += (parseFloat(position.entry_price) - price) * parseFloat(position.quantity);
           }
         }
       }
@@ -14946,10 +15011,11 @@ class PaperTradingExecutor {
         
         // Calculate unrealized PnL
         let unrealizedPnL = 0;
+        // quantity already includes leverage (total contract size)
         if (position.side === 'long') {
-          unrealizedPnL = (currentPrice - parseFloat(position.entry_price)) * parseFloat(position.quantity) * position.leverage;
+          unrealizedPnL = (currentPrice - parseFloat(position.entry_price)) * parseFloat(position.quantity);
         } else {
-          unrealizedPnL = (parseFloat(position.entry_price) - currentPrice) * parseFloat(position.quantity) * position.leverage;
+          unrealizedPnL = (parseFloat(position.entry_price) - currentPrice) * parseFloat(position.quantity);
         }
         
         // Get bot configuration for advanced features
@@ -15208,10 +15274,11 @@ class PaperTradingExecutor {
           }
           
           let finalPnL = 0;
+          // quantity already includes leverage (total contract size)
           if (position.side === 'long') {
-            finalPnL = (exitPrice - parseFloat(position.entry_price)) * quantity * position.leverage;
+            finalPnL = (exitPrice - parseFloat(position.entry_price)) * quantity;
           } else {
-            finalPnL = (parseFloat(position.entry_price) - exitPrice) * quantity * position.leverage;
+            finalPnL = (parseFloat(position.entry_price) - exitPrice) * quantity;
           }
           
           // Deduct fees (entry + exit)
