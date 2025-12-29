@@ -248,7 +248,7 @@ export default function CreateBotPage() {
                 bb_width_max: 0.03,
                 min_24h_volume_usd: 500000000,
                 max_spread_bps: 3,
-                risk_per_trade_pct: 0.75,
+                risk_per_trade_pct: 10.0,
                 daily_loss_limit_pct: 3.0,
                 weekly_loss_limit_pct: 6.0,
                 max_trades_per_day: 8,
@@ -346,7 +346,7 @@ export default function CreateBotPage() {
           max_spread_bps: 3,
           
           // Risk & Exits
-          risk_per_trade_pct: 0.75,
+          risk_per_trade_pct: 10.0,
           daily_loss_limit_pct: 3.0,
           weekly_loss_limit_pct: 6.0,
           max_trades_per_day: 8,
@@ -1857,7 +1857,7 @@ All settings have been applied to your bot configuration.`;
                           onChange={(e) => setAdvancedConfig(prev => ({ ...prev, risk_per_trade_pct: parseFloat(e.target.value) }))}
                           className="w-full"
                           min="0.25"
-                          max="2.0"
+                          max="10.0"
                           step="0.25"
                         />
                       </div>
@@ -2421,7 +2421,7 @@ All settings have been applied to your bot configuration.`;
                           ...advancedConfig,
                           bias_mode: 'auto',
                           regime_mode: 'auto',
-                          risk_per_trade_pct: 0.75,
+                          risk_per_trade_pct: 10.0,
                           max_trades_per_day: 8,
                           tp1_r: 1.0,
                           tp2_r: 2.0
