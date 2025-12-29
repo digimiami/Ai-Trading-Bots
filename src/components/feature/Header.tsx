@@ -106,7 +106,7 @@ export function Header({ title, subtitle, showBack = false, action, rightAction 
             aria-label="Home"
           >
             <img 
-              src="https://dkawxgwdqiirgmmjbvhc.supabase.co/storage/v1/object/public/message-attachments/pablobots-logo.jpeg" 
+              src="https://dkawxgwdqiirgmmjbvhc.supabase.co/storage/v1/object/public/pablobots-logo/logo_no_bg.png" 
               alt="Pablo Logo" 
               className="h-8 w-8 sm:h-10 sm:w-10 object-contain"
             />

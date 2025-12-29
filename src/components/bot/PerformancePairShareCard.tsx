@@ -29,7 +29,7 @@ interface PerformancePairShareCardProps {
 export default function PerformancePairShareCard({ pair, isOpen, onClose }: PerformancePairShareCardProps) {
   const cardRef = useRef<HTMLDivElement>(null);
   const [downloading, setDownloading] = useState(false);
-  const logoUrl = 'https://dkawxgwdqiirgmmjbvhc.supabase.co/storage/v1/object/public/message-attachments/pablobots-logo.jpeg';
+  const logoUrl = 'https://dkawxgwdqiirgmmjbvhc.supabase.co/storage/v1/object/public/pablobots-logo/logo_no_bg.png';
   const shareUrl = 'https://pablobots.com';
 
   const totalPnLWithUnrealized = pair.totalPnL + pair.unrealizedPnL;

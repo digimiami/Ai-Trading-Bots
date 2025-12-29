@@ -207,7 +207,7 @@ export default function LandingPage() {
             className="flex items-center space-x-3 hover:opacity-80 transition-opacity"
           >
             <img 
-              src="https://dkawxgwdqiirgmmjbvhc.supabase.co/storage/v1/object/public/message-attachments/pablobots-logo.jpeg" 
+              src="https://dkawxgwdqiirgmmjbvhc.supabase.co/storage/v1/object/public/pablobots-logo/logo_no_bg.png" 
               alt="Pablo Logo" 
               className="h-10 w-10 sm:h-12 sm:w-12 object-contain"
             />
@@ -526,7 +526,7 @@ export default function LandingPage() {
           <div>
             <div className="flex items-center space-x-3">
               <img 
-                src="https://dkawxgwdqiirgmmjbvhc.supabase.co/storage/v1/object/public/message-attachments/pablobots-logo.jpeg" 
+                src="https://dkawxgwdqiirgmmjbvhc.supabase.co/storage/v1/object/public/pablobots-logo/logo_no_bg.png" 
                 alt="Pablo Logo" 
                 className="h-9 w-9 sm:h-10 sm:w-10 object-contain"
               />
