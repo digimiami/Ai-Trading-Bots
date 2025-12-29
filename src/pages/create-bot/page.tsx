@@ -248,7 +248,7 @@ export default function CreateBotPage() {
                 bb_width_max: 0.03,
                 min_24h_volume_usd: 500000000,
                 max_spread_bps: 3,
-                risk_per_trade_pct: 10.0,
+                risk_per_trade_pct: 1.5,
                 daily_loss_limit_pct: 3.0,
                 weekly_loss_limit_pct: 6.0,
                 max_trades_per_day: 8,
@@ -2421,7 +2421,7 @@ All settings have been applied to your bot configuration.`;
                           ...advancedConfig,
                           bias_mode: 'auto',
                           regime_mode: 'auto',
-                          risk_per_trade_pct: 10.0,
+                          risk_per_trade_pct: 1.5,
                           max_trades_per_day: 8,
                           tp1_r: 1.0,
                           tp2_r: 2.0
