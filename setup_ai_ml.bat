@@ -1,6 +1,11 @@
 @echo off
 echo 🚀 Setting up AI/ML Trading System...
 
+REM Change to workspace directory
+set "WORKSPACE_DIR=%~dp0"
+cd /d "%WORKSPACE_DIR%"
+echo 📂 Changed to workspace directory: %CD%
+
 echo 📝 Creating .env file...
 (
 echo # Pablo AI Trading - Environment Configuration
@@ -65,6 +70,8 @@ echo TF_CPP_MIN_LOG_LEVEL=1
 echo ✅ .env file created successfully!
 
 echo 📦 Installing AI/ML dependencies...
+REM Ensure we're in the workspace directory
+cd /d "%WORKSPACE_DIR%"
 npm install @tensorflow/tfjs-node zod uuid
 npm install --save-dev @types/uuid
 

@@ -2,6 +2,11 @@
 REM Deployment Script: Testnet Removal Update (Windows)
 REM This script deploys the updated functions after testnet removal
 
+REM Change to workspace directory
+set "WORKSPACE_DIR=%~dp0"
+cd /d "%WORKSPACE_DIR%"
+echo 📂 Changed to workspace directory: %CD%
+
 echo.
 echo ========================================
 echo  Testnet Removal Deployment

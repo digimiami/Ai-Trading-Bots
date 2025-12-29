@@ -2,6 +2,11 @@
 echo 🚀 DEPLOYING PROFILE MANAGEMENT FUNCTION
 echo ======================================
 
+REM Change to workspace directory
+set "WORKSPACE_DIR=%~dp0"
+cd /d "%WORKSPACE_DIR%"
+echo 📂 Changed to workspace directory: %CD%
+
 echo.
 echo Step 1: Checking Supabase CLI...
 npx supabase --version
