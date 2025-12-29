@@ -14,7 +14,7 @@ const VALIDATION_RANGES: Record<string, ValidationRange> = {
   adx_min_htf: { min: 15, max: 35 },
   adx_trend_min: { min: 15, max: 50 },
   adx_meanrev_max: { min: 10, max: 25 },
-  risk_per_trade_pct: { min: 0.1, max: 5.0 },
+  risk_per_trade_pct: { min: 0.1, max: 10.0 },
   daily_loss_limit_pct: { min: 0.5, max: 10.0 },
   weekly_loss_limit_pct: { min: 1.0, max: 20.0 },
   max_trades_per_day: { min: 1, max: 200 },

@@ -344,9 +344,9 @@ Provide optimized parameters as JSON with confidence score:
             config.adx_min_htf = Math.max(15, Math.min(35, config.adx_min_htf));
           }
           
-          // Clamp risk_per_trade_pct to 0.1-5.0
+          // Clamp risk_per_trade_pct to 0.1-10.0 (updated to match UI max)
           if (config.risk_per_trade_pct !== undefined) {
-            config.risk_per_trade_pct = Math.max(0.1, Math.min(5.0, config.risk_per_trade_pct));
+            config.risk_per_trade_pct = Math.max(0.1, Math.min(10.0, config.risk_per_trade_pct));
           }
           
           // Validate enum values
