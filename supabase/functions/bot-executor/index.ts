@@ -853,6 +853,17 @@ class MarketDataFetcher {
       variants.push(symbol.toLowerCase());
     }
     
+    // Bitunix-specific normalization (especially for futures)
+    if (exchange === 'bitunix' && (tradingType === 'futures' || tradingType === 'linear')) {
+      // Bitunix futures sometimes use hyphenated format like "BTC-USDT"
+      if (!upperSymbol.includes('-')) {
+        const hyphenated = upperSymbol.replace(/USDT$/, '-USDT');
+        if (hyphenated !== upperSymbol) {
+          variants.push(hyphenated);
+        }
+      }
+    }
+    
     // Remove duplicates and return
     return [...new Set(variants)];
   }
@@ -7358,7 +7369,7 @@ class BotExecutor {
         // For buy orders, use quoteCoin (USDT amount) - this is the default
         // For sell orders, use baseCoin (base currency quantity) - this is the default
         if (capitalizedSide === 'Buy') {
-          // Buy orders: marketUnit=1 means qty is in USDT (quote currency)
+          // Buy orders: marketUnit='quoteCoin' means qty is in USDT (quote currency)
           // For manual orders, 'amount' parameter may already be in USDT (not converted to quantity)
           // Check if amount is reasonable for USDT (typically >= 10) vs quantity (could be very small like 0.001)
           // If amount >= 10 and orderValue would be > amount * 10, then amount is likely already in USDT
@@ -7376,15 +7387,15 @@ class BotExecutor {
             console.log(`💰 Spot BUY order (quantity provided): Base qty: ${formattedQty}, Price: $${currentMarketPrice}, Order value: $${calculatedOrderValue.toFixed(2)}`);
           }
           
-          requestBody.marketUnit = 1; // 1 = quoteCoin (USDT amount)
+          requestBody.marketUnit = 'quoteCoin'; // 'quoteCoin' = USDT amount (string format required for V5)
           requestBody.qty = finalOrderValue.toFixed(2); // Order value in USDT with 2 decimal places
           
-          console.log(`💰 Spot BUY order: marketUnit=1 (quoteCoin/USDT), qty=$${finalOrderValue.toFixed(2)} USDT`);
+          console.log(`💰 Spot BUY order: marketUnit=quoteCoin, qty=$${finalOrderValue.toFixed(2)} USDT`);
           if (finalOrderValue > (isLikelyUSDTAmount ? amount : calculatedOrderValue)) {
             console.log(`   ⚠️ Adjusted order value to $${finalOrderValue.toFixed(2)} to meet minimum $${minOrderValue}`);
           }
         } else {
-          // Sell orders: marketUnit=0 means qty is in base currency
+          // Sell orders: marketUnit=baseCoin means qty is in base currency
           // Need to validate base currency quantity against step size
           const finalQtyValue = parseFloat(formattedQty);
           if (isNaN(finalQtyValue) || finalQtyValue < minQty || finalQtyValue > maxQty) {
@@ -7403,12 +7414,12 @@ class BotExecutor {
             }
           }
           
-          requestBody.marketUnit = 0; // 0 = baseCoin (base currency quantity)
+          requestBody.marketUnit = 'baseCoin'; // 'baseCoin' = base currency quantity
           requestBody.qty = formattedQty.toString(); // Base currency quantity
           
-          console.log(`💰 Spot SELL order: marketUnit=0 (baseCoin), qty=${formattedQty} ${symbol.replace('USDT', '')}`);
+          console.log(`💰 Spot SELL order: marketUnit=baseCoin, qty=${formattedQty} ${symbol.replace('USDT', '')}`);
         }
-        // For spot orders with marketUnit=1, we don't validate base currency quantity against step size
+        // For spot orders with marketUnit='quoteCoin', we don't validate base currency quantity against step size
         // because qty represents USDT amount, not base currency quantity
       } else {
         // For linear/futures, validate and format base currency quantity
@@ -7533,6 +7544,35 @@ class BotExecutor {
           
           // If we got a valid JSON response, use it (even if retCode is not 0, we'll handle that below)
           if (data && typeof data === 'object') {
+            // Handle Code 10001 (Request parameter error) for spot orders
+            if (data.retCode === 10001 && bybitCategory === 'spot' && capitalizedSide === 'Buy') {
+              console.warn(`⚠️ Bybit returned Code 10001 (Request parameter error) for spot Buy order. Retrying without marketUnit...`);
+              
+              const retryBody = { ...requestBody };
+              delete (retryBody as any).marketUnit;
+              
+              const retrySigPayload = timestamp + apiKey + recvWindow + JSON.stringify(retryBody);
+              const retrySig = await this.createBybitSignature(retrySigPayload, apiSecret);
+              
+              const retryHeaders = { ...headers, 'X-BAPI-SIGN': String(retrySig) };
+              
+              const retryResponse = await fetch(`${domain}/v5/order/create`, {
+                method: 'POST',
+                headers: retryHeaders,
+                body: JSON.stringify(retryBody),
+                signal: AbortSignal.timeout(15000)
+              });
+              
+              if (retryResponse.ok) {
+                const retryData = await retryResponse.json().catch(() => null);
+                if (retryData && (retryData.retCode === 0 || retryData.retCode === 0)) {
+                  console.log(`✅ Success on retry without marketUnit`);
+                  data = retryData;
+                  break;
+                }
+              }
+            }
+
             console.log(`✅ Successfully received order response from ${domain}`);
             break; // Success, exit loop
           }
@@ -8088,8 +8128,33 @@ class BotExecutor {
             data = await response.json();
             
             if (data && typeof data === 'object') {
-              console.log(`✅ Successfully received spot ${coinToCheck} balance response from ${domain}`);
-              break;
+              // Handle accountType only supporting UNIFIED
+              if (data.retCode === 10001 && data.retMsg?.includes('UNIFIED')) {
+                console.warn(`⚠️ Account only supports UNIFIED. Retrying spot balance check with accountType=UNIFIED...`);
+                
+                const unifiedParams = `accountType=UNIFIED&coin=${coinToCheck}`;
+                const unifiedSigPayload = timestamp + apiKey + recvWindow + unifiedParams;
+                const unifiedSig = await this.createBybitSignature(unifiedSigPayload, apiSecret);
+                
+                const unifiedResponse = await fetch(`${domain}/v5/account/wallet-balance?${unifiedParams}`, {
+                  method: 'GET',
+                  headers: this.buildBybitHeaders(apiKey, timestamp, recvWindow, unifiedSig),
+                });
+                
+                if (unifiedResponse.ok) {
+                  const unifiedData = await unifiedResponse.json().catch(() => null);
+                  if (unifiedData && unifiedData.retCode === 0) {
+                    console.log(`✅ Successfully received UNIFIED balance response from ${domain}`);
+                    data = unifiedData;
+                    break;
+                  }
+                }
+              }
+
+              if (data.retCode === 0) {
+                console.log(`✅ Successfully received spot ${coinToCheck} balance response from ${domain}`);
+                break;
+              }
             }
           } catch (fetchError: any) {
             if (response?.status === 403 && baseDomains.indexOf(domain) < baseDomains.length - 1) {
@@ -16477,9 +16542,9 @@ serve(async (req) => {
             
             if (isSpotBuy && order.orderType === 'market') {
               // For spot market buy orders, pass USDT amount directly
-              // placeBybitOrder will use marketUnit=1 and set qty to this USDT amount
+              // placeBybitOrder will use marketUnit='quoteCoin' and set qty to this USDT amount
               amountToUse = usdtAmount;
-              console.log(`💰 Spot market BUY: Using USDT amount directly: $${usdtAmount} (marketUnit=1 will be set)`);
+              console.log(`💰 Spot market BUY: Using USDT amount directly: $${usdtAmount} (marketUnit='quoteCoin' will be set)`);
             } else {
               // For limit orders, sell orders, or futures orders, convert USDT to quantity
               let quantity = usdtAmount / priceForConversion;
@@ -16526,7 +16591,7 @@ serve(async (req) => {
             };
 
             // Place the order using the public manual order method with DECRYPTED keys
-            // For spot buy orders: pass USDT amount (placeBybitOrder will use marketUnit=1)
+            // For spot buy orders: pass USDT amount (placeBybitOrder will use marketUnit='quoteCoin')
             // For other orders: pass quantity
             const orderResult = await executor.placeManualOrder(
               decryptedApiKey,
