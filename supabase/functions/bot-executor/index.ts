@@ -480,14 +480,16 @@ function getSymbolSteps(symbol: string): SymbolSteps {
       'WIFUSDT': { stepSize: 0.1, tickSize: 0.0001 },
       'ZENUSDT': { stepSize: 0.1, tickSize: 0.0001 },
       'LTCUSDT': { stepSize: 0.01, tickSize: 0.01 },
-      'SWARMSUSDT': { stepSize: 1, tickSize: 0.0001 }
+      'SWARMSUSDT': { stepSize: 1, tickSize: 0.0001 },
+      'ZRXUSDT': { stepSize: 0.1, tickSize: 0.0001 }
     };
 
   if (isLowLiquiditySymbol(symbol)) {
     return { stepSize: 1000, tickSize: 0.00000001 };
   }
 
-  return steps[symbol] || { stepSize: 0.001, tickSize: 0.01 };
+  // Use a more precise fallback for unknown symbols to avoid SL/TP rounding issues
+  return steps[symbol] || { stepSize: 0.001, tickSize: 0.0001 };
 }
 
 function getRiskMultiplier(bot: any): number {
@@ -8882,13 +8884,15 @@ class BotExecutor {
         if (slValue >= entryPrice) {
           console.error(`❌ CRITICAL: Long position SL (${slValue}) >= Entry (${entryPrice}) - INVALID!`);
           console.error(`   Force correcting SL to be below entry...`);
-          slValue = roundToTick(entryPrice * 0.99); // Force 1% below entry
+          // Use Math.floor to ensure we round DOWN away from entry
+          slValue = Math.floor((entryPrice * 0.995) / tickSize) * tickSize;
           stopLossPrice = Number(slValue.toFixed(tickDecimals)).toString();
         }
         if (tpValue <= entryPrice) {
           console.error(`❌ CRITICAL: Long position TP (${tpValue}) <= Entry (${entryPrice}) - INVALID!`);
           console.error(`   Force correcting TP to be above entry...`);
-          tpValue = roundToTick(entryPrice * 1.01); // Force 1% above entry
+          // Use Math.ceil to ensure we round UP away from entry
+          tpValue = Math.ceil((entryPrice * 1.005) / tickSize) * tickSize;
           takeProfitPrice = Number(tpValue.toFixed(tickDecimals)).toString();
         }
         console.log(`📊 Long Position SL/TP:`);
@@ -8898,13 +8902,15 @@ class BotExecutor {
         if (slValue <= entryPrice) {
           console.error(`❌ CRITICAL: Short position SL (${slValue}) <= Entry (${entryPrice}) - INVALID!`);
           console.error(`   Force correcting SL to be above entry...`);
-          slValue = roundToTick(entryPrice * 1.01); // Force 1% above entry
+          // Use Math.ceil to ensure we round UP away from entry
+          slValue = Math.ceil((entryPrice * 1.005) / tickSize) * tickSize; 
           stopLossPrice = Number(slValue.toFixed(tickDecimals)).toString();
         }
         if (tpValue >= entryPrice) {
           console.error(`❌ CRITICAL: Short position TP (${tpValue}) >= Entry (${entryPrice}) - INVALID!`);
           console.error(`   Force correcting TP to be below entry...`);
-          tpValue = roundToTick(entryPrice * 0.99); // Force 1% below entry
+          // Use Math.floor to ensure we round DOWN away from entry
+          tpValue = Math.floor((entryPrice * 0.995) / tickSize) * tickSize;
           takeProfitPrice = Number(tpValue.toFixed(tickDecimals)).toString();
         }
         console.log(`📊 Short Position SL/TP:`);
@@ -9026,6 +9032,18 @@ class BotExecutor {
               if (actualPositionSide === 'Buy') {
                 recalcSlValue = roundToTick(entryPrice * (1 - stopLossPercent / 100));
                 recalcTpValue = roundToTick(entryPrice * (1 + takeProfitPercent / 100));
+                
+                // Validate long position TP/SL
+                if (recalcSlValue >= entryPrice) {
+                  console.error(`❌ Recalculated Long SL (${recalcSlValue}) >= Entry (${entryPrice}) - INVALID!`);
+                  recalcSlValue = Math.floor((entryPrice * 0.995) / tickSize) * tickSize;
+                  console.log(`   ✅ Corrected SL: ${recalcSlValue}`);
+                }
+                if (recalcTpValue <= entryPrice) {
+                  console.error(`❌ Recalculated Long TP (${recalcTpValue}) <= Entry (${entryPrice}) - INVALID!`);
+                  recalcTpValue = Math.ceil((entryPrice * 1.005) / tickSize) * tickSize;
+                  console.log(`   ✅ Corrected TP: ${recalcTpValue}`);
+                }
               } else {
                 recalcSlValue = roundToTick(entryPrice * (1 + stopLossPercent / 100));
                 recalcTpValue = roundToTick(entryPrice * (1 - takeProfitPercent / 100));
@@ -9033,12 +9051,12 @@ class BotExecutor {
                 // Validate short position TP/SL
                 if (recalcTpValue >= entryPrice) {
                   console.error(`❌ Recalculated Short TP (${recalcTpValue}) >= Entry (${entryPrice}) - INVALID!`);
-                  recalcTpValue = roundToTick(entryPrice * (1 - Math.max(takeProfitPercent, 0.1) / 100));
+                  recalcTpValue = Math.floor((entryPrice * 0.995) / tickSize) * tickSize;
                   console.log(`   ✅ Corrected TP: ${recalcTpValue}`);
                 }
                 if (recalcSlValue <= entryPrice) {
                   console.error(`❌ Recalculated Short SL (${recalcSlValue}) <= Entry (${entryPrice}) - INVALID!`);
-                  recalcSlValue = roundToTick(entryPrice * (1 + Math.max(stopLossPercent, 0.1) / 100));
+                  recalcSlValue = Math.ceil((entryPrice * 1.005) / tickSize) * tickSize;
                   console.log(`   ✅ Corrected SL: ${recalcSlValue}`);
                 }
               }
