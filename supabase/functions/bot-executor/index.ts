@@ -3638,6 +3638,9 @@ class BotExecutor {
     // 🚀 PAPER TRADING MODE: Check at the very beginning for ALL strategy types
     // Use more balanced thresholds for paper trading to allow for neutral states
     const config = bot?.strategy_config || {};
+    const isSuperAggressive = config.immediate_execution === true || config.super_aggressive === true || 
+                              strategy.immediate_execution === true || strategy.super_aggressive === true ||
+                              config.immediate_trading === true; // Also check immediate_trading
     
     // For ALL paper trading bots, trade based on RSI alone (not just super aggressive ones)
     if (bot?.paper_trading === true) {
@@ -15011,7 +15014,26 @@ class PaperTradingExecutor {
         console.log(`📈 [TRAILING] New highest equity: $${newHighestEquity.toFixed(2)} (was $${highestEquity.toFixed(2)})`);
       }
 
+      let processedCount = 0;
+      const MAX_POSITIONS_PER_UPDATE = 25; // Hard limit to avoid timeouts
+
       for (const position of positions) {
+        // Increment processed count
+        processedCount++;
+        
+        // 🛑 CRITICAL TIMEOUT PROTECTION: Hard break if we're over the limit or time is running out
+        if (processedCount > MAX_POSITIONS_PER_UPDATE) {
+          console.warn(`⏰ [PAPER] Processed ${MAX_POSITIONS_PER_UPDATE} positions, breaking loop to avoid timeout`);
+          break;
+        }
+
+        const currentElapsed = Date.now() - updateStartTime;
+        const currentRemaining = availableTime - currentElapsed;
+        if (currentRemaining < 3000) { // If less than 3s left, stop immediately
+          console.warn(`⏰ [PAPER] Less than 3s remaining (${currentRemaining}ms), breaking loop`);
+          break;
+        }
+
         // Initialize variables for this position iteration
         let shouldClose = false;
         let newStatus = '';
