@@ -59,6 +59,214 @@ async function createBybitSignature(payload: string, secret: string): Promise<st
 }
 
 /**
+ * Generate a random nonce for Bitunix API
+ */
+function generateNonce(): string {
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+}
+
+/**
+ * Create Bitunix Double SHA256 signature
+ */
+async function createBitunixSignature(
+  nonce: string,
+  timestamp: string,
+  apiKey: string,
+  queryParams: string,
+  body: string,
+  secretKey: string
+): Promise<string> {
+  // According to Bitunix official docs:
+  // digest = SHA256(nonce + timestamp + api-key + queryParams + body)
+  // sign = SHA256(digest + secretKey)
+  
+  // Sort query parameters alphabetically (required by Bitunix for GET requests)
+  let sortedQueryParams = queryParams;
+  if (queryParams && queryParams.includes('=')) {
+    const params = queryParams.split('&');
+    const paramMap: Record<string, string> = {};
+    for (const param of params) {
+      const [key, value] = param.split('=');
+      if (key) paramMap[key] = value || '';
+    }
+    const sortedKeys = Object.keys(paramMap).sort();
+    sortedQueryParams = sortedKeys.map(key => `${key}=${paramMap[key]}`).join('&');
+  }
+  
+  const digestInput = nonce + timestamp + apiKey + sortedQueryParams + body;
+  const encoder = new TextEncoder();
+  
+  const digestHash = await crypto.subtle.digest('SHA-256', encoder.encode(digestInput));
+  const digestHex = Array.from(new Uint8Array(digestHash))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+  
+  const signInput = digestHex + secretKey;
+  const signHash = await crypto.subtle.digest('SHA-256', encoder.encode(signInput));
+  return Array.from(new Uint8Array(signHash))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+interface StandardizedPosition {
+  symbol: string;
+  size: number;
+  side: 'long' | 'short';
+  entryPrice: number;
+  markPrice: number;
+  unrealizedPnL: number;
+}
+
+/**
+ * Fetch positions from Bybit
+ */
+async function fetchBybitPositions(
+  symbol: string,
+  tradingType: string,
+  apiKey: string,
+  apiSecret: string,
+  errors: string[]
+): Promise<StandardizedPosition[]> {
+  const baseUrl = 'https://api.bybit.com';
+  const timestamp = Date.now().toString();
+  const recvWindow = '5000';
+  const category = tradingType === 'futures' ? 'linear' : 'linear';
+
+  const positionParams: Record<string, string> = {
+    category: category,
+    symbol: symbol
+  };
+  const queryParams = Object.keys(positionParams)
+    .sort()
+    .map(key => `${key}=${positionParams[key]}`)
+    .join('&');
+
+  const signaturePayload = timestamp + apiKey + recvWindow + queryParams;
+  const signature = await createBybitSignature(signaturePayload, apiSecret);
+
+  try {
+    const response = await fetch(`${baseUrl}/v5/position/list?${queryParams}`, {
+      method: 'GET',
+      headers: {
+        'X-BAPI-API-KEY': apiKey,
+        'X-BAPI-TIMESTAMP': timestamp,
+        'X-BAPI-RECV-WINDOW': recvWindow,
+        'X-BAPI-SIGN': signature,
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMsg = `Bybit HTTP ${response.status}: ${errorText.substring(0, 200)}`;
+      if (response.status === 401) {
+        errorMsg += ' | Hint: Authentication failed. Check API key permissions (needs "Position" read permission) and verify API key/secret are correct.';
+      }
+      errors.push(errorMsg);
+      return [];
+    }
+
+    const data = await response.json();
+    if (data.retCode !== 0) {
+      errors.push(`Bybit API error (${data.retCode}): ${data.retMsg || 'Unknown error'}`);
+      return [];
+    }
+
+    if (!data.result?.list) return [];
+
+    return data.result.list
+      .filter((p: any) => parseFloat(p.size || 0) !== 0)
+      .map((p: any) => ({
+        symbol: p.symbol,
+        size: Math.abs(parseFloat(p.size || 0)),
+        side: p.side?.toLowerCase() === 'buy' ? 'long' : 'short',
+        entryPrice: parseFloat(p.avgPrice || p.entryPrice || 0),
+        markPrice: parseFloat(p.markPrice || p.lastPrice || 0),
+        unrealizedPnL: parseFloat(p.unrealisedPnl || 0)
+      }));
+  } catch (error: any) {
+    errors.push(`Bybit fetch error: ${error.message || String(error)}`);
+    return [];
+  }
+}
+
+/**
+ * Fetch positions from Bitunix
+ */
+async function fetchBitunixPositions(
+  symbol: string,
+  tradingType: string,
+  apiKey: string,
+  apiSecret: string,
+  errors: string[]
+): Promise<StandardizedPosition[]> {
+  const baseUrl = 'https://fapi.bitunix.com';
+  const endpoints = [
+    '/api/v1/futures/position/list',
+    '/api/v1/futures/position',
+    '/api/v1/position/list'
+  ];
+
+  for (const endpoint of endpoints) {
+    try {
+      const timestamp = Date.now().toString();
+      const nonce = generateNonce();
+      const queryParams = `symbol=${symbol.toUpperCase()}`;
+      const body = '';
+      const signature = await createBitunixSignature(nonce, timestamp, apiKey, queryParams, body, apiSecret);
+
+      const response = await fetch(`${baseUrl}${endpoint}?${queryParams}`, {
+        method: 'GET',
+        headers: {
+          'api-key': String(apiKey),
+          'nonce': String(nonce),
+          'timestamp': String(timestamp),
+          'sign': String(signature),
+          'Content-Type': 'application/json',
+          'language': 'en-US'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.code === 0 && data.data) {
+          let positions = [];
+          if (Array.isArray(data.data)) {
+            positions = data.data;
+          } else if (typeof data.data === 'object') {
+            const possibleArrays = Object.values(data.data).filter(v => Array.isArray(v));
+            if (possibleArrays.length > 0) {
+              positions = possibleArrays[0] as any[];
+            } else {
+              positions = [data.data];
+            }
+          }
+
+          if (positions.length > 0) {
+            return positions
+              .filter((p: any) => parseFloat(p.size || p.holdVol || p.quantity || 0) !== 0)
+              .map((p: any) => {
+                const sideRaw = (p.side || p.positionSide || '').toLowerCase();
+                return {
+                  symbol: p.symbol || symbol,
+                  size: Math.abs(parseFloat(p.size || p.holdVol || p.quantity || 0)),
+                  side: (sideRaw === 'buy' || sideRaw === 'long') ? 'long' : 'short',
+                  entryPrice: parseFloat(p.entryPrice || p.avgPrice || p.openPrice || p.entry_price || 0),
+                  markPrice: parseFloat(p.markPrice || p.lastPrice || 0),
+                  unrealizedPnL: parseFloat(p.unrealisedPnl || p.pnl || 0)
+                };
+              });
+          }
+        }
+      }
+    } catch (error: any) {
+      console.warn(`   ⚠️ Bitunix endpoint ${endpoint} failed: ${error.message}`);
+    }
+  }
+
+  return [];
+}
+
+/**
  * Recalculate bot statistics from trades
  */
 async function recalculateBotStats(
@@ -244,34 +452,17 @@ async function syncPositionsForBot(
   try {
     const tradingType = bot.tradingType || bot.trading_type || 'futures';
     const symbol = bot.symbol;
-    const exchange = bot.exchange || 'bybit';
+    const exchange = (bot.exchange || 'bybit').toLowerCase();
 
     console.log(`   🔍 Fetching positions for ${symbol} (${tradingType}) from ${exchange}`);
 
-    // Spot trading doesn't use positions like futures - Bybit's /v5/position/list doesn't support category=spot
-    // For spot trading, we skip position sync (positions are tracked via account balances/orders instead)
+    // Spot trading doesn't use positions like futures
     if (tradingType === 'spot') {
-      console.log(`   ℹ️ Skipping position sync for spot trading (Bybit doesn't support position/list for spot).`);
+      console.log(`   ℹ️ Skipping position sync for spot trading (${exchange} doesn't support position/list for spot).`);
       console.log(`   ℹ️ Spot positions are tracked via account balances and orders, not the position/list endpoint.`);
       return { success: true, synced: 0, closed: 0, errors: [] };
     }
 
-    // Fetch positions from exchange (mainnet only - no testnet support)
-    const baseUrl = 'https://api.bybit.com';
-    const timestamp = Date.now().toString();
-    const recvWindow = '5000';
-    const category = tradingType === 'futures' ? 'linear' : 'linear'; // Only linear/option supported, not spot
-
-    // Build query params and ensure they're sorted alphabetically (required by Bybit)
-    const positionParams: Record<string, string> = {
-      category: category,
-      symbol: symbol
-    };
-    const queryParams = Object.keys(positionParams)
-      .sort()
-      .map(key => `${key}=${positionParams[key]}`)
-      .join('&');
-    
     // Trim API key and secret to prevent whitespace issues
     const apiKey = (apiKeys.api_key || '').trim();
     const apiSecret = (apiKeys.api_secret || '').trim();
@@ -282,196 +473,24 @@ async function syncPositionsForBot(
       errors.push(errorMsg);
       return { success: false, synced: 0, closed: 0, errors };
     }
-    
-    // First, validate API key with a simpler endpoint (wallet balance) to diagnose auth issues
-    // Bybit V5 wallet-balance requires UNIFIED account type and sorted parameters including api_key, recv_window, timestamp
-    const walletParams = {
-      api_key: apiKey,
-      accountType: 'UNIFIED',
-      recv_window: recvWindow,
-      timestamp: timestamp
-    };
-    const sortedWalletParams = Object.keys(walletParams)
-      .sort()
-      .map(key => `${key}=${walletParams[key as keyof typeof walletParams]}`)
-      .join('&');
-    const walletSignaturePayload = timestamp + apiKey + recvWindow + sortedWalletParams;
-    const walletSignature = await createBybitSignature(walletSignaturePayload, apiSecret);
-    
-    // Log wallet-balance validation details for debugging
-    console.log(`   🔍 Wallet-balance validation: signature payload length=${walletSignaturePayload.length}, sorted params="${sortedWalletParams.substring(0, 100)}..."`);
-    
-    try {
-      const walletTestResponse = await fetch(`${baseUrl}/v5/account/wallet-balance?${sortedWalletParams}`, {
-        method: 'GET',
-        headers: {
-          'X-BAPI-API-KEY': apiKey,
-          'X-BAPI-TIMESTAMP': timestamp,
-          'X-BAPI-RECV-WINDOW': recvWindow,
-          'X-BAPI-SIGN': walletSignature,
-        },
-      });
-      
-      if (!walletTestResponse.ok) {
-        let walletErrorText = '';
-        let walletErrorJson: any = null;
-        try {
-          walletErrorText = await walletTestResponse.text();
-          if (walletErrorText && walletErrorText.trim()) {
-            try {
-              walletErrorJson = JSON.parse(walletErrorText);
-            } catch {
-              walletErrorJson = { rawResponse: walletErrorText };
-            }
-          } else {
-            walletErrorJson = { emptyResponse: true };
-          }
-        } catch (e) {
-          walletErrorText = `Failed to read error: ${e}`;
-        }
-        
-        console.warn(`   ⚠️ API key validation failed (wallet-balance returned ${walletTestResponse.status}):`);
-        if (walletErrorJson?.retCode) {
-          console.warn(`      retCode: ${walletErrorJson.retCode}, retMsg: ${walletErrorJson.retMsg || 'Unknown'}`);
-        } else if (walletErrorJson?.emptyResponse) {
-          console.warn(`      Empty response body (common for 401 errors)`);
-        } else if (walletErrorText) {
-          console.warn(`      Error: ${walletErrorText.substring(0, 200)}`);
-        }
-        console.warn(`   💡 This suggests the API key is invalid, expired, or doesn't have required permissions.`);
-        console.warn(`   ⚠️ IMPORTANT: Position sync requires "Read" permissions, not just "Trade" permissions.`);
-        console.warn(`   💡 Verify the API key has "Read" permissions for "Account" and "Position" in Bybit API settings.`);
-        console.warn(`   💡 In Bybit API settings, enable: "Read" → "Account" and "Read" → "Position" (not just "Trade" permissions).`);
-      } else {
-        const walletData = await walletTestResponse.json().catch(() => null);
-        if (walletData?.retCode === 0) {
-          console.log(`   ✅ API key validation successful (wallet-balance OK)`);
-        } else {
-          console.warn(`   ⚠️ API key validation warning: wallet-balance returned retCode ${walletData?.retCode}: ${walletData?.retMsg || 'Unknown'}`);
-        }
-      }
-    } catch (walletTestError: any) {
-      console.warn(`   ⚠️ API key validation test failed: ${walletTestError?.message || String(walletTestError)}`);
-    }
 
-    const signaturePayload = timestamp + apiKey + recvWindow + queryParams;
-    const signature = await createBybitSignature(signaturePayload, apiSecret);
-
-    // Log API key info (first 8 chars only for security)
-    const apiKeyPreview = apiKey ? `${apiKey.substring(0, 8)}...` : 'MISSING';
-    console.log(`   🔑 Using API key: ${apiKeyPreview}`);
-    console.log(`   📝 Request details: category=${category}, symbol=${symbol}, timestamp=${timestamp}`);
-    console.log(`   🔐 Signature payload: "${signaturePayload.substring(0, 50)}...${signaturePayload.substring(signaturePayload.length - 20)}" (length: ${signaturePayload.length})`);
-    console.log(`   🔐 Signature: ${signature.substring(0, 16)}...${signature.substring(signature.length - 8)} (length: ${signature.length}, all lowercase: ${signature === signature.toLowerCase()})`);
-    console.log(`   🔐 API secret length: ${apiSecret.length}, starts with: ${apiSecret.substring(0, 4)}...`);
-
-    const response = await fetch(`${baseUrl}/v5/position/list?${queryParams}`, {
-      method: 'GET',
-      headers: {
-        'X-BAPI-API-KEY': apiKey,
-        'X-BAPI-TIMESTAMP': timestamp,
-        'X-BAPI-RECV-WINDOW': recvWindow,
-        'X-BAPI-SIGN': signature,
-      },
-    });
-
-    if (!response.ok) {
-      let errorText = '';
-      let bybitError: any = null;
-      const responseHeaders: Record<string, string> = {};
-      
-      // Capture response headers for debugging
-      response.headers.forEach((value, key) => {
-        responseHeaders[key] = value;
-      });
-      
-      try {
-        errorText = await response.text();
-        // Try to parse as JSON to get Bybit error details
-        if (errorText && errorText.trim()) {
-          try {
-            bybitError = JSON.parse(errorText);
-          } catch {
-            // Not JSON, use text as-is
-            bybitError = { rawResponse: errorText };
-          }
-        } else {
-          // Empty response body - common for 401 errors
-          bybitError = { emptyResponse: true };
-        }
-      } catch (e) {
-        errorText = `Failed to read error response: ${e}`;
-        bybitError = { readError: String(e) };
-      }
-
-      // Build detailed error message
-      let errorMsg = `Failed to fetch positions: HTTP ${response.status}`;
-      
-      if (bybitError) {
-        if (bybitError.retCode) {
-          errorMsg += ` (retCode: ${bybitError.retCode}, retMsg: ${bybitError.retMsg || 'Unknown'})`;
-        } else if (bybitError.emptyResponse) {
-          errorMsg += ` (empty response body)`;
-        } else if (bybitError.rawResponse) {
-          errorMsg += ` - ${bybitError.rawResponse.substring(0, 200)}`;
-        }
-      } else if (errorText) {
-        errorMsg += ` - ${errorText.substring(0, 200)}`;
-      }
-      
-      // Add API key context
-      errorMsg += ` | API Key: ${apiKeyPreview} | Category: ${category}`;
-      
-      console.error(`   ❌ ${errorMsg}`);
-      console.error(`   📋 Response status: ${response.status} ${response.statusText}`);
-      console.error(`   📋 Response headers:`, JSON.stringify(responseHeaders, null, 2));
-      console.error(`   📋 Response body:`, bybitError || errorText || '(empty)');
-      console.error(`   📋 Request URL: ${baseUrl}/v5/position/list?${queryParams}`);
-      console.error(`   📋 Request headers:`, {
-        'X-BAPI-API-KEY': apiKeyPreview,
-        'X-BAPI-TIMESTAMP': timestamp,
-        'X-BAPI-RECV-WINDOW': recvWindow,
-        'X-BAPI-SIGN': `${signature.substring(0, 16)}...`
-      });
-      
-      // Add helpful hints based on error code
-      if (response.status === 401) {
-        if (bybitError?.retCode === 10003) {
-          errorMsg += ' | Hint: Invalid API key or secret. Please verify your Bybit API credentials.';
-        } else if (bybitError?.retCode === 10004) {
-          errorMsg += ' | Hint: Invalid signature. Check API secret is correct.';
-        } else if (bybitError?.retCode === 10005) {
-          errorMsg += ' | Hint: Request expired. Check system clock synchronization.';
-        } else if (bybitError?.retCode === 10006) {
-          errorMsg += ' | Hint: IP not whitelisted. Add Supabase Edge Function IPs to Bybit API key whitelist.';
-        } else if (bybitError?.retCode === 33004) {
-          errorMsg += ' | Hint: Insufficient permissions. API key needs "Position" read permission.';
-        } else {
-          errorMsg += ' | Hint: Authentication failed. Check API key permissions (needs "Position" read permission) and verify API key/secret are correct.';
-        }
-      }
-      
+    // Fetch positions based on exchange
+    let exchangePositions: StandardizedPosition[] = [];
+    if (exchange === 'bybit') {
+      exchangePositions = await fetchBybitPositions(symbol, tradingType, apiKey, apiSecret, errors);
+    } else if (exchange === 'bitunix') {
+      exchangePositions = await fetchBitunixPositions(symbol, tradingType, apiKey, apiSecret, errors);
+    } else if (exchange === 'mexc') {
+      // MEXC is currently spot-only in bot-executor, so skip position sync
+      console.log(`   ℹ️ Skipping position sync for MEXC (${tradingType}) - currently only spot supported`);
+      return { success: true, synced: 0, closed: 0, errors: [] };
+    } else {
+      const errorMsg = `Unsupported exchange for position sync: ${exchange}`;
+      console.warn(`   ⚠️ ${errorMsg}`);
       errors.push(errorMsg);
       return { success: false, synced: 0, closed: 0, errors };
     }
 
-    const data = await response.json();
-    if (data.retCode !== 0) {
-      const errorMsg = `Exchange error (retCode: ${data.retCode}): ${data.retMsg || 'Unknown error'} | API Key: ${apiKeyPreview}`;
-      console.error(`   ❌ ${errorMsg}`);
-      console.error(`   📋 Full error response:`, JSON.stringify(data, null, 2));
-      errors.push(errorMsg);
-      return { success: false, synced: 0, closed: 0, errors };
-    }
-
-    if (!data.result?.list) {
-      const errorMsg = `Exchange returned no result list for ${symbol}`;
-      console.error(`   ❌ ${errorMsg}`);
-      errors.push(errorMsg);
-      return { success: false, synced: 0, closed: 0, errors };
-    }
-
-    const exchangePositions = data.result.list.filter((p: any) => parseFloat(p.size || 0) !== 0);
     console.log(`   📊 Exchange positions found: ${exchangePositions.length} for ${symbol}`);
 
     // Get database positions
@@ -505,19 +524,19 @@ async function syncPositionsForBot(
 
     // Update or close positions based on exchange data
     for (const dbPos of dbPositions || []) {
-      const exchangePos = exchangePositions.find((ep: any) => {
-        const epSide = ep.side?.toLowerCase();
+      const exchangePos = exchangePositions.find((ep: StandardizedPosition) => {
+        const epSide = ep.side;
         const dbSide = dbPos.side?.toLowerCase();
-        return ep.symbol === symbol && (
+        return (
           epSide === dbSide ||
-          (epSide === 'buy' && dbSide === 'long') ||
-          (epSide === 'sell' && dbSide === 'short')
+          (epSide === 'long' && dbSide === 'long') ||
+          (epSide === 'short' && dbSide === 'short')
         );
       });
 
-      if (!exchangePos || parseFloat(exchangePos.size || 0) === 0) {
+      if (!exchangePos || exchangePos.size === 0) {
         // Position closed on exchange, close in database
-        const currentPrice = parseFloat(exchangePos?.markPrice || exchangePos?.lastPrice || dbPos.current_price || 0);
+        const currentPrice = parseFloat(exchangePos?.markPrice?.toString() || dbPos.current_price?.toString() || '0');
         
         if (currentPrice > 0) {
           // Calculate realized PnL
@@ -534,7 +553,7 @@ async function syncPositionsForBot(
           // Calculate PnL based on side
           let realizedPnL: number;
           const normalizedSide = dbPos.side?.toLowerCase();
-          if (normalizedSide === 'long') {
+          if (normalizedSide === 'long' || normalizedSide === 'buy') {
             realizedPnL = (currentPrice - entryPrice) * quantity - totalFees;
           } else {
             realizedPnL = (entryPrice - currentPrice) * quantity - totalFees;
@@ -556,18 +575,15 @@ async function syncPositionsForBot(
             .eq('id', dbPos.id);
 
           if (updateError) {
-            // Check if it's the known database schema issue with peak.running_pnl
+            // ... (keep existing trigger error handling)
             if (updateError.message && updateError.message.includes('peak.running_pnl')) {
               console.warn(`   ⚠️ Database schema issue detected: ${updateError.message}`);
               console.warn(`   💡 This is caused by a database trigger/view on trading_positions referencing a non-existent column 'peak.running_pnl'`);
               console.warn(`   💡 Position ${dbPos.id} (${symbol}) is closed on exchange but cannot be updated in database due to trigger error`);
               console.warn(`   💡 ACTION REQUIRED: Fix database trigger/view or manually close position ${dbPos.id} in database`);
               
-              // Still try to update trade record (it may not have the same trigger issue)
               let tradeUpdated = false;
               if (dbPos.trade_id) {
-                // First, try updating just pnl and fee (most important data) without status
-                // This avoids constraint issues that might be caused by status updates
                 const tradeUpdatePnL: any = {
                   pnl: realizedPnL,
                   fee: totalFees
@@ -578,70 +594,29 @@ async function syncPositionsForBot(
                   .update(tradeUpdatePnL)
                   .eq('id', dbPos.trade_id);
 
-                let tradeUpdateError = updateResult.error;
-
-                // If pnl/fee update succeeds, try to update status separately
-                if (!tradeUpdateError) {
-                  // Fetch current trade to check its status
+                if (!updateResult.error) {
                   const { data: currentTrade } = await supabaseClient
                     .from('trades')
                     .select('status')
                     .eq('id', dbPos.trade_id)
                     .single();
 
-                  // Only update status if it's not already a closed status
                   const currentStatus = (currentTrade?.status || '').toLowerCase();
                   const closedStatuses = ['closed', 'completed', 'filled'];
                   
                   if (!closedStatuses.includes(currentStatus)) {
-                    // Try updating status - use 'filled' as it's commonly accepted
-                    const statusUpdate: any = { status: 'filled' };
-                    updateResult = await supabaseClient
+                    await supabaseClient
                       .from('trades')
-                      .update(statusUpdate)
+                      .update({ status: 'filled' })
                       .eq('id', dbPos.trade_id);
-                    
-                    tradeUpdateError = updateResult.error;
-                    
-                    // If 'filled' fails, try 'completed'
-                    if (tradeUpdateError && (tradeUpdateError.code === '23514' || (tradeUpdateError.message && tradeUpdateError.message.includes('check constraint')))) {
-                      statusUpdate.status = 'completed';
-                      updateResult = await supabaseClient
-                        .from('trades')
-                        .update(statusUpdate)
-                        .eq('id', dbPos.trade_id);
-                      tradeUpdateError = updateResult.error;
-                    }
-                    
-                    // If 'completed' fails, try 'closed'
-                    if (tradeUpdateError && (tradeUpdateError.code === '23514' || (tradeUpdateError.message && tradeUpdateError.message.includes('check constraint')))) {
-                      statusUpdate.status = 'closed';
-                      updateResult = await supabaseClient
-                        .from('trades')
-                        .update(statusUpdate)
-                        .eq('id', dbPos.trade_id);
-                      tradeUpdateError = updateResult.error;
-                    }
-                    
-                    // If status update fails, log but don't fail the whole operation (pnl/fee were updated)
-                    if (tradeUpdateError) {
-                      console.warn(`   ⚠️ Trade PnL/fee updated successfully, but status update failed:`, tradeUpdateError.message);
-                      console.warn(`   💡 Trade ${dbPos.trade_id} has correct PnL/fee but status may need manual update`);
-                    }
                   }
                   
                   console.log(`   ✅ Updated trade ${dbPos.trade_id} with PnL: $${realizedPnL.toFixed(2)}, fee: $${totalFees.toFixed(2)} (position update blocked by trigger)`);
                   tradeUpdated = true;
-                  // Recalculate stats since trade was updated
                   await recalculateBotStats(supabaseClient, bot.id, bot.user_id);
-                } else {
-                  // If pnl/fee update failed, log the error
-                  console.error(`   ⚠️ Failed to update trade ${dbPos.trade_id} (PnL/fee):`, tradeUpdateError);
-                  console.error(`   ⚠️ Trade update error details:`, JSON.stringify(tradeUpdateError, null, 2));
                 }
               }
               
-              // Add detailed error message
               errors.push(`Position ${dbPos.id} (${symbol}) closed on exchange but database update blocked by trigger error (peak.running_pnl). ${tradeUpdated ? 'Trade record updated successfully.' : 'Trade record also failed to update.'} Manual database fix required.`);
             } else {
               errors.push(`Failed to close position ${dbPos.id}: ${updateError.message}`);
@@ -649,10 +624,7 @@ async function syncPositionsForBot(
           } else {
             closed++;
             
-            // Update trade if trade_id exists
             if (dbPos.trade_id) {
-              // First, try updating just pnl and fee (most important data) without status
-              // This avoids constraint issues that might be caused by status updates
               const tradeUpdatePnL: any = {
                 pnl: realizedPnL,
                 fee: totalFees
@@ -663,75 +635,30 @@ async function syncPositionsForBot(
                 .update(tradeUpdatePnL)
                 .eq('id', dbPos.trade_id);
 
-              let tradeUpdateError = updateResult.error;
-
-              // If pnl/fee update succeeds, try to update status separately
-              if (!tradeUpdateError) {
-                // Fetch current trade to check its status
+              if (!updateResult.error) {
                 const { data: currentTrade } = await supabaseClient
                   .from('trades')
                   .select('status')
                   .eq('id', dbPos.trade_id)
                   .single();
 
-                // Only update status if it's not already a closed status
                 const currentStatus = (currentTrade?.status || '').toLowerCase();
                 const closedStatuses = ['closed', 'completed', 'filled'];
                 
                 if (!closedStatuses.includes(currentStatus)) {
-                  // Try updating status - use 'filled' as it's commonly accepted
-                  const statusUpdate: any = { status: 'filled' };
-                  updateResult = await supabaseClient
+                  await supabaseClient
                     .from('trades')
-                    .update(statusUpdate)
+                    .update({ status: 'filled' })
                     .eq('id', dbPos.trade_id);
-                  
-                  tradeUpdateError = updateResult.error;
-                  
-                  // If 'filled' fails, try 'completed'
-                  if (tradeUpdateError && (tradeUpdateError.code === '23514' || (tradeUpdateError.message && tradeUpdateError.message.includes('check constraint')))) {
-                    statusUpdate.status = 'completed';
-                    updateResult = await supabaseClient
-                      .from('trades')
-                      .update(statusUpdate)
-                      .eq('id', dbPos.trade_id);
-                    tradeUpdateError = updateResult.error;
-                  }
-                  
-                  // If 'completed' fails, try 'closed'
-                  if (tradeUpdateError && (tradeUpdateError.code === '23514' || (tradeUpdateError.message && tradeUpdateError.message.includes('check constraint')))) {
-                    statusUpdate.status = 'closed';
-                    updateResult = await supabaseClient
-                      .from('trades')
-                      .update(statusUpdate)
-                      .eq('id', dbPos.trade_id);
-                    tradeUpdateError = updateResult.error;
-                  }
-                  
-                  // If status update fails, log but don't fail the whole operation (pnl/fee were updated)
-                  if (tradeUpdateError) {
-                    console.warn(`   ⚠️ Trade PnL/fee updated successfully, but status update failed:`, tradeUpdateError.message);
-                    console.warn(`   💡 Trade ${dbPos.trade_id} has correct PnL/fee but status may need manual update`);
-                    // Don't add to errors since pnl/fee were successfully updated
-                  } else {
-                    console.log(`   ✅ Updated trade ${dbPos.trade_id} with PnL: $${realizedPnL.toFixed(2)}, fee: $${totalFees.toFixed(2)}, status: ${statusUpdate.status}`);
-                  }
-                } else {
-                  console.log(`   ✅ Updated trade ${dbPos.trade_id} with PnL: $${realizedPnL.toFixed(2)}, fee: $${totalFees.toFixed(2)} (status already closed: ${currentStatus})`);
                 }
-              } else {
-                // If pnl/fee update failed, log the error
-                console.error(`   ⚠️ Failed to update trade ${dbPos.trade_id} (PnL/fee):`, tradeUpdateError);
-                console.error(`   ⚠️ Trade update error details:`, JSON.stringify(tradeUpdateError, null, 2));
-                errors.push(`Failed to update trade ${dbPos.trade_id}: ${tradeUpdateError.message}`);
+                
+                console.log(`   ✅ Updated trade ${dbPos.trade_id} with PnL: $${realizedPnL.toFixed(2)}, fee: $${totalFees.toFixed(2)}`);
               }
             }
 
-            // Recalculate bot stats after closing position
             await recalculateBotStats(supabaseClient, bot.id, bot.user_id);
           }
         } else {
-          // Close without price update if we can't get current price
           await supabaseClient
             .from('trading_positions')
             .update({
@@ -745,8 +672,8 @@ async function syncPositionsForBot(
         }
       } else {
         // Update position with current price and unrealized PnL
-        const currentPrice = parseFloat(exchangePos.markPrice || exchangePos.lastPrice || 0);
-        const unrealizedPnL = parseFloat(exchangePos.unrealisedPnl || 0);
+        const currentPrice = exchangePos.markPrice;
+        const unrealizedPnL = exchangePos.unrealizedPnL;
 
         if (currentPrice > 0) {
           const { error: updateError } = await supabaseClient
@@ -754,16 +681,14 @@ async function syncPositionsForBot(
             .update({
               current_price: currentPrice,
               unrealized_pnl: unrealizedPnL,
-              quantity: parseFloat(exchangePos.size || dbPos.quantity),
+              quantity: exchangePos.size,
               updated_at: new Date().toISOString()
             })
             .eq('id', dbPos.id);
 
           if (updateError) {
-            // Check if it's the same database schema issue
             if (updateError.message && updateError.message.includes('peak.running_pnl')) {
               console.warn(`   ⚠️ Cannot update open position ${dbPos.id}: Database trigger error (peak.running_pnl)`);
-              console.warn(`   💡 Position data will not be updated until database trigger is fixed`);
               errors.push(`Position ${dbPos.id} (${symbol}) update blocked by trigger error (peak.running_pnl). Database fix required.`);
             } else {
               errors.push(`Failed to update position ${dbPos.id}: ${updateError.message}`);
