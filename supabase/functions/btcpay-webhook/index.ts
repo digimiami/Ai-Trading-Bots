@@ -198,6 +198,35 @@ async function handlePaymentSettled(
   // Send confirmation email to user (includes invoice)
   await sendSubscriptionEmail(supabaseClient, updatedSubscription || subscription, 'activated')
 
+  // Notify admin about the payment
+  try {
+    const adminNotificationUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/admin-notifications`;
+    const { data: userData } = await supabaseClient.auth.admin.getUserById(subscription.user_id);
+    const userEmail = userData?.user?.email || 'Unknown User';
+    const planName = updatedSubscription?.subscription_plans?.display_name || subscription.subscription_plans?.display_name || 'Premium Plan';
+    
+    await fetch(adminNotificationUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
+      },
+      body: JSON.stringify({
+        type: 'subscription_paid',
+        data: {
+          user_id: subscription.user_id,
+          user_email: userEmail,
+          plan_name: planName,
+          amount: subscription.subscription_plans?.price_monthly || subscription.subscription_plans?.price || 0,
+          invoice_id: event.invoiceId
+        }
+      })
+    });
+    console.log(`✅ Admin notified about subscription payment for ${userEmail}`);
+  } catch (adminNotifError) {
+    console.error('❌ Failed to notify admin about payment:', adminNotifError);
+  }
+
   // Send in-app message to user
   await sendSubscriptionMessage(supabaseClient, updatedSubscription || subscription, 'activated')
 }
