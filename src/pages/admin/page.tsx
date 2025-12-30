@@ -19,6 +19,7 @@ import PopupManager from './components/PopupManager';
 import EmailCenter from './components/EmailCenter';
 import FunnelManager from './components/FunnelManager';
 import ManualTrading from './components/ManualTrading';
+import AdminNotifications from './components/AdminNotifications';
 
 interface User {
   id: string;
@@ -1108,6 +1109,7 @@ export default function AdminPage() {
 
   const tabs = [
     { id: 'email-center', label: 'Email Center', icon: 'ri-mail-send-line' },
+    { id: 'notifications', label: 'Admin Notifications', icon: 'ri-notification-badge-line' },
     { id: 'contact-messages', label: 'Contact Messages', icon: 'ri-mail-line' },
     { id: 'subscriptions', label: 'Subscriptions', icon: 'ri-wallet-line' },
     { id: 'popups', label: 'Popup Manager', icon: 'ri-notification-line' },
@@ -1131,7 +1133,7 @@ export default function AdminPage() {
     <div className="min-h-screen bg-gray-50">
       <Header 
         title="Admin Panel"
-        subtitle="Complete System Management & Control"
+        subtitle="Complete System Management & Control (v1.0.1)"
       />
       
       <div className="pt-20 pb-20 px-4">
@@ -2879,6 +2881,11 @@ export default function AdminPage() {
         {/* Manual Trading Tab */}
         {activeTab === 'manual-trading' && (
           <ManualTrading />
+        )}
+
+        {/* Notifications Tab */}
+        {activeTab === 'notifications' && (
+          <AdminNotifications />
         )}
 
         {/* Create User Modal */}
