@@ -5349,14 +5349,14 @@ class BotExecutor {
     return slope * n + intercept;
   }
   
-  public async executeTrade(bot: any, tradeSignal: any): Promise<void> {
+  public async executeTrade(bot: any, tradeSignal: any): Promise<{ success: boolean; skipped?: boolean; reason?: string; trade?: any }> {
     try {
       console.log(`\n🚀 === EXECUTING REAL TRADE ===`);
-      console.log(`📊 Bot: ${bot.name} (${bot.id})`);
-      console.log(`📈 Symbol: ${bot.symbol}`);
-      console.log(`📊 Side: ${tradeSignal.side}`);
-      console.log(`💰 Trade Amount: ${bot.trade_amount || bot.tradeAmount}`);
-      console.log(`🏦 Exchange: ${bot.exchange}`);
+      console.log(`   Bot: ${bot.name} (${bot.id})`);
+      console.log(`   Symbol: ${bot.symbol}`);
+      console.log(`   Side: ${tradeSignal.side}`);
+      console.log(`   💰 Trade Amount: ${bot.trade_amount || bot.tradeAmount}`);
+      console.log(`   🏦 Exchange: ${bot.exchange}`);
       
       // ⚠️ CRITICAL: Check subscription/trial limits BEFORE executing real trades
       if (bot.paper_trading !== true) {
@@ -5395,17 +5395,14 @@ class BotExecutor {
                 trial_expired: tradeCheck?.trial_expired
               }
             });
-            throw new Error(reason);
+            return { success: false, skipped: true, reason };
           }
 
           console.log(`✅ Trade permission check passed: ${tradeCheck.reason || 'Allowed'}`);
-          if (tradeCheck.remaining_trades !== null && tradeCheck.remaining_trades !== undefined) {
-            console.log(`📊 Trade limits: ${tradeCheck.current_trades || 0}/${tradeCheck.max_trades || 'unlimited'} (${tradeCheck.remaining_trades} remaining)`);
-          }
         } catch (err: any) {
           // If it's already an error we threw, re-throw it
           if (err.message && (err.message.includes('Trading blocked') || err.message.includes('subscription') || err.message.includes('trial'))) {
-            throw err;
+            return { success: false, skipped: true, reason: err.message };
           }
           // Otherwise log and re-throw
           console.error(`❌ Subscription check failed:`, err);
@@ -5760,8 +5757,10 @@ class BotExecutor {
         // Don't fail the trade if notification fails - just log it
         console.warn('⚠️ Failed to send Telegram notification (non-critical):', notifError);
       }
+
+      return { success: true, trade };
       
-    } catch (error) {
+    } catch (error: any) {
       // Check if it's a regulatory restriction error (10024) - requires pausing bot
       const isRegulatoryRestriction = error.message?.includes('regulatory restrictions') || 
                                      error.message?.includes('regulatory restriction') ||
@@ -5781,8 +5780,7 @@ class BotExecutor {
             recommendation: 'Contact Bybit support to enable trading for your region. Bot has been paused automatically.'
           }
         });
-        // Throw error so caller knows no trade was created
-        throw new Error(`Regulatory restriction: ${error.message}. Bot has been paused.`);
+        return { success: false, skipped: true, reason: `Regulatory restriction: ${error.message}` };
       }
       
       // Check if it's an insufficient balance error (less critical)
@@ -5793,13 +5791,9 @@ class BotExecutor {
         
         // Extract balance details from error message if available
         const balanceMatch = error.message.match(/Available: \$?([0-9.]+)/i);
-        const requiredMatch = error.message.match(/Required: \$?([0-9.]+)/i);
         const shortfallMatch = error.message.match(/Shortfall: \$?([0-9.]+)/i);
-        
         const shortfall = shortfallMatch ? parseFloat(shortfallMatch[1]) : null;
         const errorMessage = `❌ Trade blocked: Insufficient balance for ${bot.symbol} ${tradeSignal?.side || 'order'}. ${shortfall ? `Need $${shortfall.toFixed(2)} more.` : 'Please add funds or reduce trade size.'}`;
-        
-        console.log(`📝 Logging insufficient balance error to bot_activity_logs for bot ${bot.id}...`);
         
         // Log as error level for better visibility in Recent Activity
         await this.addBotLog(bot.id, {
@@ -5809,18 +5803,14 @@ class BotExecutor {
           details: { 
             error: error.message,
             errorType: 'insufficient_balance',
-            availableBalance: balanceMatch ? parseFloat(balanceMatch[1]) : null,
-            requiredBalance: requiredMatch ? parseFloat(requiredMatch[1]) : null,
             shortfall: shortfall,
             symbol: bot.symbol,
             side: tradeSignal?.side || 'unknown',
-            recommendation: shortfall ? `Add at least $${(shortfall + 5).toFixed(2)} to your ${bot.exchange} ${bot.tradingType === 'futures' ? 'UNIFIED/Futures' : 'Spot'} wallet` : 'Reduce trade amount in bot settings or add funds',
-            note: 'Add funds to your exchange wallet or reduce trade amount. Will retry on next execution cycle.',
             timestamp: TimeSync.getCurrentTimeISO()
           }
         });
         
-        console.log(`✅ Insufficient balance error logged to bot_activity_logs`);
+        return { success: false, skipped: true, reason: 'Insufficient balance' };
       } else {
         console.error('❌ Trade execution error:', error);
         await this.addBotLog(bot.id, {
@@ -5832,11 +5822,10 @@ class BotExecutor {
             errorType: error.name || 'unknown',
             symbol: bot.symbol,
             side: tradeSignal?.side || 'unknown',
-            stack: error.stack,
             timestamp: TimeSync.getCurrentTimeISO()
           }
         });
-        // CRITICAL: Re-throw the error so executeManualTrade can catch it and mark signal as failed
+        // Re-throw other errors
         throw error;
       }
     }
@@ -5852,7 +5841,7 @@ class BotExecutor {
       sizeMultiplier?: number | null;
       source?: string;
     }
-  ): Promise<{ mode: 'real' | 'paper' }> {
+  ): Promise<{ mode: 'real' | 'paper'; success: boolean; skipped?: boolean; reason?: string; trade?: any }> {
     console.log(`\n🚀 === EXECUTING MANUAL TRADE ===`);
     console.log(`   Bot ID: ${bot.id}`);
     console.log(`   Bot Name: ${bot.name}`);
@@ -5998,12 +5987,13 @@ class BotExecutor {
             message: errorMsg,
             details: { ...tradeSignal, paper_trading: true, open_positions: openPositions, max_concurrent: maxConcurrent }
           });
-          return { mode: 'paper' };
+          return { mode: 'paper', success: false, skipped: true, reason: errorMsg };
         }
         
-        await paperExecutor.executePaperTrade(botSnapshot, tradeSignal);
+        const paperTrade = await paperExecutor.executePaperTrade(botSnapshot, tradeSignal);
         await paperExecutor.updatePaperPositions(bot.id, Date.now(), 20000);
         console.log(`✅ PAPER trade executed successfully`);
+        return { mode: 'paper', success: true, trade: paperTrade };
       } else {
         console.log(`💵 Executing REAL trade for ${bot.symbol}...`);
         
@@ -6013,6 +6003,7 @@ class BotExecutor {
         const baseDelayMs = isWebhookOrder ? 2000 : 0; // 2 second base delay for webhook orders
         
         let lastError: Error | null = null;
+        let tradeResult: any = null;
         
         for (let retryAttempt = 0; retryAttempt < maxRetries; retryAttempt++) {
           if (retryAttempt > 0) {
@@ -6022,9 +6013,9 @@ class BotExecutor {
           }
           
           try {
-            await this.executeTrade(botSnapshot, tradeSignal);
-            console.log(`✅ REAL trade executed successfully`);
-            break; // Success, exit retry loop
+            tradeResult = await this.executeTrade(botSnapshot, tradeSignal);
+            console.log(`✅ REAL trade result:`, tradeResult);
+            break; // Success or known skip, exit retry loop
           } catch (error) {
             lastError = error instanceof Error ? error : new Error(String(error));
             const errorMessage = lastError.message;
@@ -6041,6 +6032,14 @@ class BotExecutor {
             }
           }
         }
+
+        return { 
+          mode: 'real', 
+          success: tradeResult?.success ?? false, 
+          skipped: tradeResult?.skipped, 
+          reason: tradeResult?.reason, 
+          trade: tradeResult?.trade 
+        };
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -6210,8 +6209,10 @@ class BotExecutor {
           console.log(`✅ [MANUAL SIGNAL ${signalId}] Trade execution completed:`, result);
 
           // Verify that a trade was actually created (for real mode)
-          let tradeCreated = false;
-          if (finalMode === 'real') {
+          let tradeCreated = result.success;
+          
+          if (finalMode === 'real' && !tradeCreated && !result.skipped) {
+            // Only perform manual DB check if it wasn't explicitly skipped and success is false
             // Check if a trade was created in the last 5 minutes (increased from 60s to handle clock skew)
             // Also check both created_at and executed_at fields
             // CRITICAL: Use bot owner's user_id when checking for trades
@@ -6234,7 +6235,7 @@ class BotExecutor {
               console.error(`⚠️ Error checking for trades:`, tradeCheckError);
             }
             
-            tradeCreated = recentTrades && recentTrades.length > 0;
+            tradeCreated = (recentTrades && recentTrades.length > 0) || !!result.trade;
             
             if (!tradeCreated) {
               // One last check: maybe it's under the executor's user ID?
@@ -6281,16 +6282,18 @@ class BotExecutor {
             } else {
               console.log(`✅ Trade verification passed: Found trade(s) created`);
             }
+          } else if (result.skipped) {
+            console.log(`⏭️ Trade was intentionally skipped: ${result.reason}`);
+            // If it was skipped, we mark it as completed but with an error message in the signal record
           } else {
-            // For paper trades, we don't check the trades table
-            tradeCreated = true;
+            console.log(`✅ Trade verification passed: result.success is true`);
           }
 
           await serviceRoleClient
             .from('manual_trade_signals')
             .update({
-              status: tradeCreated ? 'completed' : 'failed',
-              error: tradeCreated ? null : 'Trade execution completed but no trade was created in database',
+              status: result.skipped ? 'failed' : (tradeCreated ? 'completed' : 'failed'),
+              error: result.skipped ? `Skipped: ${result.reason}` : (tradeCreated ? null : 'Trade execution completed but no trade was created in database'),
               processed_at: TimeSync.getCurrentTimeISO(),
               mode: result.mode
             })
