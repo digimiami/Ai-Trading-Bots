@@ -13,7 +13,10 @@ interface AdminNotificationData {
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response('ok', { 
+      status: 200, 
+      headers: corsHeaders 
+    });
   }
 
   try {
@@ -23,8 +26,52 @@ serve(async (req) => {
     const adminEmail = Deno.env.get('ADMIN_EMAIL') || 'digimiami@gmail.com';
     const siteUrl = Deno.env.get('SITE_URL') || 'https://pablobots.com';
 
+    if (!supabaseUrl || !supabaseServiceKey) {
+      throw new Error('Missing environment variables');
+    }
+
     if (!resendApiKey) {
       throw new Error('RESEND_API_KEY is not configured');
+    }
+
+    const supabaseClient = createClient(supabaseUrl, supabaseServiceKey);
+
+    // 1. Verify Authentication (Service Role or Admin User)
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Missing authorization header' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    
+    // Check if it's the service role key
+    if (token !== supabaseServiceKey) {
+      // If not service role, check if it's a valid admin user
+      const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
+      
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      // Check user role in database
+      const { data: userData, error: userError } = await supabaseClient
+        .from('users')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+      if (userError || userData?.role !== 'admin') {
+        return new Response(JSON.stringify({ error: 'Forbidden: Admin access required' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     const { type, data } = await req.json() as AdminNotificationData;

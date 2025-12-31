@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useSubscription } from '../../hooks/useSubscription'
+import { useTracking } from '../../hooks/useTracking'
 import Button from '../../components/base/Button'
 import Card from '../../components/base/Card'
 import Header from '../../components/feature/Header'
@@ -14,7 +15,9 @@ export default function SubscriptionSuccessPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const { refresh, subscription } = useSubscription()
+  const { trackEvent } = useTracking()
   const [loading, setLoading] = useState(true)
+  const [tracked, setTracked] = useState(false)
   const invoiceId = searchParams.get('invoiceId')
 
   useEffect(() => {
@@ -31,6 +34,11 @@ export default function SubscriptionSuccessPage() {
 
           if (subscription?.status === 'active' || attempts >= maxAttempts) {
             setLoading(false)
+            // Track payment event once
+            if (subscription?.status === 'active' && !tracked) {
+              trackEvent('payment');
+              setTracked(true);
+            }
           } else {
             setTimeout(pollSubscription, 2000) // Check every 2 seconds
           }
@@ -43,7 +51,7 @@ export default function SubscriptionSuccessPage() {
     }
 
     checkSubscription()
-  }, [invoiceId, refresh, subscription])
+  }, [invoiceId, refresh, subscription, trackEvent, tracked])
 
   if (loading) {
     return (

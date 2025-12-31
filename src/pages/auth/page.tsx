@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
+import { useTracking } from '../../hooks/useTracking'
 import { Button } from '../../components/base/Button'
 import { Card } from '../../components/base/Card'
 import { supabase } from '../../lib/supabase'
@@ -20,6 +21,7 @@ export default function AuthPage() {
   
   const navigate = useNavigate()
   const { user, loading: authLoading, signIn, signUp } = useAuth()
+  const { trackEvent } = useTracking()
 
   // Redirect authenticated users - let App.tsx handle first-time login redirect
   // This prevents conflicts between auth page and App.tsx redirects
@@ -195,9 +197,12 @@ export default function AuthPage() {
         // Signup with selected plan info
         result = await signUp(email, password)
         
-        // Check if email confirmation is required
+        // Check if signup successful
         if (!result.error && result.data?.user) {
-          // Track conversion event for Google Ads
+          // 1. Track custom admin scripts
+          trackEvent('signup');
+          
+          // 2. Track hardcoded conversion event for Google Ads (existing logic)
           if (typeof window !== 'undefined' && (window as any).gtag) {
             try {
               (window as any).gtag('event', 'conversion', {

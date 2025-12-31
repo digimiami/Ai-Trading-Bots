@@ -1667,6 +1667,61 @@ serve(async (req) => {
         }
       }
 
+      // NEW: Tracking Scripts Management
+      case 'getTrackingScripts': {
+        const { data: scripts, error: scriptsError } = await supabaseClient
+          .from('tracking_scripts')
+          .select('*')
+          .order('created_at', { ascending: false })
+
+        if (scriptsError) throw scriptsError
+        return new Response(JSON.stringify({ scripts }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      case 'createTrackingScript': {
+        const { name, script_content, event_type, is_active } = params
+        const { data: script, error: createError } = await supabaseClient
+          .from('tracking_scripts')
+          .insert({ name, script_content, event_type, is_active })
+          .select()
+          .single()
+
+        if (createError) throw createError
+        return new Response(JSON.stringify({ success: true, script }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      case 'updateTrackingScript': {
+        const { id, ...updates } = params
+        const { data: script, error: updateError } = await supabaseClient
+          .from('tracking_scripts')
+          .update(updates)
+          .eq('id', id)
+          .select()
+          .single()
+
+        if (updateError) throw updateError
+        return new Response(JSON.stringify({ success: true, script }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      case 'deleteTrackingScript': {
+        const { id } = params
+        const { error: deleteError } = await supabaseClient
+          .from('tracking_scripts')
+          .delete()
+          .eq('id', id)
+
+        if (deleteError) throw deleteError
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
       default:
         return new Response(JSON.stringify({ error: 'Invalid action' }), {
           status: 400,
