@@ -157,6 +157,9 @@ export interface AdvancedStrategyConfig {
   enable_pair_win_rate?: boolean; // Enable real-time win rate calculation per trading pair
   pair_win_rate_min_trades?: number; // Minimum trades required before showing pair win rate (default: 3)
   pair_win_rate_update_frequency?: 'realtime' | 'on_close' | 'periodic'; // How often to update (default: 'realtime')
+  
+  // Always Trade Mode
+  always_trade?: boolean; // Trade on every execution cycle regardless of conditions
 }
 
 export interface ManualTradeSignal {

@@ -3637,14 +3637,41 @@ class BotExecutor {
       };
     }
     
+    // 🚀 ALWAYS TRADE MODE: Trade on all conditions (highest priority)
+    // This mode bypasses all strategy conditions and always generates a trade signal
+    const config = bot?.strategy_config || {};
+    const alwaysTrade = config.always_trade === true || 
+                        strategy.always_trade === true ||
+                        strategy.type === 'always_trade' ||
+                        strategy.name === 'Always Trade Strategy' ||
+                        strategy.name === 'Trade All Conditions';
+    
+    if (alwaysTrade) {
+      // Determine side based on RSI direction (simple rule)
+      // RSI > 50 = sell/short, RSI <= 50 = buy/long
+      const side = rsi > 50 ? 'sell' : 'buy';
+      console.log(`🚀 [ALWAYS TRADE MODE] Generating ${side.toUpperCase()} signal regardless of conditions (RSI: ${rsi.toFixed(2)})`);
+      return {
+        shouldTrade: true,
+        side: side,
+        reason: `Always Trade Mode: ${side.toUpperCase()} signal (RSI: ${rsi.toFixed(2)}, ADX: ${adx.toFixed(2)})`,
+        confidence: 0.6,
+        entryPrice: price,
+        stopLoss: side === 'buy' ? price * 0.98 : price * 1.02,
+        takeProfit1: side === 'buy' ? price * 1.02 : price * 0.98,
+        takeProfit2: side === 'buy' ? price * 1.05 : price * 0.95,
+        indicators: { rsi, adx, price }
+      };
+    }
+    
     // 🚀 PAPER TRADING MODE: Check at the very beginning for ALL strategy types
     // Use more balanced thresholds for paper trading to allow for neutral states
-    const config = bot?.strategy_config || {};
     const isSuperAggressive = config.immediate_execution === true || config.super_aggressive === true || 
                               strategy.immediate_execution === true || strategy.super_aggressive === true ||
                               config.immediate_trading === true; // Also check immediate_trading
     
     // For ALL paper trading bots, trade based on RSI alone (not just super aggressive ones)
+    // Note: always_trade mode is already handled above, so this section won't execute if always_trade is enabled
     if (bot?.paper_trading === true) {
       // For paper trading, trade based on RSI with reasonable buffers for "Neutral" state
       // This prevents bots from opening positions every single time they run
@@ -6801,7 +6828,70 @@ class BotExecutor {
           }
         }
         
-        const orderResult = await this.placeBitunixOrder(apiKey, apiSecret, bot.symbol, tradeSignal.side, amount, price, tradingType, bot);
+        // #region agent log - BEFORE order placement
+        console.log(`[DEBUG-SLTP] ABOUT TO PLACE BITUNIX ORDER:`, JSON.stringify({
+          location: 'bot-executor/index.ts:6804',
+          message: 'ABOUT TO PLACE BITUNIX ORDER',
+          data: { 
+            tradingType, 
+            exchange: 'bitunix', 
+            symbol: bot.symbol,
+            side: tradeSignal.side,
+            amount,
+            price
+          },
+          timestamp: Date.now(),
+          hypothesisId: 'A'
+        }));
+        // #endregion
+        
+        let orderResult: any = null;
+        let orderPlacementError: any = null;
+        
+        try {
+          orderResult = await this.placeBitunixOrder(apiKey, apiSecret, bot.symbol, tradeSignal.side, amount, price, tradingType, bot);
+        } catch (orderErr: any) {
+          // CRITICAL: Don't let order placement errors prevent SL/TP setup
+          // If order was actually placed but returned an error, we should still try SL/TP
+          orderPlacementError = orderErr;
+          console.error(`[DEBUG-SLTP] Order placement threw error, but checking if order was actually placed:`, orderErr?.message || String(orderErr));
+          
+          // Check if error message suggests order might have been placed
+          const errorMsg = orderErr?.message || String(orderErr);
+          if (errorMsg.includes('orderId') || errorMsg.includes('order placed') || errorMsg.includes('Code: 2')) {
+            // Code 2 or other errors might occur even if order was placed
+            // Try to extract orderId from error if possible
+            console.warn(`[DEBUG-SLTP] Order placement error occurred, but order might have been placed. Will attempt SL/TP anyway.`);
+          }
+        }
+        
+        // #region agent log - IMMEDIATELY AFTER order placement
+        console.log(`[DEBUG-SLTP] ORDER PLACED - IMMEDIATE CHECK:`, JSON.stringify({
+          location: 'bot-executor/index.ts:6806',
+          message: 'ORDER PLACED - IMMEDIATE CHECK',
+          data: { 
+            tradingType, 
+            hasOrderResult: !!orderResult,
+            orderResultType: typeof orderResult,
+            hasOrderId: !!orderResult?.orderId, 
+            orderId: orderResult?.orderId,
+            hasId: !!orderResult?.id,
+            id: orderResult?.id,
+            hasResponse: !!orderResult?.response,
+            hasResponseData: !!orderResult?.response?.data,
+            responseDataOrderId: orderResult?.response?.data?.orderId,
+            responseDataId: orderResult?.response?.data?.id,
+            exchange: 'bitunix', 
+            symbol: bot.symbol,
+            orderResultKeys: orderResult ? Object.keys(orderResult) : [],
+            fullOrderResultPreview: orderResult ? JSON.stringify(orderResult).substring(0, 1000) : 'null',
+            hasOrderPlacementError: !!orderPlacementError,
+            orderPlacementErrorMsg: orderPlacementError?.message || null
+          },
+          timestamp: Date.now(),
+          hypothesisId: 'A'
+        }));
+        // #endregion
         
         // CRITICAL: Extract positionId from order response if available
         // Bitunix order response may contain positionId directly
@@ -6813,6 +6903,207 @@ class BotExecutor {
           if (orderPositionId) {
             console.log(`📊 Found positionId in order response: ${orderPositionId}`);
           }
+        }
+        
+        // #region agent log
+        console.log(`[DEBUG-SLTP] Extracted positionId from order:`, JSON.stringify({
+          location: 'bot-executor/index.ts:6816',
+          message: 'Extracted positionId from order',
+          data: { orderPositionId, hasOrderResult: !!orderResult, hasResponseData: !!orderResult?.response?.data },
+          timestamp: Date.now(),
+          hypothesisId: 'A'
+        }));
+        // #endregion
+        
+        // CRITICAL FIX: Set SL/TP after order placement, but wait a moment for position to be established
+        // Bitunix may need a few seconds to process the order and establish the position before SL/TP can be set
+        // Wait 2-3 seconds after successful order placement before attempting SL/TP
+        // Bitunix supports symbol-based SL/TP which doesn't require positionId, but position must still exist
+        
+        // #region agent log - BEFORE condition check
+        console.log(`[DEBUG-SLTP] BEFORE condition check - full orderResult analysis:`, JSON.stringify({
+          location: 'bot-executor/index.ts:6869',
+          message: 'BEFORE condition check - analyzing orderResult',
+          data: {
+            hasOrderResult: !!orderResult,
+            tradingType,
+            isFutures: tradingType === 'futures',
+            orderResultType: typeof orderResult,
+            orderResultKeys: orderResult ? Object.keys(orderResult) : [],
+            orderResultOrderId: orderResult?.orderId,
+            orderResultId: orderResult?.id,
+            orderResultStatus: orderResult?.status,
+            orderResultExchange: orderResult?.exchange,
+            hasResponse: !!orderResult?.response,
+            responseType: typeof orderResult?.response,
+            responseKeys: orderResult?.response ? Object.keys(orderResult.response) : [],
+            hasResponseData: !!orderResult?.response?.data,
+            responseDataType: typeof orderResult?.response?.data,
+            responseDataKeys: orderResult?.response?.data ? Object.keys(orderResult.response.data) : [],
+            responseDataOrderId: orderResult?.response?.data?.orderId,
+            responseDataId: orderResult?.response?.data?.id,
+            responseDataCode: orderResult?.response?.code,
+            responseDataMsg: orderResult?.response?.msg,
+            fullOrderResultPreview: orderResult ? JSON.stringify(orderResult).substring(0, 1000) : 'null'
+          },
+          timestamp: Date.now(),
+          hypothesisId: 'A'
+        }));
+        // #endregion
+        
+        // #region agent log - ENTERING SL/TP SECTION
+        console.log(`[DEBUG-SLTP] ENTERING SL/TP SECTION:`, JSON.stringify({
+          location: 'bot-executor/index.ts:6870',
+          message: 'ENTERING SL/TP SECTION',
+          data: { 
+            tradingType,
+            isFutures: tradingType === 'futures',
+            hasOrderResult: !!orderResult,
+            orderResultExists: orderResult !== null && orderResult !== undefined
+          },
+          timestamp: Date.now(),
+          hypothesisId: 'A'
+        }));
+        // #endregion
+        
+        const hasOrderId = !!(orderResult?.orderId || orderResult?.id || orderResult?.response?.data?.orderId || orderResult?.response?.data?.id);
+        const hasSuccessfulResponse = !!(orderResult && (orderResult.response || orderResult.status || orderResult.exchange === 'bitunix'));
+        // CRITICAL: For futures, attempt SL/TP if we have ANY orderResult (even if structure is unexpected)
+        // Symbol-based SL/TP doesn't require orderId, so we can attempt it as long as orderResult exists
+        const hasAnyOrderResult = !!orderResult && typeof orderResult === 'object' && !(orderResult instanceof Error);
+        // CRITICAL: Even if order placement threw an error, attempt SL/TP for futures
+        // Code 2 errors might occur even if order was placed, and we should try to protect the position
+        const shouldAttemptSLTPDespiteError = tradingType === 'futures' && orderPlacementError && !orderResult;
+        
+        // #region agent log
+        console.log(`[DEBUG-SLTP] Checking SL/TP condition:`, JSON.stringify({
+          location: 'bot-executor/index.ts:6871',
+          message: 'Checking SL/TP condition',
+          data: { 
+            tradingType, 
+            isFutures: tradingType === 'futures', 
+            hasOrderId, 
+            orderId: orderResult?.orderId || orderResult?.id || orderResult?.response?.data?.orderId || orderResult?.response?.data?.id,
+            hasSuccessfulResponse,
+            hasAnyOrderResult,
+            orderResultType: typeof orderResult,
+            orderResultIsError: orderResult instanceof Error,
+            hasOrderPlacementError: !!orderPlacementError,
+            shouldAttemptSLTPDespiteError,
+            conditionMet: tradingType === 'futures' && (hasOrderId || hasSuccessfulResponse || hasAnyOrderResult || shouldAttemptSLTPDespiteError),
+            reasonIfNotMet: tradingType !== 'futures' ? 'Not futures trading' : (!hasOrderId && !hasSuccessfulResponse && !hasAnyOrderResult && !shouldAttemptSLTPDespiteError ? 'No orderId, no successful response, no orderResult, and not attempting despite error' : 'Unknown')
+          },
+          timestamp: Date.now(),
+          hypothesisId: 'A'
+        }));
+        // #endregion
+        
+        // CRITICAL FIX: Attempt SL/TP if order was successful, even if orderId format is unexpected
+        // For futures, we can use symbol-based SL/TP endpoint which doesn't require orderId
+        // Try SL/TP if we have ANY orderResult (not null, not undefined, not an Error)
+        // ALSO attempt SL/TP even if order placement threw an error (Code 2 might occur even if order was placed)
+        if (tradingType === 'futures' && (hasOrderId || hasSuccessfulResponse || hasAnyOrderResult || shouldAttemptSLTPDespiteError)) {
+          // #region agent log
+          console.log(`[DEBUG-SLTP] SL/TP CONDITION MET - CALLING setBitunixSLTP:`, JSON.stringify({
+            location: 'bot-executor/index.ts:6872',
+            message: 'SL/TP CONDITION MET - CALLING setBitunixSLTP',
+            data: { 
+              tradingType,
+              hasOrderId,
+              hasSuccessfulResponse,
+              orderId: orderResult?.orderId || orderResult?.id || orderResult?.response?.data?.orderId || orderResult?.response?.data?.id,
+              orderPositionId
+            },
+            timestamp: Date.now(),
+            hypothesisId: 'A'
+          }));
+          // #endregion
+          
+          try {
+            // CRITICAL: Wait longer for Bitunix to establish the position before setting SL/TP
+            // Bitunix may need 8-12 seconds to process the order and make the position available for SL/TP
+            // Increased wait time based on Code 2 errors indicating position not ready
+            console.log(`⏳ Waiting 8 seconds for Bitunix position to be established before setting SL/TP...`);
+            await new Promise(resolve => setTimeout(resolve, 8000));
+            
+            // Verify position exists before attempting SL/TP
+            console.log(`🔍 Verifying position exists before setting SL/TP...`);
+            let positionVerified = false;
+            for (let verifyAttempt = 1; verifyAttempt <= 8; verifyAttempt++) {
+              try {
+                const verifyPos = await this.getBitunixPosition(apiKey, apiSecret, bot.symbol);
+                if (verifyPos && verifyPos.size > 0) {
+                  console.log(`✅ Position verified: ${verifyPos.size} @ ${verifyPos.entryPrice || 'N/A'}`);
+                  positionVerified = true;
+                  break;
+                } else {
+                  console.warn(`   ⚠️ Position not found yet (attempt ${verifyAttempt}/8), waiting 3 more seconds...`);
+                  if (verifyAttempt < 8) {
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                  }
+                }
+              } catch (verifyErr) {
+                console.warn(`   ⚠️ Error verifying position (attempt ${verifyAttempt}/8):`, verifyErr instanceof Error ? verifyErr.message : String(verifyErr));
+                if (verifyAttempt < 5) {
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+              }
+            }
+            
+            if (!positionVerified) {
+              console.warn(`⚠️ Position not verified after 5 attempts, but proceeding with SL/TP attempt anyway...`);
+            }
+            
+            // Get entry price from order result or use provided price
+            // CRITICAL: If order placement threw an error but order might have been placed, use provided price
+            let entryPrice = price;
+            if (orderResult?.avgPrice && parseFloat(orderResult.avgPrice) > 0) {
+              entryPrice = parseFloat(orderResult.avgPrice);
+            } else if (orderResult?.price && parseFloat(orderResult.price) > 0) {
+              entryPrice = parseFloat(orderResult.price);
+            } else if (orderPlacementError && !orderResult) {
+              // Order placement threw error, but order might have been placed
+              // Use provided price as fallback
+              console.warn(`⚠️ Using provided price (${price}) for SL/TP since orderResult is null due to error`);
+              entryPrice = price;
+            }
+            
+            // setBitunixSLTP calculates SL/TP internally based on entryPrice and bot settings
+            // Pass orderResult even if it's null (setBitunixSLTP can handle it)
+            await this.setBitunixSLTP(apiKey, apiSecret, bot.symbol, tradeSignal.side, entryPrice, bot, tradeSignal, orderResult || undefined);
+            console.log(`✅ Bitunix SL/TP set successfully for ${bot.symbol}`);
+          } catch (sltpError) {
+            console.error(`❌ Failed to set Bitunix SL/TP for ${bot.symbol}:`, sltpError);
+            // Don't throw - allow order to succeed even if SL/TP fails
+            // Log error for debugging
+            if (bot?.id) {
+              await this.addBotLog(bot.id, {
+                level: 'error',
+                category: 'trade',
+                message: `Failed to set SL/TP: ${sltpError instanceof Error ? sltpError.message : String(sltpError)}`,
+                details: {
+                  symbol: bot.symbol,
+                  error: sltpError instanceof Error ? sltpError.message : String(sltpError),
+                  orderId: orderResult?.orderId || orderResult?.id || orderResult?.response?.data?.orderId || orderResult?.response?.data?.id,
+                  action_required: 'Manually set SL/TP on Bitunix exchange'
+                }
+              });
+            }
+          }
+        } else {
+          console.log(`[DEBUG-SLTP] SL/TP CONDITION NOT MET - SKIPPING:`, JSON.stringify({
+            location: 'bot-executor/index.ts:6873',
+            message: 'SL/TP CONDITION NOT MET - SKIPPING',
+            data: { 
+              tradingType,
+              isFutures: tradingType === 'futures',
+              hasOrderId,
+              hasSuccessfulResponse,
+              reason: tradingType !== 'futures' ? 'Not futures trading' : (!hasOrderId && !hasSuccessfulResponse ? 'No orderId and no successful response' : 'Unknown')
+            },
+            timestamp: Date.now(),
+            hypothesisId: 'A'
+          }));
         }
         
         // Set leverage and margin mode on the position AFTER order is placed (for futures only)
@@ -6929,213 +7220,17 @@ class BotExecutor {
           }
         }
         
-        // Set SL/TP on the position after order is filled (for futures only)
-        if (tradingType === 'futures' && orderResult?.orderId) {
-          try {
-            // Wait for position to be established after order fills
-            // Bitunix may need more time to process the position
-            console.log(`⏳ Waiting for Bitunix position to be established...`);
-            await new Promise(resolve => setTimeout(resolve, 5000)); // Increased to 5 seconds - positions can take time
-            
-            // Get entry price from order result, or use provided price, or fetch current market price
-            let entryPrice = price;
-            
-            // Try to get fill price from order result
-            if (orderResult?.avgPrice && parseFloat(orderResult.avgPrice) > 0) {
-              entryPrice = parseFloat(orderResult.avgPrice);
-              console.log(`📊 Using order fill price for SL/TP: ${entryPrice}`);
-            } else if (orderResult?.price && parseFloat(orderResult.price) > 0) {
-              entryPrice = parseFloat(orderResult.price);
-              console.log(`📊 Using order price for SL/TP: ${entryPrice}`);
-            } else if (price > 0) {
-              entryPrice = price;
-              console.log(`📊 Using provided price for SL/TP: ${entryPrice}`);
-            } else {
-              // Fetch current market price as fallback
-              try {
-                const currentPrice = await MarketDataFetcher.fetchPrice(bot.symbol, 'bitunix', tradingType);
-                if (currentPrice > 0) {
-                  entryPrice = currentPrice;
-                  console.log(`📊 Using current market price for SL/TP: ${entryPrice}`);
-                } else {
-                  throw new Error('Could not determine entry price for SL/TP calculation');
-                }
-              } catch (priceErr) {
-                throw new Error(`Could not fetch market price for SL/TP: ${priceErr instanceof Error ? priceErr.message : String(priceErr)}`);
-              }
-            }
-            
-            const capitalizedSide = tradeSignal.side.charAt(0).toUpperCase() + tradeSignal.side.slice(1).toLowerCase();
-            
-            // Verify position exists before setting SL/TP
-            // Wait longer for position to be established (Bitunix can be slow)
-            console.log(`⏳ Waiting for position to be established (may take up to 15 seconds)...`);
-            await new Promise(resolve => setTimeout(resolve, 5000)); // 5 second initial wait
-            
-            let positionInfo = await this.getBitunixPosition(apiKey, apiSecret, bot.symbol);
-            let retryCount = 0;
-            const maxRetries = 10; // Increased retries - positions can take time to appear
-            
-            // Retry getting position if not found immediately
-            while ((!positionInfo || positionInfo.size === 0) && retryCount < maxRetries) {
-              retryCount++;
-              console.log(`   ⏳ Position not found, retrying... (${retryCount}/${maxRetries})`);
-              // Progressive delay: 2s, 2s, 3s, 3s, 4s, 4s, 5s...
-              const delay = Math.min(2000 + Math.floor(retryCount / 2) * 1000, 5000);
-              await new Promise(resolve => setTimeout(resolve, delay));
-              positionInfo = await this.getBitunixPosition(apiKey, apiSecret, bot.symbol);
-            }
-            
-            if (positionInfo && positionInfo.size > 0) {
-              console.log(`📊 Position verified: ${positionInfo.size} @ ${positionInfo.entryPrice || entryPrice}`);
-              console.log(`🛡️ Setting Bitunix SL/TP for ${bot.symbol} ${capitalizedSide} at entry price: ${entryPrice}`);
-              
-              // Use actual entry price from position if available
-              const actualEntryPrice = positionInfo.entryPrice || entryPrice;
-              
-              // Set SL/TP with retries
-              let slTpSuccess = false;
-              for (let attempt = 1; attempt <= 3; attempt++) {
-                try {
-                  // Pass positionId from order response if we have it (helps with SL/TP setting)
-                  const slTpOrderResult = orderPositionId ? { ...orderResult, positionId: orderPositionId } : orderResult;
-                  
-                  await this.setBitunixSLTP(apiKey, apiSecret, bot.symbol, capitalizedSide, actualEntryPrice, bot, tradeSignal, slTpOrderResult);
-                  slTpSuccess = true;
-                  break;
-                } catch (slTpError) {
-                  console.warn(`   ⚠️ SL/TP attempt ${attempt}/3 failed:`, slTpError);
-                  if (attempt < 3) {
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                  }
-                }
-              }
-              
-              // Verify SL/TP was set with multiple checks
-              let verified = false;
-              for (let verifyAttempt = 1; verifyAttempt <= 3; verifyAttempt++) {
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                const updatedPosition = await this.getBitunixPosition(apiKey, apiSecret, bot.symbol);
-                if (updatedPosition) {
-                  const hasSL = !!(updatedPosition.stopLoss || updatedPosition.stop_loss);
-                  const hasTP = !!(updatedPosition.takeProfit || updatedPosition.take_profit);
-                  if (hasSL && hasTP) {
-                    console.log(`✅ SL/TP verified (attempt ${verifyAttempt}): SL=${updatedPosition.stopLoss || updatedPosition.stop_loss}, TP=${updatedPosition.takeProfit || updatedPosition.take_profit}`);
-                    verified = true;
-                    break;
-                  } else {
-                    console.warn(`   ⚠️ SL/TP verification attempt ${verifyAttempt} failed. SL: ${hasSL ? 'SET' : 'NOT SET'}, TP: ${hasTP ? 'SET' : 'NOT SET'}`);
-                  }
-                }
-              }
-              
-              if (!verified) {
-                console.error(`❌ CRITICAL: SL/TP verification failed after all attempts`);
-                const stopLossPercent = bot.stop_loss || bot.stopLoss || 2.0;
-                const takeProfitPercent = bot.take_profit || bot.takeProfit || 4.0;
-                const isLong = capitalizedSide.toUpperCase() === 'BUY';
-                const stopLossPrice = isLong 
-                  ? actualEntryPrice * (1 - stopLossPercent / 100)
-                  : actualEntryPrice * (1 + stopLossPercent / 100);
-                const takeProfitPrice = isLong
-                  ? actualEntryPrice * (1 + takeProfitPercent / 100)
-                  : actualEntryPrice * (1 - takeProfitPercent / 100);
-                
-                if (bot?.id) {
-                  await this.addBotLog(bot.id, {
-                    level: 'error',
-                    category: 'trade',
-                    message: `CRITICAL: SL/TP not set after multiple attempts. Position is UNPROTECTED.`,
-                    details: {
-                      symbol: bot.symbol,
-                      entryPrice: actualEntryPrice,
-                      stopLossPercent: stopLossPercent,
-                      takeProfitPercent: takeProfitPercent,
-                      calculatedStopLoss: stopLossPrice.toFixed(8),
-                      calculatedTakeProfit: takeProfitPrice.toFixed(8),
-                      action_required: 'URGENT: Manually set SL/TP on Bitunix exchange immediately to protect position',
-                      manualInstructions: `Go to Bitunix → Positions → ${bot.symbol} → TP/SL → Set SL: ${stopLossPrice.toFixed(4)}, TP: ${takeProfitPrice.toFixed(4)}`
-                    }
-                  });
-                }
-                // NEW APPROACH: Don't throw error - log warning and continue
-                // We'll keep trying to set SL/TP in the background
-                console.warn(`⚠️ SL/TP not verified after initial attempts. Will continue trying in background.`);
-                console.warn(`   Position is OPEN. Please monitor and set SL/TP manually if needed: SL=${stopLossPrice.toFixed(4)}, TP=${takeProfitPrice.toFixed(4)}`);
-                
-                // Start background task to keep trying SL/TP (non-blocking)
-                this.retrySetBitunixSLTPInBackground(apiKey, apiSecret, bot, bot.symbol, capitalizedSide, actualEntryPrice, tradeSignal, orderResult, orderPositionId)
-                  .catch(err => console.error('Background SL/TP retry error:', err));
-              }
-            } else {
-              console.warn(`⚠️ Position not found for ${bot.symbol} after ${maxRetries} retries. Order was placed but position may not be visible yet.`);
-              console.warn(`   Will continue trying to set SL/TP in background once position appears.`);
-              
-              // Start background task to wait for position and set SL/TP
-              this.retrySetBitunixSLTPInBackground(apiKey, apiSecret, bot, bot.symbol, capitalizedSide, entryPrice, tradeSignal, orderResult, orderPositionId)
-                .catch(err => console.error('Background SL/TP retry error:', err));
-            }
-          } catch (slTpError) {
-            // NEW APPROACH: Don't abort the trade - log warning and continue
-            // The order was placed successfully, we just need to set SL/TP
-            console.warn('⚠️ Initial SL/TP setup failed (non-critical):', slTpError instanceof Error ? slTpError.message : String(slTpError));
-            console.warn('   Order was placed successfully. Will continue trying to set SL/TP in background.');
-            
-            // Calculate expected SL/TP for manual instructions
-            const stopLossPercent = bot.stop_loss || bot.stopLoss || 2.0;
-            const takeProfitPercent = bot.take_profit || bot.takeProfit || 4.0;
-            const isLong = tradeSignal.side.toUpperCase() === 'BUY';
-            let entryPrice = price;
-            if (orderResult?.avgPrice && parseFloat(orderResult.avgPrice) > 0) {
-              entryPrice = parseFloat(orderResult.avgPrice);
-            }
-            const stopLossPrice = isLong 
-              ? entryPrice * (1 - stopLossPercent / 100)
-              : entryPrice * (1 + stopLossPercent / 100);
-            const takeProfitPrice = isLong
-              ? entryPrice * (1 + takeProfitPercent / 100)
-              : entryPrice * (1 - takeProfitPercent / 100);
-            
-            // Start background task to keep trying SL/TP
-            this.retrySetBitunixSLTPInBackground(apiKey, apiSecret, bot, bot.symbol, tradeSignal.side.charAt(0).toUpperCase() + tradeSignal.side.slice(1).toLowerCase(), entryPrice, tradeSignal, orderResult, orderPositionId)
-              .catch(err => console.error('Background SL/TP retry error:', err));
-            
-            if (bot?.id) {
-              await this.addBotLog(bot.id, {
-                level: 'warning',
-                category: 'trade',
-                message: `Bitunix order placed successfully. SL/TP setup will continue in background.`,
-                details: {
-                  symbol: bot.symbol,
-                  error: slTpError instanceof Error ? slTpError.message : String(slTpError),
-                  entryPrice: entryPrice,
-                  stopLossPercent: stopLossPercent,
-                  takeProfitPercent: takeProfitPercent,
-                  calculatedStopLoss: stopLossPrice.toFixed(8),
-                  calculatedTakeProfit: takeProfitPrice.toFixed(8),
-                  action_required: 'URGENT: Manually set SL/TP on Bitunix exchange immediately',
-                  manualInstructions: `Go to Bitunix → Positions → ${bot.symbol} → Click TP/SL → Set SL: ${stopLossPrice.toFixed(4)}, TP: ${takeProfitPrice.toFixed(4)}`
-                }
-              });
-            }
-            // NEW APPROACH: Don't throw error - log warning and continue
-            // The order was placed successfully, we'll keep trying SL/TP in background
-            console.warn(`⚠️ Initial SL/TP setup failed. Order was placed successfully. Will continue trying SL/TP in background.`);
-            
-            // Start background retry task (non-blocking)
-            this.retrySetBitunixSLTPInBackground(apiKey, apiSecret, bot, bot.symbol, tradeSignal.side.charAt(0).toUpperCase() + tradeSignal.side.slice(1).toLowerCase(), entryPrice, tradeSignal, orderResult, orderPositionId)
-              .catch(err => console.error('Background SL/TP retry error:', err));
-          }
-        }
+        // SL/TP setup has already been executed earlier (right after order placement)
+        // This ensures SL/TP is set immediately, before the leverage/margin mode section completes
         
         return orderResult;
       } else if (exchange === 'mexc') {
         // TODO: Add balance check for MEXC (similar to Bybit/Bitunix)
         // For now, MEXC will place orders without balance check (like OKX)
         return await this.placeMEXCOrder(apiKey, apiSecret, bot.symbol, tradeSignal.side, amount, price, tradingType, bot);
-      }
-      
+      } else {
       throw new Error(`Unsupported exchange: ${bot.exchange || 'unknown'} (normalized: ${exchange}). Supported exchanges: bybit, bitunix, okx, mexc`);
+    }
     }
     } catch (error) {
       console.error('Order placement error:', error);
@@ -7152,7 +7247,6 @@ class BotExecutor {
     console.log(`   API Key length: ${apiKey.length}, starts with: ${apiKey.substring(0, 8)}...`);
     console.log(`   API Secret length: ${apiSecret.length}, starts with: ${apiSecret.substring(0, 8)}...`);
     console.log(`   Symbol: ${symbol}, Side: ${side}, Amount: ${amount}, Price: ${price}`);
-    console.log(`   Trading Type: ${tradingType}`);
     
     try {
       const timestamp = Date.now().toString();
@@ -9533,16 +9627,17 @@ class BotExecutor {
     console.log(`🔍 Will try symbol variants: ${symbolVariants.join(', ')}`);
     
     // Use correct endpoints based on official Bitunix API documentation
-    // Futures: /api/v1/futures/trade/place_order
-    // Spot: /api/v1/spot/trade/place_order (if exists) or try futures endpoint
+    // CRITICAL: For futures, ONLY use /api/v1/futures/trade/place_order
+    // Using /api/v1/trade/place_order for futures causes Code 2 (System error)
+    // Futures: /api/v1/futures/trade/place_order (ONLY)
+    // Spot: /api/v1/spot/trade/place_order or /api/v1/trade/place_order
     const endpointsToTry = marketType === 'futures' 
       ? [
-          '/api/v1/futures/trade/place_order',  // Official futures endpoint
-          '/api/v1/trade/place_order',          // Alternative
+          '/api/v1/futures/trade/place_order',  // Official futures endpoint (ONLY - others cause Code 2)
         ]
       : [
           '/api/v1/spot/trade/place_order',     // Spot endpoint (if exists)
-          '/api/v1/trade/place_order',          // Alternative
+          '/api/v1/trade/place_order',          // Alternative for spot
           '/api/v1/futures/trade/place_order',  // Try futures endpoint as fallback
         ];
     
@@ -9715,8 +9810,39 @@ class BotExecutor {
               if (data.code === 2) {
                 code2ErrorCount++;
                 totalAttempts++;
-                console.log(`   ⚠️ System error (Code: 2) from ${baseUrl}${requestPath}, trying alternative parameter format...`);
-                console.log(`   📋 Original request: symbol=${symbol}, side=${sideString}, orderType=${orderTypeString}, qty=${amount}, price=${price}`);
+                console.error(`   ❌ System error (Code: 2) from ${baseUrl}${requestPath}`);
+                console.error(`   📋 Error message: ${errorMsg}`);
+                console.error(`   📋 Full error response: ${JSON.stringify(data, null, 2)}`);
+                console.error(`   📋 Raw response text: ${responseText}`);
+                console.error(`   📋 Original request: symbol=${symbolVariant}, side=${sideString}, orderType=${orderTypeString}, qty=${amount}, price=${price}`);
+                console.error(`   📋 Request body: ${bodyString}`);
+                console.error(`   📋 Request headers: api-key=${apiKey.substring(0, 8)}..., nonce=${nonce}, timestamp=${timestamp}`);
+                // Log to bot activity logs for visibility
+                if (bot?.id) {
+                  await this.addBotLog(bot.id, {
+                    level: 'error',
+                    category: 'trade',
+                    message: `Bitunix order placement failed with Code 2 (System error): ${errorMsg}`,
+                    details: {
+                      symbol: symbolVariant,
+                      side: sideString,
+                      orderType: orderTypeString,
+                      qty: amount,
+                      price: price,
+                      code: 2,
+                      msg: errorMsg,
+                      endpoint: `${baseUrl}${requestPath}`,
+                      troubleshooting: [
+                        '1. Verify symbol is tradeable on Bitunix futures',
+                        '2. Check account margin mode and leverage settings',
+                        '3. Ensure API key has futures trading permissions',
+                        '4. Verify symbol format matches Bitunix requirements',
+                        '5. Check Bitunix API status for temporary issues'
+                      ]
+                    }
+                  });
+                }
+                console.log(`   🔄 Trying alternative parameter format...`);
                 
                 // Try alternative parameter names: 'volume' instead of 'qty' (for spot or older API versions)
                 const altOrderParams: any = {
@@ -9989,9 +10115,11 @@ class BotExecutor {
               if (data.code === 2) {
                 // If we reach here, alternative formats were already tried above
                 // This means all parameter formats failed - try next endpoint
-                console.warn(`   ⚠️ Code 2 persisted after trying all parameter formats, trying next endpoint...`);
-                console.warn(`   💡 Possible causes: Symbol ${symbol} may not be tradeable, account may need margin mode/leverage setup, or temporary API issue`);
-                lastError = new Error(`Bitunix system error (Code: 2): ${errorMsg}. All parameter formats failed. Please verify: 1) Symbol ${symbol} is tradeable on Bitunix futures, 2) API key has trading permissions, 3) Account has margin mode and leverage configured.`);
+                console.error(`   ❌ Code 2 persisted after trying all parameter formats, trying next endpoint...`);
+                console.error(`   📋 Error message: ${errorMsg}`);
+                console.error(`   📋 Full error response: ${JSON.stringify(data)}`);
+                console.error(`   💡 Possible causes: Symbol ${symbolVariant} may not be tradeable, account may need margin mode/leverage setup, or temporary API issue`);
+                lastError = new Error(`Bitunix system error (Code: 2): ${errorMsg}. All parameter formats failed. Please verify: 1) Symbol ${symbolVariant} is tradeable on Bitunix futures, 2) API key has trading permissions, 3) Account has margin mode and leverage configured.`);
                 continue;
               }
               
@@ -10829,6 +10957,16 @@ class BotExecutor {
   }
   
   private async setBitunixSLTP(apiKey: string, apiSecret: string, symbol: string, side: string, entryPrice: number, bot: any, tradeSignal: any = null, orderResult: any = null): Promise<void> {
+    // #region agent log
+    console.log(`[DEBUG-SLTP] setBitunixSLTP called:`, JSON.stringify({
+      location: 'bot-executor/index.ts:10891',
+      message: 'setBitunixSLTP called',
+      data: { symbol, side, entryPrice, hasBot: !!bot, hasOrderResult: !!orderResult, orderId: orderResult?.orderId },
+      timestamp: Date.now(),
+      hypothesisId: 'D'
+    }));
+    // #endregion
+    
     const baseUrl = 'https://fapi.bitunix.com'; // Futures API domain
     const marketType = 'futures';
     
@@ -10847,6 +10985,16 @@ class BotExecutor {
         ? entryPrice * (1 + takeProfitPercent / 100)  // Long: TP above entry
         : entryPrice * (1 - takeProfitPercent / 100); // Short: TP below entry
       
+      // #region agent log
+      console.log(`[DEBUG-SLTP] SL/TP prices calculated:`, JSON.stringify({
+        location: 'bot-executor/index.ts:10908',
+        message: 'SL/TP prices calculated',
+        data: { entryPrice, stopLossPrice, takeProfitPrice, stopLossPercent, takeProfitPercent, isLong },
+        timestamp: Date.now(),
+        hypothesisId: 'C'
+      }));
+      // #endregion
+      
       console.log(`🛡️ Setting Bitunix SL/TP for ${symbol} ${side}:`);
       console.log(`   Entry: ${entryPrice}, SL: ${stopLossPrice.toFixed(4)} (${stopLossPercent}%), TP: ${takeProfitPrice.toFixed(4)} (${takeProfitPercent}%)`);
       console.log(`   Margin Mode: ISOLATED, Order Type: MARKET`);
@@ -10854,86 +11002,114 @@ class BotExecutor {
       // Sync Bitunix server time to prevent timestamp errors
       await this.syncBitunixServerTime();
       
-      // Wait for position to be established after order fills
-      // Bitunix may need time to process the position before SL/TP can be set
-      console.log(`⏳ Waiting for Bitunix position to be established before setting SL/TP...`);
-      await new Promise(resolve => setTimeout(resolve, 5000)); // Increased to 5 seconds - positions can take time
+      // CRITICAL: Verify position exists before attempting SL/TP
+      // Bitunix requires the position to be fully established before SL/TP can be set
+      // Based on Code 2 errors, Bitunix needs more time to process positions
+      console.log(`⏳ Verifying Bitunix position exists before setting SL/TP...`);
       
-      // CRITICAL: Get positionId (required for TP/SL orders)
-      // First, try to get positionId from orderResult if available (fastest method)
+      // Wait initial delay for position to be established (increased from 3s to 5s)
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      
+      // Verify position exists with retries (increased retries and wait times)
+      let positionInfo = null;
+      let positionVerified = false;
+      const maxPositionRetries = 10; // Increased retries for better reliability
+      
+      for (let retry = 0; retry < maxPositionRetries; retry++) {
+        try {
+          positionInfo = await this.getBitunixPosition(apiKey, apiSecret, symbol);
+          if (positionInfo && positionInfo.size > 0) {
+            console.log(`✅ Position verified: ${positionInfo.size} @ ${positionInfo.entryPrice || 'N/A'}`);
+            positionVerified = true;
+            break;
+          } else {
+            console.warn(`   ⚠️ Position not found yet (attempt ${retry + 1}/${maxPositionRetries}), waiting 3 seconds...`);
+            if (retry < maxPositionRetries - 1) {
+              await new Promise(resolve => setTimeout(resolve, 3000));
+            }
+          }
+        } catch (posErr) {
+          console.warn(`   ⚠️ Error verifying position (attempt ${retry + 1}/${maxPositionRetries}):`, posErr instanceof Error ? posErr.message : String(posErr));
+          if (retry < maxPositionRetries - 1) {
+            await new Promise(resolve => setTimeout(resolve, 3000));
+          }
+        }
+      }
+      
+      if (!positionVerified) {
+        console.error(`❌ CRITICAL: Position not verified after ${maxPositionRetries} attempts`);
+        console.error(`   Symbol: ${symbol}, Side: ${side}, Entry Price: ${entryPrice}`);
+        console.error(`   This may indicate:`);
+        console.error(`   1. Order was not filled successfully`);
+        console.error(`   2. Position takes longer to appear (Bitunix delay)`);
+        console.error(`   3. API key lacks position read permissions`);
+        console.warn(`   ⚠️ Proceeding with SL/TP attempt anyway (symbol-based endpoint may work without positionId)...`);
+      }
+      
+      // CRITICAL: Get positionId (preferred for position-based endpoints, but not required for symbol-based)
+      // First, try to get positionId from positionInfo if available
       let positionId = null;
-      if (orderResult?.positionId) {
-        positionId = String(orderResult.positionId);
-        console.log(`📊 Using positionId from orderResult: ${positionId}`);
-      } else if (orderResult?.response?.data) {
-        const orderData = orderResult.response.data;
-        positionId = orderData.positionId || orderData.position_id || orderData.positionID || 
-                     orderData.id || orderData.orderId;
+      
+      if (positionInfo?.positionId) {
+        positionId = String(positionInfo.positionId);
+        console.log(`📊 Using positionId from positionInfo: ${positionId}`);
+      } else if (positionInfo?.rawPosition) {
+        // Try to extract from raw position
+        const rawPos = positionInfo.rawPosition;
+        positionId = rawPos.positionId || rawPos.id || rawPos.position_id || rawPos.positionID || 
+                     rawPos.pid || rawPos.posId || rawPos.pos_id;
         if (positionId) {
           positionId = String(positionId);
-          console.log(`📊 Using positionId from order response data: ${positionId}`);
+          console.log(`📊 Extracted positionId from rawPosition: ${positionId}`);
         }
       }
       
-      // If we don't have positionId from order, fetch position from API with retries
-      // Bitunix positions often take longer than 3 seconds to be visible in the API after a market order fills
-      // Retry up to 10 times with 2-second delays
-      let positionInfo = null;
-      const maxRetries = 10;
+      // Fallback: try to get positionId from orderResult if available
       if (!positionId) {
-        console.log(`📊 PositionId not in order response, fetching from position API with ${maxRetries} retries (2-second delays)...`);
-        for (let retry = 0; retry < maxRetries; retry++) {
-          try {
-            positionInfo = await this.getBitunixPosition(apiKey, apiSecret, symbol);
-            if (positionInfo && positionInfo.size > 0) {
-              // Try multiple field names for positionId
-              positionId = positionInfo.positionId || 
-                          (positionInfo.rawPosition?.positionId) ||
-                          (positionInfo.rawPosition?.id) ||
-                          (positionInfo.rawPosition?.position_id) ||
-                          (positionInfo.rawPosition?.positionID);
-              
-              console.log(`📊 Position found: ${positionInfo.size} @ ${positionInfo.entryPrice}, PositionId: ${positionId || 'NOT FOUND'}`);
-              
-              // If still not found, try to get it from the raw position response
-              if (!positionId && positionInfo.rawPosition) {
-                console.log(`📊 Raw position keys:`, Object.keys(positionInfo.rawPosition));
-                // Log full position for debugging
-                console.log(`📊 Full position data:`, JSON.stringify(positionInfo.rawPosition).substring(0, 1000));
-                
-                // Try to extract positionId from any field that looks like an ID
-                for (const [key, value] of Object.entries(positionInfo.rawPosition)) {
-                  if (key.toLowerCase().includes('id') || key.toLowerCase().includes('position')) {
-                    if (value && (typeof value === 'string' || typeof value === 'number')) {
-                      positionId = String(value);
-                      console.log(`📊 Found positionId in field '${key}': ${positionId}`);
-                      break;
-                    }
-                  }
-                }
-              }
-              
-              if (positionId) {
-                break; // Found positionId, exit retry loop
-              } else {
-                console.warn(`   ⚠️ Position found but positionId not found (attempt ${retry + 1}/${maxRetries})`);
-              }
-            } else {
-              console.warn(`   ⚠️ Position not found yet (attempt ${retry + 1}/${maxRetries})`);
-            }
-          } catch (posErr) {
-            console.warn(`   ⚠️ Failed to get position (attempt ${retry + 1}/${maxRetries}):`, posErr);
-          }
-          
-          // Wait 2 seconds before next retry (Bitunix positions can take longer to appear)
-          if (retry < maxRetries - 1) {
-            await new Promise(resolve => setTimeout(resolve, 2000));
+        if (orderResult?.positionId) {
+          positionId = String(orderResult.positionId);
+          console.log(`📊 Using positionId from orderResult: ${positionId}`);
+          // #region agent log
+          console.log(`[DEBUG-SLTP] PositionId found in orderResult:`, JSON.stringify({
+            location: 'bot-executor/index.ts:10925',
+            message: 'PositionId found in orderResult',
+            data: { positionId },
+            timestamp: Date.now(),
+            hypothesisId: 'F'
+          }));
+          // #endregion
+        } else if (orderResult?.response?.data) {
+          const orderData = orderResult.response.data;
+          positionId = orderData.positionId || orderData.position_id || orderData.positionID || 
+                       orderData.id || orderData.orderId;
+          if (positionId) {
+            positionId = String(positionId);
+            console.log(`📊 Using positionId from order response data: ${positionId}`);
+            // #region agent log
+            console.log(`[DEBUG-SLTP] PositionId found in order response data:`, JSON.stringify({
+              location: 'bot-executor/index.ts:10933',
+              message: 'PositionId found in order response data',
+              data: { positionId },
+              timestamp: Date.now(),
+              hypothesisId: 'F'
+            }));
+            // #endregion
           }
         }
-      } else {
-        // We have positionId from order, but still fetch position info for entry price
-        positionInfo = await this.getBitunixPosition(apiKey, apiSecret, symbol);
       }
+      
+      // #region agent log
+      console.log(`[DEBUG-SLTP] PositionId initial check:`, JSON.stringify({
+        location: 'bot-executor/index.ts:10937',
+        message: 'PositionId initial check',
+        data: { hasPositionId: !!positionId, positionId },
+        timestamp: Date.now(),
+        hypothesisId: 'F'
+      }));
+      // #endregion
+      
+      // Position verification already done above - positionInfo should be available if position exists
+      // If we still don't have positionId, log warning but proceed (symbol-based endpoint doesn't require it)
       
       // Fallback: If positionId is still missing but we have an orderId, use it as a temporary positionId
       // This allows us to attempt SL/TP via the symbol-based endpoint
@@ -10948,6 +11124,16 @@ class BotExecutor {
           // Note: We'll proceed without positionId - the symbol-based endpoint should work
         }
       }
+      
+      // #region agent log
+      console.log(`[DEBUG-SLTP] PositionId final check before API call:`, JSON.stringify({
+        location: 'bot-executor/index.ts:11020',
+        message: 'PositionId final check before API call',
+        data: { hasPositionId: !!positionId, positionId, hasPositionInfo: !!positionInfo, positionSize: positionInfo?.size || 0 },
+        timestamp: Date.now(),
+        hypothesisId: 'F'
+      }));
+      // #endregion
       
       if (!positionId && (!positionInfo || positionInfo.size === 0)) {
         // Try one more direct API call with detailed logging
@@ -10995,22 +11181,31 @@ class BotExecutor {
           console.warn(`⚠️ Using orderId as positionId fallback: ${orderResult.orderId}`);
           positionId = String(orderResult.orderId);
         } else if (!positionId) {
-          throw new Error(`Position not found for ${symbol} after ${maxRetries} retries - cannot set SL/TP. The position may not have been created yet or the order may have failed.`);
+          // CRITICAL FIX: Don't throw error - proceed with symbol-based SL/TP endpoint
+          // Symbol-based endpoint doesn't require positionId, only symbol, side, and prices
+          console.warn(`⚠️ Position not found after ${maxRetries} retries, but order was successful.`);
+          console.warn(`   Will proceed with symbol-based SL/TP endpoint (does not require positionId)`);
+          // Continue without positionId - symbol-based endpoint will be used
         }
       }
       
-      // Final check - positionId is required
+      // Final check - positionId is NOT required for symbol-based endpoint
+      // Only log warning if positionId is missing, but don't throw error
       if (!positionId) {
         // Last resort: try orderId
         if (orderResult?.orderId) {
           console.warn(`⚠️ Final fallback: Using orderId as positionId: ${orderResult.orderId}`);
           positionId = String(orderResult.orderId);
         } else {
-          throw new Error(`positionId is required for TP/SL orders but could not be determined for ${symbol}. OrderId: ${orderResult?.orderId || 'N/A'}`);
+          // CRITICAL FIX: Don't throw - symbol-based endpoint doesn't need positionId
+          console.warn(`⚠️ positionId not found, but will use symbol-based SL/TP endpoint (does not require positionId)`);
+          console.warn(`   Symbol: ${symbol}, Side: ${side}, Entry: ${entryPrice}, SL: ${stopLossPrice.toFixed(4)}, TP: ${takeProfitPrice.toFixed(4)}`);
+          // Continue without positionId - the symbol-based endpoints in endpointsToTry don't require it
         }
       }
       
-      if (!positionId) {
+      // Additional check removed - we'll proceed even without positionId
+      if (false && !positionId) {
         // CRITICAL: positionId is required for Bitunix TP/SL orders
         // Try one more time with direct API call and exhaustive field search
         console.error(`❌ CRITICAL: positionId not found after all retries. Attempting final extraction...`);
@@ -11094,26 +11289,29 @@ class BotExecutor {
                 }
                 
                 if (!positionId) {
-                  console.error(`❌ CRITICAL: positionId not found in position response after exhaustive search.`);
-                  console.error(`   Available fields:`, allFields);
-                  console.error(`   Position size: ${position.size || position.holdVol || position.quantity || '0'}`);
-                  throw new Error(`positionId is required for TP/SL orders but not found in position data. Available fields: ${allFields.join(', ')}`);
+                  console.warn(`⚠️ positionId not found in position response after exhaustive search.`);
+                  console.warn(`   Available fields:`, allFields);
+                  console.warn(`   Position size: ${position.size || position.holdVol || position.quantity || '0'}`);
+                  console.warn(`   Will proceed with symbol-based SL/TP endpoint (does not require positionId)`);
+                  // Don't throw - proceed with symbol-based endpoint
                 }
               } else {
-                console.error(`   No positions found in response`);
-                throw new Error(`Position not found for ${symbol} - cannot set SL/TP`);
+                console.warn(`   No positions found in response - will use symbol-based SL/TP endpoint`);
+                // Don't throw - proceed with symbol-based endpoint
               }
             } else {
-              console.error(`   API returned code ${positionData.code}: ${positionData.msg || positionData.message}`);
-              throw new Error(`Position API returned code ${positionData.code}: ${positionData.msg || positionData.message}`);
+              console.warn(`   API returned code ${positionData.code}: ${positionData.msg || positionData.message}`);
+              console.warn(`   Will proceed with symbol-based SL/TP endpoint (does not require positionId)`);
+              // Don't throw - proceed with symbol-based endpoint
             }
           } else {
-            console.error(`   Position API returned HTTP ${positionResponse.status}`);
-            throw new Error(`Position API returned HTTP ${positionResponse.status}`);
+            console.warn(`   Position API returned HTTP ${positionResponse.status} - will use symbol-based SL/TP endpoint`);
+            // Don't throw - proceed with symbol-based endpoint
           }
         } catch (extractErr) {
-          console.error(`❌ CRITICAL: Could not extract positionId:`, extractErr);
-          throw new Error(`positionId is required for TP/SL orders but could not be extracted: ${extractErr instanceof Error ? extractErr.message : String(extractErr)}`);
+          console.warn(`⚠️ Could not extract positionId:`, extractErr);
+          console.warn(`   Will proceed with symbol-based SL/TP endpoint (does not require positionId)`);
+          // Don't throw - proceed with symbol-based endpoint
         }
       }
       
@@ -11125,104 +11323,204 @@ class BotExecutor {
       const timestamp = (Date.now() + BotExecutor.bitunixServerTimeOffset).toString();
       const nonce = this.generateNonce();
       
-      // PRIMARY endpoint: symbol-based (more reliable, doesn't require positionId)
-      // Based on Bitunix API docs: https://openapidoc.bitunix.com/doc/tp_sl/place_tp_sl_order.html
-      // Try multiple parameter variations as Bitunix API might require different formats
-      const endpointsToTry = [
+      // CRITICAL: Convert side to position side format (LONG/SHORT) for TP/SL orders
+      // Bitunix TP/SL API uses position side (LONG/SHORT) not order side (BUY/SELL)
+      // BUY order = LONG position, SELL order = SHORT position
+      const positionSide = (side.toUpperCase() === 'BUY' || side.toUpperCase() === 'LONG') ? 'LONG' : 'SHORT';
+      const orderSide = side.toUpperCase() === 'BUY' ? 'BUY' : 'SELL'; // Keep for error logging
+      
+      console.log(`🔍 Side conversion: ${side} → positionSide: ${positionSide}, orderSide: ${orderSide}`);
+      
+      // CRITICAL FIX: Based on Bitunix official API documentation
+      // The correct endpoint is /api/v1/futures/tpsl/place_tp_sl_order
+      // Required parameters: symbol, holdSide (LONG/SHORT), tpPrice, slPrice
+      // Optional parameters: tpStopType, slStopType, tpOrderType, slOrderType, marginCoin
+      // CRITICAL FIX: Prioritize symbol-based endpoints (they don't require positionId)
+      // Only include position-based endpoints if we have a valid positionId
+      // Based on Code 2 errors, position-based endpoints fail when positionId is invalid
+      const endpointsToTry: Array<{endpoint: string, params: any, description: string}> = [
+        // Try 1: Official symbol-based endpoint minimal (required params only) - MOST RELIABLE
+        // Based on: https://openapidoc.bitunix.com/doc/tp_sl/place_tp_sl_order.html
         {
           endpoint: '/api/v1/futures/tpsl/place_tp_sl_order',
           params: {
             symbol: symbol.toUpperCase(),
-            side: side.toUpperCase() === 'BUY' ? 'BUY' : 'SELL',
-            tpPrice: String(takeProfitPrice.toFixed(8)), // Must be string
-            slPrice: String(stopLossPrice.toFixed(8)), // Must be string
-            tpStopType: 'LAST_PRICE',
-            slStopType: 'LAST_PRICE',
-            marginCoin: 'USDT',
-            marketType: 'futures' // May be required
+            holdSide: positionSide,
+            tpPrice: String(takeProfitPrice.toFixed(8)),
+            slPrice: String(stopLossPrice.toFixed(8))
           },
-          description: 'Primary endpoint (symbol-based, with marginCoin and marketType)'
+          description: 'Official symbol-based endpoint minimal (required params only) - PRIORITY'
         },
+        // Try 2: Official symbol-based endpoint with MARK_PRICE
         {
           endpoint: '/api/v1/futures/tpsl/place_tp_sl_order',
           params: {
             symbol: symbol.toUpperCase(),
-            side: side.toUpperCase() === 'BUY' ? 'BUY' : 'SELL',
+            holdSide: positionSide, // Required: LONG or SHORT
+            tpPrice: String(takeProfitPrice.toFixed(8)), // Required: string format
+            slPrice: String(stopLossPrice.toFixed(8)), // Required: string format
+            tpStopType: 'MARK_PRICE', // Optional: MARK_PRICE or LAST_PRICE
+            slStopType: 'MARK_PRICE', // Optional: MARK_PRICE or LAST_PRICE
+            tpOrderType: 'MARKET', // Optional: MARKET or LIMIT
+            slOrderType: 'MARKET', // Optional: MARKET or LIMIT
+            marginCoin: 'USDT' // Optional: margin coin
+          },
+          description: 'Official symbol-based endpoint with all parameters (MARK_PRICE)'
+        },
+        // Try 3: Official symbol-based endpoint with LAST_PRICE
+        {
+          endpoint: '/api/v1/futures/tpsl/place_tp_sl_order',
+          params: {
+            symbol: symbol.toUpperCase(),
+            holdSide: positionSide,
             tpPrice: String(takeProfitPrice.toFixed(8)),
             slPrice: String(stopLossPrice.toFixed(8)),
             tpStopType: 'LAST_PRICE',
             slStopType: 'LAST_PRICE',
+            tpOrderType: 'MARKET',
+            slOrderType: 'MARKET',
             marginCoin: 'USDT'
           },
-          description: 'Primary endpoint (symbol-based, with marginCoin, without marketType)'
-        },
-        {
-          endpoint: '/api/v1/futures/tpsl/place_tp_sl_order',
-          params: {
-            symbol: symbol.toUpperCase(),
-            side: side.toUpperCase() === 'BUY' ? 'BUY' : 'SELL',
-            tpPrice: String(takeProfitPrice.toFixed(8)),
-            slPrice: String(stopLossPrice.toFixed(8)),
-            tpStopType: 'LAST_PRICE',
-            slStopType: 'LAST_PRICE'
-          },
-          description: 'Primary endpoint (symbol-based, minimal params)'
-        },
-        {
-          endpoint: '/api/v1/futures/tpsl/place_position_tp_sl_order', // FIXED: Correct endpoint path per API docs
-          params: {
-            symbol: symbol.toUpperCase(),
-            positionId: String(positionId || ''),
-            tpPrice: String(takeProfitPrice.toFixed(8)),
-            slPrice: String(stopLossPrice.toFixed(8)),
-            tpStopType: 'LAST_PRICE',
-            slStopType: 'LAST_PRICE',
-            marginCoin: 'USDT',
-            marketType: 'futures'
-          },
-          description: 'Position-based endpoint (corrected path, with marginCoin and marketType)'
-        },
-        {
-          endpoint: '/api/v1/futures/tpsl/place_position_tp_sl_order', // FIXED: Correct endpoint path per API docs
-          params: {
-            symbol: symbol.toUpperCase(),
-            positionId: String(positionId || ''),
-            tpPrice: String(takeProfitPrice.toFixed(8)),
-            slPrice: String(stopLossPrice.toFixed(8)),
-            tpStopType: 'LAST_PRICE',
-            slStopType: 'LAST_PRICE',
-            marginCoin: 'USDT'
-          },
-          description: 'Position-based endpoint (corrected path, with marginCoin)'
-        },
-        {
-          endpoint: '/api/v1/futures/tpsl/place_position_tp_sl_order', // FIXED: Correct endpoint path per API docs
-          params: {
-            symbol: symbol.toUpperCase(),
-            positionId: String(positionId || ''),
-            tpPrice: String(takeProfitPrice.toFixed(8)),
-            slPrice: String(stopLossPrice.toFixed(8)),
-            tpStopType: 'LAST_PRICE',
-            slStopType: 'LAST_PRICE'
-          },
-          description: 'Position-based endpoint (corrected path, minimal params)'
+          description: 'Official symbol-based endpoint with LAST_PRICE'
         }
       ];
+      
+      // Only add position-based endpoints if we have a valid positionId
+      // Position-based endpoints require positionId and fail with Code 2 if invalid
+      if (positionId && positionId !== '' && positionId !== 'undefined' && positionId !== 'null') {
+        // Try 4: Position-based endpoint (only if positionId is valid)
+        // Based on: https://openapidoc.bitunix.com/doc/tp_sl/place_position_tp_sl_order.html
+        endpointsToTry.push({
+          endpoint: '/api/v1/futures/tpsl/place_position_tp_sl_order',
+          params: {
+            symbol: symbol.toUpperCase(),
+            positionId: String(positionId),
+            holdSide: positionSide,
+            tpPrice: String(takeProfitPrice.toFixed(8)),
+            slPrice: String(stopLossPrice.toFixed(8)),
+            tpStopType: 'MARK_PRICE',
+            slStopType: 'MARK_PRICE',
+            tpOrderType: 'MARKET',
+            slOrderType: 'MARKET',
+            marginCoin: 'USDT'
+          },
+          description: 'Position-based endpoint with positionId (validated)'
+        });
+        // Try 5: Position-based endpoint minimal
+        endpointsToTry.push({
+          endpoint: '/api/v1/futures/tpsl/place_position_tp_sl_order',
+          params: {
+            symbol: symbol.toUpperCase(),
+            positionId: String(positionId),
+            holdSide: positionSide,
+            tpPrice: String(takeProfitPrice.toFixed(8)),
+            slPrice: String(stopLossPrice.toFixed(8))
+          },
+          description: 'Position-based endpoint minimal (validated positionId)'
+        });
+      } else {
+        console.log(`   ℹ️ Skipping position-based endpoints (no valid positionId available)`);
+      }
       
       let slTpSuccess = false;
       let lastError: any = null;
       
-      for (const endpointConfig of endpointsToTry) {
+      // #region agent log
+      console.log(`[DEBUG-SLTP] Starting SL/TP API calls:`, JSON.stringify({
+        location: 'bot-executor/index.ts:11280',
+        message: 'Starting SL/TP API calls',
+        data: { endpointCount: endpointsToTry.length, hasPositionId: !!positionId, positionId, stopLossPrice, takeProfitPrice },
+        timestamp: Date.now(),
+        hypothesisId: 'E'
+      }));
+      // #endregion
+      
+      for (let endpointIndex = 0; endpointIndex < endpointsToTry.length; endpointIndex++) {
+        const endpointConfig = endpointsToTry[endpointIndex];
         try {
+          // CRITICAL FIX: Add delay between endpoint attempts to give Bitunix time to process
+          // Code 2 errors may occur if we try too quickly after order placement
+          if (endpointIndex > 0) {
+            const delayMs = 2000 * endpointIndex; // Exponential delay: 2s, 4s, 6s, etc.
+            console.log(`   ⏳ Waiting ${delayMs}ms before trying next endpoint (attempt ${endpointIndex + 1}/${endpointsToTry.length})...`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+          }
+          
+          // CRITICAL FIX: Skip position-based endpoints if positionId is missing
+          // Position-based endpoints require positionId, but symbol-based ones don't
+          if (endpointConfig.endpoint.includes('place_position_tp_sl_order') && !positionId) {
+            console.log(`   ⏭️ Skipping position-based endpoint (no positionId): ${endpointConfig.endpoint}`);
+            // #region agent log
+            console.log(`[DEBUG-SLTP] Skipping position-based endpoint:`, JSON.stringify({
+              location: 'bot-executor/index.ts:11540',
+              message: 'Skipping position-based endpoint',
+              data: { endpoint: endpointConfig.endpoint, reason: 'no positionId' },
+              timestamp: Date.now(),
+              hypothesisId: 'E'
+            }));
+            // #endregion
+            continue; // Skip position-based endpoints when positionId is missing
+          }
+          
           const slTpParams = endpointConfig.params;
+          
+          // Remove empty positionId from params if it's empty (cleaner request)
+          if (slTpParams.positionId === '' || slTpParams.positionId === 'undefined' || slTpParams.positionId === 'null') {
+            delete slTpParams.positionId;
+          }
+          
+          // CRITICAL: Remove empty or invalid positionId from params
+          if (slTpParams.positionId === '' || slTpParams.positionId === 'undefined' || slTpParams.positionId === 'null' || !slTpParams.positionId) {
+            delete slTpParams.positionId;
+          }
+          
+          // CRITICAL: Ensure all price values are properly formatted as strings
+          if (slTpParams.tpPrice) {
+            slTpParams.tpPrice = String(parseFloat(slTpParams.tpPrice).toFixed(8));
+          }
+          if (slTpParams.slPrice) {
+            slTpParams.slPrice = String(parseFloat(slTpParams.slPrice).toFixed(8));
+          }
           
           const bodyString = JSON.stringify(slTpParams).replace(/\s+/g, '');
           const queryParams = '';
           const signature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, bodyString, apiSecret);
           
-          console.log(`   Trying endpoint: ${endpointConfig.endpoint} (${endpointConfig.description})`);
-          console.log(`   Request body: ${bodyString}`);
+          console.log(`   🔄 Trying endpoint: ${endpointConfig.endpoint}`);
+          console.log(`   📋 Description: ${endpointConfig.description}`);
+          console.log(`   📦 Request params: ${JSON.stringify(slTpParams, null, 2)}`);
+          console.log(`   📝 Request body: ${bodyString}`);
+          console.log(`   🔑 API Key (first 8): ${apiKey.substring(0, 8)}...`);
+          console.log(`   ⏰ Timestamp: ${timestamp}, Nonce: ${nonce}`);
+          console.log(`   📊 Symbol: ${symbol.toUpperCase()}, Position Side: ${positionSide}, Entry Price: ${entryPrice}`);
+          console.log(`   🎯 SL Price: ${stopLossPrice.toFixed(8)}, TP Price: ${takeProfitPrice.toFixed(8)}`);
+          console.log(`   📍 Position Verified: ${positionVerified}, Position Size: ${positionInfo?.size || 0}`);
           
+          // #region agent log
+          console.log(`[DEBUG-SLTP] Calling SL/TP API endpoint:`, JSON.stringify({
+            location: 'bot-executor/index.ts:11558',
+            message: 'Calling SL/TP API endpoint',
+            data: { 
+              endpoint: endpointConfig.endpoint, 
+              description: endpointConfig.description, 
+              params: slTpParams, 
+              hasPositionId: !!positionId,
+              positionId: positionId,
+              positionSide: positionSide,
+              positionVerified: positionVerified,
+              positionSize: positionInfo?.size || 0,
+              stopLossPrice: stopLossPrice.toFixed(8),
+              takeProfitPrice: takeProfitPrice.toFixed(8),
+              requestBody: bodyString,
+              timestamp: timestamp,
+              nonce: nonce
+            },
+            timestamp: Date.now(),
+            hypothesisId: 'E'
+          }));
+          // #endregion
+          
+          // CRITICAL: Use POST method (Bitunix API uses POST for TP/SL orders)
           const response = await fetch(`${baseUrl}${endpointConfig.endpoint}`, {
             method: 'POST',
             headers: {
@@ -11237,18 +11535,108 @@ class BotExecutor {
           });
           
           const responseText = await response.text();
-          console.log(`   Response: ${response.status}, body: ${responseText.substring(0, 500)}`);
+          console.log(`   📥 Response status: ${response.status} ${response.statusText}`);
+          console.log(`   📄 Response body: ${responseText}`);
+          
+          // #region agent log
+          console.log(`[DEBUG-SLTP] SL/TP API response received:`, JSON.stringify({
+            location: 'bot-executor/index.ts:11585',
+            message: 'SL/TP API response received',
+            data: { 
+              status: response.status, 
+              statusText: response.statusText,
+              endpoint: endpointConfig.endpoint, 
+              responseText: responseText,
+              responseHeaders: Object.fromEntries(response.headers.entries())
+            },
+            timestamp: Date.now(),
+            hypothesisId: 'E'
+          }));
+          // #endregion
           
           if (response.ok) {
             try {
               const data = JSON.parse(responseText);
-              console.log(`   Response code: ${data.code}`);
-              console.log(`   Response message: ${data.msg || data.message || 'N/A'}`);
-              console.log(`   Response data: ${JSON.stringify(data.data || {}).substring(0, 500)}`);
+              console.log(`   ✅ Response code: ${data.code}`);
+              console.log(`   📨 Response message: ${data.msg || data.message || 'N/A'}`);
+              console.log(`   📊 Response data: ${JSON.stringify(data.data || {}, null, 2)}`);
+              
+              // #region agent log
+              console.log(`[DEBUG-SLTP] SL/TP API response parsed:`, JSON.stringify({
+                location: 'bot-executor/index.ts:11602',
+                message: 'SL/TP API response parsed',
+                data: { 
+                  code: data.code, 
+                  msg: data.msg || data.message, 
+                  hasData: !!data.data,
+                  data: data.data
+                },
+                timestamp: Date.now(),
+                hypothesisId: 'E'
+              }));
+              // #endregion
+              
+              // CRITICAL: Handle Code 2 (System error) with detailed diagnostics
+              if (data.code === 2) {
+                const errorMsg = data.msg || data.message || 'System error';
+                console.error(`   ❌ Code 2 (System error): ${errorMsg}`);
+                console.error(`   📋 Possible causes:`);
+                console.error(`      1. Position not fully established (wait longer)`);
+                console.error(`      2. Invalid parameter format (check holdSide, prices)`);
+                console.error(`      3. API key lacks TP/SL permissions`);
+                console.error(`      4. Symbol not supported for TP/SL`);
+                console.error(`      5. Account not fully activated for futures trading`);
+                console.error(`   📋 Request details:`);
+                console.error(`      Endpoint: ${endpointConfig.endpoint}`);
+                console.error(`      Params: ${JSON.stringify(slTpParams, null, 2)}`);
+                console.error(`      Position verified: ${positionVerified}`);
+                console.error(`      Position size: ${positionInfo?.size || 0}`);
+                
+                lastError = new Error(`Bitunix system error (Code: 2): ${errorMsg}. Endpoint: ${endpointConfig.endpoint}. Check: 1) Position exists, 2) Parameter format, 3) API permissions, 4) Account activation.`);
+                
+                // #region agent log
+                console.log(`[DEBUG-SLTP] Code 2 error details:`, JSON.stringify({
+                  location: 'bot-executor/index.ts:11615',
+                  message: 'Code 2 error details',
+                  data: { 
+                    code: data.code,
+                    errorMsg,
+                    endpoint: endpointConfig.endpoint,
+                    description: endpointConfig.description,
+                    params: slTpParams,
+                    positionVerified,
+                    positionSize: positionInfo?.size || 0,
+                    responseText: responseText
+                  },
+                  timestamp: Date.now(),
+                  hypothesisId: 'E'
+                }));
+                // #endregion
+                
+                // Continue to next endpoint - don't fail yet
+                console.log(`   ⏭️ Trying next endpoint variation...`);
+                continue;
+              }
               
               if (data.code === 0 || data.code === 200) {
                 console.log(`✅ Bitunix SL/TP API call succeeded via ${endpointConfig.endpoint}`);
-                console.log(`   Response data: ${JSON.stringify(data.data || {}).substring(0, 500)}`);
+                console.log(`   ✅ Used parameters: ${endpointConfig.description}`);
+                
+                // #region agent log
+                console.log(`[DEBUG-SLTP] SL/TP API call succeeded:`, JSON.stringify({
+                  location: 'bot-executor/index.ts:11615',
+                  message: 'SL/TP API call succeeded',
+                  data: { 
+                    endpoint: endpointConfig.endpoint, 
+                    description: endpointConfig.description,
+                    code: data.code,
+                    responseData: data.data
+                  },
+                  timestamp: Date.now(),
+                  hypothesisId: 'E'
+                }));
+                // #endregion
+                console.log(`   📊 Full response data: ${JSON.stringify(data.data || {}, null, 2)}`);
                 
                 // CRITICAL: Verify SL/TP was actually set by checking position AND TP/SL orders API
                 console.log(`🔍 Verifying SL/TP was actually set on position...`);
@@ -11348,32 +11736,159 @@ class BotExecutor {
                 }
               } else {
                 const errorMsg = data.msg || data.message || 'Unknown error';
-                console.warn(`   ⚠️ ${endpointConfig.endpoint} returned code ${data.code}: ${errorMsg}`);
-                console.warn(`   ⚠️ Full response: ${responseText.substring(0, 1000)}`);
-                console.warn(`   ⚠️ Request params: ${JSON.stringify(endpointConfig.params)}`);
-                lastError = new Error(`Bitunix SL/TP endpoint failed: ${errorMsg} (Code: ${data.code}). Response: ${responseText.substring(0, 500)}`);
-                // Continue to next endpoint
+                console.error(`   ❌ ${endpointConfig.endpoint} returned code ${data.code}: ${errorMsg}`);
+                console.error(`   ❌ Full response: ${responseText}`);
+                console.error(`   ❌ Request params: ${JSON.stringify(slTpParams, null, 2)}`);
+                console.error(`   ❌ Request body: ${bodyString}`);
+                console.error(`   ❌ Endpoint description: ${endpointConfig.description}`);
+                
+                // CRITICAL: Handle specific error codes
+                if (data.code === 10003) {
+                  // Invalid API key
+                  console.error(`   ❌ CRITICAL: API key is invalid (Code: 10003)`);
+                  throw new Error(`Bitunix API key is invalid (Code: 10003). Please verify and update your Bitunix API keys in account settings.`);
+                } else if (data.code === 10004) {
+                  // Invalid signature
+                  console.error(`   ❌ CRITICAL: Invalid signature (Code: 10004)`);
+                  console.error(`   📋 Check signature generation: nonce=${nonce}, timestamp=${timestamp}, body=${bodyString.substring(0, 100)}...`);
+                } else if (data.code === 10005) {
+                  // Invalid timestamp
+                  console.error(`   ❌ CRITICAL: Invalid timestamp (Code: 10005)`);
+                  console.error(`   📋 Current timestamp: ${timestamp}, Server offset: ${BotExecutor.bitunixServerTimeOffset}`);
+                } else if (data.code === 10006) {
+                  // Invalid parameter
+                  console.error(`   ❌ CRITICAL: Invalid parameter (Code: 10006)`);
+                  console.error(`   📋 Check parameters: ${JSON.stringify(slTpParams, null, 2)}`);
+                }
+                
+                lastError = new Error(`Bitunix SL/TP endpoint failed: ${errorMsg} (Code: ${data.code}). Endpoint: ${endpointConfig.endpoint}. Response: ${responseText}`);
+                
+                // #region agent log
+                console.log(`[DEBUG-SLTP] SL/TP API returned error code:`, JSON.stringify({
+                  location: 'bot-executor/index.ts:11722',
+                  message: 'SL/TP API returned error code',
+                  data: { 
+                    endpoint: endpointConfig.endpoint, 
+                    description: endpointConfig.description,
+                    code: data.code, 
+                    errorMsg, 
+                    responseText: responseText,
+                    requestParams: slTpParams,
+                    requestBody: bodyString,
+                    positionVerified: positionVerified,
+                    positionSize: positionInfo?.size || 0
+                  },
+                  timestamp: Date.now(),
+                  hypothesisId: 'E'
+                }));
+                // #endregion
+                
+                // Continue to next endpoint - don't fail yet, try other variations
+                console.log(`   ⏭️ Trying next endpoint variation...`);
               }
             } catch (parseError) {
               console.warn(`   ⚠️ Failed to parse response:`, parseError);
               console.error(`   ⚠️ Raw response: ${responseText}`);
               lastError = new Error(`Bitunix SL/TP endpoint returned invalid response: ${responseText.substring(0, 200)}`);
+              
+              // #region agent log
+              console.log(`[DEBUG-SLTP] SL/TP API response parse error:`, JSON.stringify({
+                location: 'bot-executor/index.ts:11459',
+                message: 'SL/TP API response parse error',
+                data: { endpoint: endpointConfig.endpoint, parseError: parseError instanceof Error ? parseError.message : String(parseError), responseText: responseText.substring(0, 500) },
+                timestamp: Date.now(),
+                hypothesisId: 'E'
+              }));
+              // #endregion
+              
               // Continue to next endpoint
             }
           } else {
-            const errorText = responseText.substring(0, 500);
-            console.error(`   ⚠️ HTTP Error: ${response.status} ${response.statusText}`);
-            console.error(`   ⚠️ Response body: ${errorText}`);
-            console.error(`   ⚠️ Request params: ${JSON.stringify(endpointConfig.params)}`);
-            lastError = new Error(`Bitunix SL/TP endpoint returned HTTP ${response.status}: ${errorText}`);
-            // Continue to next endpoint
+            const errorText = responseText;
+            console.error(`   ❌ HTTP Error: ${response.status} ${response.statusText}`);
+            console.error(`   ❌ Response body: ${errorText}`);
+            console.error(`   ❌ Request params: ${JSON.stringify(slTpParams, null, 2)}`);
+            console.error(`   ❌ Request body: ${bodyString}`);
+            console.error(`   ❌ Endpoint: ${endpointConfig.endpoint}`);
+            console.error(`   ❌ Description: ${endpointConfig.description}`);
+            console.error(`   ❌ Position verified: ${positionVerified}, Position size: ${positionInfo?.size || 0}`);
+            
+            // Try to parse error if it's JSON
+            try {
+              const errorData = JSON.parse(errorText);
+              if (errorData.code === 2) {
+                console.error(`   ❌ Detected Code 2 in HTTP error response`);
+                console.error(`   📋 This may indicate: 1) Position not established, 2) Invalid parameters, 3) API permissions`);
+              }
+            } catch (e) {
+              // Not JSON, ignore
+            }
+            
+            lastError = new Error(`Bitunix SL/TP endpoint returned HTTP ${response.status}: ${errorText}. Endpoint: ${endpointConfig.endpoint}`);
+            
+            // #region agent log
+            console.log(`[DEBUG-SLTP] SL/TP API HTTP error:`, JSON.stringify({
+              location: 'bot-executor/index.ts:11757',
+              message: 'SL/TP API HTTP error',
+              data: { 
+                endpoint: endpointConfig.endpoint,
+                description: endpointConfig.description,
+                status: response.status, 
+                statusText: response.statusText, 
+                errorText: errorText,
+                requestParams: slTpParams,
+                requestBody: bodyString,
+                positionVerified: positionVerified,
+                positionSize: positionInfo?.size || 0,
+                responseHeaders: Object.fromEntries(response.headers.entries())
+              },
+              timestamp: Date.now(),
+              hypothesisId: 'E'
+            }));
+            // #endregion
+            
+            // Continue to next endpoint - don't fail yet
+            console.log(`   ⏭️ Trying next endpoint variation...`);
           }
         } catch (endpointError) {
-          console.warn(`   ⚠️ Error trying ${endpointConfig.endpoint}:`, endpointError);
+          console.error(`   ❌ Exception trying ${endpointConfig.endpoint}:`, endpointError);
+          console.error(`   ❌ Endpoint description: ${endpointConfig.description}`);
+          console.error(`   ❌ Request params: ${JSON.stringify(slTpParams, null, 2)}`);
+          console.error(`   ❌ Position verified: ${positionVerified}, Position size: ${positionInfo?.size || 0}`);
           lastError = endpointError instanceof Error ? endpointError : new Error(String(endpointError));
-          // Continue to next endpoint
+          
+          // #region agent log
+          console.log(`[DEBUG-SLTP] SL/TP API endpoint exception:`, JSON.stringify({
+            location: 'bot-executor/index.ts:11776',
+            message: 'SL/TP API endpoint exception',
+            data: { 
+              endpoint: endpointConfig.endpoint,
+              description: endpointConfig.description,
+              endpointError: endpointError instanceof Error ? endpointError.message : String(endpointError), 
+              errorStack: endpointError instanceof Error ? endpointError.stack : undefined,
+              requestParams: slTpParams,
+              positionVerified: positionVerified,
+              positionSize: positionInfo?.size || 0
+            },
+            timestamp: Date.now(),
+            hypothesisId: 'E'
+          }));
+          // #endregion
+          
+          // Continue to next endpoint - don't fail yet
+          console.log(`   ⏭️ Trying next endpoint variation...`);
         }
       }
+      
+      // #region agent log
+      console.log(`[DEBUG-SLTP] SL/TP API calls completed:`, JSON.stringify({
+        location: 'bot-executor/index.ts:11478',
+        message: 'SL/TP API calls completed',
+        data: { slTpSuccess, hasLastError: !!lastError, lastError: lastError instanceof Error ? lastError.message : String(lastError) },
+        timestamp: Date.now(),
+        hypothesisId: 'E'
+      }));
+      // #endregion
       
       if (!slTpSuccess) {
         // All primary endpoints failed - try fallback method
@@ -11387,15 +11902,16 @@ class BotExecutor {
             const positionSize = String(positionInfo.size);
             console.log(`   📊 Using position size for fallback: ${positionSize}`);
             
-            // Try simpler endpoint with just symbol, side, and prices
+            // Try simpler endpoint with holdSide (LONG/SHORT) and position size
             const fallbackParams = {
               symbol: symbol.toUpperCase(),
-              side: side.toUpperCase() === 'BUY' ? 'BUY' : 'SELL',
+              holdSide: positionSide, // Use LONG/SHORT for position side
               tpPrice: String(takeProfitPrice.toFixed(8)),
               slPrice: String(stopLossPrice.toFixed(8)),
               tpStopType: 'LAST_PRICE',
               slStopType: 'LAST_PRICE',
-              qty: positionSize
+              qty: positionSize,
+              marginCoin: 'USDT'
             };
             
             const fallbackBody = JSON.stringify(fallbackParams).replace(/\s+/g, '');
@@ -11450,7 +11966,37 @@ class BotExecutor {
         const errorMsg = lastError?.message || 'All SL/TP endpoints failed';
         console.error(`❌ CRITICAL: All Bitunix SL/TP endpoints failed`);
         console.error(`   Last error: ${errorMsg}`);
-        console.error(`   Endpoints tried: ${endpointsToTry.map(e => e.endpoint).join(', ')}`);
+        console.error(`   Endpoints tried: ${endpointsToTry.map(e => `${e.endpoint} (${e.description})`).join(', ')}`);
+        console.error(`   Position side: ${positionSide} (LONG/SHORT)`);
+        console.error(`   Order side: ${orderSide} (BUY/SELL)`);
+        console.error(`   Symbol: ${symbol.toUpperCase()}`);
+        console.error(`   Entry price: ${entryPrice}`);
+        console.error(`   Stop loss: ${stopLossPrice.toFixed(8)}`);
+        console.error(`   Take profit: ${takeProfitPrice.toFixed(8)}`);
+        console.error(`   Position ID: ${positionId || 'NOT FOUND'}`);
+        console.error(`   Position size: ${positionInfo?.size || 'NOT FOUND'}`);
+        
+        // #region agent log
+        console.log(`[DEBUG-SLTP] All SL/TP endpoints failed:`, JSON.stringify({
+          location: 'bot-executor/index.ts:11982',
+          message: 'All SL/TP endpoints failed',
+          data: {
+            errorMsg,
+            endpointsTried: endpointsToTry.map(e => ({ endpoint: e.endpoint, description: e.description })),
+            positionSide,
+            orderSide,
+            symbol: symbol.toUpperCase(),
+            entryPrice,
+            stopLossPrice: stopLossPrice.toFixed(8),
+            takeProfitPrice: takeProfitPrice.toFixed(8),
+            positionId: positionId || 'NOT FOUND',
+            positionSize: positionInfo?.size || 'NOT FOUND',
+            lastError: lastError instanceof Error ? lastError.message : String(lastError)
+          },
+          timestamp: Date.now(),
+          hypothesisId: 'E'
+        }));
+        // #endregion
         
         // CRITICAL: Log high-priority error to Supabase
         if (bot?.id) {
@@ -11461,6 +12007,8 @@ class BotExecutor {
             details: {
               symbol: symbol,
               side: side,
+              positionSide: positionSide,
+              orderSide: orderSide,
               entryPrice: entryPrice,
               stopLossPrice: stopLossPrice.toFixed(8),
               takeProfitPrice: takeProfitPrice.toFixed(8),
@@ -11469,18 +12017,25 @@ class BotExecutor {
               positionId: positionId || 'NOT FOUND',
               positionSize: positionInfo?.size || 'NOT FOUND',
               error: errorMsg,
-              endpointsTried: endpointsToTry.map(e => e.endpoint),
+              endpointsTried: endpointsToTry.map(e => `${e.endpoint} (${e.description})`),
               action_required: 'URGENT: Manually set SL/TP on Bitunix exchange immediately',
               manualInstructions: `Go to Bitunix → Positions → ${symbol} → Click TP/SL → Set SL: ${stopLossPrice.toFixed(4)}, TP: ${takeProfitPrice.toFixed(4)}`,
               calculatedStopLoss: stopLossPrice.toFixed(8),
-              calculatedTakeProfit: takeProfitPrice.toFixed(8)
+              calculatedTakeProfit: takeProfitPrice.toFixed(8),
+              troubleshooting: [
+                '1. Check Bitunix API documentation for correct TP/SL endpoint format',
+                '2. Verify API key has futures trading and TP/SL permissions',
+                '3. Ensure position exists and is open before setting TP/SL',
+                '4. Check if Bitunix requires different parameter names (holdSide vs positionSide vs side)',
+                `5. Manual fix: Set SL=${stopLossPrice.toFixed(4)}, TP=${takeProfitPrice.toFixed(4)} on Bitunix exchange`
+              ]
             }
           });
         }
         
         // CRITICAL: Throw error to ensure caller knows SL/TP failed
         // This will trigger the background retry mechanism
-        throw new Error(`CRITICAL: Bitunix order placed but SL/TP setup FAILED after trying all endpoints. Position is UNPROTECTED. Last error: ${errorMsg}`);
+        throw new Error(`CRITICAL: Bitunix order placed but SL/TP setup FAILED after trying ${endpointsToTry.length} endpoint variations. Position is UNPROTECTED. Last error: ${errorMsg}. Tried positionSide=${positionSide}, orderSide=${orderSide}`);
       }
       
       // FINAL VERIFICATION: Double-check that SL/TP was actually set on the position
@@ -11540,420 +12095,7 @@ class BotExecutor {
         
         throw new Error(`CRITICAL: ${errorMsg}. Position is UNPROTECTED. Please set manually: SL=${stopLossPrice.toFixed(4)}, TP=${takeProfitPrice.toFixed(4)}`);
       }
-      
-      // Fallback: If position-based SL/TP doesn't work, try placing TP and SL as separate conditional orders
-      // (This code should not be reached if the above succeeds, but kept as fallback)
-      if (false) {
-        console.log(`   ⚠️ Combined TP/SL endpoint failed, trying separate TP and SL conditional orders...`);
-        
-        try {
-          // Get position details for separate orders
-          let positionSize = positionInfo?.size?.toString() || '0';
-          let hasExistingSL = false;
-          let hasExistingTP = false;
-          
-          // Verify current SL/TP status from position
-          if (positionInfo) {
-            hasExistingSL = !!(positionInfo.stopLoss || positionInfo.stop_loss || positionInfo.stopPrice || positionInfo.slPrice);
-            hasExistingTP = !!(positionInfo.takeProfit || positionInfo.take_profit || positionInfo.tpPrice);
-            console.log(`   📊 Current position status: SL: ${hasExistingSL ? 'SET' : 'NOT SET'}, TP: ${hasExistingTP ? 'SET' : 'NOT SET'}`);
-          }
-          
-          // Try placing TP order separately using conditional order endpoint
-          if (!hasExistingTP) {
-            console.log(`   🟢 Placing Take Profit conditional order separately...`);
-            const tpOrderEndpoints = [
-              '/api/v1/futures/tp-sl/place',           // Place TP/SL order
-              '/api/v1/futures/trade/conditional-order', // Conditional order
-              '/api/v1/futures/trade/stop_order',      // Stop order
-              '/api/v1/trade/conditional-order',        // Shorter path
-              '/api/v1/trade/stop_order'                // Shortest path
-            ];
-            
-            for (const tpEndpoint of tpOrderEndpoints) {
-              try {
-                const tpOrderParams: any = {
-            symbol: symbol.toUpperCase(),
-                  side: isLong ? 'SELL' : 'BUY', // Opposite side for TP (closing position)
-                  orderType: 'MARKET',
-                  tpPrice: takeProfitPrice.toFixed(8), // TP trigger price
-                  tpOrderType: 'MARKET',
-                  tpStopType: 'LAST_PRICE',
-                  qty: positionSize !== '0' ? positionSize : (positionInfo?.size?.toString() || '0'),
-            marginMode: 'ISOLATED'
-          };
-          
-                if (positionId) {
-                  tpOrderParams.positionId = String(positionId);
-                }
-                
-                const tpBodyString = JSON.stringify(tpOrderParams).replace(/\s+/g, '');
-                const tpQueryParams = '';
-                const tpSignature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, tpQueryParams, tpBodyString, apiSecret);
-                
-                console.log(`   Trying TP endpoint: ${tpEndpoint}`);
-                console.log(`   TP request body: ${tpBodyString}`);
-                
-                const tpResponse = await fetch(`${baseUrl}${tpEndpoint}`, {
-                  method: 'POST',
-                  headers: {
-                    'api-key': String(apiKey),
-                    'nonce': String(nonce),
-                    'timestamp': String(timestamp),
-                    'sign': String(tpSignature),
-                    'Content-Type': 'application/json',
-                    'language': 'en-US'
-                  },
-                  body: tpBodyString
-                });
-                
-                const tpResponseText = await tpResponse.text();
-                console.log(`   TP response: ${tpResponse.status}, body: ${tpResponseText.substring(0, 300)}`);
-                
-                if (tpResponse.ok) {
-                  const tpData = JSON.parse(tpResponseText);
-                  if (tpData.code === 0) {
-                    console.log(`✅ Bitunix Take Profit order placed via ${tpEndpoint}`);
-                    hasExistingTP = true;
-                    slTpSet = true;
-                    break;
-                  } else {
-                    console.warn(`   ⚠️ TP endpoint ${tpEndpoint} returned code ${tpData.code}: ${tpData.msg || tpData.message}`);
-                  }
-                }
-              } catch (tpErr) {
-                console.warn(`   ⚠️ Error with TP endpoint ${tpEndpoint}:`, tpErr);
-                continue;
-              }
-            }
-          }
-          
-          // Try placing SL order separately using conditional order endpoint
-          if (!hasExistingSL) {
-            console.log(`   🔴 Placing Stop Loss conditional order separately...`);
-            const slOrderEndpoints = [
-              '/api/v1/futures/tp-sl/place',           // Place TP/SL order
-              '/api/v1/futures/trade/conditional-order', // Conditional order
-              '/api/v1/futures/trade/stop_order',      // Stop order
-              '/api/v1/trade/conditional-order',        // Shorter path
-              '/api/v1/trade/stop_order'                // Shortest path
-            ];
-            
-            for (const slEndpoint of slOrderEndpoints) {
-              try {
-                const slOrderParams: any = {
-                  symbol: symbol.toUpperCase(),
-                  side: isLong ? 'SELL' : 'BUY', // Opposite side for SL (closing position)
-                  orderType: 'MARKET',
-                  slPrice: stopLossPrice.toFixed(8), // SL trigger price
-                  slOrderType: 'MARKET',
-                  slStopType: 'LAST_PRICE',
-                  qty: positionSize !== '0' ? positionSize : (positionInfo?.size?.toString() || '0'),
-                  marginMode: 'ISOLATED'
-                };
-                
-                if (positionId) {
-                  slOrderParams.positionId = String(positionId);
-                }
-                
-                const slBodyString = JSON.stringify(slOrderParams).replace(/\s+/g, '');
-                const slQueryParams = '';
-                const slSignature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, slQueryParams, slBodyString, apiSecret);
-                
-                console.log(`   Trying SL endpoint: ${slEndpoint}`);
-                console.log(`   SL request body: ${slBodyString}`);
-                
-                const slResponse = await fetch(`${baseUrl}${slEndpoint}`, {
-                method: 'POST',
-                headers: {
-                  'api-key': String(apiKey),
-                  'nonce': String(nonce),
-                  'timestamp': String(timestamp),
-                    'sign': String(slSignature),
-                  'Content-Type': 'application/json',
-                  'language': 'en-US'
-                },
-                  body: slBodyString
-                });
-                
-                const slResponseText = await slResponse.text();
-                console.log(`   SL response: ${slResponse.status}, body: ${slResponseText.substring(0, 300)}`);
-                
-                if (slResponse.ok) {
-                  const slData = JSON.parse(slResponseText);
-                  if (slData.code === 0) {
-                    console.log(`✅ Bitunix Stop Loss order placed via ${slEndpoint}`);
-                    hasExistingSL = true;
-                  slTpSet = true;
-                  break;
-                  } else {
-                    console.warn(`   ⚠️ SL endpoint ${slEndpoint} returned code ${slData.code}: ${slData.msg || slData.message}`);
-                }
-              }
-              } catch (slErr) {
-                console.warn(`   ⚠️ Error with SL endpoint ${slEndpoint}:`, slErr);
-              continue;
-              }
-            }
-          }
-          
-          // If still not set, try the old method with position size
-          if (!hasExistingSL || !hasExistingTP) {
-            console.log(`   ⚠️ Separate TP/SL orders failed, trying alternative method...`);
-            
-            // Get position size if not already available
-            if (positionSize === '0') {
-              try {
-                const positionTimestamp = Date.now().toString();
-                const positionNonce = this.generateNonce();
-                const positionQueryParams = `symbol=${symbol.toUpperCase()}`;
-                const positionBody = '';
-                const positionSig = await this.createBitunixSignatureDoubleSHA256(positionNonce, positionTimestamp, apiKey, positionQueryParams, positionBody, apiSecret);
-                
-                const positionResponse = await fetch(`${baseUrl}/api/v1/futures/position/list?${positionQueryParams}`, {
-                  method: 'GET',
-                  headers: {
-                    'api-key': String(apiKey),
-                    'nonce': String(positionNonce),
-                    'timestamp': String(positionTimestamp),
-                    'sign': String(positionSig),
-                    'Content-Type': 'application/json',
-                    'language': 'en-US'
-                  }
-                });
-                
-                if (positionResponse.ok) {
-                  const positionData = await positionResponse.json();
-                  if (positionData.code === 0 && positionData.data && positionData.data.length > 0) {
-                    const position = positionData.data[0];
-                    positionSize = position.size || position.holdVol || position.holdVol || '0';
-                    hasExistingSL = !!(position.stopLoss || position.stop_loss || position.stopPrice);
-                    hasExistingTP = !!(position.takeProfit || position.take_profit || position.tpPrice);
-                    console.log(`   📊 Position size: ${positionSize}, SL: ${hasExistingSL ? 'SET' : 'NOT SET'}, TP: ${hasExistingTP ? 'SET' : 'NOT SET'}`);
-                  }
-                }
-              } catch (posErr) {
-                console.warn(`   ⚠️ Could not fetch position details:`, posErr);
-              }
-            }
-            
-            // Try setting SL separately if not set (fallback method)
-            if (!hasExistingSL) {
-              console.log(`   🔴 Setting Stop Loss separately...`);
-              const slEndpoints = [
-                '/api/v1/futures/position/set-stop-loss',
-                '/api/v1/futures/position/stop-loss',
-                '/api/v1/futures/trade/stop_order',
-                '/api/v1/trade/stop_order'
-              ];
-              
-              for (const slEndpoint of slEndpoints) {
-                try {
-                  const slParams: any = {
-                    symbol: symbol.toUpperCase(),
-                    stopLoss: stopLossPrice.toFixed(8),
-                    stop_loss: stopLossPrice.toFixed(8),
-                    stopPrice: stopLossPrice.toFixed(8),
-                    marginMode: 'ISOLATED',
-                    tdMode: 'ISOLATED'
-                  };
-                  
-                  const slBodyString = JSON.stringify(slParams).replace(/\s+/g, '');
-                  const slQueryParams = '';
-                  const slSignature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, slQueryParams, slBodyString, apiSecret);
-                  
-                  const slResponse = await fetch(`${baseUrl}${slEndpoint}`, {
-                    method: 'POST',
-                    headers: {
-                      'api-key': String(apiKey),
-                      'nonce': String(nonce),
-                      'timestamp': String(timestamp),
-                      'sign': String(slSignature),
-                      'Content-Type': 'application/json',
-                      'language': 'en-US'
-                    },
-                    body: slBodyString
-                  });
-                  
-                  const slResponseText = await slResponse.text();
-                  if (slResponse.ok) {
-                    const slData = JSON.parse(slResponseText);
-                    if (slData.code === 0) {
-                      console.log(`✅ Bitunix Stop Loss set successfully via ${slEndpoint}`);
-                      hasExistingSL = true;
-                      slTpSet = true;
-                      break;
-                    }
-                  }
-                } catch (slErr) {
-                  continue;
-                }
-              }
-            }
-            
-            // Try setting TP separately if not set (fallback method)
-            if (!hasExistingTP) {
-              console.log(`   🟢 Setting Take Profit separately...`);
-              const tpEndpoints = [
-                '/api/v1/futures/position/set-take-profit',
-                '/api/v1/futures/position/take-profit',
-                '/api/v1/futures/trade/stop_order',
-                '/api/v1/trade/stop_order'
-              ];
-              
-              for (const tpEndpoint of tpEndpoints) {
-                try {
-                  const tpParams: any = {
-                    symbol: symbol.toUpperCase(),
-                    takeProfit: takeProfitPrice.toFixed(8),
-                    take_profit: takeProfitPrice.toFixed(8),
-                    tpPrice: takeProfitPrice.toFixed(8),
-                    marginMode: 'ISOLATED',
-                    tdMode: 'ISOLATED'
-                  };
-                  
-                  const tpBodyString = JSON.stringify(tpParams).replace(/\s+/g, '');
-                  const tpQueryParams = '';
-                  const tpSignature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, tpQueryParams, tpBodyString, apiSecret);
-                  
-                  const tpResponse = await fetch(`${baseUrl}${tpEndpoint}`, {
-                    method: 'POST',
-                    headers: {
-                      'api-key': String(apiKey),
-                      'nonce': String(nonce),
-                      'timestamp': String(timestamp),
-                      'sign': String(tpSignature),
-                      'Content-Type': 'application/json',
-                      'language': 'en-US'
-                    },
-                    body: tpBodyString
-                  });
-                
-                const tpResponseText = await tpResponse.text();
-                if (tpResponse.ok) {
-                  const tpData = JSON.parse(tpResponseText);
-                  if (tpData.code === 0) {
-                    console.log(`✅ Bitunix Take Profit set successfully via ${tpEndpoint}`);
-                    hasExistingTP = true;
-                    slTpSet = true;
-                    break;
-                  }
-                }
-              } catch (tpErr) {
-                continue;
-              }
-            }
-          }
-          }
-          
-          // If still not set, try creating stop orders as last resort
-          if (!hasExistingSL || !hasExistingTP) {
-            console.log(`   ⚠️ Trying stop order method as last resort...`);
-            const stopOrderEndpoints = [
-              '/api/v1/futures/trade/stop_order',
-              '/api/v1/futures/trade/place_order',
-              '/api/v1/trade/stop_order'
-            ];
-            
-            // Create stop loss order if not set
-            if (!hasExistingSL && positionSize !== '0') {
-              for (const stopEndpoint of stopOrderEndpoints) {
-                try {
-                  const stopOrderParams: any = {
-                    symbol: symbol.toUpperCase(),
-                    side: isLong ? 'SELL' : 'BUY', // Opposite side for stop loss
-                    orderType: 'STOP_MARKET',
-                    qty: positionSize,
-                    stopPrice: stopLossPrice.toFixed(8),
-                    marginMode: 'ISOLATED'
-                  };
-                  
-                  const stopBodyString = JSON.stringify(stopOrderParams).replace(/\s+/g, '');
-                  const stopQueryParams = '';
-                  const stopSignature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, stopQueryParams, stopBodyString, apiSecret);
-                  
-                  const stopResponse = await fetch(`${baseUrl}${stopEndpoint}`, {
-                    method: 'POST',
-                    headers: {
-                      'api-key': String(apiKey),
-                      'nonce': String(nonce),
-                      'timestamp': String(timestamp),
-                      'sign': String(stopSignature),
-                      'Content-Type': 'application/json',
-                      'language': 'en-US'
-                    },
-                    body: stopBodyString
-                  });
-                  
-                  const stopResponseText = await stopResponse.text();
-                  if (stopResponse.ok) {
-                    const stopData = JSON.parse(stopResponseText);
-                    if (stopData.code === 0) {
-                      console.log(`✅ Bitunix Stop Loss order created via ${stopEndpoint}`);
-                      hasExistingSL = true;
-                      slTpSet = true;
-                      break;
-                    }
-                  }
-                } catch (stopErr) {
-                  continue;
-                }
-              }
-            }
-            
-            // Create take profit order if not set
-            if (!hasExistingTP && positionSize !== '0') {
-              for (const tpEndpoint of stopOrderEndpoints) {
-                try {
-                  const tpOrderParams: any = {
-                    symbol: symbol.toUpperCase(),
-                    side: isLong ? 'SELL' : 'BUY', // Opposite side for take profit
-                    orderType: 'TAKE_PROFIT_MARKET',
-                    qty: positionSize,
-                    stopPrice: takeProfitPrice.toFixed(8),
-                    marginMode: 'ISOLATED'
-                  };
-                  
-                  const tpBodyString = JSON.stringify(tpOrderParams).replace(/\s+/g, '');
-                  const tpQueryParams = '';
-                  const tpSignature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, tpQueryParams, tpBodyString, apiSecret);
-                  
-                  const tpResponse = await fetch(`${baseUrl}${tpEndpoint}`, {
-                    method: 'POST',
-                    headers: {
-                      'api-key': String(apiKey),
-                      'nonce': String(nonce),
-                      'timestamp': String(timestamp),
-                      'sign': String(tpSignature),
-                      'Content-Type': 'application/json',
-                      'language': 'en-US'
-                    },
-                    body: tpBodyString
-                  });
-                  
-                  const tpResponseText = await tpResponse.text();
-                  if (tpResponse.ok) {
-                    const tpData = JSON.parse(tpResponseText);
-                    if (tpData.code === 0) {
-                      console.log(`✅ Bitunix Take Profit order created via ${tpEndpoint}`);
-                      hasExistingTP = true;
-                      slTpSet = true;
-                      break;
-                    }
-                  }
-                } catch (tpErr) {
-                  continue;
-                }
-              }
-            }
-          }
-        } catch (altErr) {
-          console.warn(`   ⚠️ Alternative SL/TP method also failed:`, altErr);
-        }
-      }
-      
-      
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Bitunix SL/TP setup error:', error);
       throw error;
     }

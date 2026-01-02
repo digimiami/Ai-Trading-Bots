@@ -1517,6 +1517,42 @@ All settings have been applied to your bot configuration.`;
               
               {showAdvanced && (
                 <div className="mt-6 space-y-6">
+                  {/* Always Trade Mode */}
+                  <div className="border-l-4 border-red-500 pl-4 bg-red-50 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex-1">
+                        <h3 className="text-md font-semibold text-gray-900 mb-1 flex items-center gap-2">
+                          🚀 Always Trade Mode
+                          <HelpTooltip text="When enabled, the bot will trade on EVERY execution cycle regardless of market conditions (RSI, ADX, EMA, etc.). Trade direction is determined by RSI: RSI > 50 = SELL, RSI ≤ 50 = BUY. ⚠️ WARNING: This will generate many trades - use with caution and proper risk management!" />
+                        </h3>
+                        <p className="text-sm text-gray-600">
+                          Bypass all strategy conditions and trade on every cycle. Trade direction based on RSI.
+                        </p>
+                        {(advancedConfig as any).always_trade && (
+                          <div className="mt-2 p-2 bg-yellow-100 border border-yellow-400 rounded text-xs text-yellow-800">
+                            <i className="ri-alert-line mr-1"></i>
+                            <strong>Warning:</strong> Always Trade mode is enabled. The bot will trade frequently. Ensure you have proper risk limits set (max trades per day, max concurrent positions, etc.).
+                          </div>
+                        )}
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer ml-4">
+                        <input
+                          type="checkbox"
+                          checked={(advancedConfig as any).always_trade || false}
+                          onChange={(e) => {
+                            setAdvancedConfig(prev => ({
+                              ...prev,
+                              always_trade: e.target.checked,
+                              type: e.target.checked ? 'always_trade' : undefined
+                            } as any));
+                          }}
+                          className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-red-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
+                      </label>
+                    </div>
+                  </div>
+
                   {/* Directional Bias */}
                   <div className="border-l-4 border-purple-500 pl-4">
                     <h3 className="text-md font-semibold text-gray-800 mb-3">🎯 Directional Bias</h3>
