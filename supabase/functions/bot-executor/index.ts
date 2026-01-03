@@ -2946,34 +2946,52 @@ class BotExecutor {
           }
         }
         
+        // 🚀 ALWAYS TRADE MODE: Bypass cooldown and trading hours checks
+        const config = bot?.strategy_config || {};
+        const alwaysTrade = config.always_trade === true || 
+                            strategy.always_trade === true ||
+                            strategy.type === 'always_trade' ||
+                            strategy.name === 'Always Trade Strategy' ||
+                            strategy.name === 'Trade All Conditions';
+        
         // ⏱️ COOLDOWN BARS CHECK - Check if enough bars have passed since last trade (for paper trading too)
-        const cooldownCheck = await this.checkCooldownBars(bot);
-        if (!cooldownCheck.canTrade) {
-          console.log(`⏸️ [PAPER] Cooldown active for ${bot.name}: ${cooldownCheck.reason}`);
-          await this.addBotLog(bot.id, {
-            level: 'info',
-            category: 'system',
-            message: `📝 [PAPER] Cooldown active: ${cooldownCheck.reason}`,
-            details: { ...cooldownCheck, paper_trading: true }
-          });
-          // Update paper positions but don't trade (with 20s time budget)
-          await paperExecutor.updatePaperPositions(bot.id, Date.now(), 20000);
-          return; // Stop execution - wait for cooldown
+        // Skip cooldown check if Always Trade mode is enabled
+        if (!alwaysTrade) {
+          const cooldownCheck = await this.checkCooldownBars(bot);
+          if (!cooldownCheck.canTrade) {
+            console.log(`⏸️ [PAPER] Cooldown active for ${bot.name}: ${cooldownCheck.reason}`);
+            await this.addBotLog(bot.id, {
+              level: 'info',
+              category: 'system',
+              message: `📝 [PAPER] Cooldown active: ${cooldownCheck.reason}`,
+              details: { ...cooldownCheck, paper_trading: true }
+            });
+            // Update paper positions but don't trade (with 20s time budget)
+            await paperExecutor.updatePaperPositions(bot.id, Date.now(), 20000);
+            return; // Stop execution - wait for cooldown
+          }
+        } else {
+          console.log(`🚀 [PAPER] Always Trade mode enabled - skipping cooldown check`);
         }
         
         // 🕐 TRADING HOURS CHECK - Check if current hour is in allowed trading hours (for paper trading too)
-        const tradingHoursCheck = this.checkTradingHours(bot);
-        if (!tradingHoursCheck.canTrade) {
-          console.log(`🕐 [PAPER] Outside trading hours for ${bot.name}: ${tradingHoursCheck.reason}`);
-          await this.addBotLog(bot.id, {
-            level: 'info',
-            category: 'system',
-            message: `📝 [PAPER] Outside trading hours: ${tradingHoursCheck.reason}`,
-            details: { ...tradingHoursCheck, paper_trading: true }
-          });
-          // Update paper positions but don't trade (with 20s time budget)
-          await paperExecutor.updatePaperPositions(bot.id, Date.now(), 20000);
-          return; // Stop execution - outside allowed hours
+        // Skip trading hours check if Always Trade mode is enabled
+        if (!alwaysTrade) {
+          const tradingHoursCheck = this.checkTradingHours(bot);
+          if (!tradingHoursCheck.canTrade) {
+            console.log(`🕐 [PAPER] Outside trading hours for ${bot.name}: ${tradingHoursCheck.reason}`);
+            await this.addBotLog(bot.id, {
+              level: 'info',
+              category: 'system',
+              message: `📝 [PAPER] Outside trading hours: ${tradingHoursCheck.reason}`,
+              details: { ...tradingHoursCheck, paper_trading: true }
+            });
+            // Update paper positions but don't trade (with 20s time budget)
+            await paperExecutor.updatePaperPositions(bot.id, Date.now(), 20000);
+            return; // Stop execution - outside allowed hours
+          }
+        } else {
+          console.log(`🚀 [PAPER] Always Trade mode enabled - skipping trading hours check`);
         }
         
         // Ensure shouldTrade always has a reason
@@ -2992,10 +3010,11 @@ class BotExecutor {
         
         if (shouldTrade.shouldTrade) {
           // Double check: don't open multiple positions for the same symbol/bot if not intended
+          // Skip max concurrent check if Always Trade mode is enabled (but still respect it as a soft limit)
           const openPositions = await this.getOpenPositions(bot.id, true);
           const maxConcurrent = this.getMaxConcurrent(bot);
           
-          if (openPositions >= maxConcurrent) {
+          if (!alwaysTrade && openPositions >= maxConcurrent) {
             console.log(`⏸️ [PAPER] Max concurrent positions (${openPositions}/${maxConcurrent}) reached for ${bot.name}`);
             await this.addBotLog(bot.id, {
               level: 'info',
@@ -3004,6 +3023,9 @@ class BotExecutor {
               details: { ...shouldTrade, paper_trading: true, open_positions: openPositions, max_concurrent: maxConcurrent }
             });
           } else {
+            if (alwaysTrade && openPositions >= maxConcurrent) {
+              console.log(`⚠️ [PAPER] Always Trade mode: Max concurrent positions (${openPositions}/${maxConcurrent}) reached, but proceeding anyway`);
+            }
             await paperExecutor.executePaperTrade(bot, shouldTrade);
           }
         } else {
@@ -3039,70 +3061,111 @@ class BotExecutor {
         }
       });
       
-      // ⏱️ COOLDOWN BARS CHECK - Check if enough bars have passed since last trade
-      console.log(`⏱️ [${bot.name}] Checking cooldown bars...`);
-      await this.addBotLog(bot.id, {
-        level: 'info',
-        category: 'system',
-        message: `⏱️ Checking cooldown bars...`,
-        details: { step: 'cooldown_check', bot_name: bot.name }
-      });
-      
-      let cooldownCheck;
-      try {
-        cooldownCheck = await this.checkCooldownBars(bot);
-        console.log(`⏱️ [${bot.name}] Cooldown check result:`, JSON.stringify(cooldownCheck, null, 2));
-      } catch (cooldownError) {
-        console.error(`❌ [${bot.name}] Error during cooldown check:`, cooldownError);
-        await this.addBotLog(bot.id, {
-          level: 'error',
-          category: 'system',
-          message: `❌ Error checking cooldown: ${cooldownError instanceof Error ? cooldownError.message : String(cooldownError)}`,
-          details: { step: 'cooldown_check', error: cooldownError instanceof Error ? cooldownError.stack : String(cooldownError) }
-        });
-        // On error, allow trading (fail open)
-        cooldownCheck = { canTrade: true, reason: 'Cooldown check error - allowing trade' };
+      // 🚀 ALWAYS TRADE MODE: Check if we should bypass cooldown and trading hours
+      const config = bot?.strategy_config || {};
+      let strategy = bot.strategy;
+      if (typeof strategy === 'string') {
+        try {
+          strategy = JSON.parse(strategy);
+          if (typeof strategy === 'string') {
+            strategy = JSON.parse(strategy);
+          }
+        } catch (error) {
+          strategy = {};
+        }
       }
+      const alwaysTrade = config.always_trade === true || 
+                          strategy.always_trade === true ||
+                          strategy.type === 'always_trade' ||
+                          strategy.name === 'Always Trade Strategy' ||
+                          strategy.name === 'Trade All Conditions';
       
-      if (!cooldownCheck.canTrade) {
-        console.log(`⏸️ Cooldown active for ${bot.name}: ${cooldownCheck.reason}`);
+      // ⏱️ COOLDOWN BARS CHECK - Check if enough bars have passed since last trade
+      // Skip cooldown check if Always Trade mode is enabled
+      if (!alwaysTrade) {
+        console.log(`⏱️ [${bot.name}] Checking cooldown bars...`);
         await this.addBotLog(bot.id, {
           level: 'info',
           category: 'system',
-          message: `⏸️ Cooldown active: ${cooldownCheck.reason}`,
-          details: { ...cooldownCheck, step: 'cooldown_check', stopped: true }
+          message: `⏱️ Checking cooldown bars...`,
+          details: { step: 'cooldown_check', bot_name: bot.name }
         });
-        return; // Stop execution - wait for cooldown
+        
+        let cooldownCheck;
+        try {
+          cooldownCheck = await this.checkCooldownBars(bot);
+          console.log(`⏱️ [${bot.name}] Cooldown check result:`, JSON.stringify(cooldownCheck, null, 2));
+        } catch (cooldownError) {
+          console.error(`❌ [${bot.name}] Error during cooldown check:`, cooldownError);
+          await this.addBotLog(bot.id, {
+            level: 'error',
+            category: 'system',
+            message: `❌ Error checking cooldown: ${cooldownError instanceof Error ? cooldownError.message : String(cooldownError)}`,
+            details: { step: 'cooldown_check', error: cooldownError instanceof Error ? cooldownError.stack : String(cooldownError) }
+          });
+          // On error, allow trading (fail open)
+          cooldownCheck = { canTrade: true, reason: 'Cooldown check error - allowing trade' };
+        }
+        
+        if (!cooldownCheck.canTrade) {
+          console.log(`⏸️ Cooldown active for ${bot.name}: ${cooldownCheck.reason}`);
+          await this.addBotLog(bot.id, {
+            level: 'info',
+            category: 'system',
+            message: `⏸️ Cooldown active: ${cooldownCheck.reason}`,
+            details: { ...cooldownCheck, step: 'cooldown_check', stopped: true }
+          });
+          return; // Stop execution - wait for cooldown
+        }
+        console.log(`✅ [${bot.name}] Cooldown check passed - can trade`);
+        await this.addBotLog(bot.id, {
+          level: 'info',
+          category: 'system',
+          message: `✅ Cooldown check passed - can trade`,
+          details: { step: 'cooldown_check', passed: true }
+        });
+      } else {
+        console.log(`🚀 [${bot.name}] Always Trade mode enabled - skipping cooldown check`);
+        await this.addBotLog(bot.id, {
+          level: 'info',
+          category: 'system',
+          message: `🚀 Always Trade mode enabled - skipping cooldown check`,
+          details: { step: 'cooldown_check', always_trade: true }
+        });
       }
-      console.log(`✅ [${bot.name}] Cooldown check passed - can trade`);
-      await this.addBotLog(bot.id, {
-        level: 'info',
-        category: 'system',
-        message: `✅ Cooldown check passed - can trade`,
-        details: { step: 'cooldown_check', passed: true }
-      });
       
       // 🕐 TRADING HOURS CHECK - Check if current hour is in allowed trading hours
-      console.log(`🕐 [${bot.name}] Checking trading hours...`);
-      await this.addBotLog(bot.id, {
-        level: 'info',
-        category: 'system',
-        message: `🕐 Checking trading hours...`,
-        details: { step: 'trading_hours_check', bot_name: bot.name }
-      });
-      
-      const tradingHoursCheck = this.checkTradingHours(bot);
-      console.log(`🕐 [${bot.name}] Trading hours check result:`, JSON.stringify(tradingHoursCheck, null, 2));
-      
-      if (!tradingHoursCheck.canTrade) {
-        console.log(`🕐 Outside trading hours for ${bot.name}: ${tradingHoursCheck.reason}`);
+      // Skip trading hours check if Always Trade mode is enabled
+      if (!alwaysTrade) {
+        console.log(`🕐 [${bot.name}] Checking trading hours...`);
         await this.addBotLog(bot.id, {
           level: 'info',
           category: 'system',
-          message: `🕐 Outside trading hours: ${tradingHoursCheck.reason}`,
-          details: { ...tradingHoursCheck, step: 'trading_hours_check', stopped: true }
+          message: `🕐 Checking trading hours...`,
+          details: { step: 'trading_hours_check', bot_name: bot.name }
         });
-        return; // Stop execution - outside allowed hours
+        
+        const tradingHoursCheck = this.checkTradingHours(bot);
+        console.log(`🕐 [${bot.name}] Trading hours check result:`, JSON.stringify(tradingHoursCheck, null, 2));
+        
+        if (!tradingHoursCheck.canTrade) {
+          console.log(`🕐 Outside trading hours for ${bot.name}: ${tradingHoursCheck.reason}`);
+          await this.addBotLog(bot.id, {
+            level: 'info',
+            category: 'system',
+            message: `🕐 Outside trading hours: ${tradingHoursCheck.reason}`,
+            details: { ...tradingHoursCheck, step: 'trading_hours_check', stopped: true }
+          });
+          return; // Stop execution - outside allowed hours
+        }
+      } else {
+        console.log(`🚀 [${bot.name}] Always Trade mode enabled - skipping trading hours check`);
+        await this.addBotLog(bot.id, {
+          level: 'info',
+          category: 'system',
+          message: `🚀 Always Trade mode enabled - skipping trading hours check`,
+          details: { step: 'trading_hours_check', always_trade: true }
+        });
       }
       console.log(`✅ [${bot.name}] Trading hours check passed - can trade`);
       await this.addBotLog(bot.id, {
