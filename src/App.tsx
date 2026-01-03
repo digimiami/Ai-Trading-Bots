@@ -107,7 +107,7 @@ function AppRoutes() {
             const hasApiKeys = data.apiKeys && data.apiKeys.length > 0;
             const currentPath = window.location.pathname;
             const settingsRoutes = ['/settings', '/auth', '/onboarding'];
-            const publicRoutes = ['/', '/market-dashboard', '/crypto-bubbles', '/crypto-news', '/contact', '/pricing'];
+            const publicRoutes = ['/', '/market-dashboard', '/crypto-bubbles', '/crypto-news', '/contact', '/pricing', '/privacy', '/terms', '/risk', '/cookies', '/disclaimer', '/adwords'];
             
             console.log('🔍 First-time login check:', { 
               hasApiKeys, 
@@ -150,7 +150,7 @@ function AppRoutes() {
     if (!loading) {
       const isOnboardingCompleted = localStorage.getItem('onboarding_completed');
       const currentPath = window.location.pathname;
-      const publicRoutes = ['/', '/auth', '/onboarding', '/market-dashboard', '/crypto-bubbles', '/crypto-news', '/contact'];
+      const publicRoutes = ['/', '/auth', '/onboarding', '/market-dashboard', '/crypto-bubbles', '/crypto-news', '/contact', '/pricing', '/privacy', '/terms', '/risk', '/cookies', '/disclaimer', '/adwords'];
       
       if (!ONBOARDING_ENABLED && !isOnboardingCompleted) {
         localStorage.setItem('onboarding_completed', 'true');
