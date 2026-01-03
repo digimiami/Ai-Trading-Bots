@@ -3063,22 +3063,15 @@ class BotExecutor {
       
       // 🚀 ALWAYS TRADE MODE: Check if we should bypass cooldown and trading hours
       const config = bot?.strategy_config || {};
-      let strategy = bot.strategy;
-      if (typeof strategy === 'string') {
-        try {
-          strategy = JSON.parse(strategy);
-          if (typeof strategy === 'string') {
-            strategy = JSON.parse(strategy);
-          }
-        } catch (error) {
-          strategy = {};
-        }
+      // Check Always Trade mode without declaring strategy variable (it's declared later)
+      let alwaysTrade = config.always_trade === true;
+      if (!alwaysTrade && bot.strategy) {
+        // Quick check of strategy string/object for always_trade indicators
+        const strategyStr = typeof bot.strategy === 'string' ? bot.strategy : JSON.stringify(bot.strategy);
+        alwaysTrade = strategyStr.includes('always_trade') || 
+                      strategyStr.includes('Always Trade Strategy') ||
+                      strategyStr.includes('Trade All Conditions');
       }
-      const alwaysTrade = config.always_trade === true || 
-                          strategy.always_trade === true ||
-                          strategy.type === 'always_trade' ||
-                          strategy.name === 'Always Trade Strategy' ||
-                          strategy.name === 'Trade All Conditions';
       
       // ⏱️ COOLDOWN BARS CHECK - Check if enough bars have passed since last trade
       // Skip cooldown check if Always Trade mode is enabled
