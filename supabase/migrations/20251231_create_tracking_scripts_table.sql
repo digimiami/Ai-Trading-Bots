@@ -18,10 +18,20 @@ CREATE TABLE IF NOT EXISTS public.tracking_scripts (
 ALTER TABLE public.tracking_scripts ENABLE ROW LEVEL SECURITY;
 
 -- Create RLS policies
--- Only service role and admin can manage tracking scripts
-CREATE POLICY "Service role can manage tracking scripts" ON public.tracking_scripts
-FOR ALL USING (EXISTS (SELECT 1 FROM auth.users WHERE id = auth.uid() AND is_service_role = TRUE))
-WITH CHECK (EXISTS (SELECT 1 FROM auth.users WHERE id = auth.uid() AND is_service_role = TRUE));
+-- Admins can manage tracking scripts (service role bypasses RLS automatically)
+CREATE POLICY "Admins can manage tracking scripts" ON public.tracking_scripts
+FOR ALL USING (
+  EXISTS (
+    SELECT 1 FROM users 
+    WHERE id = auth.uid() AND role = 'admin'
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM users 
+    WHERE id = auth.uid() AND role = 'admin'
+  )
+);
 
 -- Public read for active scripts (needed by the frontend during signup)
 CREATE POLICY "Public can read active tracking scripts" ON public.tracking_scripts
