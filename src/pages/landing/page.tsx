@@ -572,6 +572,15 @@ export default function LandingPage() {
             <button onClick={() => navigate('/terms')} className="text-white transition hover:text-blue-300">
               Terms
             </button>
+            <button onClick={() => navigate('/risk')} className="text-white transition hover:text-blue-300">
+              Risk Disclosure
+            </button>
+            <button onClick={() => navigate('/cookies')} className="text-white transition hover:text-blue-300">
+              Cookies
+            </button>
+            <button onClick={() => navigate('/disclaimer')} className="text-white transition hover:text-blue-300">
+              Disclaimer
+            </button>
           </div>
         </div>
       </footer>

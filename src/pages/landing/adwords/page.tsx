@@ -479,18 +479,28 @@ export default function AdWordsLandingPage() {
               <h4 className="text-white font-semibold mb-4">Legal</h4>
               <ul className="space-y-2 text-sm">
                 <li>
-                  <button onClick={() => navigate('/terms')} className="hover:text-white transition">
-                    Terms of Service
-                  </button>
-                </li>
-                <li>
                   <button onClick={() => navigate('/privacy')} className="hover:text-white transition">
                     Privacy Policy
                   </button>
                 </li>
                 <li>
+                  <button onClick={() => navigate('/terms')} className="hover:text-white transition">
+                    Terms of Service
+                  </button>
+                </li>
+                <li>
                   <button onClick={() => navigate('/risk')} className="hover:text-white transition">
                     Risk Disclosure
+                  </button>
+                </li>
+                <li>
+                  <button onClick={() => navigate('/cookies')} className="hover:text-white transition">
+                    Cookie Policy
+                  </button>
+                </li>
+                <li>
+                  <button onClick={() => navigate('/disclaimer')} className="hover:text-white transition">
+                    Disclaimer
                   </button>
                 </li>
               </ul>
