@@ -1677,6 +1677,13 @@ serve(async (req) => {
 
           if (scriptsError) {
             console.error('Error fetching tracking scripts:', scriptsError)
+            // Check if table doesn't exist (PGRST116 = relation does not exist)
+            if (scriptsError.code === 'PGRST116' || scriptsError.message?.includes('does not exist') || scriptsError.message?.includes('relation')) {
+              console.warn('tracking_scripts table does not exist, returning empty array')
+              return new Response(JSON.stringify({ scripts: [] }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              })
+            }
             return new Response(JSON.stringify({ 
               error: 'Failed to fetch tracking scripts',
               details: scriptsError.message,
@@ -1691,9 +1698,16 @@ serve(async (req) => {
           return new Response(JSON.stringify({ scripts: scripts || [] }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
-        } catch (err) {
+        } catch (err: any) {
           console.error('Unexpected error in getTrackingScripts:', err)
-          throw err
+          return new Response(JSON.stringify({ 
+            error: 'Failed to fetch tracking scripts',
+            details: err?.message || String(err),
+            scripts: []
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
         }
       }
 
@@ -1719,6 +1733,17 @@ serve(async (req) => {
 
           if (createError) {
             console.error('Error creating tracking script:', createError)
+            // Check if table doesn't exist
+            if (createError.code === 'PGRST116' || createError.message?.includes('does not exist') || createError.message?.includes('relation')) {
+              return new Response(JSON.stringify({ 
+                error: 'Tracking scripts table does not exist. Please run the migration: 20251231_create_tracking_scripts_table.sql',
+                details: createError.message,
+                code: createError.code
+              }), {
+                status: 500,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              })
+            }
             return new Response(JSON.stringify({ 
               error: 'Failed to create tracking script',
               details: createError.message,
@@ -1733,9 +1758,16 @@ serve(async (req) => {
           return new Response(JSON.stringify({ success: true, script }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
-        } catch (err) {
+        } catch (err: any) {
           console.error('Unexpected error in createTrackingScript:', err)
-          throw err
+          return new Response(JSON.stringify({ 
+            error: 'Failed to create tracking script',
+            details: err?.message || String(err),
+            stack: err?.stack
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
         }
       }
 
@@ -1761,6 +1793,17 @@ serve(async (req) => {
 
           if (updateError) {
             console.error('Error updating tracking script:', updateError)
+            // Check if table doesn't exist
+            if (updateError.code === 'PGRST116' || updateError.message?.includes('does not exist') || updateError.message?.includes('relation')) {
+              return new Response(JSON.stringify({ 
+                error: 'Tracking scripts table does not exist. Please run the migration: 20251231_create_tracking_scripts_table.sql',
+                details: updateError.message,
+                code: updateError.code
+              }), {
+                status: 500,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+              })
+            }
             return new Response(JSON.stringify({ 
               error: 'Failed to update tracking script',
               details: updateError.message,
@@ -1775,9 +1818,16 @@ serve(async (req) => {
           return new Response(JSON.stringify({ success: true, script }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
-        } catch (err) {
+        } catch (err: any) {
           console.error('Unexpected error in updateTrackingScript:', err)
-          throw err
+          return new Response(JSON.stringify({ 
+            error: 'Failed to update tracking script',
+            details: err?.message || String(err),
+            stack: err?.stack
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
         }
       }
 

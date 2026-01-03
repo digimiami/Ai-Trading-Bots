@@ -81,7 +81,7 @@ export default function StatsGrid() {
       // Build query for paper trades - fetch all trades for user, optionally filter by bot_id
       let paperTradesQuery = supabase
         .from('paper_trading_trades')
-        .select('id, status, pnl, fee, executed_at, created_at, bot_id')
+        .select('id, status, pnl, fees, executed_at, created_at, bot_id')
         .eq('user_id', user.id);
       
       // Only filter by bot_id if we have bots, otherwise get all user trades
@@ -127,8 +127,11 @@ export default function StatsGrid() {
       }, 0);
       
       // Calculate fees - handle both numeric and string values
+      // Note: paper_trading_trades uses 'fees' (plural), trades uses 'fee' (singular)
       const totalFees = allTrades.reduce((sum, t) => {
-        const fee = typeof t.fee === 'number' ? t.fee : parseFloat(t.fee || '0') || 0;
+        const fee = typeof t.fee === 'number' ? t.fee : 
+                   typeof t.fees === 'number' ? t.fees : 
+                   parseFloat(t.fee || t.fees || '0') || 0;
         return sum + fee;
       }, 0);
       
