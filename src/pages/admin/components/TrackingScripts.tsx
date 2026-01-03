@@ -27,11 +27,32 @@ export default function TrackingScripts() {
       const { data, error } = await supabase.functions.invoke('admin-management-enhanced', {
         body: { action: 'getTrackingScripts' }
       });
-      if (error) throw error;
-      setScripts(data.scripts || []);
+      
+      if (error) {
+        console.error('Error fetching tracking scripts:', error);
+        throw error;
+      }
+      
+      // Check if response contains an error
+      if (data?.error) {
+        console.error('Function returned error:', data);
+        const errorMsg = data.details || data.error || 'Failed to fetch tracking scripts';
+        // If table doesn't exist, show helpful message
+        if (errorMsg.includes('does not exist') || errorMsg.includes('migration')) {
+          alert(`⚠️ Tracking scripts table not found. Please run the migration: create_tracking_scripts_table.sql\n\nError: ${errorMsg}`);
+        } else {
+          alert(`Failed to fetch tracking scripts: ${errorMsg}`);
+        }
+        setScripts([]);
+        return;
+      }
+      
+      setScripts(data?.scripts || []);
     } catch (err: any) {
       console.error('Error fetching tracking scripts:', err);
-      alert('Failed to fetch tracking scripts');
+      const errorMsg = err.message || err.error || 'Failed to fetch tracking scripts';
+      alert(`Failed to fetch tracking scripts: ${errorMsg}`);
+      setScripts([]);
     } finally {
       setLoading(false);
     }
@@ -48,18 +69,36 @@ export default function TrackingScripts() {
     setSaving(true);
     try {
       const action = editingScript.id ? 'updateTrackingScript' : 'createTrackingScript';
-      const { error } = await supabase.functions.invoke('admin-management-enhanced', {
+      const { data, error } = await supabase.functions.invoke('admin-management-enhanced', {
         body: { action, ...editingScript }
       });
-      if (error) throw error;
       
-      alert(`Tracking script ${editingScript.id ? 'updated' : 'created'} successfully!`);
+      if (error) {
+        console.error('Error saving tracking script:', error);
+        throw error;
+      }
+      
+      // Check if response contains an error
+      if (data?.error) {
+        console.error('Function returned error:', data);
+        const errorMsg = data.details || data.error || 'Failed to save tracking script';
+        // If table doesn't exist, show helpful message
+        if (errorMsg.includes('does not exist') || errorMsg.includes('migration')) {
+          alert(`⚠️ Tracking scripts table not found. Please run the migration: create_tracking_scripts_table.sql\n\nError: ${errorMsg}`);
+        } else {
+          alert(`Failed to save tracking script: ${errorMsg}`);
+        }
+        return;
+      }
+      
+      alert(`✅ Tracking script ${editingScript.id ? 'updated' : 'created'} successfully!`);
       setShowModal(false);
       setEditingScript(null);
       fetchScripts();
     } catch (err: any) {
       console.error('Error saving tracking script:', err);
-      alert('Failed to save tracking script');
+      const errorMsg = err.message || err.error || err.details || 'Failed to save tracking script';
+      alert(`Failed to save tracking script: ${errorMsg}`);
     } finally {
       setSaving(false);
     }

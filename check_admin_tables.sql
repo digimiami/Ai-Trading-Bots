@@ -24,6 +24,13 @@ SELECT EXISTS (
     AND table_name = 'bot_activity_logs'
 ) as bot_activity_logs_exists;
 
+-- Check if tracking_scripts table exists
+SELECT EXISTS (
+    SELECT FROM information_schema.tables 
+    WHERE table_schema = 'public' 
+    AND table_name = 'tracking_scripts'
+) as tracking_scripts_exists;
+
 -- Show all tables in public schema
 SELECT table_name 
 FROM information_schema.tables 
