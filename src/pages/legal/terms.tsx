@@ -5,7 +5,7 @@ import Button from '../../components/base/Button';
 const META = {
   title: 'Pablo Terms of Service | AI Trading Platform',
   description:
-    'Review the legal agreement that governs access to Pablo's automated trading bots, APIs, and analytics services.',
+    'Review the legal agreement that governs access to Pablo automated trading bots, APIs, and analytics services.',
 };
 
 export default function TermsPage() {
