@@ -14,6 +14,34 @@ interface TrackingScript {
   updated_at: string;
 }
 
+// Map event types to where they're placed
+const getEventPlacement = (eventType: string): { url: string; description: string } => {
+  const baseUrl = window.location.origin;
+  
+  switch (eventType) {
+    case 'signup':
+      return {
+        url: `${baseUrl}/auth`,
+        description: 'Auth page - after successful signup'
+      };
+    case 'payment':
+      return {
+        url: `${baseUrl}/subscription/success`,
+        description: 'Subscription success page - after payment completion'
+      };
+    case 'page_view':
+      return {
+        url: 'All pages',
+        description: 'All pages - on page load/view'
+      };
+    default:
+      return {
+        url: 'Unknown',
+        description: 'Unknown event type'
+      };
+  }
+};
+
 export default function TrackingScripts() {
   const [scripts, setScripts] = useState<TrackingScript[]>([]);
   const [loading, setLoading] = useState(false);
@@ -91,7 +119,8 @@ export default function TrackingScripts() {
         return;
       }
       
-      alert(`✅ Tracking script ${editingScript.id ? 'updated' : 'created'} successfully!`);
+      const placement = getEventPlacement(editingScript.event_type || 'signup');
+      alert(`✅ Tracking script ${editingScript.id ? 'updated' : 'created'} successfully!\n\n📍 Placement: ${placement.url}\n📝 ${placement.description}`);
       setShowModal(false);
       setEditingScript(null);
       fetchScripts();
@@ -160,36 +189,53 @@ export default function TrackingScripts() {
                 <tr className="bg-gray-100 text-gray-600 uppercase text-xs font-semibold">
                   <th className="px-4 py-3">Name</th>
                   <th className="px-4 py-3">Event Type</th>
+                  <th className="px-4 py-3">Placement</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Created</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {scripts.map((script) => (
-                  <tr key={script.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-4 font-medium">{script.name}</td>
-                    <td className="px-4 py-4 capitalize">{script.event_type}</td>
-                    <td className="px-4 py-4">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        script.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        {script.is_active ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4 text-sm text-gray-500">
-                      {new Date(script.created_at).toLocaleDateString()}
-                    </td>
-                    <td className="px-4 py-4 text-right space-x-2">
-                      <Button variant="secondary" size="sm" onClick={() => openModal(script)}>
-                        <i className="ri-edit-line"></i>
-                      </Button>
-                      <Button variant="secondary" size="sm" onClick={() => handleDelete(script.id)} className="text-red-600 hover:text-red-700">
-                        <i className="ri-delete-bin-line"></i>
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
+                {scripts.map((script) => {
+                  const placement = getEventPlacement(script.event_type);
+                  return (
+                    <tr key={script.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-4 font-medium">{script.name}</td>
+                      <td className="px-4 py-4 capitalize">{script.event_type}</td>
+                      <td className="px-4 py-4">
+                        <div className="flex flex-col">
+                          <a 
+                            href={placement.url.startsWith('http') ? placement.url : undefined}
+                            target={placement.url.startsWith('http') ? '_blank' : undefined}
+                            rel={placement.url.startsWith('http') ? 'noopener noreferrer' : undefined}
+                            className="text-blue-600 hover:text-blue-800 hover:underline text-sm font-medium"
+                          >
+                            {placement.url}
+                          </a>
+                          <span className="text-xs text-gray-500 mt-1">{placement.description}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          script.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {script.is_active ? 'Active' : 'Inactive'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 text-sm text-gray-500">
+                        {new Date(script.created_at).toLocaleDateString()}
+                      </td>
+                      <td className="px-4 py-4 text-right space-x-2">
+                        <Button variant="secondary" size="sm" onClick={() => openModal(script)}>
+                          <i className="ri-edit-line"></i>
+                        </Button>
+                        <Button variant="secondary" size="sm" onClick={() => handleDelete(script.id)} className="text-red-600 hover:text-red-700">
+                          <i className="ri-delete-bin-line"></i>
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -230,6 +276,30 @@ export default function TrackingScripts() {
                   <option value="page_view">Page View</option>
                   <option value="payment">Payment Successful</option>
                 </select>
+                {editingScript.event_type && (
+                  <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-start gap-2">
+                      <i className="ri-information-line text-blue-600 mt-0.5"></i>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-blue-900 mb-1">📍 Script Placement:</p>
+                        <p className="text-sm text-blue-700">
+                          <strong>URL:</strong>{' '}
+                          <a 
+                            href={getEventPlacement(editingScript.event_type).url.startsWith('http') ? getEventPlacement(editingScript.event_type).url : undefined}
+                            target={getEventPlacement(editingScript.event_type).url.startsWith('http') ? '_blank' : undefined}
+                            rel={getEventPlacement(editingScript.event_type).url.startsWith('http') ? 'noopener noreferrer' : undefined}
+                            className="text-blue-600 hover:text-blue-800 hover:underline font-mono"
+                          >
+                            {getEventPlacement(editingScript.event_type).url}
+                          </a>
+                        </p>
+                        <p className="text-sm text-blue-700 mt-1">
+                          <strong>When:</strong> {getEventPlacement(editingScript.event_type).description}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
