@@ -1,12 +1,16 @@
 import { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import Button from '../../components/base/Button';
 
 const META = {
   title: 'Pablo Terms of Service | AI Trading Platform',
   description:
-    'Review the legal agreement that governs access to Pablo’s automated trading bots, APIs, and analytics services.',
+    'Review the legal agreement that governs access to Pablo's automated trading bots, APIs, and analytics services.',
 };
 
 export default function TermsPage() {
+  const navigate = useNavigate();
+
   useEffect(() => {
     const previousTitle = document.title;
     document.title = META.title;
@@ -63,22 +67,46 @@ export default function TermsPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200">
-      <div className="mx-auto max-w-4xl px-6 py-20 space-y-10">
-        <header className="space-y-3">
-          <p className="text-xs uppercase tracking-[0.4em] text-blue-300/80">Legal</p>
-          <h1 className="text-3xl font-semibold text-white">Terms of Service</h1>
-          <p className="text-sm text-slate-400">Effective: {new Date().getFullYear()} • Pablo Autonomous Trading Systems</p>
-          <p className="text-base text-slate-300/80">
-            These terms govern access to Pablo’s automated trading platform, APIs, and associated services. They form a binding agreement between you (or your organization) and Pablo Trading Systems.
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+      {/* Header */}
+      <header className="bg-white shadow-sm border-b">
+        <div className="mx-auto max-w-7xl px-6 py-4">
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => navigate('/')}
+              className="flex items-center space-x-3 hover:opacity-80 transition-opacity"
+            >
+              <img 
+                src="https://dkawxgwdqiirgmmjbvhc.supabase.co/storage/v1/object/public/pablobots-logo/logo_no_bg.png" 
+                alt="Pablo Logo" 
+                className="h-10 w-10 object-contain"
+              />
+              <span className="text-gray-900 font-semibold">Pablo Trading</span>
+            </button>
+            <Button variant="secondary" size="sm" onClick={() => navigate('/auth')}>
+              Sign In
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-4xl px-6 py-12">
+        <header className="mb-8">
+          <p className="text-sm uppercase tracking-wider text-gray-500 mb-2">Legal</p>
+          <h1 className="text-4xl font-bold text-gray-900 mb-4">Terms of Service</h1>
+          <p className="text-sm text-gray-600">
+            Last Updated: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+          </p>
+          <p className="text-base text-gray-700 mt-4">
+            These terms govern access to Pablo's automated trading platform, APIs, and associated services. They form a binding agreement between you (or your organization) and Pablo Trading Systems.
           </p>
         </header>
 
         <section className="space-y-6">
           {sections.map((section) => (
-            <div key={section.title} className="rounded-2xl border border-slate-800/70 bg-slate-900/70 p-6 shadow-lg shadow-blue-500/5">
-              <h2 className="text-xl font-semibold text-white">{section.title}</h2>
-              <div className="mt-3 space-y-3 text-sm text-slate-300/80">
+            <div key={section.title} className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">{section.title}</h2>
+              <div className="space-y-3 text-gray-700">
                 {section.paragraphs.map((paragraph) => (
                   <p key={paragraph}>{paragraph}</p>
                 ))}
@@ -87,14 +115,90 @@ export default function TermsPage() {
           ))}
         </section>
 
-        <section className="rounded-2xl border border-slate-800/70 bg-slate-900/70 p-6 text-sm text-slate-300/80 shadow-lg shadow-blue-500/5">
-          <h2 className="text-lg font-semibold text-white">Governing Law & Contact</h2>
-          <p className="mt-3">
+        <section className="mt-6 bg-blue-50 rounded-lg border border-blue-200 p-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-3">Governing Law & Contact</h2>
+          <p className="text-gray-700">
             These terms are governed by the laws of the jurisdiction in which Pablo Trading Systems operates. Questions can be directed to{' '}
-            <span className="text-blue-300">legal@pablobots.net</span>.
+            <a href="mailto:legal@pablobots.net" className="text-blue-600 hover:text-blue-800 underline">
+              legal@pablobots.net
+            </a>.
           </p>
         </section>
-      </div>
+
+        <div className="mt-8 flex gap-4">
+          <Button variant="secondary" onClick={() => navigate('/privacy')}>
+            Privacy Policy
+          </Button>
+          <Button variant="secondary" onClick={() => navigate('/risk')}>
+            Risk Disclosure
+          </Button>
+          <Button variant="secondary" onClick={() => navigate('/')}>
+            Back to Home
+          </Button>
+        </div>
+      </main>
+
+      {/* Footer */}
+      <footer className="bg-gray-900 text-gray-400 py-8 mt-16">
+        <div className="mx-auto max-w-6xl px-6">
+          <div className="grid gap-6 md:grid-cols-4 text-sm">
+            <div>
+              <h4 className="text-white font-semibold mb-3">Legal</h4>
+              <ul className="space-y-2">
+                <li>
+                  <button onClick={() => navigate('/privacy')} className="hover:text-white transition">
+                    Privacy Policy
+                  </button>
+                </li>
+                <li>
+                  <button onClick={() => navigate('/terms')} className="hover:text-white transition">
+                    Terms of Service
+                  </button>
+                </li>
+                <li>
+                  <button onClick={() => navigate('/risk')} className="hover:text-white transition">
+                    Risk Disclosure
+                  </button>
+                </li>
+                <li>
+                  <button onClick={() => navigate('/cookies')} className="hover:text-white transition">
+                    Cookie Policy
+                  </button>
+                </li>
+              </ul>
+            </div>
+            <div>
+              <h4 className="text-white font-semibold mb-3">Platform</h4>
+              <ul className="space-y-2">
+                <li>
+                  <button onClick={() => navigate('/auth')} className="hover:text-white transition">
+                    Sign In
+                  </button>
+                </li>
+                <li>
+                  <button onClick={() => navigate('/pricing')} className="hover:text-white transition">
+                    Pricing
+                  </button>
+                </li>
+                <li>
+                  <button onClick={() => navigate('/contact')} className="hover:text-white transition">
+                    Contact
+                  </button>
+                </li>
+              </ul>
+            </div>
+            <div className="md:col-span-2">
+              <p className="text-xs mt-4">
+                © {new Date().getFullYear()} Pablo Trading Platform. All rights reserved.
+              </p>
+              <p className="text-xs mt-2">
+                Pablo is a software platform providing trading automation tools. We do not handle user funds. 
+                Trading involves substantial risk of loss.
+              </p>
+            </div>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

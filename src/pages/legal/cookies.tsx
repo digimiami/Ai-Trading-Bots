@@ -3,12 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import Button from '../../components/base/Button';
 
 const META = {
-  title: 'Pablo Privacy Policy | Autonomous Trading Bots',
+  title: 'Pablo Cookie Policy | Trading Platform',
   description:
-    'Understand how Pablo collects, stores, and protects information when you automate trading through our AI-powered platform.',
+    'Learn about how Pablo uses cookies and similar technologies to provide and improve our trading automation platform.',
 };
 
-export default function PrivacyPolicyPage() {
+export default function CookiePolicyPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -21,38 +21,46 @@ export default function PrivacyPolicyPage() {
 
   const sections = [
     {
-      heading: 'Data We Collect',
+      heading: 'What Are Cookies?',
       body: [
-        'Account identifiers (name, email, exchange account IDs).',
-        'Operational telemetry (bot configuration, execution metrics, latency statistics).',
-        'Billing and audit information as required for invoicing and compliance.',
-        'Optional datasets you supply for custom models or strategy backtests.',
+        'Cookies are small text files that are placed on your device when you visit our website. They help us provide you with a better experience by remembering your preferences and understanding how you use our platform.',
+        'We use both session cookies (which expire when you close your browser) and persistent cookies (which remain on your device until deleted or expired).',
       ],
     },
     {
-      heading: 'How Information Is Used',
+      heading: 'Types of Cookies We Use',
       body: [
-        'To operate, maintain, and optimize trading automation across supported exchanges.',
-        'To deliver analytics, audit ledgers, notifications, and security alerts.',
-        'To improve machine learning models in aggregate (never exposing individual strategies).',
-        'To comply with legal requests and risk-control obligations.',
+        {
+          title: 'Essential Cookies',
+          description: 'These cookies are necessary for the website to function properly. They enable core functionality such as security, network management, and accessibility. You cannot opt-out of these cookies.',
+        },
+        {
+          title: 'Analytics Cookies',
+          description: 'These cookies help us understand how visitors interact with our website by collecting and reporting information anonymously. This helps us improve our platform and user experience.',
+        },
+        {
+          title: 'Functional Cookies',
+          description: 'These cookies allow the website to remember choices you make (such as your username, language, or region) and provide enhanced, personalized features.',
+        },
+        {
+          title: 'Marketing Cookies',
+          description: 'These cookies are used to track visitors across websites to display relevant advertisements. They help us measure the effectiveness of our marketing campaigns.',
+        },
       ],
     },
     {
-      heading: 'Security Controls',
+      heading: 'Third-Party Cookies',
       body: [
-        'API credentials are encrypted at rest with hardware-backed keys.',
-        'Network segregation keeps execution infrastructure isolated from public endpoints.',
-        'Role-based permissions let you separate research, execution, and compliance access.',
-        'Continuous monitoring detects anomalies, credential misuse, or failed safeguards.',
+        'We may use third-party services that set their own cookies, such as analytics providers, advertising networks, and social media platforms. These third parties may use cookies to collect information about your online activities across different websites.',
+        'We do not control these third-party cookies. Please refer to their respective privacy policies for more information.',
       ],
     },
     {
-      heading: 'Your Rights',
+      heading: 'Managing Cookies',
       body: [
-        'Request export or deletion of stored personal data by contacting privacy@pablobots.net.',
-        'Revoke exchange keys or remove collaborators at any time from the security console.',
-        'Receive notice when policy changes materially affect data usage or sharing.',
+        'You can control and manage cookies in various ways. Most browsers allow you to refuse or accept cookies, and to delete cookies that have already been set.',
+        'You can manage your cookie preferences through our cookie consent banner when you first visit our website. You can also change your preferences at any time.',
+        'Please note that disabling certain cookies may impact the functionality of our platform and your user experience.',
       ],
     },
   ];
@@ -84,60 +92,56 @@ export default function PrivacyPolicyPage() {
       <main className="mx-auto max-w-4xl px-6 py-12">
         <header className="mb-8">
           <p className="text-sm uppercase tracking-wider text-gray-500 mb-2">Legal</p>
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">Privacy Policy</h1>
+          <h1 className="text-4xl font-bold text-gray-900 mb-4">Cookie Policy</h1>
           <p className="text-sm text-gray-600">
             Last Updated: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
           </p>
           <p className="text-base text-gray-700 mt-4">
-            This policy explains how Pablo collects, uses, and protects information when you use our trading automation
-            services. It applies to the Pablo web app, APIs, mobile interfaces, and any connected execution infrastructure.
+            This Cookie Policy explains how Pablo Trading Platform ("we", "our", or "us") uses cookies and similar technologies 
+            when you visit our website and use our trading automation platform.
           </p>
         </header>
 
-        <section className="space-y-6">
+        <section className="space-y-8">
           {sections.map((section) => (
             <div key={section.heading} className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">{section.heading}</h2>
-              <ul className="space-y-2 text-gray-700">
-                {section.body.map((item) => (
-                  <li key={item} className="flex items-start space-x-2">
-                    <span className="mt-1 text-blue-500">
-                      <i className="ri-checkbox-circle-fill" />
-                    </span>
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
+              <h2 className="text-2xl font-semibold text-gray-900 mb-4">{section.heading}</h2>
+              {Array.isArray(section.body) && section.body[0]?.title ? (
+                <div className="space-y-4">
+                  {section.body.map((item: any, index: number) => (
+                    <div key={index} className="border-l-4 border-blue-500 pl-4">
+                      <h3 className="font-semibold text-gray-900 mb-2">{item.title}</h3>
+                      <p className="text-gray-700">{item.description}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-3 text-gray-700">
+                  {section.body.map((item: string, index: number) => (
+                    <p key={index}>{item}</p>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </section>
 
-        <section className="mt-6 bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Data Retention & Transfers</h2>
+        <section className="mt-8 bg-blue-50 rounded-lg border border-blue-200 p-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-3">Contact Us</h2>
           <p className="text-gray-700">
-            We retain operational records for as long as required to support your trading automations, comply with legal obligations,
-            or resolve disputes. Residual backups may persist for up to 12 months. When we use subprocessors, we ensure they uphold
-            equivalent security and privacy commitments.
-          </p>
-        </section>
-
-        <section className="mt-6 bg-blue-50 rounded-lg border border-blue-200 p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-3">Contact</h2>
-          <p className="text-gray-700">
-            Reach our privacy team at{' '}
+            If you have any questions about our use of cookies, please contact us at{' '}
             <a href="mailto:privacy@pablobots.net" className="text-blue-600 hover:text-blue-800 underline">
               privacy@pablobots.net
-            </a>{' '}
-            for questions, data requests, or compliance documentation.
+            </a>
           </p>
         </section>
 
         <div className="mt-8 flex gap-4">
+          <Button variant="secondary" onClick={() => navigate('/privacy')}>
+            Privacy Policy
+          </Button>
           <Button variant="secondary" onClick={() => navigate('/terms')}>
             Terms of Service
-          </Button>
-          <Button variant="secondary" onClick={() => navigate('/cookies')}>
-            Cookie Policy
           </Button>
           <Button variant="secondary" onClick={() => navigate('/')}>
             Back to Home

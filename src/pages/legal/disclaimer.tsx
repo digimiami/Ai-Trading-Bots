@@ -3,12 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import Button from '../../components/base/Button';
 
 const META = {
-  title: 'Pablo Privacy Policy | Autonomous Trading Bots',
+  title: 'Pablo Disclaimer | Trading Platform',
   description:
-    'Understand how Pablo collects, stores, and protects information when you automate trading through our AI-powered platform.',
+    'Important disclaimer regarding the use of Pablo trading automation platform and cryptocurrency trading risks.',
 };
 
-export default function PrivacyPolicyPage() {
+export default function DisclaimerPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -19,40 +19,52 @@ export default function PrivacyPolicyPage() {
     };
   }, []);
 
-  const sections = [
+  const disclaimers = [
     {
-      heading: 'Data We Collect',
-      body: [
-        'Account identifiers (name, email, exchange account IDs).',
-        'Operational telemetry (bot configuration, execution metrics, latency statistics).',
-        'Billing and audit information as required for invoicing and compliance.',
-        'Optional datasets you supply for custom models or strategy backtests.',
+      title: 'No Investment Advice',
+      content: [
+        'Pablo Trading Platform is a software tool that provides trading automation services. We do not provide investment, financial, legal, or tax advice.',
+        'All trading decisions are made by you. You are solely responsible for evaluating the merits and risks associated with using our platform and any trading strategies you implement.',
       ],
     },
     {
-      heading: 'How Information Is Used',
-      body: [
-        'To operate, maintain, and optimize trading automation across supported exchanges.',
-        'To deliver analytics, audit ledgers, notifications, and security alerts.',
-        'To improve machine learning models in aggregate (never exposing individual strategies).',
-        'To comply with legal requests and risk-control obligations.',
+      title: 'No Guarantee of Results',
+      content: [
+        'Past performance does not guarantee future results. Historical backtesting results are not indicative of future performance.',
+        'Trading results vary based on market conditions, strategy selection, risk management, and other factors beyond our control.',
+        'There is no guarantee that you will achieve profits or avoid losses when using our platform.',
       ],
     },
     {
-      heading: 'Security Controls',
-      body: [
-        'API credentials are encrypted at rest with hardware-backed keys.',
-        'Network segregation keeps execution infrastructure isolated from public endpoints.',
-        'Role-based permissions let you separate research, execution, and compliance access.',
-        'Continuous monitoring detects anomalies, credential misuse, or failed safeguards.',
+      title: 'We Do Not Handle Funds',
+      content: [
+        'Pablo does not hold, manage, or have access to your funds. All trading is executed directly on cryptocurrency exchanges that you connect to our platform.',
+        'Your funds remain on the exchange at all times. We only send trading instructions via API keys that you provide.',
+        'You are responsible for the security of your exchange accounts and API keys.',
       ],
     },
     {
-      heading: 'Your Rights',
-      body: [
-        'Request export or deletion of stored personal data by contacting privacy@pablobots.net.',
-        'Revoke exchange keys or remove collaborators at any time from the security console.',
-        'Receive notice when policy changes materially affect data usage or sharing.',
+      title: 'Trading Risks',
+      content: [
+        'Cryptocurrency trading involves substantial risk of loss. You may lose some or all of your invested capital.',
+        'Leveraged trading amplifies both gains and losses. You can lose more than your initial investment when using leverage.',
+        'Market volatility, technical issues, exchange downtime, and other factors can result in significant losses.',
+      ],
+    },
+    {
+      title: 'Platform Availability',
+      content: [
+        'While we strive to maintain high availability, we do not guarantee uninterrupted access to our platform.',
+        'Technical issues, maintenance, or third-party service disruptions may temporarily prevent access to our services.',
+        'We are not liable for any losses resulting from platform unavailability or technical issues.',
+      ],
+    },
+    {
+      title: 'Third-Party Services',
+      content: [
+        'Our platform integrates with third-party cryptocurrency exchanges and services. We are not responsible for the actions, policies, or services of these third parties.',
+        'Exchange downtime, policy changes, or service limitations may affect your ability to trade.',
+        'You should review and understand the terms of service and policies of any exchange you connect to our platform.',
       ],
     },
   ];
@@ -84,25 +96,26 @@ export default function PrivacyPolicyPage() {
       <main className="mx-auto max-w-4xl px-6 py-12">
         <header className="mb-8">
           <p className="text-sm uppercase tracking-wider text-gray-500 mb-2">Legal</p>
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">Privacy Policy</h1>
+          <h1 className="text-4xl font-bold text-gray-900 mb-4">Disclaimer</h1>
           <p className="text-sm text-gray-600">
             Last Updated: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
           </p>
-          <p className="text-base text-gray-700 mt-4">
-            This policy explains how Pablo collects, uses, and protects information when you use our trading automation
-            services. It applies to the Pablo web app, APIs, mobile interfaces, and any connected execution infrastructure.
-          </p>
+          <div className="mt-6 p-4 bg-yellow-50 border-l-4 border-yellow-400">
+            <p className="text-sm text-yellow-800 font-semibold">
+              ⚠️ Important: Please read this disclaimer carefully before using Pablo Trading Platform.
+            </p>
+          </div>
         </header>
 
         <section className="space-y-6">
-          {sections.map((section) => (
-            <div key={section.heading} className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">{section.heading}</h2>
-              <ul className="space-y-2 text-gray-700">
-                {section.body.map((item) => (
-                  <li key={item} className="flex items-start space-x-2">
+          {disclaimers.map((disclaimer) => (
+            <div key={disclaimer.title} className="bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">{disclaimer.title}</h2>
+              <ul className="space-y-3 text-gray-700">
+                {disclaimer.content.map((item, index) => (
+                  <li key={index} className="flex items-start space-x-2">
                     <span className="mt-1 text-blue-500">
-                      <i className="ri-checkbox-circle-fill" />
+                      <i className="ri-information-line" />
                     </span>
                     <span>{item}</span>
                   </li>
@@ -112,32 +125,23 @@ export default function PrivacyPolicyPage() {
           ))}
         </section>
 
-        <section className="mt-6 bg-white rounded-lg border border-gray-200 p-6 shadow-sm">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">Data Retention & Transfers</h2>
-          <p className="text-gray-700">
-            We retain operational records for as long as required to support your trading automations, comply with legal obligations,
-            or resolve disputes. Residual backups may persist for up to 12 months. When we use subprocessors, we ensure they uphold
-            equivalent security and privacy commitments.
+        <section className="mt-8 bg-red-50 rounded-lg border border-red-200 p-6">
+          <h2 className="text-xl font-semibold text-gray-900 mb-3">Acknowledgment</h2>
+          <p className="text-gray-700 mb-4">
+            By using Pablo Trading Platform, you acknowledge that you have read, understood, and agree to this disclaimer. 
+            You understand the risks associated with cryptocurrency trading and automated trading systems.
           </p>
-        </section>
-
-        <section className="mt-6 bg-blue-50 rounded-lg border border-blue-200 p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-3">Contact</h2>
           <p className="text-gray-700">
-            Reach our privacy team at{' '}
-            <a href="mailto:privacy@pablobots.net" className="text-blue-600 hover:text-blue-800 underline">
-              privacy@pablobots.net
-            </a>{' '}
-            for questions, data requests, or compliance documentation.
+            If you do not agree with any part of this disclaimer, you should not use our platform.
           </p>
         </section>
 
         <div className="mt-8 flex gap-4">
+          <Button variant="secondary" onClick={() => navigate('/risk')}>
+            Risk Disclosure
+          </Button>
           <Button variant="secondary" onClick={() => navigate('/terms')}>
             Terms of Service
-          </Button>
-          <Button variant="secondary" onClick={() => navigate('/cookies')}>
-            Cookie Policy
           </Button>
           <Button variant="secondary" onClick={() => navigate('/')}>
             Back to Home
@@ -168,8 +172,8 @@ export default function PrivacyPolicyPage() {
                   </button>
                 </li>
                 <li>
-                  <button onClick={() => navigate('/cookies')} className="hover:text-white transition">
-                    Cookie Policy
+                  <button onClick={() => navigate('/disclaimer')} className="hover:text-white transition">
+                    Disclaimer
                   </button>
                 </li>
               </ul>
