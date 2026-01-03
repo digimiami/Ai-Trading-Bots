@@ -6,6 +6,7 @@ import { ONBOARDING_ENABLED } from '../constants/featureFlags';
 
 // Lazy load components
 const Landing = lazy(() => import('../pages/landing/page'));
+const AdWordsLanding = lazy(() => import('../pages/landing/adwords/page'));
 const Home = lazy(() => import('../pages/home/page'));
 const Academy = lazy(() => import('../pages/academy/page'));
 const AcademyModule = lazy(() => import('../pages/academy/module'));
@@ -50,6 +51,10 @@ const routes: RouteObject[] = [
   {
     path: '/',
     element: <Landing />
+  },
+  {
+    path: '/adwords',
+    element: <AdWordsLanding />
   },
   {
     path: '/dashboard',
