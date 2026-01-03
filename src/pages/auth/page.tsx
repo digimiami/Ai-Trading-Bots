@@ -199,8 +199,17 @@ export default function AuthPage() {
         
         // Check if signup successful
         if (!result.error && result.data?.user) {
-          // 1. Track custom admin scripts
-          trackEvent('signup');
+          // 1. Track custom admin scripts (await to ensure scripts execute)
+          try {
+            console.log('📊 Triggering signup tracking scripts...');
+            await trackEvent('signup');
+            console.log('✅ Signup tracking scripts executed');
+            // Small delay to ensure scripts have time to execute
+            await new Promise(resolve => setTimeout(resolve, 500));
+          } catch (trackingError) {
+            console.error('❌ Error executing tracking scripts:', trackingError);
+            // Continue even if tracking fails
+          }
           
           // 2. Track hardcoded conversion event for Google Ads (existing logic)
           if (typeof window !== 'undefined' && (window as any).gtag) {

@@ -36,8 +36,15 @@ export default function SubscriptionSuccessPage() {
             setLoading(false)
             // Track payment event once
             if (subscription?.status === 'active' && !tracked) {
-              trackEvent('payment');
-              setTracked(true);
+              try {
+                console.log('📊 Triggering payment tracking scripts...');
+                await trackEvent('payment');
+                console.log('✅ Payment tracking scripts executed');
+                setTracked(true);
+              } catch (trackingError) {
+                console.error('❌ Error executing payment tracking scripts:', trackingError);
+                setTracked(true); // Mark as tracked to prevent retries
+              }
             }
           } else {
             setTimeout(pollSubscription, 2000) // Check every 2 seconds
