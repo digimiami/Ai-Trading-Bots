@@ -1669,57 +1669,156 @@ serve(async (req) => {
 
       // NEW: Tracking Scripts Management
       case 'getTrackingScripts': {
-        const { data: scripts, error: scriptsError } = await supabaseClient
-          .from('tracking_scripts')
-          .select('*')
-          .order('created_at', { ascending: false })
+        try {
+          const { data: scripts, error: scriptsError } = await supabaseClient
+            .from('tracking_scripts')
+            .select('*')
+            .order('created_at', { ascending: false })
 
-        if (scriptsError) throw scriptsError
-        return new Response(JSON.stringify({ scripts }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
+          if (scriptsError) {
+            console.error('Error fetching tracking scripts:', scriptsError)
+            return new Response(JSON.stringify({ 
+              error: 'Failed to fetch tracking scripts',
+              details: scriptsError.message,
+              code: scriptsError.code,
+              hint: scriptsError.hint
+            }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          }
+          
+          return new Response(JSON.stringify({ scripts: scripts || [] }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        } catch (err) {
+          console.error('Unexpected error in getTrackingScripts:', err)
+          throw err
+        }
       }
 
       case 'createTrackingScript': {
-        const { name, script_content, event_type, is_active } = params
-        const { data: script, error: createError } = await supabaseClient
-          .from('tracking_scripts')
-          .insert({ name, script_content, event_type, is_active })
-          .select()
-          .single()
+        try {
+          const { name, script_content, event_type, is_active } = params
+          
+          if (!name || !script_content || !event_type) {
+            return new Response(JSON.stringify({ 
+              error: 'Missing required fields',
+              required: ['name', 'script_content', 'event_type']
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          }
+          
+          const { data: script, error: createError } = await supabaseClient
+            .from('tracking_scripts')
+            .insert({ name, script_content, event_type, is_active: is_active !== undefined ? is_active : true })
+            .select()
+            .single()
 
-        if (createError) throw createError
-        return new Response(JSON.stringify({ success: true, script }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
+          if (createError) {
+            console.error('Error creating tracking script:', createError)
+            return new Response(JSON.stringify({ 
+              error: 'Failed to create tracking script',
+              details: createError.message,
+              code: createError.code,
+              hint: createError.hint
+            }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          }
+          
+          return new Response(JSON.stringify({ success: true, script }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        } catch (err) {
+          console.error('Unexpected error in createTrackingScript:', err)
+          throw err
+        }
       }
 
       case 'updateTrackingScript': {
-        const { id, ...updates } = params
-        const { data: script, error: updateError } = await supabaseClient
-          .from('tracking_scripts')
-          .update(updates)
-          .eq('id', id)
-          .select()
-          .single()
+        try {
+          const { id, ...updates } = params
+          
+          if (!id) {
+            return new Response(JSON.stringify({ 
+              error: 'Missing required field: id'
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          }
+          
+          const { data: script, error: updateError } = await supabaseClient
+            .from('tracking_scripts')
+            .update(updates)
+            .eq('id', id)
+            .select()
+            .single()
 
-        if (updateError) throw updateError
-        return new Response(JSON.stringify({ success: true, script }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
+          if (updateError) {
+            console.error('Error updating tracking script:', updateError)
+            return new Response(JSON.stringify({ 
+              error: 'Failed to update tracking script',
+              details: updateError.message,
+              code: updateError.code,
+              hint: updateError.hint
+            }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          }
+          
+          return new Response(JSON.stringify({ success: true, script }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        } catch (err) {
+          console.error('Unexpected error in updateTrackingScript:', err)
+          throw err
+        }
       }
 
       case 'deleteTrackingScript': {
-        const { id } = params
-        const { error: deleteError } = await supabaseClient
-          .from('tracking_scripts')
-          .delete()
-          .eq('id', id)
+        try {
+          const { id } = params
+          
+          if (!id) {
+            return new Response(JSON.stringify({ 
+              error: 'Missing required field: id'
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          }
+          
+          const { error: deleteError } = await supabaseClient
+            .from('tracking_scripts')
+            .delete()
+            .eq('id', id)
 
-        if (deleteError) throw deleteError
-        return new Response(JSON.stringify({ success: true }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
+          if (deleteError) {
+            console.error('Error deleting tracking script:', deleteError)
+            return new Response(JSON.stringify({ 
+              error: 'Failed to delete tracking script',
+              details: deleteError.message,
+              code: deleteError.code,
+              hint: deleteError.hint
+            }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          }
+          
+          return new Response(JSON.stringify({ success: true }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        } catch (err) {
+          console.error('Unexpected error in deleteTrackingScript:', err)
+          throw err
+        }
       }
 
       default:

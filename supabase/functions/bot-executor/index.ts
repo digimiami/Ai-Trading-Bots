@@ -11058,128 +11058,15 @@ class BotExecutor {
       // Sync Bitunix server time to prevent timestamp errors
       await this.syncBitunixServerTime();
       
-      // CRITICAL: Verify position exists before attempting SL/TP
-      // Bitunix requires the position to be fully established before SL/TP can be set
-      // Based on Code 2 errors, Bitunix needs more time to process positions
-      console.log(`⏳ Verifying Bitunix position exists before setting SL/TP...`);
-      
-      // Wait initial delay for position to be established (increased from 3s to 5s)
-      await new Promise(resolve => setTimeout(resolve, 5000));
-      
-      // Verify position exists with retries (increased retries and wait times)
+      // Simplified: Skip position verification for symbol-based SL/TP endpoint
+      // The symbol-based endpoint doesn't require positionId, so we can proceed immediately
+      console.log(`⏳ Using symbol-based SL/TP endpoint - no position verification needed`);
       let positionInfo = null;
       let positionVerified = false;
-      const maxPositionRetries = 10; // Increased retries for better reliability
       
-      for (let retry = 0; retry < maxPositionRetries; retry++) {
-        try {
-          positionInfo = await this.getBitunixPosition(apiKey, apiSecret, symbol);
-          if (positionInfo && positionInfo.size > 0) {
-            console.log(`✅ Position verified: ${positionInfo.size} @ ${positionInfo.entryPrice || 'N/A'}`);
-            positionVerified = true;
-            break;
-          } else {
-            console.warn(`   ⚠️ Position not found yet (attempt ${retry + 1}/${maxPositionRetries}), waiting 3 seconds...`);
-            if (retry < maxPositionRetries - 1) {
-              await new Promise(resolve => setTimeout(resolve, 3000));
-            }
-          }
-        } catch (posErr) {
-          console.warn(`   ⚠️ Error verifying position (attempt ${retry + 1}/${maxPositionRetries}):`, posErr instanceof Error ? posErr.message : String(posErr));
-          if (retry < maxPositionRetries - 1) {
-            await new Promise(resolve => setTimeout(resolve, 3000));
-          }
-        }
-      }
-      
-      if (!positionVerified) {
-        console.error(`❌ CRITICAL: Position not verified after ${maxPositionRetries} attempts`);
-        console.error(`   Symbol: ${symbol}, Side: ${side}, Entry Price: ${entryPrice}`);
-        console.error(`   This may indicate:`);
-        console.error(`   1. Order was not filled successfully`);
-        console.error(`   2. Position takes longer to appear (Bitunix delay)`);
-        console.error(`   3. API key lacks position read permissions`);
-        console.warn(`   ⚠️ Proceeding with SL/TP attempt anyway (symbol-based endpoint may work without positionId)...`);
-      }
-      
-      // CRITICAL: Get positionId (preferred for position-based endpoints, but not required for symbol-based)
-      // First, try to get positionId from positionInfo if available
+      // Simplified: positionId not needed for symbol-based endpoint
       let positionId = null;
-      
-      if (positionInfo?.positionId) {
-        positionId = String(positionInfo.positionId);
-        console.log(`📊 Using positionId from positionInfo: ${positionId}`);
-      } else if (positionInfo?.rawPosition) {
-        // Try to extract from raw position
-        const rawPos = positionInfo.rawPosition;
-        positionId = rawPos.positionId || rawPos.id || rawPos.position_id || rawPos.positionID || 
-                     rawPos.pid || rawPos.posId || rawPos.pos_id;
-        if (positionId) {
-          positionId = String(positionId);
-          console.log(`📊 Extracted positionId from rawPosition: ${positionId}`);
-        }
-      }
-      
-      // Fallback: try to get positionId from orderResult if available
-      if (!positionId) {
-        if (orderResult?.positionId) {
-          positionId = String(orderResult.positionId);
-          console.log(`📊 Using positionId from orderResult: ${positionId}`);
-          // #region agent log
-          console.log(`[DEBUG-SLTP] PositionId found in orderResult:`, JSON.stringify({
-            location: 'bot-executor/index.ts:10925',
-            message: 'PositionId found in orderResult',
-            data: { positionId },
-            timestamp: Date.now(),
-            hypothesisId: 'F'
-          }));
-          // #endregion
-        } else if (orderResult?.response?.data) {
-          const orderData = orderResult.response.data;
-          positionId = orderData.positionId || orderData.position_id || orderData.positionID || 
-                       orderData.id || orderData.orderId;
-          if (positionId) {
-            positionId = String(positionId);
-            console.log(`📊 Using positionId from order response data: ${positionId}`);
-            // #region agent log
-            console.log(`[DEBUG-SLTP] PositionId found in order response data:`, JSON.stringify({
-              location: 'bot-executor/index.ts:10933',
-              message: 'PositionId found in order response data',
-              data: { positionId },
-              timestamp: Date.now(),
-              hypothesisId: 'F'
-            }));
-            // #endregion
-          }
-        }
-      }
-      
-      // #region agent log
-      console.log(`[DEBUG-SLTP] PositionId initial check:`, JSON.stringify({
-        location: 'bot-executor/index.ts:10937',
-        message: 'PositionId initial check',
-        data: { hasPositionId: !!positionId, positionId },
-        timestamp: Date.now(),
-        hypothesisId: 'F'
-      }));
-      // #endregion
-      
-      // Position verification already done above - positionInfo should be available if position exists
-      // If we still don't have positionId, log warning but proceed (symbol-based endpoint doesn't require it)
-      
-      // Fallback: If positionId is still missing but we have an orderId, use it as a temporary positionId
-      // This allows us to attempt SL/TP via the symbol-based endpoint
-      if (!positionId && orderResult) {
-        const orderId = orderResult.orderId || 
-                       orderResult.id || 
-                       (orderResult.response?.data?.orderId) ||
-                       (orderResult.response?.data?.id);
-        if (orderId) {
-          console.warn(`   ⚠️ PositionId not found, but orderId available: ${orderId}`);
-          console.warn(`   ⚠️ Will attempt SL/TP using symbol-based endpoint (does not require positionId)`);
-          // Note: We'll proceed without positionId - the symbol-based endpoint should work
-        }
-      }
+      console.log(`📊 Using symbol-based SL/TP endpoint - positionId not required`);
       
       // #region agent log
       console.log(`[DEBUG-SLTP] PositionId final check before API call:`, JSON.stringify({
@@ -11191,191 +11078,17 @@ class BotExecutor {
       }));
       // #endregion
       
-      if (!positionId && (!positionInfo || positionInfo.size === 0)) {
-        // Try one more direct API call with detailed logging
-        console.error(`❌ Position not found after ${maxRetries} retries. Trying direct API call...`);
-        try {
-          const positionTimestamp = Date.now().toString();
-          const positionNonce = this.generateNonce();
-          const positionQueryParams = `symbol=${symbol.toUpperCase()}`;
-          const positionBody = '';
-          const positionSig = await this.createBitunixSignatureDoubleSHA256(positionNonce, positionTimestamp, apiKey, positionQueryParams, positionBody, apiSecret);
-          
-          const positionResponse = await fetch(`${baseUrl}/api/v1/futures/position/list?${positionQueryParams}`, {
-            method: 'GET',
-            headers: {
-              'api-key': String(apiKey),
-              'nonce': String(positionNonce),
-              'timestamp': String(positionTimestamp),
-              'sign': String(positionSig),
-              'Content-Type': 'application/json',
-              'language': 'en-US'
-            }
-          });
-          
-          const positionResponseText = await positionResponse.text();
-          console.error(`   Direct API call response: ${positionResponse.status}`);
-          console.error(`   Response body: ${positionResponseText.substring(0, 1000)}`);
-          
-          if (positionResponse.ok) {
-            const positionData = JSON.parse(positionResponseText);
-            console.error(`   Response code: ${positionData.code}`);
-            console.error(`   Has data: ${!!positionData.data}`);
-            if (positionData.data) {
-              console.error(`   Data type: ${Array.isArray(positionData.data) ? 'array' : typeof positionData.data}`);
-              if (Array.isArray(positionData.data)) {
-                console.error(`   Data length: ${positionData.data.length}`);
-              }
-            }
-          }
-        } catch (debugErr) {
-          console.error(`   Debug API call failed:`, debugErr);
-        }
-        
-        // If we still don't have positionId, try using orderId as fallback
-        if (!positionId && orderResult?.orderId) {
-          console.warn(`⚠️ Using orderId as positionId fallback: ${orderResult.orderId}`);
-          positionId = String(orderResult.orderId);
-        } else if (!positionId) {
-          // CRITICAL FIX: Don't throw error - proceed with symbol-based SL/TP endpoint
-          // Symbol-based endpoint doesn't require positionId, only symbol, side, and prices
-          console.warn(`⚠️ Position not found after ${maxRetries} retries, but order was successful.`);
-          console.warn(`   Will proceed with symbol-based SL/TP endpoint (does not require positionId)`);
-          // Continue without positionId - symbol-based endpoint will be used
-        }
-      }
-      
-      // Final check - positionId is NOT required for symbol-based endpoint
-      // Only log warning if positionId is missing, but don't throw error
-      if (!positionId) {
-        // Last resort: try orderId
-        if (orderResult?.orderId) {
-          console.warn(`⚠️ Final fallback: Using orderId as positionId: ${orderResult.orderId}`);
-          positionId = String(orderResult.orderId);
-        } else {
-          // CRITICAL FIX: Don't throw - symbol-based endpoint doesn't need positionId
-          console.warn(`⚠️ positionId not found, but will use symbol-based SL/TP endpoint (does not require positionId)`);
-          console.warn(`   Symbol: ${symbol}, Side: ${side}, Entry: ${entryPrice}, SL: ${stopLossPrice.toFixed(4)}, TP: ${takeProfitPrice.toFixed(4)}`);
-          // Continue without positionId - the symbol-based endpoints in endpointsToTry don't require it
-        }
-      }
-      
-      // Additional check removed - we'll proceed even without positionId
-      if (false && !positionId) {
-        // CRITICAL: positionId is required for Bitunix TP/SL orders
-        // Try one more time with direct API call and exhaustive field search
-        console.error(`❌ CRITICAL: positionId not found after all retries. Attempting final extraction...`);
-        try {
-          const positionTimestamp = Date.now().toString();
-          const positionNonce = this.generateNonce();
-          const positionQueryParams = `symbol=${symbol.toUpperCase()}`;
-          const positionBody = '';
-          const positionSig = await this.createBitunixSignatureDoubleSHA256(positionNonce, positionTimestamp, apiKey, positionQueryParams, positionBody, apiSecret);
-          
-          const positionResponse = await fetch(`${baseUrl}/api/v1/futures/position/list?${positionQueryParams}`, {
-            method: 'GET',
-            headers: {
-              'api-key': String(apiKey),
-              'nonce': String(positionNonce),
-              'timestamp': String(positionTimestamp),
-              'sign': String(positionSig),
-              'Content-Type': 'application/json',
-              'language': 'en-US'
-            }
-          });
-          
-          if (positionResponse.ok) {
-            const positionData = await positionResponse.json();
-            console.error(`   Final API call - Response code: ${positionData.code}`);
-            console.error(`   Has data: ${!!positionData.data}`);
-            
-            if (positionData.code === 0 && positionData.data) {
-              // Handle both array and object responses
-              let positions = [];
-              if (Array.isArray(positionData.data)) {
-                positions = positionData.data;
-              } else if (typeof positionData.data === 'object') {
-                const possibleArrays = Object.values(positionData.data).filter(v => Array.isArray(v));
-                if (possibleArrays.length > 0) {
-                  positions = possibleArrays[0];
-                } else {
-                  positions = [positionData.data];
-                }
-              }
-              
-              console.error(`   Found ${positions.length} position(s)`);
-              
-              if (positions.length > 0) {
-                const position = positions.find(p => {
-                  const size = parseFloat(p.size || p.holdVol || p.quantity || '0');
-                  return size > 0;
-                }) || positions[0];
-                
-                console.error(`   Position keys:`, Object.keys(position));
-                console.error(`   Full position:`, JSON.stringify(position).substring(0, 1000));
-                
-                // Try ALL possible field names - exhaustive search
-                const allFields = Object.keys(position);
-                for (const field of allFields) {
-                  const value = position[field];
-                  if (value && (typeof value === 'string' || typeof value === 'number')) {
-                    const fieldLower = field.toLowerCase();
-                    if (fieldLower.includes('id') || fieldLower.includes('position')) {
-                      positionId = String(value);
-                      console.error(`   ✅ Found potential positionId in field '${field}': ${positionId}`);
-                      break;
-                    }
-                  }
-                }
-                
-                // If still not found, try using orderId as positionId (some exchanges use this)
-                if (!positionId && orderResult?.orderId) {
-                  console.warn(`   ⚠️ Trying orderId as positionId: ${orderResult.orderId}`);
-                  positionId = String(orderResult.orderId);
-                }
-                
-                // Also try extracting from orderResult response data
-                if (!positionId && orderResult?.response?.data) {
-                  const orderData = orderResult.response.data;
-                  const orderDataId = orderData.positionId || orderData.id || orderData.position_id || orderData.orderId;
-                  if (orderDataId) {
-                    console.warn(`   ⚠️ Trying positionId from order response: ${orderDataId}`);
-                    positionId = String(orderDataId);
-                  }
-                }
-                
-                if (!positionId) {
-                  console.warn(`⚠️ positionId not found in position response after exhaustive search.`);
-                  console.warn(`   Available fields:`, allFields);
-                  console.warn(`   Position size: ${position.size || position.holdVol || position.quantity || '0'}`);
-                  console.warn(`   Will proceed with symbol-based SL/TP endpoint (does not require positionId)`);
-                  // Don't throw - proceed with symbol-based endpoint
-                }
-              } else {
-                console.warn(`   No positions found in response - will use symbol-based SL/TP endpoint`);
-                // Don't throw - proceed with symbol-based endpoint
-              }
-            } else {
-              console.warn(`   API returned code ${positionData.code}: ${positionData.msg || positionData.message}`);
-              console.warn(`   Will proceed with symbol-based SL/TP endpoint (does not require positionId)`);
-              // Don't throw - proceed with symbol-based endpoint
-            }
-          } else {
-            console.warn(`   Position API returned HTTP ${positionResponse.status} - will use symbol-based SL/TP endpoint`);
-            // Don't throw - proceed with symbol-based endpoint
-          }
-        } catch (extractErr) {
-          console.warn(`⚠️ Could not extract positionId:`, extractErr);
-          console.warn(`   Will proceed with symbol-based SL/TP endpoint (does not require positionId)`);
-          // Don't throw - proceed with symbol-based endpoint
-        }
-      }
+      // Simplified: positionId not needed for symbol-based endpoint
+      console.log(`📋 FINAL CHECK BEFORE API CALLS: positionId=${positionId}, endpointsToTry.length=${endpointsToTry.length}`);
       
       // Bitunix API endpoints for setting stop loss and take profit
       // PRIMARY: Use /api/v1/futures/tpsl/place_tp_sl_order (symbol-based, more reliable)
       // FALLBACK: Use /api/v1/futures/tpsl/place_position_tp_sl_order (position-based, requires positionId)
       // API Docs: https://openapidoc.bitunix.com/doc/tp_sl/place_tp_sl_order.html
       // API Docs: https://openapidoc.bitunix.com/doc/tp_sl/place_position_tp_sl_order.html
+
+      console.log(`📋 BUILDING ENDPOINTS ARRAY - positionId: ${positionId}, positionVerified: ${positionVerified}`);
+
       const timestamp = (Date.now() + BotExecutor.bitunixServerTimeOffset).toString();
       const nonce = this.generateNonce();
       
@@ -11394,9 +11107,9 @@ class BotExecutor {
       // CRITICAL FIX: Prioritize symbol-based endpoints (they don't require positionId)
       // Only include position-based endpoints if we have a valid positionId
       // Based on Code 2 errors, position-based endpoints fail when positionId is invalid
+      // SIMPLIFIED: Use only the official symbol-based endpoint with required parameters
+      // Based on: https://openapidoc.bitunix.com/doc/tp_sl/place_tp_sl_order.html
       const endpointsToTry: Array<{endpoint: string, params: any, description: string}> = [
-        // Try 1: Official symbol-based endpoint minimal (required params only) - MOST RELIABLE
-        // Based on: https://openapidoc.bitunix.com/doc/tp_sl/place_tp_sl_order.html
         {
           endpoint: '/api/v1/futures/tpsl/place_tp_sl_order',
           params: {
@@ -11405,44 +11118,14 @@ class BotExecutor {
             tpPrice: String(takeProfitPrice.toFixed(8)),
             slPrice: String(stopLossPrice.toFixed(8))
           },
-          description: 'Official symbol-based endpoint minimal (required params only) - PRIORITY'
-        },
-        // Try 2: Official symbol-based endpoint with MARK_PRICE
-        {
-          endpoint: '/api/v1/futures/tpsl/place_tp_sl_order',
-          params: {
-            symbol: symbol.toUpperCase(),
-            holdSide: positionSide, // Required: LONG or SHORT
-            tpPrice: String(takeProfitPrice.toFixed(8)), // Required: string format
-            slPrice: String(stopLossPrice.toFixed(8)), // Required: string format
-            tpStopType: 'MARK_PRICE', // Optional: MARK_PRICE or LAST_PRICE
-            slStopType: 'MARK_PRICE', // Optional: MARK_PRICE or LAST_PRICE
-            tpOrderType: 'MARKET', // Optional: MARKET or LIMIT
-            slOrderType: 'MARKET', // Optional: MARKET or LIMIT
-            marginCoin: 'USDT' // Optional: margin coin
-          },
-          description: 'Official symbol-based endpoint with all parameters (MARK_PRICE)'
-        },
-        // Try 3: Official symbol-based endpoint with LAST_PRICE
-        {
-          endpoint: '/api/v1/futures/tpsl/place_tp_sl_order',
-          params: {
-            symbol: symbol.toUpperCase(),
-            holdSide: positionSide,
-            tpPrice: String(takeProfitPrice.toFixed(8)),
-            slPrice: String(stopLossPrice.toFixed(8)),
-            tpStopType: 'LAST_PRICE',
-            slStopType: 'LAST_PRICE',
-            tpOrderType: 'MARKET',
-            slOrderType: 'MARKET',
-            marginCoin: 'USDT'
-          },
-          description: 'Official symbol-based endpoint with LAST_PRICE'
+          description: 'Official symbol-based endpoint - required params only'
         }
       ];
       
       // Only add position-based endpoints if we have a valid positionId
       // Position-based endpoints require positionId and fail with Code 2 if invalid
+      console.log(`📋 ENDPOINTS ARRAY BUILT - endpointsToTry.length before position check: ${endpointsToTry.length}`);
+
       if (positionId && positionId !== '' && positionId !== 'undefined' && positionId !== 'null') {
         // Try 4: Position-based endpoint (only if positionId is valid)
         // Based on: https://openapidoc.bitunix.com/doc/tp_sl/place_position_tp_sl_order.html
@@ -11490,33 +11173,15 @@ class BotExecutor {
         hypothesisId: 'E'
       }));
       // #endregion
-      
+
+      console.log(`🚀 ABOUT TO ENTER API CALL LOOP - endpointsToTry.length: ${endpointsToTry.length}`);
+
       for (let endpointIndex = 0; endpointIndex < endpointsToTry.length; endpointIndex++) {
+        console.log(`🔄 ENTERED LOOP - endpointIndex: ${endpointIndex}, endpoint: ${endpointsToTry[endpointIndex]?.endpoint}`);
         const endpointConfig = endpointsToTry[endpointIndex];
         try {
-          // CRITICAL FIX: Add delay between endpoint attempts to give Bitunix time to process
-          // Code 2 errors may occur if we try too quickly after order placement
-          if (endpointIndex > 0) {
-            const delayMs = 2000 * endpointIndex; // Exponential delay: 2s, 4s, 6s, etc.
-            console.log(`   ⏳ Waiting ${delayMs}ms before trying next endpoint (attempt ${endpointIndex + 1}/${endpointsToTry.length})...`);
-            await new Promise(resolve => setTimeout(resolve, delayMs));
-          }
           
-          // CRITICAL FIX: Skip position-based endpoints if positionId is missing
-          // Position-based endpoints require positionId, but symbol-based ones don't
-          if (endpointConfig.endpoint.includes('place_position_tp_sl_order') && !positionId) {
-            console.log(`   ⏭️ Skipping position-based endpoint (no positionId): ${endpointConfig.endpoint}`);
-            // #region agent log
-            console.log(`[DEBUG-SLTP] Skipping position-based endpoint:`, JSON.stringify({
-              location: 'bot-executor/index.ts:11540',
-              message: 'Skipping position-based endpoint',
-              data: { endpoint: endpointConfig.endpoint, reason: 'no positionId' },
-              timestamp: Date.now(),
-              hypothesisId: 'E'
-            }));
-            // #endregion
-            continue; // Skip position-based endpoints when positionId is missing
-          }
+          // Simplified: All endpoints in our array are symbol-based, so no need to skip
           
           const slTpParams = endpointConfig.params;
           

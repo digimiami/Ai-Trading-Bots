@@ -50,20 +50,56 @@ serve(async (req) => {
     if (attachments && attachments.length > 0) {
       attachmentContext = '\n\n## ATTACHED DOCUMENTS:\n';
       for (const att of attachments) {
-        attachmentContext += `- **${att.name}** (${att.type})\n`;
-        // For text-based files, try to extract content from base64 data
-        if (att.type?.includes('text/') || att.name?.endsWith('.txt') || att.name?.endsWith('.csv')) {
-          try {
-            const base64Data = att.data.split(',')[1]; // Remove data URL prefix
-            const textContent = atob(base64Data);
-            // Limit to first 2000 chars to avoid token limits
-            const preview = textContent.length > 2000 ? textContent.substring(0, 2000) + '...' : textContent;
-            attachmentContext += `  Content preview: ${preview}\n`;
-          } catch (e) {
-            attachmentContext += `  (Could not extract text content)\n`;
+        attachmentContext += `- **${att.name}** (${att.type || 'unknown type'})\n`;
+        
+        try {
+          let fileContent: string | null = null;
+          let fileBuffer: Uint8Array | null = null;
+          
+          // Check if attachment has a URL (from Supabase storage)
+          if (att.url) {
+            try {
+              const fileResponse = await fetch(att.url);
+              if (fileResponse.ok) {
+                const arrayBuffer = await fileResponse.arrayBuffer();
+                fileBuffer = new Uint8Array(arrayBuffer);
+              }
+            } catch (e) {
+              console.warn(`Failed to fetch file from URL ${att.url}:`, e);
+            }
           }
-        } else {
-          attachmentContext += `  (Binary file - please describe the contents in your message)\n`;
+          // Check if attachment has base64 data
+          else if (att.data) {
+            try {
+              const base64Data = att.data.includes(',') ? att.data.split(',')[1] : att.data;
+              const binaryString = atob(base64Data);
+              fileBuffer = new Uint8Array(binaryString.length);
+              for (let i = 0; i < binaryString.length; i++) {
+                fileBuffer[i] = binaryString.charCodeAt(i);
+              }
+            } catch (e) {
+              console.warn(`Failed to decode base64 data for ${att.name}:`, e);
+            }
+          }
+          
+          // Extract text content based on file type
+          if (fileBuffer) {
+            fileContent = await extractTextFromFile(att.name, att.type, fileBuffer);
+          }
+          
+          if (fileContent) {
+            // Limit content to avoid token limits (keep first 5000 chars for important files)
+            const maxLength = 5000;
+            const preview = fileContent.length > maxLength 
+              ? fileContent.substring(0, maxLength) + `\n\n... [Content truncated. Total length: ${fileContent.length} characters]` 
+              : fileContent;
+            attachmentContext += `  **Content:**\n\`\`\`\n${preview}\n\`\`\`\n`;
+          } else {
+            attachmentContext += `  (File attached but content could not be extracted. Please describe the file contents in your message.)\n`;
+          }
+        } catch (e) {
+          console.error(`Error processing attachment ${att.name}:`, e);
+          attachmentContext += `  (Error processing file: ${e.message || 'Unknown error'})\n`;
         }
       }
     }
@@ -792,6 +828,180 @@ IMPORTANT GUIDELINES:
     );
   }
 });
+
+// Helper function to extract text content from various file types
+async function extractTextFromFile(
+  fileName: string,
+  mimeType: string | undefined,
+  fileBuffer: Uint8Array
+): Promise<string | null> {
+  try {
+    const extension = fileName.split('.').pop()?.toLowerCase() || '';
+    
+    // Text-based files
+    if (
+      mimeType?.includes('text/') ||
+      mimeType === 'application/json' ||
+      mimeType === 'application/javascript' ||
+      mimeType === 'application/xml' ||
+      mimeType === 'application/x-sh' ||
+      ['txt', 'csv', 'json', 'js', 'ts', 'jsx', 'tsx', 'html', 'css', 'xml', 'md', 'markdown', 'log', 'sh', 'bat', 'ps1', 'sql'].includes(extension)
+    ) {
+      try {
+        const decoder = new TextDecoder('utf-8');
+        let text = decoder.decode(fileBuffer);
+        
+        // Try other encodings if UTF-8 fails
+        if (!text || text.includes('\uFFFD')) {
+          try {
+            const decoderLatin1 = new TextDecoder('latin1');
+            text = decoderLatin1.decode(fileBuffer);
+          } catch (e) {
+            // Fallback to UTF-8 even if it has replacement characters
+          }
+        }
+        
+        return text;
+      } catch (e) {
+        console.warn(`Failed to decode text file ${fileName}:`, e);
+        return null;
+      }
+    }
+    
+    // CSV files - parse and format
+    if (mimeType === 'text/csv' || extension === 'csv') {
+      try {
+        const decoder = new TextDecoder('utf-8');
+        const csvText = decoder.decode(fileBuffer);
+        // Return CSV as-is, AI can parse it
+        return csvText;
+      } catch (e) {
+        return null;
+      }
+    }
+    
+    // PDF files - extract text using basic PDF parsing
+    if (mimeType === 'application/pdf' || extension === 'pdf') {
+      try {
+        // Basic PDF text extraction (simplified - for production, consider using a PDF library)
+        const pdfText = await extractTextFromPDF(fileBuffer);
+        return pdfText;
+      } catch (e) {
+        console.warn(`Failed to extract text from PDF ${fileName}:`, e);
+        return `[PDF file: ${fileName} - Text extraction attempted but may be incomplete. Please describe the PDF contents.]`;
+      }
+    }
+    
+    // Images - use OCR or describe
+    if (
+      mimeType?.startsWith('image/') ||
+      ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'].includes(extension)
+    ) {
+      // For images, we can't extract text directly without OCR
+      // Return a description that prompts the user to describe the image
+      return `[Image file: ${fileName} (${mimeType || 'image'}) - Please describe what you see in this image or what information it contains.]`;
+    }
+    
+    // Microsoft Office documents
+    if (
+      mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      extension === 'docx'
+    ) {
+      return `[Word document: ${fileName} - DOCX parsing not available in edge function. Please convert to PDF or describe the contents.]`;
+    }
+    
+    if (
+      mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      extension === 'xlsx'
+    ) {
+      return `[Excel spreadsheet: ${fileName} - XLSX parsing not available in edge function. Please export as CSV or describe the contents.]`;
+    }
+    
+    if (
+      mimeType === 'application/vnd.ms-excel' ||
+      extension === 'xls'
+    ) {
+      return `[Excel spreadsheet: ${fileName} - XLS parsing not available in edge function. Please export as CSV or describe the contents.]`;
+    }
+    
+    // Code files
+    if (
+      ['py', 'java', 'cpp', 'c', 'go', 'rs', 'rb', 'php', 'swift', 'kt', 'scala', 'r', 'm', 'pl', 'lua'].includes(extension)
+    ) {
+      try {
+        const decoder = new TextDecoder('utf-8');
+        return decoder.decode(fileBuffer);
+      } catch (e) {
+        return null;
+      }
+    }
+    
+    // Unknown file type - try to decode as text anyway
+    try {
+      const decoder = new TextDecoder('utf-8');
+      const text = decoder.decode(fileBuffer);
+      // Check if it looks like valid text (not too many null bytes or control chars)
+      const nullByteCount = (text.match(/\0/g) || []).length;
+      const controlCharCount = (text.match(/[\x00-\x08\x0E-\x1F\x7F]/g) || []).length;
+      
+      if (nullByteCount < text.length * 0.1 && controlCharCount < text.length * 0.2) {
+        return text;
+      }
+    } catch (e) {
+      // Not text, that's okay
+    }
+    
+    return null;
+  } catch (error) {
+    console.error(`Error extracting text from ${fileName}:`, error);
+    return null;
+  }
+}
+
+// Basic PDF text extraction (simplified version)
+async function extractTextFromPDF(pdfBuffer: Uint8Array): Promise<string> {
+  try {
+    // Convert to string to search for text objects
+    const pdfString = new TextDecoder('latin1').decode(pdfBuffer);
+    
+    // Extract text between BT (Begin Text) and ET (End Text) markers
+    const textMatches: string[] = [];
+    const btPattern = /BT[\s\S]*?ET/g;
+    let match;
+    
+    while ((match = btPattern.exec(pdfString)) !== null) {
+      const textBlock = match[0];
+      // Extract text content (simplified - looks for text strings)
+      const textPattern = /\((.*?)\)/g;
+      let textMatch;
+      while ((textMatch = textPattern.exec(textBlock)) !== null) {
+        const text = textMatch[1]
+          .replace(/\\n/g, '\n')
+          .replace(/\\r/g, '\r')
+          .replace(/\\t/g, '\t')
+          .replace(/\\(.)/g, '$1'); // Remove escape sequences
+        if (text.trim()) {
+          textMatches.push(text);
+        }
+      }
+    }
+    
+    if (textMatches.length > 0) {
+      return textMatches.join('\n');
+    }
+    
+    // Fallback: try to find readable text patterns
+    const readableText = pdfString.match(/[A-Za-z0-9\s.,;:!?\-]{20,}/g);
+    if (readableText && readableText.length > 0) {
+      return readableText.slice(0, 50).join(' '); // Limit to first 50 matches
+    }
+    
+    return '[PDF content detected but text extraction incomplete. Please describe the PDF contents.]';
+  } catch (error) {
+    console.error('PDF extraction error:', error);
+    return '[PDF file - text extraction failed. Please describe the PDF contents.]';
+  }
+}
 
 function buildKnowledgeBase(): string {
   return `

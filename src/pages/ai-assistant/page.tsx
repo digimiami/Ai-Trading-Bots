@@ -290,9 +290,67 @@ What would you like to know?`,
       return;
     }
 
-    // Convert attachments to base64 for sending
+    // Process attachments: upload large files to storage, small files as base64
     const attachmentData = await Promise.all(
       attachments.map(async (att) => {
+        const MAX_BASE64_SIZE = 1024 * 1024; // 1MB - files larger than this will be uploaded to storage
+        
+        // For large files, upload to storage and send URL
+        if (att.file.size > MAX_BASE64_SIZE) {
+          try {
+            const fileExt = att.name.split('.').pop();
+            const fileName = `ai-assistant/${user?.id}/${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+            const filePath = `ai-assistant/${user?.id}/${fileName}`;
+
+            const { data, error } = await supabase.storage
+              .from('message-attachments') // Reuse message-attachments bucket or create ai-assistant bucket
+              .upload(filePath, att.file);
+
+            if (error) {
+              console.warn('Failed to upload large file to storage, falling back to base64:', error);
+              // Fallback to base64 if upload fails
+              return new Promise<{ name: string; type: string; data: string }>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => {
+                  resolve({
+                    name: att.name,
+                    type: att.type,
+                    data: reader.result as string
+                  });
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(att.file);
+              });
+            }
+
+            const { data: { publicUrl } } = supabase.storage
+              .from('message-attachments')
+              .getPublicUrl(filePath);
+
+            return {
+              name: att.name,
+              type: att.type,
+              url: publicUrl
+            };
+          } catch (error) {
+            console.error('Error uploading file to storage:', error);
+            // Fallback to base64
+            return new Promise<{ name: string; type: string; data: string }>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => {
+                resolve({
+                  name: att.name,
+                  type: att.type,
+                  data: reader.result as string
+                });
+              };
+              reader.onerror = reject;
+              reader.readAsDataURL(att.file);
+            });
+          }
+        }
+        
+        // For small files, send as base64
         return new Promise<{ name: string; type: string; data: string }>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => {
