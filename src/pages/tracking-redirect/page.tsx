@@ -1,0 +1,227 @@
+import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
+import { supabase } from '../../lib/supabase';
+
+export default function TrackingRedirectPage() {
+  const { shortCode } = useParams<{ shortCode: string }>();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!shortCode) {
+      setError('Invalid tracking code');
+      setLoading(false);
+      return;
+    }
+
+    handleRedirect(shortCode);
+  }, [shortCode]);
+
+  const handleRedirect = async (code: string) => {
+    try {
+      // Fetch tracking URL
+      const { data: trackingUrl, error: urlError } = await supabase
+        .from('tracking_urls')
+        .select('*')
+        .eq('short_code', code)
+        .single();
+
+      if (urlError || !trackingUrl) {
+        setError('Tracking URL not found');
+        setLoading(false);
+        return;
+      }
+
+      if (!trackingUrl.is_active) {
+        setError('This tracking URL is inactive');
+        setLoading(false);
+        return;
+      }
+
+      // Check if expired
+      if (trackingUrl.expires_at && new Date(trackingUrl.expires_at) < new Date()) {
+        setError('This tracking URL has expired');
+        setLoading(false);
+        return;
+      }
+
+      // Get user if logged in
+      const { data: { user } } = await supabase.auth.getUser();
+
+      // Get session ID or create one
+      let sessionId = sessionStorage.getItem(`tracking_session_${code}`);
+      if (!sessionId) {
+        sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        sessionStorage.setItem(`tracking_session_${code}`, sessionId);
+      }
+
+      // Extract data for tracking
+      const urlParams = new URLSearchParams(window.location.search);
+      const referrer = document.referrer || urlParams.get('ref') || null;
+
+      // Get screen dimensions
+      const screenWidth = window.screen.width;
+      const screenHeight = window.screen.height;
+      const language = navigator.language || (navigator as any).userLanguage;
+
+      // Parse user agent
+      const userAgent = navigator.userAgent;
+      const deviceInfo = parseUserAgent(userAgent);
+
+      // Track the click (we'll get IP/geo on backend if needed)
+      // For now, track what we can on the frontend
+      const { error: clickError } = await supabase
+        .from('tracking_url_clicks')
+        .insert({
+          tracking_url_id: trackingUrl.id,
+          user_agent: userAgent,
+          referrer: referrer,
+          device_type: deviceInfo.device_type,
+          browser: deviceInfo.browser,
+          browser_version: deviceInfo.browser_version,
+          os: deviceInfo.os,
+          os_version: deviceInfo.os_version,
+          screen_width: screenWidth,
+          screen_height: screenHeight,
+          language: language,
+          is_unique_visit: true, // Will be checked on backend
+          session_id: sessionId,
+          user_id: user?.id || null
+        });
+
+      if (clickError) {
+        console.error('Error tracking click:', clickError);
+        // Continue with redirect even if tracking fails
+      }
+
+      // Build destination URL with UTM parameters
+      const destinationUrl = new URL(trackingUrl.destination_url);
+      
+      // Add UTM parameters
+      if (trackingUrl.source) destinationUrl.searchParams.set('utm_source', trackingUrl.source);
+      if (trackingUrl.medium) destinationUrl.searchParams.set('utm_medium', trackingUrl.medium);
+      if (trackingUrl.campaign_name) destinationUrl.searchParams.set('utm_campaign', trackingUrl.campaign_name);
+      if (trackingUrl.content) destinationUrl.searchParams.set('utm_content', trackingUrl.content);
+      if (trackingUrl.term) destinationUrl.searchParams.set('utm_term', trackingUrl.term);
+      
+      // Add custom parameters
+      if (trackingUrl.custom_params && typeof trackingUrl.custom_params === 'object') {
+        Object.entries(trackingUrl.custom_params).forEach(([key, value]) => {
+          if (value) destinationUrl.searchParams.set(key, String(value));
+        });
+      }
+
+      // Preserve original query params
+      urlParams.forEach((value, key) => {
+        if (!destinationUrl.searchParams.has(key)) {
+          destinationUrl.searchParams.set(key, value);
+        }
+      });
+
+      // Redirect after a brief delay to ensure tracking is recorded
+      setTimeout(() => {
+        window.location.href = destinationUrl.toString();
+      }, 100);
+
+    } catch (err: any) {
+      console.error('Redirect error:', err);
+      setError(err.message || 'Failed to redirect');
+      setLoading(false);
+    }
+  };
+
+  const parseUserAgent = (userAgent: string) => {
+    const ua = userAgent.toLowerCase();
+    
+    // Device type
+    let device_type = 'desktop';
+    if (ua.includes('mobile') || ua.includes('android') || ua.includes('iphone')) {
+      device_type = 'mobile';
+    } else if (ua.includes('tablet') || ua.includes('ipad')) {
+      device_type = 'tablet';
+    }
+
+    // Browser
+    let browser = 'Unknown';
+    let browser_version = '';
+    if (ua.includes('chrome') && !ua.includes('edg')) {
+      browser = 'Chrome';
+      const match = ua.match(/chrome\/([\d.]+)/);
+      browser_version = match ? match[1] : '';
+    } else if (ua.includes('firefox')) {
+      browser = 'Firefox';
+      const match = ua.match(/firefox\/([\d.]+)/);
+      browser_version = match ? match[1] : '';
+    } else if (ua.includes('safari') && !ua.includes('chrome')) {
+      browser = 'Safari';
+      const match = ua.match(/version\/([\d.]+)/);
+      browser_version = match ? match[1] : '';
+    } else if (ua.includes('edg')) {
+      browser = 'Edge';
+      const match = ua.match(/edg\/([\d.]+)/);
+      browser_version = match ? match[1] : '';
+    }
+
+    // OS
+    let os = 'Unknown';
+    let os_version = '';
+    if (ua.includes('windows')) {
+      os = 'Windows';
+      if (ua.includes('windows nt 10')) os_version = '10';
+      else if (ua.includes('windows nt 6.3')) os_version = '8.1';
+      else if (ua.includes('windows nt 6.2')) os_version = '8';
+      else if (ua.includes('windows nt 6.1')) os_version = '7';
+    } else if (ua.includes('mac os x') || ua.includes('macintosh')) {
+      os = 'macOS';
+      const match = ua.match(/mac os x ([\d_]+)/);
+      os_version = match ? match[1].replace(/_/g, '.') : '';
+    } else if (ua.includes('linux')) {
+      os = 'Linux';
+    } else if (ua.includes('android')) {
+      os = 'Android';
+      const match = ua.match(/android ([\d.]+)/);
+      os_version = match ? match[1] : '';
+    } else if (ua.includes('iphone') || ua.includes('ipad')) {
+      os = 'iOS';
+      const match = ua.match(/os ([\d_]+)/);
+      os_version = match ? match[1].replace(/_/g, '.') : '';
+    }
+
+    return {
+      device_type,
+      browser,
+      browser_version,
+      os,
+      os_version
+    };
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <i className="ri-loader-4-line animate-spin text-4xl text-blue-600 mb-4"></i>
+          <p className="text-gray-600">Redirecting...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center max-w-md p-6">
+          <i className="ri-error-warning-line text-4xl text-red-600 mb-4"></i>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Tracking URL Error</h1>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <a href="/" className="text-blue-600 hover:text-blue-800 underline">
+            Return to Home
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+

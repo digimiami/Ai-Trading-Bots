@@ -48,6 +48,7 @@ const Disclaimer = lazy(() => import('../pages/legal/disclaimer'));
 // AI/ML Dashboard - only loads when feature flag is enabled
 const AiMlDashboard = lazy(() => import('../pages/ai-ml-dashboard/page'));
 const FunnelPageViewer = lazy(() => import('../pages/funnel/page'));
+const TrackingRedirect = lazy(() => import('../pages/tracking-redirect/page'));
 
 const routes: RouteObject[] = [
   {
@@ -213,6 +214,10 @@ const routes: RouteObject[] = [
   {
     path: '/funnel/:funnelSlug/:pageSlug',
     element: <FunnelPageViewer />
+  },
+  {
+    path: '/t/:shortCode',
+    element: <TrackingRedirect />
   },
   {
     path: '*',

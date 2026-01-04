@@ -63,3 +63,4 @@ SELECT
   COUNT(*) as existing_rows
 FROM public.tracking_scripts;
 
+

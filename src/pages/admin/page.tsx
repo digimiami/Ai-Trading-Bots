@@ -21,6 +21,7 @@ import FunnelManager from './components/FunnelManager';
 import ManualTrading from './components/ManualTrading';
 import AdminNotifications from './components/AdminNotifications';
 import TrackingScripts from './components/TrackingScripts';
+import TrackingUrlGenerator from './components/TrackingUrlGenerator';
 
 interface User {
   id: string;
@@ -1112,6 +1113,7 @@ export default function AdminPage() {
     { id: 'email-center', label: 'Email Center', icon: 'ri-mail-send-line' },
     { id: 'notifications', label: 'Admin Notifications', icon: 'ri-notification-badge-line' },
     { id: 'tracking', label: 'Tracking Codes', icon: 'ri-code-line' },
+    { id: 'tracking-urls', label: 'Tracking URLs', icon: 'ri-link' },
     { id: 'contact-messages', label: 'Contact Messages', icon: 'ri-mail-line' },
     { id: 'subscriptions', label: 'Subscriptions', icon: 'ri-wallet-line' },
     { id: 'popups', label: 'Popup Manager', icon: 'ri-notification-line' },
@@ -2893,6 +2895,11 @@ export default function AdminPage() {
         {/* Tracking Scripts Tab */}
         {activeTab === 'tracking' && (
           <TrackingScripts />
+        )}
+
+        {/* Tracking URLs Tab */}
+        {activeTab === 'tracking-urls' && (
+          <TrackingUrlGenerator />
         )}
 
         {/* Create User Modal */}
