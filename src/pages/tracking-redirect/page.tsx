@@ -19,12 +19,28 @@ export default function TrackingRedirectPage() {
 
   const handleRedirect = async (code: string) => {
     try {
-      // Fetch tracking URL (case-insensitive to handle O/0, I/1 confusion)
-      const { data: trackingUrl, error: urlError } = await supabase
+      // Fetch tracking URL - try exact match first, then case-insensitive
+      // This handles O/0, I/1 confusion
+      let { data: trackingUrl, error: urlError } = await supabase
         .from('tracking_urls')
         .select('*')
-        .ilike('short_code', code)
+        .eq('short_code', code)
         .single();
+
+      // If not found, try case-insensitive search
+      if (urlError && (urlError.code === 'PGRST116' || urlError.message?.includes('No rows'))) {
+        const { data: trackingUrls, error: searchError } = await supabase
+          .from('tracking_urls')
+          .select('*');
+
+        if (!searchError && trackingUrls) {
+          // Find case-insensitive match
+          trackingUrl = trackingUrls.find(
+            (url: any) => url.short_code.toLowerCase() === code.toLowerCase()
+          ) || null;
+          urlError = trackingUrl ? null : { code: 'PGRST116', message: 'No rows found' };
+        }
+      }
 
       if (urlError) {
         console.error('Error fetching tracking URL:', urlError);
