@@ -39,6 +39,7 @@ serve(async (req) => {
     // 1. Verify Authentication (Service Role or Admin User)
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
+      console.error('[admin-notifications] Missing authorization header');
       return new Response(JSON.stringify({ error: 'Missing authorization header' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -53,7 +54,8 @@ serve(async (req) => {
       const { data: { user }, error: authError } = await supabaseClient.auth.getUser(token);
       
       if (authError || !user) {
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        console.error('[admin-notifications] Auth error:', authError?.message || 'User not found');
+        return new Response(JSON.stringify({ error: 'Unauthorized: Invalid or expired token' }), {
           status: 401,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -67,14 +69,42 @@ serve(async (req) => {
         .single();
 
       if (userError || userData?.role !== 'admin') {
+        console.error('[admin-notifications] User is not admin:', user.id, userError?.message || '');
         return new Response(JSON.stringify({ error: 'Forbidden: Admin access required' }), {
           status: 403,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
+      
+      console.log('[admin-notifications] Authenticated as admin user:', user.id);
+    } else {
+      console.log('[admin-notifications] Authenticated with service role key');
     }
 
-    const { type, data } = await req.json() as AdminNotificationData;
+    // Parse request body
+    let type: string;
+    let data: any;
+    try {
+      const body = await req.json() as AdminNotificationData;
+      type = body.type;
+      data = body.data;
+    } catch (parseError) {
+      console.error('[admin-notifications] Failed to parse request body:', parseError);
+      return new Response(JSON.stringify({ error: 'Invalid request body' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (!type || !data) {
+      console.error('[admin-notifications] Missing required fields: type or data');
+      return new Response(JSON.stringify({ error: 'Missing required fields: type and data' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    console.log(`[admin-notifications] Processing notification type: ${type}`);
 
     let subject = '';
     let html = '';

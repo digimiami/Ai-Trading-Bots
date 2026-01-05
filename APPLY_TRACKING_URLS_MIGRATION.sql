@@ -1,5 +1,6 @@
 -- Migration: Create tracking URLs system for ad campaigns
 -- Description: Tables for generating tracking URLs and capturing click/view analytics with geographic data
+-- IMPORTANT: Run this in Supabase SQL Editor, then refresh schema cache
 
 BEGIN;
 
@@ -130,4 +131,9 @@ END;
 $$ LANGUAGE plpgsql;
 
 COMMIT;
+
+-- CRITICAL: Refresh PostgREST schema cache after migration
+NOTIFY pgrst, 'reload schema';
+SELECT pg_sleep(1);
+SELECT 'Migration completed successfully! Schema cache refreshed.' as status;
 

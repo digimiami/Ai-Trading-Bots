@@ -44,6 +44,8 @@ export default function TrackingUrlGenerator() {
   const [clickAnalytics, setClickAnalytics] = useState<TrackingUrlClick[]>([]);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [copySuccess, setCopySuccess] = useState<string | null>(null);
+  const [customParamKey, setCustomParamKey] = useState('');
+  const [customParamValue, setCustomParamValue] = useState('');
 
   const baseUrl = window.location.origin;
 
@@ -497,6 +499,80 @@ export default function TrackingUrlGenerator() {
                 </div>
               </div>
 
+              {/* Custom Parameters Section */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Custom Parameters
+                </label>
+                <div className="space-y-2">
+                  {/* Display existing custom params */}
+                  {editingUrl.custom_params && Object.keys(editingUrl.custom_params).length > 0 && (
+                    <div className="space-y-2 mb-3">
+                      {Object.entries(editingUrl.custom_params).map(([key, value]) => (
+                        <div key={key} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
+                          <code className="text-sm font-mono bg-white px-2 py-1 rounded border flex-1">
+                            {key}={String(value)}
+                          </code>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newParams = { ...editingUrl.custom_params };
+                              delete newParams[key];
+                              setEditingUrl({ ...editingUrl, custom_params: newParams });
+                            }}
+                            className="text-red-600 hover:text-red-800 p-1"
+                            title="Remove parameter"
+                          >
+                            <i className="ri-delete-bin-line"></i>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {/* Add new custom param */}
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={customParamKey}
+                      onChange={(e) => setCustomParamKey(e.target.value)}
+                      placeholder="Parameter name (e.g., param1)"
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
+                    />
+                    <span className="self-center text-gray-500">=</span>
+                    <input
+                      type="text"
+                      value={customParamValue}
+                      onChange={(e) => setCustomParamValue(e.target.value)}
+                      placeholder="Value (e.g., value1)"
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent font-mono text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (customParamKey.trim() && customParamValue.trim()) {
+                          setEditingUrl({
+                            ...editingUrl,
+                            custom_params: {
+                              ...editingUrl.custom_params,
+                              [customParamKey.trim()]: customParamValue.trim()
+                            }
+                          });
+                          setCustomParamKey('');
+                          setCustomParamValue('');
+                        }
+                      }}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1"
+                    >
+                      <i className="ri-add-line"></i> Add
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Add custom parameters that will be appended to your tracking URL (e.g., param1=value1&param2=value2)
+                  </p>
+                </div>
+              </div>
+
               <div className="flex items-center gap-2">
                 <input
                   type="checkbox"
@@ -510,16 +586,42 @@ export default function TrackingUrlGenerator() {
                 </label>
               </div>
 
-              {editingUrl.id && (
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <p className="text-sm text-blue-900">
-                    <strong>Short Code:</strong> <code className="bg-white px-2 py-1 rounded">{editingUrl.short_code}</code>
-                  </p>
-                  <p className="text-sm text-blue-700 mt-2">
-                    Tracking URL: <code className="bg-white px-2 py-1 rounded">{editingUrl.short_code ? `${baseUrl}/t/${editingUrl.short_code}` : 'Will be generated on save'}</code>
-                  </p>
-                </div>
-              )}
+              {/* URL Preview */}
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-sm font-medium text-blue-900 mb-2">Preview URL:</p>
+                {editingUrl.id ? (
+                  <>
+                    <p className="text-xs text-blue-700 mb-1">
+                      <strong>Short Code:</strong> <code className="bg-white px-2 py-1 rounded">{editingUrl.short_code}</code>
+                    </p>
+                    <div className="mt-2">
+                      <code className="bg-white px-2 py-1 rounded text-xs block break-all">
+                        {getFullTrackingUrl(editingUrl as TrackingUrl)}
+                      </code>
+                    </div>
+                  </>
+                ) : editingUrl.destination_url ? (
+                  <div className="text-xs text-blue-700">
+                    <p className="mb-1">Will generate: <code className="bg-white px-2 py-1 rounded">yoursite.com/t/XXXXX</code></p>
+                    <p>With parameters: {(() => {
+                      const params: string[] = [];
+                      if (editingUrl.source) params.push(`utm_source=${editingUrl.source}`);
+                      if (editingUrl.medium) params.push(`utm_medium=${editingUrl.medium}`);
+                      if (editingUrl.campaign_name) params.push(`utm_campaign=${editingUrl.campaign_name}`);
+                      if (editingUrl.content) params.push(`utm_content=${editingUrl.content}`);
+                      if (editingUrl.term) params.push(`utm_term=${editingUrl.term}`);
+                      if (editingUrl.custom_params) {
+                        Object.entries(editingUrl.custom_params).forEach(([key, value]) => {
+                          params.push(`${key}=${value}`);
+                        });
+                      }
+                      return params.length > 0 ? params.join('&') : 'none';
+                    })()}</p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-blue-700">Enter destination URL to see preview</p>
+                )}
+              </div>
 
               <div className="flex gap-3 pt-4">
                 <Button variant="secondary" onClick={() => setShowModal(false)} className="flex-1">
