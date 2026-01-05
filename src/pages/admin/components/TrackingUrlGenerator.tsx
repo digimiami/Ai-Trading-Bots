@@ -30,7 +30,29 @@ interface TrackingUrlClick {
   city?: string;
   device_type?: string;
   browser?: string;
+  browser_version?: string;
   os?: string;
+  os_version?: string;
+  screen_width?: number;
+  screen_height?: number;
+  viewport_width?: number;
+  viewport_height?: number;
+  language?: string;
+  referrer?: string;
+  utm_source?: string;
+  utm_medium?: string;
+  utm_campaign?: string;
+  utm_content?: string;
+  utm_term?: string;
+  converted?: boolean;
+  conversion_type?: string;
+  converted_at?: string;
+  time_to_conversion_seconds?: number;
+  pages_viewed?: number;
+  session_duration_seconds?: number;
+  bounce?: boolean;
+  is_mobile_traffic?: boolean;
+  landing_page_url?: string;
   clicked_at: string;
 }
 
@@ -249,9 +271,14 @@ export default function TrackingUrlGenerator() {
           <h2 className="text-2xl font-bold">Tracking URL Generator</h2>
           <p className="text-gray-600">Generate tracking URLs for ads and campaigns with click/view analytics</p>
         </div>
-        <Button variant="primary" onClick={() => openModal()} className="flex items-center gap-2">
-          <i className="ri-add-line"></i> Create Tracking URL
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={fetchUrls} className="flex items-center gap-2" disabled={loading}>
+            <i className="ri-refresh-line"></i> Refresh
+          </Button>
+          <Button variant="primary" onClick={() => openModal()} className="flex items-center gap-2">
+            <i className="ri-add-line"></i> Create Tracking URL
+          </Button>
+        </div>
       </div>
 
       <Card className="p-0 overflow-hidden">
@@ -395,18 +422,37 @@ export default function TrackingUrlGenerator() {
                       <th className="px-3 py-2">Device</th>
                       <th className="px-3 py-2">Browser</th>
                       <th className="px-3 py-2">OS</th>
+                      <th className="px-3 py-2">UTM Source</th>
+                      <th className="px-3 py-2">UTM Campaign</th>
+                      <th className="px-3 py-2">Converted</th>
+                      <th className="px-3 py-2">Pages</th>
+                      <th className="px-3 py-2">Duration</th>
                       <th className="px-3 py-2">IP</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
                     {clickAnalytics.slice(0, 50).map((click) => (
                       <tr key={click.id} className="hover:bg-gray-50">
-                        <td className="px-3 py-2">{new Date(click.clicked_at).toLocaleString()}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">{new Date(click.clicked_at).toLocaleString()}</td>
                         <td className="px-3 py-2">{click.country || '-'}</td>
                         <td className="px-3 py-2">{click.city || '-'}</td>
                         <td className="px-3 py-2 capitalize">{click.device_type || '-'}</td>
                         <td className="px-3 py-2">{click.browser || '-'}</td>
                         <td className="px-3 py-2">{click.os || '-'}</td>
+                        <td className="px-3 py-2 text-xs">{click.utm_source || '-'}</td>
+                        <td className="px-3 py-2 text-xs">{click.utm_campaign || '-'}</td>
+                        <td className="px-3 py-2">
+                          {click.converted ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-medium">
+                              <i className="ri-check-line"></i>
+                              {click.conversion_type || 'Yes'}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-center">{click.pages_viewed || 1}</td>
+                        <td className="px-3 py-2">{click.session_duration_seconds ? `${click.session_duration_seconds}s` : '-'}</td>
                         <td className="px-3 py-2 text-xs text-gray-500 font-mono">{click.ip_address || '-'}</td>
                       </tr>
                     ))}

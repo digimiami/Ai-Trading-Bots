@@ -68,8 +68,24 @@ export default function TrackingRedirectPage() {
       const userAgent = navigator.userAgent;
       const deviceInfo = parseUserAgent(userAgent);
 
-      // Track the click (we'll get IP/geo on backend if needed)
-      // For now, track what we can on the frontend
+      // Get viewport dimensions (more accurate than screen)
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const devicePixelRatio = window.devicePixelRatio || 1;
+      const colorDepth = screen.colorDepth || 24;
+      const touchSupport = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      
+      // Determine if mobile traffic
+      const isMobileTraffic = deviceInfo.device_type === 'mobile' || viewportWidth < 768;
+
+      // Extract UTM parameters from tracking URL config
+      const utmSource = trackingUrl.source || urlParams.get('utm_source');
+      const utmMedium = trackingUrl.medium || urlParams.get('utm_medium');
+      const utmCampaign = trackingUrl.campaign_name || urlParams.get('utm_campaign');
+      const utmContent = trackingUrl.content || urlParams.get('utm_content');
+      const utmTerm = trackingUrl.term || urlParams.get('utm_term');
+
+      // Track the click with enhanced data
       const { error: clickError } = await supabase
         .from('tracking_url_clicks')
         .insert({
@@ -83,7 +99,19 @@ export default function TrackingRedirectPage() {
           os_version: deviceInfo.os_version,
           screen_width: screenWidth,
           screen_height: screenHeight,
+          viewport_width: viewportWidth,
+          viewport_height: viewportHeight,
+          device_pixel_ratio: devicePixelRatio,
+          color_depth: colorDepth,
+          touch_support: touchSupport,
           language: language,
+          utm_source: utmSource,
+          utm_medium: utmMedium,
+          utm_campaign: utmCampaign,
+          utm_content: utmContent,
+          utm_term: utmTerm,
+          is_mobile_traffic: isMobileTraffic,
+          landing_page_url: window.location.href,
           is_unique_visit: true, // Will be checked on backend
           session_id: sessionId,
           user_id: user?.id || null
@@ -95,7 +123,14 @@ export default function TrackingRedirectPage() {
       }
 
       // Build destination URL with UTM parameters
-      const destinationUrl = new URL(trackingUrl.destination_url);
+      // Ensure destination_url is a valid absolute URL
+      let destinationUrlString = trackingUrl.destination_url;
+      if (!destinationUrlString.startsWith('http://') && !destinationUrlString.startsWith('https://')) {
+        // If relative URL, prepend current origin
+        destinationUrlString = window.location.origin + (destinationUrlString.startsWith('/') ? '' : '/') + destinationUrlString;
+      }
+      
+      const destinationUrl = new URL(destinationUrlString);
       
       // Add UTM parameters
       if (trackingUrl.source) destinationUrl.searchParams.set('utm_source', trackingUrl.source);
