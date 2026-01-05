@@ -58,12 +58,14 @@ export default function AuthPage() {
       validateInviteCode(invite)
     }
     
-    // If plan is selected and signup=true, switch to signup mode
-    if (planId && isSignup) {
+    // If signup=true is present, switch to signup mode (plan optional)
+    if (isSignup) {
       setIsLogin(false)
-      // Store plan ID for later use during signup
-      localStorage.setItem('selectedPlanId', planId)
-      sessionStorage.setItem('selectedPlanId', planId)
+      // Store plan ID for later use during signup (optional)
+      if (planId) {
+        localStorage.setItem('selectedPlanId', planId)
+        sessionStorage.setItem('selectedPlanId', planId)
+      }
     }
   }, [])
 

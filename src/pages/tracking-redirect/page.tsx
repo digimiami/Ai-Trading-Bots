@@ -19,11 +19,11 @@ export default function TrackingRedirectPage() {
 
   const handleRedirect = async (code: string) => {
     try {
-      // Fetch tracking URL
+      // Fetch tracking URL (case-insensitive to handle O/0, I/1 confusion)
       const { data: trackingUrl, error: urlError } = await supabase
         .from('tracking_urls')
         .select('*')
-        .eq('short_code', code)
+        .ilike('short_code', code)
         .single();
 
       if (urlError) {
