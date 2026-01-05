@@ -153,10 +153,10 @@ export default function TrackingRedirectPage() {
         }
       });
 
-      // Redirect after a brief delay to ensure tracking is recorded
-      setTimeout(() => {
-        window.location.href = destinationUrl.toString();
-      }, 100);
+      // Redirect immediately - use replace to avoid back button issues
+      // Set loading to false to prevent error state
+      setLoading(false);
+      window.location.replace(destinationUrl.toString());
 
     } catch (err: any) {
       console.error('Redirect error:', err);
@@ -236,7 +236,8 @@ export default function TrackingRedirectPage() {
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <i className="ri-loader-4-line animate-spin text-4xl text-blue-600 mb-4"></i>
-          <p className="text-gray-600">Redirecting...</p>
+          <p className="text-gray-600">Redirecting to destination...</p>
+          <p className="text-sm text-gray-500 mt-2">Please wait...</p>
         </div>
       </div>
     );

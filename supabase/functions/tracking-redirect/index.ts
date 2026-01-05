@@ -203,7 +203,14 @@ serve(async (req) => {
 
     const isUniqueVisit = !recentClicks || recentClicks.length === 0;
 
-    // Record the click
+    // Extract UTM parameters from tracking URL config
+    const utmSource = trackingUrl.source || url.searchParams.get('utm_source');
+    const utmMedium = trackingUrl.medium || url.searchParams.get('utm_medium');
+    const utmCampaign = trackingUrl.campaign_name || url.searchParams.get('utm_campaign');
+    const utmContent = trackingUrl.content || url.searchParams.get('utm_content');
+    const utmTerm = trackingUrl.term || url.searchParams.get('utm_term');
+
+    // Record the click with enhanced data
     const { error: clickError } = await supabaseClient
       .from('tracking_url_clicks')
       .insert({
@@ -220,6 +227,11 @@ serve(async (req) => {
         browser_version: deviceInfo.browser_version,
         os: deviceInfo.os,
         os_version: deviceInfo.os_version,
+        utm_source: utmSource,
+        utm_medium: utmMedium,
+        utm_campaign: utmCampaign,
+        utm_content: utmContent,
+        utm_term: utmTerm,
         is_unique_visit: isUniqueVisit,
         session_id: sessionId
       });
@@ -230,7 +242,15 @@ serve(async (req) => {
     }
 
     // Build destination URL with UTM parameters
-    const destinationUrl = new URL(trackingUrl.destination_url);
+    // Ensure destination_url is a valid absolute URL
+    let destinationUrlString = trackingUrl.destination_url;
+    if (!destinationUrlString.startsWith('http://') && !destinationUrlString.startsWith('https://')) {
+      // If relative URL, prepend the origin from the request
+      const requestOrigin = `${url.protocol}//${url.host}`;
+      destinationUrlString = requestOrigin + (destinationUrlString.startsWith('/') ? '' : '/') + destinationUrlString;
+    }
+    
+    const destinationUrl = new URL(destinationUrlString);
     
     // Add UTM parameters
     if (trackingUrl.source) destinationUrl.searchParams.set('utm_source', trackingUrl.source);
