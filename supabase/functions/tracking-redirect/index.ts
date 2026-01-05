@@ -156,15 +156,29 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
-    // Fetch tracking URL from database
-    const { data: trackingUrl, error: urlError } = await supabaseClient
+    // Fetch tracking URL from database (case-insensitive to handle O/0, I/1 confusion)
+    let { data: trackingUrl, error: urlError } = await supabaseClient
       .from('tracking_urls')
       .select('*')
       .eq('short_code', shortCode)
       .single();
 
+    // If not found, try case-insensitive search
+    if (urlError && (urlError.code === 'PGRST116' || urlError.message?.includes('No rows'))) {
+      const { data: allUrls, error: searchError } = await supabaseClient
+        .from('tracking_urls')
+        .select('*');
+
+      if (!searchError && allUrls) {
+        trackingUrl = allUrls.find(
+          (url: any) => url.short_code.toLowerCase() === shortCode.toLowerCase()
+        ) || null;
+        urlError = trackingUrl ? null : { code: 'PGRST116', message: 'No rows found' };
+      }
+    }
+
     if (urlError || !trackingUrl) {
-      return new Response('Tracking URL not found', { status: 404, headers: corsHeaders });
+      return new Response(`Tracking URL not found for code: ${shortCode}`, { status: 404, headers: corsHeaders });
     }
 
     if (!trackingUrl.is_active) {
