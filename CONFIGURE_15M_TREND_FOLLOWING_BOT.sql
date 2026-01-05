@@ -107,12 +107,7 @@ SET strategy_config = jsonb_build_object(
     'enable_pair_win_rate', false,                -- Pair-Based Win Rate Calculation: OFF
     'pair_win_rate_update_frequency', 'periodic', -- Real-Time Pair Win Rate: OFF (use 'periodic' instead of 'realtime')
     'strategy_integration', ARRAY[]::text[],      -- Auto-Rebalancing (Combo): OFF (empty array)
-    'enable_automatic_execution', false,          -- Automatic Execution: OFF
-    
-    -- Additional Strategy Parameters
-    'momentum_threshold', 0.70,                   -- Momentum Threshold: 0.70
-    'ema_slope', 0.35,                            -- EMA Slope: 0.35
-    'vwap_distance', 1.1                          -- VWAP Distance: 1.1
+    'enable_automatic_execution', false           -- Automatic Execution: OFF
 )
 WHERE id = 'YOUR_BOT_ID';  -- ⚠️ REPLACE WITH YOUR ACTUAL BOT ID
 
