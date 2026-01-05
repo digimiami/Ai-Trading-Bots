@@ -26,8 +26,21 @@ export default function TrackingRedirectPage() {
         .eq('short_code', code)
         .single();
 
-      if (urlError || !trackingUrl) {
-        setError('Tracking URL not found');
+      if (urlError) {
+        console.error('Error fetching tracking URL:', urlError);
+        // Check if it's a "not found" error or something else
+        if (urlError.code === 'PGRST116' || urlError.message?.includes('No rows')) {
+          setError(`Tracking URL not found for code: ${code}`);
+        } else {
+          setError(`Error loading tracking URL: ${urlError.message}`);
+        }
+        setLoading(false);
+        return;
+      }
+
+      if (!trackingUrl) {
+        console.error('Tracking URL not found:', code);
+        setError(`Tracking URL not found for code: ${code}`);
         setLoading(false);
         return;
       }
