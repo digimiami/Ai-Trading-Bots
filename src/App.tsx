@@ -152,12 +152,16 @@ function AppRoutes() {
       const currentPath = window.location.pathname;
       const publicRoutes = ['/', '/auth', '/onboarding', '/market-dashboard', '/crypto-bubbles', '/crypto-news', '/contact', '/pricing', '/privacy', '/terms', '/risk', '/cookies', '/disclaimer', '/adwords'];
       
+      // Tracking redirect routes are public (allow redirects without auth)
+      const isTrackingRedirect = currentPath.startsWith('/t/');
+      const isPublicRoute = publicRoutes.includes(currentPath) || isTrackingRedirect;
+      
       if (!ONBOARDING_ENABLED && !isOnboardingCompleted) {
         localStorage.setItem('onboarding_completed', 'true');
       }
       
       // Only redirect if we're certain about auth state
-      if (user === null && !publicRoutes.includes(currentPath)) {
+      if (user === null && !isPublicRoute) {
         console.log('🔄 No user, redirecting to auth');
         navigate('/auth', { replace: true });
       } else if (user && currentPath === '/') {
