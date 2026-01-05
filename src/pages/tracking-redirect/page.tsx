@@ -21,23 +21,37 @@ export default function TrackingRedirectPage() {
     try {
       // Fetch tracking URL - try exact match first, then case-insensitive
       // This handles O/0, I/1 confusion
+      console.log('🔍 Looking up tracking URL for code:', code);
+      
       let { data: trackingUrl, error: urlError } = await supabase
         .from('tracking_urls')
         .select('*')
         .eq('short_code', code)
         .single();
 
+      console.log('🔍 Exact match result:', { trackingUrl: !!trackingUrl, error: urlError });
+
       // If not found, try case-insensitive search
       if (urlError && (urlError.code === 'PGRST116' || urlError.message?.includes('No rows'))) {
+        console.log('🔍 Trying case-insensitive search...');
         const { data: trackingUrls, error: searchError } = await supabase
           .from('tracking_urls')
           .select('*');
+
+        console.log('🔍 All tracking URLs:', trackingUrls?.map((u: any) => u.short_code));
 
         if (!searchError && trackingUrls) {
           // Find case-insensitive match
           trackingUrl = trackingUrls.find(
             (url: any) => url.short_code.toLowerCase() === code.toLowerCase()
           ) || null;
+          
+          console.log('🔍 Case-insensitive match found:', !!trackingUrl);
+          
+          if (trackingUrl) {
+            console.log('✅ Matched short_code:', trackingUrl.short_code, 'with input:', code);
+          }
+          
           urlError = trackingUrl ? null : { code: 'PGRST116', message: 'No rows found' };
         }
       }
