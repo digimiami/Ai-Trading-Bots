@@ -825,8 +825,30 @@ IMPORTANT GUIDELINES:
     );
   } catch (error: any) {
     console.error('Error in ai-assistant function:', error);
+    console.error('Error stack:', error.stack);
+    console.error('Error details:', {
+      message: error.message,
+      name: error.name,
+      cause: error.cause
+    });
+    
+    // Sanitize error message to prevent exposing internal details
+    let errorMessage = 'Internal server error';
+    if (error.message) {
+      // If error mentions backtest, provide a helpful message instead
+      if (error.message.includes('backtest') || error.message.includes('backTest')) {
+        errorMessage = 'The AI assistant encountered an issue. Please try rephrasing your question about backtesting, or navigate directly to the /backtest page to use the backtesting feature.';
+      } else if (error.message.includes('is not defined')) {
+        errorMessage = 'An error occurred processing your request. Please try rephrasing your question.';
+      } else {
+        // Only show safe error messages
+        const safeMessage = error.message.substring(0, 200); // Limit length
+        errorMessage = safeMessage;
+      }
+    }
+    
     return new Response(
-      JSON.stringify({ error: error.message || 'Internal server error' }),
+      JSON.stringify({ error: errorMessage }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
