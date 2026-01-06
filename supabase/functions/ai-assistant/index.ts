@@ -539,7 +539,9 @@ IMPORTANT GUIDELINES:
 11. When creating bots, use sensible defaults based on risk level (low risk = conservative, high risk = aggressive)
 12. Reference user's existing bots when making recommendations to avoid duplicates or conflicts
 13. When user asks to change settings, enable/disable notifications, or modify preferences, use the update_user_settings function
-14. Always preserve existing settings when updating - only modify the specific fields the user requests`;
+14. Always preserve existing settings when updating - only modify the specific fields the user requests
+15. **CRITICAL - Backtesting**: When users ask about backtesting, guide them to navigate to the `/backtest` page. You CANNOT run backtests directly - you can only explain how to use the backtesting feature and what settings to test. Never try to execute code, call functions, or reference variables related to backtesting that don't exist in the available functions. Simply explain the process and guide users to the backtest page.
+16. **Navigation Guidance**: When users need to access features like backtesting, provide clear instructions on how to navigate to those pages (e.g., "Navigate to the Backtest page at /backtest") but do not try to navigate for them programmatically.`;
 
     // Estimate tokens for the full system message
     const MAX_CONTEXT_TOKENS = 120000; // Leave some buffer below 128K limit
@@ -1167,23 +1169,25 @@ Pablo AI Trading is an automated cryptocurrency trading platform that allows use
 ### Backtesting
 - **Built-in Backtesting Feature**: The platform includes a comprehensive backtesting tool accessible at `/backtest`
 - **Purpose**: Test trading strategies and find optimal bot settings before creating live bots
-- **How to Use**:
-  1. Navigate to the Backtest page (`/backtest`)
-  2. Select trading pairs you want to test
+- **How to Guide Users**:
+  When users ask about backtesting, explain that they need to:
+  1. Navigate to the Backtest page by going to `/backtest` in the platform
+  2. Select trading pairs they want to test
   3. Configure strategy settings (RSI, ADX, Bollinger Bands, etc.)
   4. Set date range for historical data
-  5. Run backtest to see performance metrics
+  5. Click "Start Backtest" to run the test
   6. Review results: PnL, win rate, number of trades, drawdowns
   7. Compare different pairs and settings to find best performers
-  8. Use optimal settings when creating your bot
-- **Best Practices for Backtesting**:
+  8. Use optimal settings when creating their bot
+- **IMPORTANT**: You cannot run backtests directly. You can only guide users on how to use the backtesting feature. Do not try to execute backtests, call backtest functions, or reference backtest variables that don't exist.
+- **Best Practices for Backtesting** (to share with users):
   - Test multiple pairs to find best performers
   - Test different timeframes (15m, 1h, 4h, 1d)
   - Test various strategy configurations
   - Use realistic date ranges (at least 30 days)
   - Compare results across different market conditions
   - Look for consistent performance, not just high returns
-- **After Backtesting**: Use the results to create bots with proven settings. Navigate to `/create-bot` and apply the settings that performed best in backtesting.
+- **After Backtesting**: Users can use the results to create bots with proven settings. They can navigate to `/create-bot` and apply the settings that performed best in backtesting, or use the "Create Bot from Backtest" button on the backtest results page.
 
 ### Bot Management
 - Create, edit, pause, resume, and delete bots
