@@ -81,74 +81,70 @@ function AppRoutes() {
 
   useEffect(() => {
     if (!loading && user) {
-      const checkFirstTimeLogin = async () => {
+      const checkSetupWizard = async () => {
         try {
           // Wait a bit for user profile to be created by trigger
           await new Promise(resolve => setTimeout(resolve, 1500));
           
-          // Check if user has API keys configured
           const { data: { session } } = await supabase.auth.getSession();
           if (!session) {
-            console.log('⚠️ No session found, skipping API key check');
+            console.log('⚠️ No session found, skipping wizard check');
             return;
           }
 
-          const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL;
-          const response = await fetch(`${supabaseUrl}/functions/v1/api-keys/list`, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`,
-              'Content-Type': 'application/json',
-            },
-          });
+          // Check if setup wizard is completed
+          const { data: userData, error } = await supabase
+            .from('users')
+            .select('setup_wizard_completed')
+            .eq('id', user.id)
+            .single();
 
-          if (response.ok) {
-            const data = await response.json();
-            const hasApiKeys = data.apiKeys && data.apiKeys.length > 0;
-            const currentPath = window.location.pathname;
-            const settingsRoutes = ['/settings', '/auth', '/onboarding'];
-            const publicRoutes = ['/', '/market-dashboard', '/crypto-bubbles', '/crypto-news', '/contact', '/pricing', '/privacy', '/terms', '/risk', '/cookies', '/disclaimer', '/adwords'];
-            
-            console.log('🔍 First-time login check:', { 
-              hasApiKeys, 
-              currentPath, 
-              isSettingsRoute: settingsRoutes.includes(currentPath),
-              isPublicRoute: publicRoutes.includes(currentPath)
-            });
-            
-            // If no API keys and not already on settings/auth/onboarding/public pages, redirect to settings
-            if (!hasApiKeys && !settingsRoutes.includes(currentPath) && !publicRoutes.includes(currentPath)) {
-              console.log('🔄 First-time user detected (no API keys), redirecting to settings');
-              navigate('/settings', { replace: true });
-              return;
-            }
-          } else {
-            console.warn('⚠️ Failed to check API keys:', response.status, response.statusText);
+          if (error && error.code !== 'PGRST116') {
+            console.warn('⚠️ Failed to check wizard status:', error);
+            return;
+          }
+
+          const wizardCompleted = userData?.setup_wizard_completed || false;
+          const currentPath = window.location.pathname;
+          const wizardRoutes = ['/onboarding', '/auth'];
+          const publicRoutes = ['/', '/market-dashboard', '/crypto-bubbles', '/crypto-news', '/contact', '/pricing', '/privacy', '/terms', '/risk', '/cookies', '/disclaimer', '/adwords', '/t/*'];
+          
+          console.log('🔍 Setup wizard check:', { 
+            wizardCompleted, 
+            currentPath, 
+            isWizardRoute: wizardRoutes.includes(currentPath),
+            isPublicRoute: publicRoutes.some(route => currentPath === route || currentPath.startsWith(route))
+          });
+          
+          // If wizard not completed and not already on wizard/auth/public pages, redirect to onboarding
+          if (!wizardCompleted && !wizardRoutes.includes(currentPath) && !publicRoutes.some(route => currentPath === route || currentPath.startsWith(route))) {
+            console.log('🔄 Setup wizard not completed, redirecting to onboarding');
+            navigate('/onboarding', { replace: true });
+            return;
           }
         } catch (error) {
-          console.error('❌ Error checking API keys for first-time login:', error);
+          console.error('❌ Error checking setup wizard status:', error);
           // Don't block navigation on error
         }
       };
 
       // Only check on first load, not on every route change
-      const hasCheckedFirstTime = sessionStorage.getItem('firstTimeLoginChecked');
-      if (!hasCheckedFirstTime) {
-        console.log('🔄 Starting first-time login check...');
-        checkFirstTimeLogin();
-        sessionStorage.setItem('firstTimeLoginChecked', 'true');
+      const hasCheckedWizard = sessionStorage.getItem('setupWizardChecked');
+      if (!hasCheckedWizard) {
+        console.log('🔄 Starting setup wizard check...');
+        checkSetupWizard();
+        sessionStorage.setItem('setupWizardChecked', 'true');
       } else {
-        console.log('✅ First-time login already checked, skipping');
+        console.log('✅ Setup wizard already checked, skipping');
       }
     } else if (!loading && !user) {
       // Clear the check flag when user logs out
-      sessionStorage.removeItem('firstTimeLoginChecked');
+      sessionStorage.removeItem('setupWizardChecked');
     }
   }, [user, loading, navigate]);
 
   useEffect(() => {
     if (!loading) {
-      const isOnboardingCompleted = localStorage.getItem('onboarding_completed');
       const currentPath = window.location.pathname;
       const publicRoutes = ['/', '/auth', '/onboarding', '/market-dashboard', '/crypto-bubbles', '/crypto-news', '/contact', '/pricing', '/privacy', '/terms', '/risk', '/cookies', '/disclaimer', '/adwords'];
       
@@ -156,19 +152,12 @@ function AppRoutes() {
       const isTrackingRedirect = currentPath.startsWith('/t/');
       const isPublicRoute = publicRoutes.includes(currentPath) || isTrackingRedirect;
       
-      if (!ONBOARDING_ENABLED && !isOnboardingCompleted) {
-        localStorage.setItem('onboarding_completed', 'true');
-      }
-      
       // Only redirect if we're certain about auth state
       if (user === null && !isPublicRoute) {
         console.log('🔄 No user, redirecting to auth');
         navigate('/auth', { replace: true });
       } else if (user && currentPath === '/') {
         navigate('/dashboard', { replace: true });
-      } else if (user && ONBOARDING_ENABLED && !isOnboardingCompleted && currentPath !== '/onboarding') {
-        console.log('🔄 User logged in but onboarding not completed, redirecting to onboarding');
-        navigate('/onboarding', { replace: true });
       }
     }
   }, [user, loading, navigate]);

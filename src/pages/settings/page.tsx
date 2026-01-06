@@ -16,6 +16,7 @@ import type { ProfileData } from '../../hooks/useProfile';
 import { supabase } from '../../lib/supabase';
 import { openAIService } from '../../services/openai';
 import { useEmailNotifications } from '../../hooks/useEmailNotifications';
+import { useSetupWizard } from '../../hooks/useSetupWizard';
 
 export default function Settings() {
   const navigate = useNavigate();
@@ -29,6 +30,7 @@ export default function Settings() {
     updateEmailPreferences, 
     updateAlertSettings 
   } = useEmailNotifications();
+  const { completed: wizardCompleted, resetWizard } = useSetupWizard();
 
   const [notifications] = useState({
     push: true,
@@ -1971,6 +1973,64 @@ export default function Settings() {
 
         {/* Telegram Notifications */}
         <TelegramSettings />
+
+        {/* Setup Wizard Status */}
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                <i className="ri-wizard-line text-xl mr-2 text-purple-600"></i>
+                Setup Wizard
+              </h3>
+              <p className="text-sm text-gray-600 mt-1">
+                Complete the setup wizard to configure your account
+              </p>
+            </div>
+            <div className={`px-3 py-1 rounded-full text-sm font-medium ${
+              wizardCompleted 
+                ? 'bg-green-100 text-green-700' 
+                : 'bg-yellow-100 text-yellow-700'
+            }`}>
+              {wizardCompleted ? 'Completed' : 'Not Completed'}
+            </div>
+          </div>
+
+          {wizardCompleted ? (
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600">
+                You've completed the setup wizard. You can re-run it to update your preferences.
+              </p>
+              <Button
+                variant="secondary"
+                onClick={async () => {
+                  const confirmed = window.confirm('Are you sure you want to re-run the setup wizard? This will take you through the setup process again.');
+                  if (confirmed) {
+                    await resetWizard();
+                    navigate('/onboarding');
+                  }
+                }}
+                className="w-full"
+              >
+                <i className="ri-refresh-line mr-2"></i>
+                Re-run Setup Wizard
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600">
+                Complete the setup wizard to configure your profile, API keys, and notifications.
+              </p>
+              <Button
+                variant="primary"
+                onClick={() => navigate('/onboarding')}
+                className="w-full"
+              >
+                <i className="ri-arrow-right-line mr-2"></i>
+                Start Setup Wizard
+              </Button>
+            </div>
+          )}
+        </Card>
 
         {/* Paper Trading Balance */}
         <PaperTradingBalance />

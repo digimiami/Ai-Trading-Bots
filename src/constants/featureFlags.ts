@@ -1,2 +1,2 @@
-export const ONBOARDING_ENABLED = false;
+export const ONBOARDING_ENABLED = true;
 
