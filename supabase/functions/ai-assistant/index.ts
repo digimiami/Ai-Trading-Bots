@@ -1164,6 +1164,27 @@ Pablo AI Trading is an automated cryptocurrency trading platform that allows use
 
 ## PLATFORM FEATURES
 
+### Backtesting
+- **Built-in Backtesting Feature**: The platform includes a comprehensive backtesting tool accessible at `/backtest`
+- **Purpose**: Test trading strategies and find optimal bot settings before creating live bots
+- **How to Use**:
+  1. Navigate to the Backtest page (`/backtest`)
+  2. Select trading pairs you want to test
+  3. Configure strategy settings (RSI, ADX, Bollinger Bands, etc.)
+  4. Set date range for historical data
+  5. Run backtest to see performance metrics
+  6. Review results: PnL, win rate, number of trades, drawdowns
+  7. Compare different pairs and settings to find best performers
+  8. Use optimal settings when creating your bot
+- **Best Practices for Backtesting**:
+  - Test multiple pairs to find best performers
+  - Test different timeframes (15m, 1h, 4h, 1d)
+  - Test various strategy configurations
+  - Use realistic date ranges (at least 30 days)
+  - Compare results across different market conditions
+  - Look for consistent performance, not just high returns
+- **After Backtesting**: Use the results to create bots with proven settings. Navigate to `/create-bot` and apply the settings that performed best in backtesting.
+
 ### Bot Management
 - Create, edit, pause, resume, and delete bots
 - Clone existing bots with same settings
@@ -1190,14 +1211,16 @@ Pablo AI Trading is an automated cryptocurrency trading platform that allows use
 
 ## BEST PRACTICES
 
-1. **Start with Paper Trading**: Test strategies before using real money
-2. **Use Conservative Settings**: Lower leverage, tighter stops initially
-3. **Monitor Performance**: Regularly review bot performance and adjust
-4. **Risk Management First**: Always prioritize capital preservation
-5. **Understand Settings**: Know what each parameter does before changing
-6. **Start Small**: Begin with small position sizes
-7. **Diversify**: Use multiple bots/pairs to spread risk
-8. **Keep Learning**: Continuously educate yourself on trading concepts
+1. **Use Backtesting First**: Before creating a bot, use the backtesting feature (`/backtest`) to test strategies and find best performing pairs
+2. **Start with Paper Trading**: Test strategies before using real money
+3. **Use Conservative Settings**: Lower leverage, tighter stops initially
+4. **Monitor Performance**: Regularly review bot performance and adjust
+5. **Risk Management First**: Always prioritize capital preservation
+6. **Understand Settings**: Know what each parameter does before changing
+7. **Start Small**: Begin with small position sizes
+8. **Diversify**: Use multiple bots/pairs to spread risk
+9. **Keep Learning**: Continuously educate yourself on trading concepts
+10. **Test Multiple Pairs**: Use backtesting to compare different trading pairs and find the best performers
 
 ## SUPPORT & HELP
 
