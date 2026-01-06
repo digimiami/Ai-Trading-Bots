@@ -107,7 +107,7 @@ function AppRoutes() {
           const wizardCompleted = userData?.setup_wizard_completed || false;
           const currentPath = window.location.pathname;
           const wizardRoutes = ['/onboarding', '/auth'];
-          const publicRoutes = ['/', '/market-dashboard', '/crypto-bubbles', '/crypto-news', '/contact', '/pricing', '/privacy', '/terms', '/risk', '/cookies', '/disclaimer', '/adwords', '/t/*'];
+          const publicRoutes = ['/', '/market-dashboard', '/crypto-bubbles', '/crypto-news', '/contact', '/pricing', '/privacy', '/terms', '/risk', '/cookies', '/disclaimer', '/adwords', '/t/*', '/ai-assistant', '/create-bot', '/backtest'];
           
           console.log('🔍 Setup wizard check:', { 
             wizardCompleted, 
