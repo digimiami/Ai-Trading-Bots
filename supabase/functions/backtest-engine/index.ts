@@ -424,7 +424,23 @@ async function runBacktestForSymbol(
         );
         console.log(`✅ Successfully fetched ${klines.length} klines from Binance for ${symbol}`);
       } catch (binanceError: any) {
-        throw new Error(`Failed to fetch data from both Bybit and Binance: ${binanceError.message}`);
+        // If Binance is also geo-blocked, try CryptoCompare as final fallback
+        if (binanceError.message && binanceError.message.includes('GEO_BLOCKED')) {
+          console.log(`⚠️ Binance is also geo-blocked, falling back to CryptoCompare API for ${symbol}...`);
+          try {
+            klines = await fetchCryptoCompareKlines(
+              symbol,
+              config.timeframe,
+              startTime,
+              endTime
+            );
+            console.log(`✅ Successfully fetched ${klines.length} klines from CryptoCompare for ${symbol}`);
+          } catch (cryptoCompareError: any) {
+            throw new Error(`Failed to fetch data from Bybit, Binance, and CryptoCompare: ${cryptoCompareError.message}`);
+          }
+        } else {
+          throw new Error(`Failed to fetch data from both Bybit and Binance: ${binanceError.message}`);
+        }
       }
     } else {
       throw error;
