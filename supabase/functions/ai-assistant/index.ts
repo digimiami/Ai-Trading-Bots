@@ -47,8 +47,21 @@ serve(async (req) => {
 
     // Early return for backtesting questions to prevent errors
     // This is a temporary workaround until we identify the root cause
-    const messageLower = message.toLowerCase();
-    if (messageLower.includes('backtest') && (messageLower.includes('use') || messageLower.includes('find') || messageLower.includes('best'))) {
+    const messageLower = message.toLowerCase().replace(/\s+/g, ''); // Remove spaces for better matching
+    const backtestVariations = ['backtest', 'back-test', 'back test', 'basktest', 'baktest', 'backtes', 'backetest'];
+    const backtestKeywords = ['run', 'use', 'find', 'best', 'perform', 'test', 'execute', 'start', 'do'];
+    
+    const hasBacktest = backtestVariations.some(variant => messageLower.includes(variant));
+    const hasBacktestKeyword = backtestKeywords.some(keyword => messageLower.includes(keyword));
+    
+    // Also check original message with spaces for phrases
+    const originalLower = message.toLowerCase();
+    const hasBacktestPhrase = originalLower.includes('backtest') || 
+                               originalLower.includes('back test') || 
+                               originalLower.includes('back-test') ||
+                               (originalLower.includes('back') && originalLower.includes('test'));
+    
+    if (hasBacktest || (hasBacktestPhrase && hasBacktestKeyword) || (hasBacktestPhrase && originalLower.includes('run'))) {
       console.log('🔧 [AI Assistant] Detected backtesting question, providing direct response');
       return new Response(
         JSON.stringify({
