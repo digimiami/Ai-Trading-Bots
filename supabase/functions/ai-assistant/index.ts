@@ -45,6 +45,52 @@ serve(async (req) => {
       );
     }
 
+    // Early return for backtesting questions to prevent errors
+    // This is a temporary workaround until we identify the root cause
+    const messageLower = message.toLowerCase();
+    if (messageLower.includes('backtest') && (messageLower.includes('use') || messageLower.includes('find') || messageLower.includes('best'))) {
+      console.log('🔧 [AI Assistant] Detected backtesting question, providing direct response');
+      return new Response(
+        JSON.stringify({
+          response: `I can help you with backtesting! Here's how to use the backtesting feature on Pablo AI Trading:
+
+**To Use Backtesting:**
+1. Navigate to the **Backtest** page by clicking on "Backtest" in the navigation menu or going to \`/backtest\` in your browser
+2. Select the trading pairs you want to test (e.g., BTCUSDT, ETHUSDT, SOLUSDT)
+3. Configure your strategy settings:
+   - Choose your strategy (RSI, ADX, Bollinger Bands, etc.)
+   - Set your timeframe (15m, 1h, 4h, 1d)
+   - Configure risk parameters (stop loss, take profit)
+   - Set the date range for historical data
+4. Click "Start Backtest" to run the test
+5. Review the results:
+   - PnL (Profit and Loss)
+   - Win rate percentage
+   - Number of trades
+   - Drawdowns
+   - Performance by pair
+
+**Best Practices:**
+- Test multiple pairs to find the best performers
+- Test different timeframes to see which works best
+- Test various strategy configurations
+- Use realistic date ranges (at least 30 days)
+- Compare results across different market conditions
+- Look for consistent performance, not just high returns
+
+**After Backtesting:**
+Once you find the best performing pairs and settings, you can:
+- Create a bot with those settings by clicking "Create Bot from Backtest" on the results page
+- Or navigate to \`/create-bot\` and manually apply the settings that performed best
+
+Would you like help configuring a specific strategy for backtesting, or do you have questions about interpreting backtest results?`,
+          provider: 'Direct Response',
+          model: 'Workaround'
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Process attachments - extract text content if available
     let attachmentContext = '';
     if (attachments && attachments.length > 0) {
