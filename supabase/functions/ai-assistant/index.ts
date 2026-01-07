@@ -2159,6 +2159,119 @@ async function executeCheckExchangeBalance(supabaseClient: any, userId: string, 
 }
 
 // Get market data
+async function executeRunBacktest(supabaseClient: any, userId: string, params: any) {
+  try {
+    console.log('🔧 [executeRunBacktest] Starting backtest with params:', JSON.stringify(params, null, 2));
+    
+    // Validate required parameters
+    if (!params.name || !params.symbols || !Array.isArray(params.symbols) || params.symbols.length === 0) {
+      return { success: false, error: 'Backtest requires: name, and symbols (array of trading pairs)' };
+    }
+    
+    if (!params.startDate || !params.endDate) {
+      return { success: false, error: 'Backtest requires startDate and endDate in ISO format' };
+    }
+    
+    // Set defaults
+    const exchange = params.exchange || 'bybit';
+    const tradingType = params.tradingType || 'spot';
+    const timeframe = params.timeframe || '1h';
+    const leverage = params.leverage || (tradingType === 'futures' ? 2 : 1);
+    const riskLevel = params.riskLevel || 'medium';
+    const tradeAmount = params.tradeAmount || 100;
+    
+    // Risk level defaults
+    const riskDefaults: any = {
+      low: { stopLoss: 2.0, takeProfit: 4.0 },
+      medium: { stopLoss: 3.0, takeProfit: 6.0 },
+      high: { stopLoss: 4.0, takeProfit: 8.0 }
+    };
+    const defaults = riskDefaults[riskLevel] || riskDefaults.medium;
+    
+    const stopLoss = params.stopLoss || defaults.stopLoss;
+    const takeProfit = params.takeProfit || defaults.takeProfit;
+    
+    // Build strategy if not provided
+    let strategy = params.strategy || {
+      type: 'rsi',
+      enabled: true,
+      rsi_period: 14,
+      rsi_oversold: 30,
+      rsi_overbought: 70
+    };
+    
+    // Prepare backtest data
+    const backtestData = {
+      name: params.name,
+      symbols: params.symbols.map((s: string) => s.toUpperCase()),
+      exchange,
+      tradingType,
+      timeframe,
+      leverage,
+      riskLevel,
+      tradeAmount,
+      stopLoss,
+      takeProfit,
+      strategy,
+      strategyConfig: params.strategyConfig || {},
+      startDate: params.startDate,
+      endDate: params.endDate
+    };
+    
+    console.log('🔧 [executeRunBacktest] Calling backtest-engine with data:', JSON.stringify(backtestData, null, 2));
+    
+    // Call backtest-engine function
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    const backtestUrl = `${supabaseUrl}/functions/v1/backtest-engine`;
+    
+    const response = await fetch(backtestUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${serviceRoleKey}`,
+        'apikey': serviceRoleKey
+      },
+      body: JSON.stringify(backtestData)
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      console.error('❌ [executeRunBacktest] Backtest engine error:', response.status, errorData);
+      return { 
+        success: false, 
+        error: errorData.error || `Backtest failed with status ${response.status}` 
+      };
+    }
+    
+    const result = await response.json();
+    console.log('✅ [executeRunBacktest] Backtest completed:', result);
+    
+    // Format results for AI
+    const summary = {
+      success: true,
+      name: params.name,
+      symbols: params.symbols,
+      totalTrades: result.total_trades || 0,
+      winRate: result.win_rate ? `${(result.win_rate * 100).toFixed(2)}%` : '0%',
+      totalPnL: result.total_pnl || 0,
+      totalPnLPercentage: result.total_pnl_percentage ? `${result.total_pnl_percentage.toFixed(2)}%` : '0%',
+      maxDrawdown: result.max_drawdown ? `${result.max_drawdown.toFixed(2)}%` : '0%',
+      sharpeRatio: result.sharpe_ratio ? result.sharpe_ratio.toFixed(2) : '0',
+      resultsPerPair: result.results_per_pair || {},
+      message: `Backtest completed successfully for ${params.symbols.length} pair(s). Total trades: ${result.total_trades || 0}, Win rate: ${result.win_rate ? (result.win_rate * 100).toFixed(2) : 0}%, Total PnL: ${result.total_pnl || 0} USDT (${result.total_pnl_percentage ? result.total_pnl_percentage.toFixed(2) : 0}%)`
+    };
+    
+    return summary;
+  } catch (error: any) {
+    console.error('❌ [executeRunBacktest] Error:', error);
+    return { 
+      success: false, 
+      error: error.message || 'Failed to run backtest' 
+    };
+  }
+}
+
 async function executeGetMarketData(symbol: string, exchange: string = 'bybit', tradingType: string = 'futures') {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
