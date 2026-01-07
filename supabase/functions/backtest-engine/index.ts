@@ -27,6 +27,83 @@ function mapTimeframeToBybitInterval(timeframe: string): string {
   return intervalMap[timeframe] || '60';
 }
 
+// Fetch historical klines from Binance (fallback when Bybit is geo-blocked)
+async function fetchBinanceKlines(
+  symbol: string,
+  interval: string,
+  startTime: number,
+  endTime: number
+): Promise<any[]> {
+  const intervalMap: { [key: string]: string } = {
+    '1m': '1m', '3m': '3m', '5m': '5m', '15m': '15m', '30m': '30m',
+    '1h': '1h', '2h': '2h', '4h': '4h', '6h': '6h', '12h': '12h',
+    '1d': '1d', '1w': '1w', '1M': '1M'
+  };
+  const binanceInterval = intervalMap[interval] || '1h';
+  const allKlines: any[] = [];
+  let currentStart = startTime;
+  const maxLimit = 1000; // Binance max per request
+
+  while (currentStart < endTime) {
+    const params = new URLSearchParams({
+      symbol: symbol,
+      interval: binanceInterval,
+      startTime: currentStart.toString(),
+      endTime: endTime.toString(),
+      limit: maxLimit.toString(),
+    });
+
+    const url = `https://api.binance.com/api/v3/klines?${params.toString()}`;
+    console.log(`Fetching klines from Binance for ${symbol}: ${url}`);
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Binance API error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      if (!Array.isArray(data) || data.length === 0) {
+        break; // No more data
+      }
+
+      // Binance format: [timestamp, open, high, low, close, volume, ...]
+      // Convert to Bybit-like format: [timestamp, open, high, low, close, volume]
+      const klines = data.map((k: any[]) => [
+        k[0].toString(), // timestamp in ms
+        k[1], // open
+        k[2], // high
+        k[3], // low
+        k[4], // close
+        k[5], // volume
+      ]);
+
+      allKlines.push(...klines);
+
+      const lastTimestamp = parseInt(klines[klines.length - 1][0]);
+      if (lastTimestamp >= endTime || klines.length < maxLimit) {
+        break; // Reached end time or got all data
+      }
+
+      currentStart = lastTimestamp + 1;
+      await new Promise(resolve => setTimeout(resolve, 200));
+    } catch (error) {
+      console.error(`Error fetching klines from Binance for ${symbol}:`, error);
+      throw error;
+    }
+  }
+
+  return allKlines;
+}
+
 // Fetch historical klines from Bybit
 async function fetchBybitKlines(
   symbol: string,
@@ -221,15 +298,37 @@ async function runBacktestForSymbol(
   
   const category = config.tradingType === 'spot' ? 'spot' : 'linear';
   
-  // Fetch all klines
+  // Fetch all klines - try Bybit first, fallback to Binance if geo-blocked
   console.log(`Fetching klines for ${symbol} from ${startDate} to ${endDate}`);
-  const klines = await fetchBybitKlines(
-    symbol,
-    config.timeframe,
-    startTime,
-    endTime,
-    category
-  );
+  let klines: any[] = [];
+  
+  try {
+    klines = await fetchBybitKlines(
+      symbol,
+      config.timeframe,
+      startTime,
+      endTime,
+      category
+    );
+  } catch (error: any) {
+    // If Bybit is geo-blocked, try Binance as fallback
+    if (error.message && error.message.includes('GEO_BLOCKED')) {
+      console.log(`⚠️ Bybit is geo-blocked, falling back to Binance API for ${symbol}...`);
+      try {
+        klines = await fetchBinanceKlines(
+          symbol,
+          config.timeframe,
+          startTime,
+          endTime
+        );
+        console.log(`✅ Successfully fetched ${klines.length} klines from Binance for ${symbol}`);
+      } catch (binanceError: any) {
+        throw new Error(`Failed to fetch data from both Bybit and Binance: ${binanceError.message}`);
+      }
+    } else {
+      throw error;
+    }
+  }
   
   if (klines.length === 0) {
     throw new Error(`No historical data found for ${symbol}`);
