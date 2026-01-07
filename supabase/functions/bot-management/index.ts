@@ -127,7 +127,7 @@ serve(async (req) => {
 
           const { data: realTrades, error: realTradesError } = await supabaseClient
             .from('trades')
-            .select('bot_id, status, pnl, fee, executed_at, exit_price')
+            .select('bot_id, status, pnl, fee, executed_at')
             .eq('user_id', user.id)
             .in('bot_id', botIds)
             .order('executed_at', { ascending: true });
@@ -141,7 +141,7 @@ serve(async (req) => {
               const status = (trade.status || '').toString().toLowerCase();
               const pnlValue = trade.pnl !== null && trade.pnl !== undefined ? parseFloat(trade.pnl) : NaN;
               const feeValue = trade.fee !== null && trade.fee !== undefined ? parseFloat(trade.fee) : 0;
-              const hasExitPrice = trade.exit_price !== null && trade.exit_price !== undefined;
+              // Note: trades table doesn't have exit_price column
 
               // Count as executed if status is in executedStatuses
               if (executedStatuses.has(status)) {
@@ -151,9 +151,8 @@ serve(async (req) => {
 
               // Count as closed if:
               // 1. Status is in closedStatuses, OR
-              // 2. Trade has a PnL value (meaning it's been closed), OR
-              // 3. Trade has an exit_price (meaning position was closed)
-              const isClosed = closedStatuses.has(status) || (!Number.isNaN(pnlValue) && pnlValue !== 0) || hasExitPrice;
+              // 2. Trade has a PnL value (meaning it's been closed)
+              const isClosed = closedStatuses.has(status) || (!Number.isNaN(pnlValue) && pnlValue !== 0);
               
               if (isClosed && !Number.isNaN(pnlValue)) {
                 stats.closedTrades += 1;
@@ -852,7 +851,7 @@ serve(async (req) => {
               const status = (trade.status || '').toString().toLowerCase();
               const pnlValue = trade.pnl !== null && trade.pnl !== undefined ? parseFloat(trade.pnl) : NaN;
               const feeValue = trade.fee !== null && trade.fee !== undefined ? parseFloat(trade.fee) : 0;
-              const hasExitPrice = trade.exit_price !== null && trade.exit_price !== undefined;
+              // Note: trades table doesn't have exit_price column
 
               // Count as executed if status is in executedStatuses
               if (executedStatuses.has(status)) {
@@ -862,9 +861,8 @@ serve(async (req) => {
 
               // Count as closed if:
               // 1. Status is in closedStatuses, OR
-              // 2. Trade has a PnL value (meaning it's been closed), OR
-              // 3. Trade has an exit_price (meaning position was closed)
-              const isClosed = closedStatuses.has(status) || (!Number.isNaN(pnlValue) && pnlValue !== 0) || hasExitPrice;
+              // 2. Trade has a PnL value (meaning it's been closed)
+              const isClosed = closedStatuses.has(status) || (!Number.isNaN(pnlValue) && pnlValue !== 0);
               
               if (isClosed && !Number.isNaN(pnlValue)) {
                 stats.closedTrades += 1;
