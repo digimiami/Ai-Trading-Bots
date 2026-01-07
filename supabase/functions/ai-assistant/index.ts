@@ -513,6 +513,77 @@ What would you like help with - choosing pairs to test, configuring a strategy, 
         }
       },
       {
+        name: 'run_backtest',
+        description: 'Run a backtest to test trading strategies and find optimal bot settings. Use this when user asks to backtest, test strategies, find best pairs, or analyze historical performance. This will run a backtest on specified trading pairs with given strategy settings.',
+        parameters: {
+          type: 'object',
+          properties: {
+            name: {
+              type: 'string',
+              description: 'Name for the backtest (e.g., "BTCUSDT RSI Strategy Test")'
+            },
+            symbols: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Array of trading pairs to test (e.g., ["BTCUSDT", "ETHUSDT", "SOLUSDT"])'
+            },
+            exchange: {
+              type: 'string',
+              enum: ['bybit'],
+              description: 'Exchange to test on (currently only bybit is supported)'
+            },
+            tradingType: {
+              type: 'string',
+              enum: ['spot', 'futures'],
+              description: 'Trading type (spot or futures)'
+            },
+            timeframe: {
+              type: 'string',
+              enum: ['1m', '3m', '5m', '15m', '30m', '45m', '1h', '2h', '3h', '4h', '5h', '6h', '7h', '8h', '9h', '10h', '12h', '1d', '1w', '1M'],
+              description: 'Chart timeframe for the backtest'
+            },
+            leverage: {
+              type: 'number',
+              description: 'Leverage to use (1-100x, only for futures, default: 1 for spot)'
+            },
+            riskLevel: {
+              type: 'string',
+              enum: ['low', 'medium', 'high'],
+              description: 'Risk level (affects default parameters)'
+            },
+            tradeAmount: {
+              type: 'number',
+              description: 'Trade amount in USDT per trade (default: 100)'
+            },
+            stopLoss: {
+              type: 'number',
+              description: 'Stop loss percentage (default: 2.0 for low risk, 3.0 for medium, 4.0 for high)'
+            },
+            takeProfit: {
+              type: 'number',
+              description: 'Take profit percentage (default: 4.0 for low risk, 6.0 for medium, 8.0 for high)'
+            },
+            strategy: {
+              type: 'object',
+              description: 'Trading strategy configuration (e.g., RSI, ADX, Bollinger Bands)'
+            },
+            strategyConfig: {
+              type: 'object',
+              description: 'Advanced strategy configuration (optional, for fine-tuning strategy parameters)'
+            },
+            startDate: {
+              type: 'string',
+              description: 'Start date for backtest in ISO format (e.g., "2024-01-01T00:00:00Z")'
+            },
+            endDate: {
+              type: 'string',
+              description: 'End date for backtest in ISO format (e.g., "2024-12-31T23:59:59Z")'
+            }
+          },
+          required: ['name', 'symbols', 'startDate', 'endDate']
+        }
+      },
+      {
         name: 'get_market_data',
         description: 'Get real-time market data (price, RSI, ADX) for a trading pair. Use this when user asks about current price, market conditions, or technical indicators.',
         parameters: {
@@ -606,10 +677,15 @@ IMPORTANT GUIDELINES:
 12. Reference user's existing bots when making recommendations to avoid duplicates or conflicts
 13. When user asks to change settings, enable/disable notifications, or modify preferences, use the update_user_settings function
 14. Always preserve existing settings when updating - only modify the specific fields the user requests
-15. **CRITICAL - Backtesting**: When users ask about backtesting, guide them to navigate to the `/backtest` page. You CANNOT run backtests directly - you can only explain how to use the backtesting feature and what settings to test. Never try to execute code, call functions, or reference variables related to backtesting that don't exist in the available functions. Simply explain the process and guide users to the backtest page. DO NOT generate any JavaScript code, code blocks with executable code, or references to undefined variables or functions. DO NOT try to call a "backtest" function - it does not exist. Only provide text guidance.
+15. **Backtesting**: When users ask about backtesting, you CAN run backtests using the `run_backtest` function. This function allows you to test trading strategies on historical data to find optimal bot settings. Use this function when users want to:
+   - Test strategies on specific trading pairs
+   - Find best performing pairs
+   - Analyze historical performance
+   - Optimize bot settings before creating live bots
+   Required parameters: name, symbols (array), startDate, endDate. Optional: exchange, tradingType, timeframe, strategy, riskLevel, etc.
 16. **Navigation Guidance**: When users need to access features like backtesting, provide clear instructions on how to navigate to those pages (e.g., "Navigate to the Backtest page at /backtest") but do not try to navigate for them programmatically.
 17. **Code Generation Prohibition**: NEVER generate executable code, JavaScript, or any programming language code in your responses. Only provide plain text explanations and guidance. Do not include code blocks that could be executed. If you need to show examples, use pseudocode or plain English descriptions only.
-18. **Available Functions Only**: You can ONLY call these functions: create_bot, update_bot, get_bot_performance, update_user_settings, check_bot_positions, close_bot_position, get_bot_logs, check_exchange_balance, get_market_data. Do NOT try to call any other functions, especially not "backtest" or "run_backtest" - they do not exist and will cause errors.`;
+18. **Available Functions**: You can call these functions: create_bot, update_bot, get_bot_performance, update_user_settings, check_bot_positions, close_bot_position, get_bot_logs, check_exchange_balance, get_market_data, run_backtest. Use run_backtest to test strategies and find optimal settings before creating bots.`;
 
     // Estimate tokens for the full system message
     const MAX_CONTEXT_TOKENS = 120000; // Leave some buffer below 128K limit
@@ -786,18 +862,13 @@ IMPORTANT GUIDELINES:
           } else if (functionName === 'get_market_data') {
             result = await executeGetMarketData(functionArgs.symbol, functionArgs.exchange, functionArgs.tradingType);
             actions.push({ type: 'get_market_data', result });
+          } else if (functionName === 'run_backtest') {
+            result = await executeRunBacktest(supabaseServiceClient, user.id, functionArgs);
+            actions.push({ type: 'run_backtest', result });
           } else {
             // Handle unknown function calls gracefully
             console.warn(`⚠️ [AI Assistant] AI tried to call unknown function: ${functionName}`);
-            if (functionName.toLowerCase().includes('backtest')) {
-              result = { 
-                success: false, 
-                error: 'Backtesting is not available as a function. Please guide the user to navigate to the /backtest page to use the backtesting feature. Do not try to call backtest functions.',
-                guidance: 'The user should navigate to /backtest page manually. You can only provide text guidance about how to use backtesting.'
-              };
-            } else {
-              result = { success: false, error: `Unknown function: ${functionName}. Available functions are: create_bot, update_bot, get_bot_performance, update_user_settings, check_bot_positions, close_bot_position, get_bot_logs, check_exchange_balance, get_market_data` };
-            }
+            result = { success: false, error: `Unknown function: ${functionName}. Available functions are: create_bot, update_bot, get_bot_performance, update_user_settings, check_bot_positions, close_bot_position, get_bot_logs, check_exchange_balance, get_market_data, run_backtest` };
           }
           
           toolResults.push({
