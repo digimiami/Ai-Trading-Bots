@@ -122,12 +122,12 @@ serve(async (req) => {
         };
 
         if (botIds.length > 0) {
-          const executedStatuses = new Set(['filled', 'completed', 'closed', 'stopped', 'taken_profit']);
+          const executedStatuses = new Set(['filled', 'completed', 'closed', 'stopped', 'taken_profit', 'open']);
           const closedStatuses = new Set(['completed', 'closed', 'stopped', 'taken_profit']);
 
           const { data: realTrades, error: realTradesError } = await supabaseClient
             .from('trades')
-            .select('bot_id, status, pnl, fee, executed_at')
+            .select('bot_id, status, pnl, fee, executed_at, exit_price')
             .eq('user_id', user.id)
             .in('bot_id', botIds)
             .order('executed_at', { ascending: true });
@@ -141,13 +141,21 @@ serve(async (req) => {
               const status = (trade.status || '').toString().toLowerCase();
               const pnlValue = trade.pnl !== null && trade.pnl !== undefined ? parseFloat(trade.pnl) : NaN;
               const feeValue = trade.fee !== null && trade.fee !== undefined ? parseFloat(trade.fee) : 0;
+              const hasExitPrice = trade.exit_price !== null && trade.exit_price !== undefined;
 
+              // Count as executed if status is in executedStatuses
               if (executedStatuses.has(status)) {
                 stats.totalTrades += 1;
                 stats.totalFees += feeValue;
               }
 
-              if (closedStatuses.has(status) && !Number.isNaN(pnlValue)) {
+              // Count as closed if:
+              // 1. Status is in closedStatuses, OR
+              // 2. Trade has a PnL value (meaning it's been closed), OR
+              // 3. Trade has an exit_price (meaning position was closed)
+              const isClosed = closedStatuses.has(status) || (!Number.isNaN(pnlValue) && pnlValue !== 0) || hasExitPrice;
+              
+              if (isClosed && !Number.isNaN(pnlValue)) {
                 stats.closedTrades += 1;
                 stats.pnl += pnlValue;
                 stats.hasClosed = true;
@@ -159,15 +167,17 @@ serve(async (req) => {
               }
 
               // Calculate drawdown: track peak equity and current drawdown
-              stats.peakEquity = Math.max(stats.peakEquity, stats.pnl);
-              const currentDrawdown = stats.peakEquity - stats.pnl;
-              stats.maxDrawdown = Math.max(stats.maxDrawdown, currentDrawdown);
+              if (stats.hasClosed) {
+                stats.peakEquity = Math.max(stats.peakEquity, stats.pnl);
+                const currentDrawdown = stats.peakEquity - stats.pnl;
+                stats.maxDrawdown = Math.max(stats.maxDrawdown, currentDrawdown);
+              }
             }
           }
 
           const { data: paperTrades, error: paperTradesError } = await supabaseClient
             .from('paper_trading_trades')
-            .select('bot_id, status, pnl, fees, executed_at')
+            .select('bot_id, status, pnl, fees, executed_at, exit_price')
             .eq('user_id', user.id)
             .in('bot_id', botIds)
             .order('executed_at', { ascending: true });
@@ -181,13 +191,21 @@ serve(async (req) => {
               const status = (trade.status || '').toString().toLowerCase();
               const pnlValue = trade.pnl !== null && trade.pnl !== undefined ? parseFloat(trade.pnl) : NaN;
               const feeValue = trade.fees !== null && trade.fees !== undefined ? parseFloat(trade.fees) : 0;
+              const hasExitPrice = trade.exit_price !== null && trade.exit_price !== undefined;
 
+              // Count as executed if status is in executedStatuses
               if (executedStatuses.has(status)) {
                 stats.totalTrades += 1;
                 stats.totalFees += feeValue;
               }
 
-              if (closedStatuses.has(status) && !Number.isNaN(pnlValue)) {
+              // Count as closed if:
+              // 1. Status is in closedStatuses, OR
+              // 2. Trade has a PnL value (meaning it's been closed), OR
+              // 3. Trade has an exit_price (meaning position was closed)
+              const isClosed = closedStatuses.has(status) || (!Number.isNaN(pnlValue) && pnlValue !== 0) || hasExitPrice;
+              
+              if (isClosed && !Number.isNaN(pnlValue)) {
                 stats.closedTrades += 1;
                 stats.pnl += pnlValue;
                 stats.hasClosed = true;
@@ -199,9 +217,11 @@ serve(async (req) => {
               }
 
               // Calculate drawdown: track peak equity and current drawdown
-              stats.peakEquity = Math.max(stats.peakEquity, stats.pnl);
-              const currentDrawdown = stats.peakEquity - stats.pnl;
-              stats.maxDrawdown = Math.max(stats.maxDrawdown, currentDrawdown);
+              if (stats.hasClosed) {
+                stats.peakEquity = Math.max(stats.peakEquity, stats.pnl);
+                const currentDrawdown = stats.peakEquity - stats.pnl;
+                stats.maxDrawdown = Math.max(stats.maxDrawdown, currentDrawdown);
+              }
             }
           }
         }
@@ -817,7 +837,7 @@ serve(async (req) => {
           // Fetch real trades
           const { data: realTrades, error: realTradesError } = await supabaseClient
             .from('trades')
-            .select('bot_id, status, pnl, fee, executed_at')
+            .select('bot_id, status, pnl, fee, executed_at, exit_price')
             .eq('user_id', user.id)
             .in('bot_id', botIds)
             .order('executed_at', { ascending: true });
@@ -831,13 +851,21 @@ serve(async (req) => {
               const status = (trade.status || '').toString().toLowerCase();
               const pnlValue = trade.pnl !== null && trade.pnl !== undefined ? parseFloat(trade.pnl) : NaN;
               const feeValue = trade.fee !== null && trade.fee !== undefined ? parseFloat(trade.fee) : 0;
+              const hasExitPrice = trade.exit_price !== null && trade.exit_price !== undefined;
 
+              // Count as executed if status is in executedStatuses
               if (executedStatuses.has(status)) {
                 stats.totalTrades += 1;
                 stats.totalFees += feeValue;
               }
 
-              if (closedStatuses.has(status) && !Number.isNaN(pnlValue)) {
+              // Count as closed if:
+              // 1. Status is in closedStatuses, OR
+              // 2. Trade has a PnL value (meaning it's been closed), OR
+              // 3. Trade has an exit_price (meaning position was closed)
+              const isClosed = closedStatuses.has(status) || (!Number.isNaN(pnlValue) && pnlValue !== 0) || hasExitPrice;
+              
+              if (isClosed && !Number.isNaN(pnlValue)) {
                 stats.closedTrades += 1;
                 stats.pnl += pnlValue;
                 stats.hasClosed = true;
@@ -849,16 +877,18 @@ serve(async (req) => {
               }
 
               // Calculate drawdown: track peak equity and current drawdown
-              stats.peakEquity = Math.max(stats.peakEquity, stats.pnl);
-              const currentDrawdown = stats.peakEquity - stats.pnl;
-              stats.maxDrawdown = Math.max(stats.maxDrawdown, currentDrawdown);
+              if (stats.hasClosed) {
+                stats.peakEquity = Math.max(stats.peakEquity, stats.pnl);
+                const currentDrawdown = stats.peakEquity - stats.pnl;
+                stats.maxDrawdown = Math.max(stats.maxDrawdown, currentDrawdown);
+              }
             }
           }
 
           // Fetch paper trades
           const { data: paperTrades, error: paperTradesError } = await supabaseClient
             .from('paper_trading_trades')
-            .select('bot_id, status, pnl, fees, executed_at')
+            .select('bot_id, status, pnl, fees, executed_at, exit_price')
             .eq('user_id', user.id)
             .in('bot_id', botIds)
             .order('executed_at', { ascending: true });
@@ -872,13 +902,21 @@ serve(async (req) => {
               const status = (trade.status || '').toString().toLowerCase();
               const pnlValue = trade.pnl !== null && trade.pnl !== undefined ? parseFloat(trade.pnl) : NaN;
               const feeValue = trade.fees !== null && trade.fees !== undefined ? parseFloat(trade.fees) : 0;
+              const hasExitPrice = trade.exit_price !== null && trade.exit_price !== undefined;
 
+              // Count as executed if status is in executedStatuses
               if (executedStatuses.has(status)) {
                 stats.totalTrades += 1;
                 stats.totalFees += feeValue;
               }
 
-              if (closedStatuses.has(status) && !Number.isNaN(pnlValue)) {
+              // Count as closed if:
+              // 1. Status is in closedStatuses, OR
+              // 2. Trade has a PnL value (meaning it's been closed), OR
+              // 3. Trade has an exit_price (meaning position was closed)
+              const isClosed = closedStatuses.has(status) || (!Number.isNaN(pnlValue) && pnlValue !== 0) || hasExitPrice;
+              
+              if (isClosed && !Number.isNaN(pnlValue)) {
                 stats.closedTrades += 1;
                 stats.pnl += pnlValue;
                 stats.hasClosed = true;
@@ -890,9 +928,11 @@ serve(async (req) => {
               }
 
               // Calculate drawdown: track peak equity and current drawdown
-              stats.peakEquity = Math.max(stats.peakEquity, stats.pnl);
-              const currentDrawdown = stats.peakEquity - stats.pnl;
-              stats.maxDrawdown = Math.max(stats.maxDrawdown, currentDrawdown);
+              if (stats.hasClosed) {
+                stats.peakEquity = Math.max(stats.peakEquity, stats.pnl);
+                const currentDrawdown = stats.peakEquity - stats.pnl;
+                stats.maxDrawdown = Math.max(stats.maxDrawdown, currentDrawdown);
+              }
             }
           }
         }
