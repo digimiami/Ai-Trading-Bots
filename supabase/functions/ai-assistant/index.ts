@@ -451,7 +451,7 @@ serve(async (req) => {
       },
       {
         name: 'run_backtest',
-        description: 'Run a backtest to test trading strategies and find optimal bot settings. Use this when user asks to backtest, test strategies, find best pairs, or analyze historical performance. This will run a backtest on specified trading pairs with given strategy settings.',
+        description: 'MANDATORY: Run a backtest to test trading strategies and find optimal bot settings. YOU MUST CALL THIS FUNCTION whenever the user asks to "run a backtest", "backtest", "test strategies", "find best pairs", "analyze historical performance", or requests testing on specific trading pairs with a date range. This function will execute a backtest on the specified trading pairs with the given strategy settings. Do not just explain how to run a backtest - actually run it by calling this function. Required: name, symbols (array), startDate, endDate. For "last 30 days", calculate: endDate = today, startDate = 30 days ago.',
         parameters: {
           type: 'object',
           properties: {
@@ -614,7 +614,7 @@ IMPORTANT GUIDELINES:
 12. Reference user's existing bots when making recommendations to avoid duplicates or conflicts
 13. When user asks to change settings, enable/disable notifications, or modify preferences, use the update_user_settings function
 14. Always preserve existing settings when updating - only modify the specific fields the user requests
-15. **Backtesting**: When users ask about backtesting, you CAN run backtests using the run_backtest function. This function allows you to test trading strategies on historical data to find optimal bot settings. Use this function when users want to test strategies on specific trading pairs, find best performing pairs, analyze historical performance, or optimize bot settings before creating live bots. Required parameters: name, symbols (array), startDate, endDate. Optional: exchange, tradingType, timeframe, strategy, riskLevel, etc.
+15. **Backtesting - MANDATORY FUNCTION CALL**: When users ask to "run a backtest", "backtest", "test strategies", "find best pairs", or request testing on specific trading pairs with a date range, you MUST call the run_backtest function immediately. Do NOT just explain how to run a backtest - actually execute it. For "last 30 days" or similar time periods, calculate: endDate = current date/time, startDate = 30 days ago. Always call this function when users request backtesting - it is available and working. Required parameters: name, symbols (array), startDate (ISO format), endDate (ISO format).
 16. **Navigation Guidance**: When users need to access features like backtesting, provide clear instructions on how to navigate to those pages (e.g., "Navigate to the Backtest page at /backtest") but do not try to navigate for them programmatically.
 17. **Code Generation Prohibition**: NEVER generate executable code, JavaScript, or any programming language code in your responses. Only provide plain text explanations and guidance. Do not include code blocks that could be executed. If you need to show examples, use pseudocode or plain English descriptions only.
 18. **Available Functions**: You can call these functions: create_bot, update_bot, get_bot_performance, update_user_settings, check_bot_positions, close_bot_position, get_bot_logs, check_exchange_balance, get_market_data, run_backtest. Use run_backtest to test strategies and find optimal settings before creating bots.`;
@@ -1002,21 +1002,14 @@ What would you like help with - choosing pairs to test, configuring a strategy, 
       } else if (errorMsgLower.includes('backtest')) {
         // Other backtest-related errors - return helpful response
         shouldReturnResponse = true;
-        helpfulResponse = `I understand you're interested in backtesting! While I cannot run backtests directly, I can help you in other ways:
+        helpfulResponse = `I encountered an error while trying to run your backtest. This might be due to missing parameters or an issue with the backtest engine. 
 
-**To Run a Backtest:**
-Navigate to the **Backtest** page at \`/backtest\` in your browser. There you can:
-- Select trading pairs to test
-- Configure your strategy settings
-- Run the backtest and review results
+Please try:
+- Specifying all required parameters: trading pairs, start date, and end date
+- Using ISO format dates (e.g., "2024-01-01T00:00:00Z")
+- Ensuring at least one trading pair is provided
 
-**How I Can Help:**
-- Strategy configuration advice
-- Pair selection suggestions
-- Interpreting backtest results
-- Creating bots from backtest results
-
-What would you like help with?`;
+If the error persists, you can also navigate to the /backtest page to run backtests manually.`;
       } else {
         // For other errors, show a safe message (but don't expose internal details)
         const safeMessage = error.message.substring(0, 200); // Limit length
