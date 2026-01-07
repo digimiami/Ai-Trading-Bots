@@ -979,22 +979,14 @@ IMPORTANT GUIDELINES:
         if (errorMsgLower.includes('backtest')) {
           // Return a helpful response instead of an error
           shouldReturnResponse = true;
-          helpfulResponse = `I understand you're interested in backtesting! While I cannot run backtests directly, I can help you in other ways:
+          helpfulResponse = `I encountered an error while trying to run your backtest. This might be due to missing parameters or an issue with the backtest engine.
 
-**To Run a Backtest:**
-Navigate to the **Backtest** page at \`/backtest\` in your browser. There you can:
-- Select trading pairs to test (e.g., BTCUSDT, ETHUSDT, SOLUSDT)
-- Configure your strategy settings
-- Set timeframes and risk parameters
-- Run the backtest and review results
+Please try:
+- Specifying all required parameters: trading pairs, start date, and end date
+- Using ISO format dates (e.g., "2024-01-01T00:00:00Z")
+- Ensuring at least one trading pair is provided
 
-**How I Can Help:**
-- **Strategy Configuration**: I can help you choose which strategy settings to test (RSI thresholds, ADX levels, etc.)
-- **Pair Selection**: I can suggest which trading pairs might be good candidates for backtesting
-- **Interpreting Results**: I can help you understand backtest results and what they mean
-- **Bot Creation**: Once you have backtest results, I can help you create a bot with those optimal settings
-
-What would you like help with - choosing pairs to test, configuring a strategy, or something else?`;
+If the error persists, you can also navigate to the /backtest page to run backtests manually.`;
         } else {
           // Generic "is not defined" error - likely the AI tried to reference something that doesn't exist
           errorMessage = 'An error occurred processing your request. Please try rephrasing your question or ask about something else.';
