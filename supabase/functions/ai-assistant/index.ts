@@ -45,71 +45,8 @@ serve(async (req) => {
       );
     }
 
-    // Early return for backtesting questions to prevent errors
-    // This is a temporary workaround until we identify the root cause
-    // Only trigger on clear backtesting intent, not on trading pairs like "btcusdt"
-    const originalLower = message.toLowerCase().trim();
-    const messageLower = originalLower.replace(/\s+/g, ''); // Remove spaces for better matching
-    
-    // Check for clear backtesting intent - must contain backtest-related words
-    const backtestVariations = ['backtest', 'back-test', 'back test', 'basktest', 'baktest', 'backtes', 'backetest'];
-    const hasBacktestWord = backtestVariations.some(variant => originalLower.includes(variant));
-    
-    // Only trigger if message clearly mentions backtesting
-    // Don't trigger on just trading pairs like "btcusdt" or "ethusdt"
-    const isTradingPairOnly = /^[a-z]{2,10}usdt?$/i.test(message.trim()); // Matches patterns like "btcusdt", "ethusdt"
-    
-    if (hasBacktestWord && !isTradingPairOnly) {
-      console.log('🔧 [AI Assistant] Detected backtesting question, providing direct response');
-      return new Response(
-        JSON.stringify({
-          response: `I understand you want to run a backtest! While I can't execute backtests directly, I can guide you through the process. Here's how to run a backtest on Pablo AI Trading:
-
-**To Run a Backtest:**
-1. Navigate to the **Backtest** page:
-   - Click on "Backtest" in the navigation menu, or
-   - Go directly to \`/backtest\` in your browser
-2. Configure your backtest:
-   - **Select trading pairs** you want to test (e.g., BTCUSDT, ETHUSDT, SOLUSDT)
-   - **Choose your strategy** (RSI, ADX, Bollinger Bands, EMA, etc.)
-   - **Set your timeframe** (15m, 1h, 4h, 1d)
-   - **Configure risk parameters** (stop loss, take profit, leverage)
-   - **Set the date range** for historical data (recommend at least 30 days)
-3. **Click "Start Backtest"** to run the test
-4. **Review the results:**
-   - PnL (Profit and Loss)
-   - Win rate percentage
-   - Number of trades executed
-   - Maximum drawdown
-   - Performance breakdown by pair
-
-**Best Practices for Finding Best Performance Pairs:**
-- Test multiple pairs simultaneously to compare performance
-- Test different timeframes (15m, 1h, 4h, 1d) to see which works best
-- Test various strategy configurations (different RSI thresholds, ADX levels, etc.)
-- Use realistic date ranges (at least 30 days, ideally 90+ days)
-- Compare results across different market conditions (trending vs. choppy markets)
-- Look for consistent performance, not just high returns
-- Pay attention to win rate and drawdown, not just total profit
-
-**After Running Your Backtest:**
-Once you find the best performing pairs and settings:
-- Click **"Create Bot from Backtest"** on the results page to automatically create a bot with those settings
-- Or navigate to \`/create-bot\` and manually apply the settings that performed best
-
-**Need Help?**
-- I can help you choose which pairs to test
-- I can explain different strategy configurations
-- I can help interpret backtest results
-- I can guide you on optimal settings based on your risk tolerance
-
-What would you like help with - choosing pairs to test, configuring a strategy, or something else?`,
-          provider: 'Direct Response',
-          model: 'Workaround'
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    // REMOVED: Early detection workaround - AI can now run backtests directly using run_backtest function
+    // The AI will handle backtesting requests through function calling
 
     // Process attachments - extract text content if available
     let attachmentContext = '';
