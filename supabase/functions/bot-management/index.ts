@@ -954,30 +954,34 @@ serve(async (req) => {
             }
           }
 
-          // STEP 3: Fetch closed paper positions and update paper trades with missing PnL
-          console.log('📊 Step 3: Fetching closed paper positions to update paper trades...');
-          const { data: closedPaperPositions, error: paperPositionsError } = await supabaseClient
-            .from('paper_trading_positions')
-            .select('id, bot_id, entry_price, exit_price, quantity, side, closed_at, status')
+          // STEP 3: Fetch paper trades with exit_price and calculate missing PnL
+          console.log('📊 Step 3: Fetching paper trades with exit_price to calculate missing PnL...');
+          const { data: paperTradesWithExit, error: paperTradesError } = await supabaseClient
+            .from('paper_trading_trades')
+            .select('id, bot_id, entry_price, exit_price, quantity, side, pnl, fees, status')
             .eq('user_id', user.id)
             .in('bot_id', botIds)
-            .in('status', ['closed', 'stopped', 'taken_profit', 'manual_close'])
-            .not('closed_at', 'is', null);
+            .not('exit_price', 'is', null);
 
-          if (paperPositionsError) {
-            console.warn('⚠️ Error fetching closed paper positions:', paperPositionsError);
-          } else if (closedPaperPositions && closedPaperPositions.length > 0) {
-            console.log(`📊 Found ${closedPaperPositions.length} closed paper positions`);
+          if (paperTradesError) {
+            console.warn('⚠️ Error fetching paper trades with exit_price:', paperTradesError);
+          } else if (paperTradesWithExit && paperTradesWithExit.length > 0) {
+            console.log(`📊 Found ${paperTradesWithExit.length} paper trades with exit_price`);
             
-            // Calculate PnL for paper positions and update paper trades
+            // Calculate PnL for paper trades that don't have it
             const paperTradesToUpdate: Array<{ id: string; pnl: number; status: string }> = [];
             
-            for (const position of closedPaperPositions) {
-              if (position.entry_price && position.exit_price && position.quantity) {
-                const entryPrice = parseFloat(position.entry_price);
-                const exitPrice = parseFloat(position.exit_price);
-                const quantity = parseFloat(position.quantity);
-                const side = (position.side || '').toLowerCase();
+            for (const trade of paperTradesWithExit) {
+              // Skip if trade already has PnL
+              if (trade.pnl && parseFloat(trade.pnl || 0) !== 0) {
+                continue;
+              }
+              
+              if (trade.entry_price && trade.exit_price && trade.quantity) {
+                const entryPrice = parseFloat(trade.entry_price);
+                const exitPrice = parseFloat(trade.exit_price);
+                const quantity = parseFloat(trade.quantity);
+                const side = (trade.side || '').toLowerCase();
                 
                 if (!Number.isNaN(entryPrice) && !Number.isNaN(exitPrice) && !Number.isNaN(quantity) && quantity > 0) {
                   let calculatedPnL = 0;
@@ -987,29 +991,15 @@ serve(async (req) => {
                     calculatedPnL = (entryPrice - exitPrice) * quantity;
                   }
                   
-                  // Find paper trade(s) linked to this position (position_id -> paper_trading_positions.id)
-                  const { data: paperTrades } = await supabaseClient
-                    .from('paper_trading_trades')
-                    .select('id, pnl, fees')
-                    .eq('position_id', position.id)
-                    .eq('user_id', user.id);
-
-                  if (paperTrades && paperTrades.length > 0) {
-                    for (const paperTrade of paperTrades) {
-                      // Subtract fees if available
-                      const fees = parseFloat(paperTrade.fees || 0);
-                      const finalPnL = calculatedPnL - fees;
-                      
-                      // Only update if trade doesn't have PnL or PnL is zero
-                      if (!paperTrade.pnl || parseFloat(paperTrade.pnl || 0) === 0) {
-                        paperTradesToUpdate.push({
-                          id: paperTrade.id,
-                          pnl: finalPnL,
-                          status: 'closed'
-                        });
-                      }
-                    }
-                  }
+                  // Subtract fees if available
+                  const fees = parseFloat(trade.fees || 0);
+                  const finalPnL = calculatedPnL - fees;
+                  
+                  paperTradesToUpdate.push({
+                    id: trade.id,
+                    pnl: finalPnL,
+                    status: trade.status || 'closed'
+                  });
                 }
               }
             }
