@@ -2093,12 +2093,12 @@ async function executeRunBacktest(supabaseClient: any, userId: string, params: a
     let startDate = params.startDate;
     let endDate = params.endDate;
     
-    // If dates are missing, try to calculate from common phrases in params or default to last 30 days
+    // Always calculate dates if not provided - default to last 30 days
     if (!startDate || !endDate) {
-      // Try to extract from any string parameter that might contain date info
+      // Try to extract "last X days" from any string parameter
       const dateString = JSON.stringify(params);
       const daysMatch = dateString.match(/last\s+(\d+)\s+days?/i);
-      const days = daysMatch ? parseInt(daysMatch[1]) : 30; // Default to 30 days if not specified
+      const days = daysMatch ? parseInt(daysMatch[1]) : 30; // Default to 30 days
       
       const now = new Date();
       endDate = now.toISOString();
@@ -2107,9 +2107,14 @@ async function executeRunBacktest(supabaseClient: any, userId: string, params: a
       console.log(`🔧 [executeRunBacktest] Auto-calculated dates: ${days} days ago = ${startDate} to ${endDate}`);
     }
     
+    // Final validation - dates should always be set by now
     if (!startDate || !endDate) {
-      console.error('❌ [executeRunBacktest] Missing dates after calculation:', { startDate, endDate });
-      return { success: false, error: 'Backtest requires startDate and endDate in ISO format. I tried to calculate them automatically but failed.' };
+      console.error('❌ [executeRunBacktest] CRITICAL: Missing dates after calculation:', { startDate, endDate, params });
+      // Force set dates as last resort
+      const now = new Date();
+      endDate = now.toISOString();
+      startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      console.log(`🔧 [executeRunBacktest] Force-set dates as last resort: ${startDate} to ${endDate}`);
     }
     
     // Set defaults
