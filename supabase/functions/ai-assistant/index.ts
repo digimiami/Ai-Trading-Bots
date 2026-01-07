@@ -1419,7 +1419,7 @@ Pablo AI Trading is an automated cryptocurrency trading platform that allows use
 
 ## BEST PRACTICES
 
-1. **Use Backtesting First**: Before creating a bot, use the backtesting feature (`/backtest`) to test strategies and find best performing pairs
+1. **Use Backtesting First**: Before creating a bot, use the backtesting feature at /backtest to test strategies and find best performing pairs
 2. **Start with Paper Trading**: Test strategies before using real money
 3. **Use Conservative Settings**: Lower leverage, tighter stops initially
 4. **Monitor Performance**: Regularly review bot performance and adjust
