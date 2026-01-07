@@ -27,6 +27,96 @@ function mapTimeframeToBybitInterval(timeframe: string): string {
   return intervalMap[timeframe] || '60';
 }
 
+// Fetch historical klines from CryptoCompare (fallback when Bybit and Binance are geo-blocked)
+async function fetchCryptoCompareKlines(
+  symbol: string,
+  interval: string,
+  startTime: number,
+  endTime: number
+): Promise<any[]> {
+  // Map symbol to CryptoCompare format (e.g., BTCUSDT -> BTC)
+  const baseSymbol = symbol.replace('USDT', '').replace('USD', '');
+  
+  // Map interval to CryptoCompare limit
+  const intervalMap: { [key: string]: { limit: number; aggregate: number } } = {
+    '1m': { limit: 2000, aggregate: 1 },
+    '3m': { limit: 2000, aggregate: 3 },
+    '5m': { limit: 2000, aggregate: 5 },
+    '15m': { limit: 2000, aggregate: 15 },
+    '30m': { limit: 2000, aggregate: 30 },
+    '1h': { limit: 2000, aggregate: 60 },
+    '2h': { limit: 2000, aggregate: 120 },
+    '4h': { limit: 2000, aggregate: 240 },
+    '6h': { limit: 2000, aggregate: 360 },
+    '12h': { limit: 2000, aggregate: 720 },
+    '1d': { limit: 2000, aggregate: 1440 },
+    '1w': { limit: 2000, aggregate: 10080 },
+    '1M': { limit: 2000, aggregate: 43200 },
+  };
+  const intervalConfig = intervalMap[interval] || { limit: 2000, aggregate: 60 };
+  
+  const allKlines: any[] = [];
+  let currentStart = Math.floor(startTime / 1000); // CryptoCompare uses seconds
+  const endTimeSeconds = Math.floor(endTime / 1000);
+
+  while (currentStart < endTimeSeconds) {
+    const url = `https://min-api.cryptocompare.com/data/v2/histominute?fsym=${baseSymbol}&tsym=USDT&limit=${intervalConfig.limit}&aggregate=${intervalConfig.aggregate}&toTs=${endTimeSeconds}`;
+    console.log(`Fetching klines from CryptoCompare for ${symbol}: ${url}`);
+
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`CryptoCompare API error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      
+      if (data.Response === 'Error' || !data.Data || !data.Data.Data || data.Data.Data.length === 0) {
+        break; // No more data
+      }
+
+      // CryptoCompare format: { time, high, low, open, close, volumefrom, volumeto }
+      // Convert to Bybit-like format: [timestamp, open, high, low, close, volume]
+      const klines = data.Data.Data
+        .filter((k: any) => k.time * 1000 >= startTime && k.time * 1000 <= endTime)
+        .map((k: any) => [
+          (k.time * 1000).toString(), // timestamp in ms
+          k.open.toString(),
+          k.high.toString(),
+          k.low.toString(),
+          k.close.toString(),
+          k.volumeto.toString(), // volume in USDT
+        ]);
+
+      if (klines.length === 0) {
+        break;
+      }
+
+      allKlines.push(...klines);
+
+      const lastTimestamp = parseInt(klines[klines.length - 1][0]);
+      if (lastTimestamp >= endTime || klines.length < intervalConfig.limit) {
+        break; // Reached end time or got all data
+      }
+
+      currentStart = Math.floor(lastTimestamp / 1000) + 1;
+      await new Promise(resolve => setTimeout(resolve, 200));
+    } catch (error) {
+      console.error(`Error fetching klines from CryptoCompare for ${symbol}:`, error);
+      throw error;
+    }
+  }
+
+  return allKlines;
+}
+
 // Fetch historical klines from Binance (fallback when Bybit is geo-blocked)
 async function fetchBinanceKlines(
   symbol: string,
@@ -66,6 +156,10 @@ async function fetchBinanceKlines(
       });
 
       if (!response.ok) {
+        // Check if it's a geo-block (451 Unavailable For Legal Reasons)
+        if (response.status === 451) {
+          throw new Error('GEO_BLOCKED: Binance API is blocked from this geographical region.');
+        }
         throw new Error(`Binance API error: ${response.status} ${response.statusText}`);
       }
 
