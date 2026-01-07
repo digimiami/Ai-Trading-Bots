@@ -2173,14 +2173,17 @@ async function executeRunBacktest(supabaseClient: any, userId: string, params: a
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     const backtestUrl = `${supabaseUrl}/functions/v1/backtest-engine`;
     
-    // Get user's auth token to pass to backtest engine (it requires user authentication)
-    const userToken = await supabaseClient.auth.getSession().then(({ data: { session } }) => session?.access_token || '');
+    // The backtest engine requires user authentication
+    // Use the user's token passed from the request, otherwise fall back to service role key
+    const authToken = userToken || serviceRoleKey;
+    
+    console.log('🔧 [executeRunBacktest] Calling backtest-engine with auth:', userToken ? 'User token' : 'Service role key');
     
     const response = await fetch(backtestUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${userToken || serviceRoleKey}`,
+        'Authorization': `Bearer ${authToken}`,
         'apikey': serviceRoleKey
       },
       body: JSON.stringify(backtestData)
