@@ -1034,15 +1034,15 @@ serve(async (req) => {
 
           // STEP 4: Fetch paper trades with all necessary fields
           console.log('📊 Step 4: Fetching paper trades for stats calculation...');
-          const { data: paperTrades, error: paperTradesError } = await supabaseClient
+          const { data: paperTrades, error: paperTradesStatsError } = await supabaseClient
             .from('paper_trading_trades')
             .select('id, bot_id, status, pnl, fees, executed_at, exit_price, entry_price, quantity, side')
             .eq('user_id', user.id)
             .in('bot_id', botIds)
             .order('executed_at', { ascending: true });
 
-          if (paperTradesError) {
-            console.warn('Error fetching paper trades for stats:', paperTradesError);
+          if (paperTradesStatsError) {
+            console.warn('Error fetching paper trades for stats:', paperTradesStatsError);
           } else if (paperTrades) {
             for (const trade of paperTrades) {
               if (!trade || !trade.bot_id) continue;
