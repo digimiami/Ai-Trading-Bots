@@ -169,8 +169,15 @@ async function fetchBybitKlines(
           const errorText = await response.text().catch(() => '');
           console.error(`Bybit API error response: ${response.status} ${response.statusText}`, errorText.substring(0, 500));
           
-          // Retry on 429 (Too Many Requests), 503 (Service Unavailable), or 403 (Forbidden - might be rate limit)
-          if ((response.status === 429 || response.status === 503 || response.status === 403) && retries > 1) {
+          // Check if it's a geographical restriction (CloudFront blocking)
+          if (response.status === 403 && errorText.includes('CloudFront') && errorText.includes('block access from your country')) {
+            console.error(`❌ Bybit API is geo-blocked from this region. Error: ${errorText.substring(0, 200)}`);
+            throw new Error('GEO_BLOCKED: Bybit API is blocked from this geographical region. Please use Binance API or contact support.');
+          }
+          
+          // Retry on 429 (Too Many Requests) or 503 (Service Unavailable)
+          // Don't retry on 403 as it's likely a permanent geo-block
+          if ((response.status === 429 || response.status === 503) && retries > 1) {
             retries--;
             const waitTime = (4 - retries) * 2000; // Longer wait: 2s, 4s, 6s
             console.log(`HTTP ${response.status}, waiting ${waitTime}ms before retry (${4 - retries}/3)...`);
