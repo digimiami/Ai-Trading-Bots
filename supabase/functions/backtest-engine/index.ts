@@ -92,11 +92,11 @@ async function fetchBybitKlines(
           const errorText = await response.text().catch(() => '');
           console.error(`Bybit API error response: ${response.status} ${response.statusText}`, errorText.substring(0, 500));
           
-          // Retry on 429 (Too Many Requests) or 503 (Service Unavailable)
-          if ((response.status === 429 || response.status === 503) && retries > 1) {
+          // Retry on 429 (Too Many Requests), 503 (Service Unavailable), or 403 (Forbidden - might be rate limit)
+          if ((response.status === 429 || response.status === 503 || response.status === 403) && retries > 1) {
             retries--;
-            const waitTime = (4 - retries) * 1000;
-            console.log(`HTTP ${response.status}, waiting ${waitTime}ms before retry...`);
+            const waitTime = (4 - retries) * 2000; // Longer wait: 2s, 4s, 6s
+            console.log(`HTTP ${response.status}, waiting ${waitTime}ms before retry (${4 - retries}/3)...`);
             await new Promise(resolve => setTimeout(resolve, waitTime));
             continue;
           }
@@ -126,8 +126,10 @@ async function fetchBybitKlines(
 
       currentStart = lastTimestamp + 1; // Start from next candle
       
-      // Rate limiting - wait a bit between requests
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Rate limiting - wait longer between requests to avoid 403 errors
+      // Bybit allows 600 requests per 5 seconds = 120 requests/second = ~8ms per request
+      // We'll wait 200ms to be safe and avoid rate limits
+      await new Promise(resolve => setTimeout(resolve, 200));
     } catch (error) {
       console.error(`Error fetching klines for ${symbol}:`, error);
       throw error;
