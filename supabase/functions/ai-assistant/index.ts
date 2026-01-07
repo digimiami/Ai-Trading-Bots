@@ -2082,6 +2082,8 @@ async function executeCheckExchangeBalance(supabaseClient: any, userId: string, 
 async function executeRunBacktest(supabaseClient: any, userId: string, params: any, userToken?: string) {
   try {
     console.log('🔧 [executeRunBacktest] Starting backtest with params:', JSON.stringify(params, null, 2));
+    console.log('🔧 [executeRunBacktest] User ID:', userId);
+    console.log('🔧 [executeRunBacktest] User token provided:', userToken ? 'Yes' : 'No');
     
     // Auto-generate name if not provided
     const name = params.name || `Backtest ${params.symbols?.join(', ') || 'Multiple Pairs'} - ${new Date().toISOString().split('T')[0]}`;
@@ -2090,6 +2092,13 @@ async function executeRunBacktest(supabaseClient: any, userId: string, params: a
     if (!params.symbols || !Array.isArray(params.symbols) || params.symbols.length === 0) {
       console.error('❌ [executeRunBacktest] Missing symbols:', params.symbols);
       return { success: false, error: 'Backtest requires: symbols (array of trading pairs like ["BTCUSDT", "ETHUSDT"])' };
+    }
+    
+    // Ensure symbols are uppercase
+    const symbols = params.symbols.map((s: string) => s.toUpperCase().trim()).filter((s: string) => s.length > 0);
+    if (symbols.length === 0) {
+      console.error('❌ [executeRunBacktest] No valid symbols after processing:', params.symbols);
+      return { success: false, error: 'No valid trading pairs provided. Please provide symbols like ["BTCUSDT", "ETHUSDT"]' };
     }
     
     // Auto-calculate dates if not provided
