@@ -47,21 +47,19 @@ serve(async (req) => {
 
     // Early return for backtesting questions to prevent errors
     // This is a temporary workaround until we identify the root cause
-    const messageLower = message.toLowerCase().replace(/\s+/g, ''); // Remove spaces for better matching
+    // Only trigger on clear backtesting intent, not on trading pairs like "btcusdt"
+    const originalLower = message.toLowerCase().trim();
+    const messageLower = originalLower.replace(/\s+/g, ''); // Remove spaces for better matching
+    
+    // Check for clear backtesting intent - must contain backtest-related words
     const backtestVariations = ['backtest', 'back-test', 'back test', 'basktest', 'baktest', 'backtes', 'backetest'];
-    const backtestKeywords = ['run', 'use', 'find', 'best', 'perform', 'test', 'execute', 'start', 'do'];
+    const hasBacktestWord = backtestVariations.some(variant => originalLower.includes(variant));
     
-    const hasBacktest = backtestVariations.some(variant => messageLower.includes(variant));
-    const hasBacktestKeyword = backtestKeywords.some(keyword => messageLower.includes(keyword));
+    // Only trigger if message clearly mentions backtesting
+    // Don't trigger on just trading pairs like "btcusdt" or "ethusdt"
+    const isTradingPairOnly = /^[a-z]{2,10}usdt?$/i.test(message.trim()); // Matches patterns like "btcusdt", "ethusdt"
     
-    // Also check original message with spaces for phrases
-    const originalLower = message.toLowerCase();
-    const hasBacktestPhrase = originalLower.includes('backtest') || 
-                               originalLower.includes('back test') || 
-                               originalLower.includes('back-test') ||
-                               (originalLower.includes('back') && originalLower.includes('test'));
-    
-    if (hasBacktest || (hasBacktestPhrase && hasBacktestKeyword) || (hasBacktestPhrase && originalLower.includes('run'))) {
+    if (hasBacktestWord && !isTradingPairOnly) {
       console.log('🔧 [AI Assistant] Detected backtesting question, providing direct response');
       return new Response(
         JSON.stringify({
