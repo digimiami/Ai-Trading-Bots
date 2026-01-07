@@ -2080,33 +2080,36 @@ async function executeRunBacktest(supabaseClient: any, userId: string, params: a
   try {
     console.log('🔧 [executeRunBacktest] Starting backtest with params:', JSON.stringify(params, null, 2));
     
+    // Auto-generate name if not provided
+    const name = params.name || `Backtest ${params.symbols?.join(', ') || 'Multiple Pairs'} - ${new Date().toISOString().split('T')[0]}`;
+    
     // Validate required parameters
-    if (!params.name || !params.symbols || !Array.isArray(params.symbols) || params.symbols.length === 0) {
-      console.error('❌ [executeRunBacktest] Missing required params:', { name: params.name, symbols: params.symbols });
-      return { success: false, error: 'Backtest requires: name, and symbols (array of trading pairs)' };
+    if (!params.symbols || !Array.isArray(params.symbols) || params.symbols.length === 0) {
+      console.error('❌ [executeRunBacktest] Missing symbols:', params.symbols);
+      return { success: false, error: 'Backtest requires: symbols (array of trading pairs like ["BTCUSDT", "ETHUSDT"])' };
     }
     
-    // Auto-calculate dates if not provided but "last X days" is mentioned
+    // Auto-calculate dates if not provided
     let startDate = params.startDate;
     let endDate = params.endDate;
     
-    // If dates are missing, try to calculate from common phrases
+    // If dates are missing, try to calculate from common phrases in params or default to last 30 days
     if (!startDate || !endDate) {
-      const message = params.message || '';
-      const daysMatch = message.match(/last\s+(\d+)\s+days?/i);
-      if (daysMatch) {
-        const days = parseInt(daysMatch[1]);
-        const now = new Date();
-        endDate = now.toISOString();
-        const start = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-        startDate = start.toISOString();
-        console.log(`🔧 [executeRunBacktest] Auto-calculated dates: ${days} days ago = ${startDate} to ${endDate}`);
-      }
+      // Try to extract from any string parameter that might contain date info
+      const dateString = JSON.stringify(params);
+      const daysMatch = dateString.match(/last\s+(\d+)\s+days?/i);
+      const days = daysMatch ? parseInt(daysMatch[1]) : 30; // Default to 30 days if not specified
+      
+      const now = new Date();
+      endDate = now.toISOString();
+      const start = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+      startDate = start.toISOString();
+      console.log(`🔧 [executeRunBacktest] Auto-calculated dates: ${days} days ago = ${startDate} to ${endDate}`);
     }
     
     if (!startDate || !endDate) {
-      console.error('❌ [executeRunBacktest] Missing dates:', { startDate, endDate });
-      return { success: false, error: 'Backtest requires startDate and endDate in ISO format. For "last 30 days", I will calculate them automatically, but please provide dates if possible.' };
+      console.error('❌ [executeRunBacktest] Missing dates after calculation:', { startDate, endDate });
+      return { success: false, error: 'Backtest requires startDate and endDate in ISO format. I tried to calculate them automatically but failed.' };
     }
     
     // Set defaults
