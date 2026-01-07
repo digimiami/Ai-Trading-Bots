@@ -51,6 +51,7 @@ export const useBots = () => {
       }
 
       const data = await response.json();
+      console.log('useBots: Response data:', { hasBots: !!data.bots, botsLength: data.bots?.length, dataKeys: Object.keys(data) });
       setBots(Array.isArray(data.bots) ? data.bots : []);
     } catch (err) {
       console.error('Error fetching bots:', err);

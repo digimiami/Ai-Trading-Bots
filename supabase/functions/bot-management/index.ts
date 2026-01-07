@@ -81,13 +81,19 @@ serve(async (req) => {
       }
 
       if (action === 'list') {
+        console.log(`📊 Fetching bots for user: ${user.id}`);
         const { data: bots, error } = await supabaseClient
           .from('trading_bots')
           .select('*')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
 
-        if (error) throw error
+        if (error) {
+          console.error('❌ Error fetching bots:', error);
+          throw error;
+        }
+
+        console.log(`📊 Found ${bots?.length || 0} bots for user ${user.id}`);
 
         // Transform the data to match frontend expectations
         const botIds = bots.map((bot: any) => bot.id);
@@ -315,6 +321,7 @@ serve(async (req) => {
         });
         })
 
+        console.log(`✅ Returning ${transformedBots.length} transformed bots`);
         return new Response(
           JSON.stringify({ bots: transformedBots }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
