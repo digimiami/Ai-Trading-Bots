@@ -795,7 +795,10 @@ IMPORTANT GUIDELINES:
             result = await executeGetMarketData(functionArgs.symbol, functionArgs.exchange, functionArgs.tradingType);
             actions.push({ type: 'get_market_data', result });
           } else if (functionName === 'run_backtest') {
-            result = await executeRunBacktest(supabaseServiceClient, user.id, functionArgs);
+            // Get the auth token from the request to pass to backtest engine
+            const authHeader = req.headers.get('Authorization') || '';
+            const userToken = authHeader.replace('Bearer ', '');
+            result = await executeRunBacktest(supabaseServiceClient, user.id, functionArgs, userToken);
             actions.push({ type: 'run_backtest', result });
           } else {
             // Handle unknown function calls gracefully
@@ -2076,7 +2079,7 @@ async function executeCheckExchangeBalance(supabaseClient: any, userId: string, 
 }
 
 // Get market data
-async function executeRunBacktest(supabaseClient: any, userId: string, params: any) {
+async function executeRunBacktest(supabaseClient: any, userId: string, params: any, userToken?: string) {
   try {
     console.log('🔧 [executeRunBacktest] Starting backtest with params:', JSON.stringify(params, null, 2));
     
