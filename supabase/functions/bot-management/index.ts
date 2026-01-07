@@ -833,9 +833,78 @@ serve(async (req) => {
           const executedStatuses = new Set(['filled', 'completed', 'closed', 'stopped', 'taken_profit']);
           const closedStatuses = new Set(['completed', 'closed', 'stopped', 'taken_profit']);
 
-          // Fetch real trades with all necessary fields
+          // STEP 1: Fetch closed positions from trading_positions and update trades with missing PnL
+          console.log('📊 Step 1: Fetching closed positions to update trades with missing PnL...');
+          const { data: closedPositions, error: positionsError } = await supabaseClient
+            .from('trading_positions')
+            .select('id, bot_id, trade_id, realized_pnl, exit_price, fees, status, closed_at')
+            .eq('user_id', user.id)
+            .in('bot_id', botIds)
+            .eq('status', 'closed')
+            .not('realized_pnl', 'is', null);
+
+          if (positionsError) {
+            console.warn('⚠️ Error fetching closed positions:', positionsError);
+          } else if (closedPositions && closedPositions.length > 0) {
+            console.log(`📊 Found ${closedPositions.length} closed positions with PnL`);
+            
+            // Update trades with PnL from positions
+            const tradesToUpdateFromPositions: Array<{ id: string; pnl: number; fee: number; status: string }> = [];
+            
+            for (const position of closedPositions) {
+              if (position.trade_id && position.realized_pnl !== null && position.realized_pnl !== undefined) {
+                const realizedPnL = parseFloat(position.realized_pnl);
+                const fees = parseFloat(position.fees || 0);
+                
+                // Only update if PnL is not zero (zero might mean it's already set or position had no PnL)
+                if (!Number.isNaN(realizedPnL)) {
+                  tradesToUpdateFromPositions.push({
+                    id: position.trade_id,
+                    pnl: realizedPnL,
+                    fee: fees,
+                    status: 'closed'
+                  });
+                }
+              }
+            }
+            
+            // Batch update trades with PnL from positions
+            if (tradesToUpdateFromPositions.length > 0) {
+              console.log(`📊 Updating ${tradesToUpdateFromPositions.length} trades with PnL from closed positions`);
+              for (const tradeUpdate of tradesToUpdateFromPositions) {
+                try {
+                  // Check if trade already has PnL
+                  const { data: existingTrade } = await supabaseClient
+                    .from('trades')
+                    .select('pnl')
+                    .eq('id', tradeUpdate.id)
+                    .eq('user_id', user.id)
+                    .single();
+                  
+                  // Only update if trade doesn't have PnL or PnL is zero/null
+                  if (!existingTrade || existingTrade.pnl === null || existingTrade.pnl === undefined || parseFloat(existingTrade.pnl || 0) === 0) {
+                    await supabaseClient
+                      .from('trades')
+                      .update({
+                        pnl: tradeUpdate.pnl,
+                        fee: tradeUpdate.fee,
+                        status: tradeUpdate.status,
+                        updated_at: new Date().toISOString()
+                      })
+                      .eq('id', tradeUpdate.id)
+                      .eq('user_id', user.id);
+                  }
+                } catch (updateError) {
+                  console.warn(`⚠️ Failed to update trade ${tradeUpdate.id} from position:`, updateError);
+                }
+              }
+            }
+          }
+
+          // STEP 2: Fetch real trades with all necessary fields
           // Note: trades table uses 'price' (not entry_price) and 'amount' (not size)
           // Also, trades table does NOT have exit_price column - only trading_positions has it
+          console.log('📊 Step 2: Fetching trades for stats calculation...');
           const { data: realTrades, error: realTradesError } = await supabaseClient
             .from('trades')
             .select('id, bot_id, status, pnl, fee, executed_at, price, amount, side')
