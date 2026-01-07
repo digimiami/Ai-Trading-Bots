@@ -517,7 +517,7 @@ serve(async (req) => {
               description: 'End date for backtest in ISO format (e.g., "2024-12-31T23:59:59Z"). For "last 30 days", use: new Date().toISOString() (current date/time)'
             }
           },
-          required: ['name', 'symbols', 'startDate', 'endDate']
+          required: ['symbols']
         }
       },
       {
