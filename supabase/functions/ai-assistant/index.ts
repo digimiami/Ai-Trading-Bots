@@ -938,17 +938,28 @@ IMPORTANT GUIDELINES:
     });
     
     // Sanitize error message to prevent exposing internal details
-    let errorMessage = 'Internal server error';
+    let errorMessage = 'An error occurred processing your request. Please try rephrasing your question or ask about something else.';
     if (error.message) {
-      // If error mentions backtest, provide a helpful message instead
-      if (error.message.includes('backtest') || error.message.includes('backTest')) {
-        errorMessage = 'The AI assistant encountered an issue. Please try rephrasing your question about backtesting, or navigate directly to the /backtest page to use the backtesting feature.';
-      } else if (error.message.includes('is not defined')) {
-        errorMessage = 'An error occurred processing your request. Please try rephrasing your question.';
+      const errorMsgLower = error.message.toLowerCase();
+      // Check for "is not defined" errors first (these are JavaScript ReferenceErrors)
+      if (errorMsgLower.includes('is not defined')) {
+        // Check if it's specifically about backtest
+        if (errorMsgLower.includes('backtest')) {
+          errorMessage = 'I cannot run backtests directly. Please navigate to the /backtest page to use the backtesting feature. I can help you with strategy configuration or interpreting results instead.';
+        } else {
+          // Generic "is not defined" error - likely the AI tried to reference something that doesn't exist
+          errorMessage = 'An error occurred processing your request. Please try rephrasing your question or ask about something else.';
+        }
+      } else if (errorMsgLower.includes('backtest')) {
+        // Other backtest-related errors
+        errorMessage = 'I cannot run backtests directly. Please navigate to the /backtest page to use the backtesting feature. I can help you with strategy configuration or interpreting results instead.';
       } else {
-        // Only show safe error messages
+        // For other errors, show a safe message (but don't expose internal details)
         const safeMessage = error.message.substring(0, 200); // Limit length
-        errorMessage = safeMessage;
+        // Only show if it's a user-friendly error
+        if (safeMessage.length < 100 && !safeMessage.includes('undefined') && !safeMessage.includes('ReferenceError')) {
+          errorMessage = safeMessage;
+        }
       }
     }
     
