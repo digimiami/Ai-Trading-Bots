@@ -36,23 +36,35 @@ export const useBots = () => {
       setError(null);
       
       const accessToken = await requireAccessToken();
+      const url = `${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management`;
+      console.log('useBots: Fetch URL:', url);
 
-      const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/bot-management`, {
+      const response = await fetch(url, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
         },
       });
 
+      console.log('useBots: Response status:', response.status, response.statusText);
+
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Bot fetch error:', response.status, errorText);
-        throw new Error(`Failed to fetch bots: ${response.status}`);
+        throw new Error(`Failed to fetch bots: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
-      console.log('useBots: Response data:', { hasBots: !!data.bots, botsLength: data.bots?.length, dataKeys: Object.keys(data) });
-      setBots(Array.isArray(data.bots) ? data.bots : []);
+      console.log('useBots: Response data:', { 
+        hasBots: !!data.bots, 
+        botsLength: data.bots?.length, 
+        dataKeys: Object.keys(data),
+        firstBot: data.bots?.[0] ? { id: data.bots[0].id, name: data.bots[0].name } : null
+      });
+      
+      const botsArray = Array.isArray(data.bots) ? data.bots : [];
+      console.log('useBots: Setting bots:', botsArray.length, 'bots');
+      setBots(botsArray);
     } catch (err) {
       console.error('Error fetching bots:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch bots');
