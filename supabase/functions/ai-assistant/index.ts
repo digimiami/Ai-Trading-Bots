@@ -510,11 +510,11 @@ serve(async (req) => {
             },
             startDate: {
               type: 'string',
-              description: 'Start date for backtest in ISO format (e.g., "2024-01-01T00:00:00Z")'
+              description: 'Start date for backtest in ISO format (e.g., "2024-01-01T00:00:00Z"). For "last 30 days", calculate as: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()'
             },
             endDate: {
               type: 'string',
-              description: 'End date for backtest in ISO format (e.g., "2024-12-31T23:59:59Z")'
+              description: 'End date for backtest in ISO format (e.g., "2024-12-31T23:59:59Z"). For "last 30 days", use: new Date().toISOString() (current date/time)'
             }
           },
           required: ['name', 'symbols', 'startDate', 'endDate']
@@ -2082,11 +2082,31 @@ async function executeRunBacktest(supabaseClient: any, userId: string, params: a
     
     // Validate required parameters
     if (!params.name || !params.symbols || !Array.isArray(params.symbols) || params.symbols.length === 0) {
+      console.error('❌ [executeRunBacktest] Missing required params:', { name: params.name, symbols: params.symbols });
       return { success: false, error: 'Backtest requires: name, and symbols (array of trading pairs)' };
     }
     
-    if (!params.startDate || !params.endDate) {
-      return { success: false, error: 'Backtest requires startDate and endDate in ISO format' };
+    // Auto-calculate dates if not provided but "last X days" is mentioned
+    let startDate = params.startDate;
+    let endDate = params.endDate;
+    
+    // If dates are missing, try to calculate from common phrases
+    if (!startDate || !endDate) {
+      const message = params.message || '';
+      const daysMatch = message.match(/last\s+(\d+)\s+days?/i);
+      if (daysMatch) {
+        const days = parseInt(daysMatch[1]);
+        const now = new Date();
+        endDate = now.toISOString();
+        const start = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+        startDate = start.toISOString();
+        console.log(`🔧 [executeRunBacktest] Auto-calculated dates: ${days} days ago = ${startDate} to ${endDate}`);
+      }
+    }
+    
+    if (!startDate || !endDate) {
+      console.error('❌ [executeRunBacktest] Missing dates:', { startDate, endDate });
+      return { success: false, error: 'Backtest requires startDate and endDate in ISO format. For "last 30 days", I will calculate them automatically, but please provide dates if possible.' };
     }
     
     // Set defaults
