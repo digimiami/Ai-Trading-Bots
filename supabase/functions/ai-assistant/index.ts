@@ -2159,8 +2159,8 @@ async function executeRunBacktest(supabaseClient: any, userId: string, params: a
       takeProfit,
       strategy,
       strategyConfig: params.strategyConfig || {},
-      startDate: params.startDate,
-      endDate: params.endDate
+      startDate: startDate,
+      endDate: endDate
     };
     
     console.log('🔧 [executeRunBacktest] Calling backtest-engine with data:', JSON.stringify(backtestData, null, 2));
