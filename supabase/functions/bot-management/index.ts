@@ -834,10 +834,10 @@ serve(async (req) => {
           const executedStatuses = new Set(['filled', 'completed', 'closed', 'stopped', 'taken_profit']);
           const closedStatuses = new Set(['completed', 'closed', 'stopped', 'taken_profit']);
 
-          // Fetch real trades
+          // Fetch real trades with all necessary fields
           const { data: realTrades, error: realTradesError } = await supabaseClient
             .from('trades')
-            .select('bot_id, status, pnl, fee, executed_at, exit_price')
+            .select('id, bot_id, status, pnl, fee, executed_at, exit_price, entry_price, size, side')
             .eq('user_id', user.id)
             .in('bot_id', botIds)
             .order('executed_at', { ascending: true });
@@ -885,10 +885,10 @@ serve(async (req) => {
             }
           }
 
-          // Fetch paper trades
+          // Fetch paper trades with all necessary fields
           const { data: paperTrades, error: paperTradesError } = await supabaseClient
             .from('paper_trading_trades')
-            .select('bot_id, status, pnl, fees, executed_at, exit_price')
+            .select('id, bot_id, status, pnl, fees, executed_at, exit_price, entry_price, quantity, side')
             .eq('user_id', user.id)
             .in('bot_id', botIds)
             .order('executed_at', { ascending: true });
