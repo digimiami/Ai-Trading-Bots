@@ -1334,9 +1334,34 @@ export default function BotsPage() {
                     <div>
                       <h3 className="font-semibold text-gray-900">{bot.name}</h3>
                       <p className="text-sm text-gray-500">
-                        {bot.symbols && bot.symbols.length > 1 
-                          ? `${bot.symbols.join(', ')} (${bot.symbols.length} pairs)` 
-                          : bot.symbol} • {bot.exchange.toUpperCase()}
+                        {(() => {
+                          // Handle symbols array (multi-pair bots)
+                          let symbolsArray: string[] = [];
+                          
+                          if (bot.symbols) {
+                            // Parse if it's a JSON string
+                            if (typeof bot.symbols === 'string') {
+                              try {
+                                symbolsArray = JSON.parse(bot.symbols);
+                              } catch (e) {
+                                // If parsing fails, treat as single symbol
+                                symbolsArray = [bot.symbols];
+                              }
+                            } else if (Array.isArray(bot.symbols)) {
+                              symbolsArray = bot.symbols;
+                            }
+                          }
+                          
+                          // If we have multiple symbols, show all of them
+                          if (symbolsArray.length > 1) {
+                            return `${symbolsArray.join(', ')} • ${bot.exchange.toUpperCase()}`;
+                          } else if (symbolsArray.length === 1) {
+                            return `${symbolsArray[0]} • ${bot.exchange.toUpperCase()}`;
+                          } else {
+                            // Fallback to single symbol
+                            return `${bot.symbol || 'N/A'} • ${bot.exchange.toUpperCase()}`;
+                          }
+                        })()}
                       </p>
                       <div className="flex items-center space-x-2 mt-1 flex-wrap gap-1">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(bot.status)}`}>
