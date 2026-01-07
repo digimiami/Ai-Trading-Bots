@@ -603,23 +603,37 @@ IMPORTANT GUIDELINES:
     const supportsFunctionCalling = !useDeepSeek;
 
     // First AI call - may request function calls (only for OpenAI)
-    let response = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        ...(supportsFunctionCalling ? {
-          tools: functions.map(f => ({ type: 'function', function: f })),
-          tool_choice: 'auto',
-        } : {}),
-        temperature: 0.7,
-        max_tokens: 2000,
-      }),
+    console.log('🔧 [AI Assistant] Making AI API call...', {
+      model,
+      messageLength: message.length,
+      hasAttachments: attachments.length > 0,
+      supportsFunctionCalling,
+      functionCount: functions.length
     });
+    
+    let response;
+    try {
+      response = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          ...(supportsFunctionCalling ? {
+            tools: functions.map(f => ({ type: 'function', function: f })),
+            tool_choice: 'auto',
+          } : {}),
+          temperature: 0.7,
+          max_tokens: 2000,
+        }),
+      });
+    } catch (fetchError: any) {
+      console.error('❌ [AI Assistant] Fetch error:', fetchError);
+      throw new Error(`Failed to call AI API: ${fetchError.message || 'Network error'}`);
+    }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
@@ -635,8 +649,22 @@ IMPORTANT GUIDELINES:
       throw new Error(`AI API error: ${response.status} - ${errorData.error?.message || 'Unknown error'}`);
     }
 
-    let data = await response.json();
+    let data;
+    try {
+      data = await response.json();
+    } catch (parseError: any) {
+      console.error('❌ [AI Assistant] Failed to parse AI API response:', parseError);
+      const responseText = await response.text().catch(() => 'Unable to read response');
+      console.error('❌ [AI Assistant] Response text:', responseText.substring(0, 500));
+      throw new Error(`Failed to parse AI API response: ${parseError.message || 'Invalid JSON'}`);
+    }
+    
     const aiMessage = data.choices[0]?.message;
+    if (!aiMessage) {
+      console.error('❌ [AI Assistant] No message in AI response:', JSON.stringify(data).substring(0, 500));
+      throw new Error('AI API returned an invalid response format');
+    }
+    
     aiResponse = aiMessage?.content || '';
     const toolCalls = supportsFunctionCalling ? (aiMessage?.tool_calls || []) : [];
     
