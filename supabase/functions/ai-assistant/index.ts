@@ -2160,7 +2160,7 @@ async function executeRunBacktest(supabaseClient: any, userId: string, params: a
     // Prepare backtest data
     const backtestData = {
       name: name,
-      symbols: params.symbols.map((s: string) => s.toUpperCase()),
+      symbols: symbols,
       exchange,
       tradingType,
       timeframe,
