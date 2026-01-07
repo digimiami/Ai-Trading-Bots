@@ -2199,11 +2199,32 @@ async function executeRunBacktest(supabaseClient: any, userId: string, params: a
     });
     
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
+      const errorText = await response.text().catch(() => 'Unable to read error response');
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+      } catch {
+        errorData = { error: errorText };
+      }
       console.error('❌ [executeRunBacktest] Backtest engine error:', response.status, errorData);
+      console.error('❌ [executeRunBacktest] Request data sent:', JSON.stringify(backtestData, null, 2));
+      console.error('❌ [executeRunBacktest] Response headers:', Object.fromEntries(response.headers.entries()));
+      
+      // Provide more helpful error message based on status code
+      let errorMessage = errorData.error || errorData.message || `Backtest failed with status ${response.status}`;
+      if (response.status === 401) {
+        errorMessage = 'Authentication failed. Please ensure you are logged in and try again.';
+      } else if (response.status === 400) {
+        errorMessage = errorData.error || 'Invalid backtest parameters. Please check your input and try again.';
+      } else if (response.status === 500) {
+        errorMessage = 'Backtest engine encountered an internal error. Please try again later or contact support.';
+      }
+      
       return { 
         success: false, 
-        error: errorData.error || `Backtest failed with status ${response.status}` 
+        error: errorMessage,
+        details: errorData,
+        status: response.status
       };
     }
     
