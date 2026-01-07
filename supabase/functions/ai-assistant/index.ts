@@ -674,11 +674,13 @@ IMPORTANT GUIDELINES:
       messageLength: message.length,
       hasAttachments: attachments.length > 0,
       supportsFunctionCalling,
-      functionCount: functions.length
+      functionCount: functions.length,
+      userMessage: message.substring(0, 100) // Log first 100 chars of message
     });
     
     let response;
     try {
+      // Wrap the entire AI API interaction in a try-catch to catch any ReferenceErrors
       response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
