@@ -37,30 +37,30 @@ async function fetchCryptoCompareKlines(
   // Map symbol to CryptoCompare format (e.g., BTCUSDT -> BTC)
   const baseSymbol = symbol.replace('USDT', '').replace('USD', '');
   
-  // Map interval to CryptoCompare limit
-  const intervalMap: { [key: string]: { limit: number; aggregate: number } } = {
-    '1m': { limit: 2000, aggregate: 1 },
-    '3m': { limit: 2000, aggregate: 3 },
-    '5m': { limit: 2000, aggregate: 5 },
-    '15m': { limit: 2000, aggregate: 15 },
-    '30m': { limit: 2000, aggregate: 30 },
-    '1h': { limit: 2000, aggregate: 60 },
-    '2h': { limit: 2000, aggregate: 120 },
-    '4h': { limit: 2000, aggregate: 240 },
-    '6h': { limit: 2000, aggregate: 360 },
-    '12h': { limit: 2000, aggregate: 720 },
-    '1d': { limit: 2000, aggregate: 1440 },
-    '1w': { limit: 2000, aggregate: 10080 },
-    '1M': { limit: 2000, aggregate: 43200 },
+  // Map interval to CryptoCompare endpoint and parameters
+  const intervalMap: { [key: string]: { endpoint: string; limit: number; aggregate: number } } = {
+    '1m': { endpoint: 'histominute', limit: 2000, aggregate: 1 },
+    '3m': { endpoint: 'histominute', limit: 2000, aggregate: 3 },
+    '5m': { endpoint: 'histominute', limit: 2000, aggregate: 5 },
+    '15m': { endpoint: 'histominute', limit: 2000, aggregate: 15 },
+    '30m': { endpoint: 'histominute', limit: 2000, aggregate: 30 },
+    '1h': { endpoint: 'histohour', limit: 2000, aggregate: 1 },
+    '2h': { endpoint: 'histohour', limit: 2000, aggregate: 2 },
+    '4h': { endpoint: 'histohour', limit: 2000, aggregate: 4 },
+    '6h': { endpoint: 'histohour', limit: 2000, aggregate: 6 },
+    '12h': { endpoint: 'histohour', limit: 2000, aggregate: 12 },
+    '1d': { endpoint: 'histoday', limit: 2000, aggregate: 1 },
+    '1w': { endpoint: 'histoday', limit: 2000, aggregate: 7 },
+    '1M': { endpoint: 'histoday', limit: 2000, aggregate: 30 },
   };
-  const intervalConfig = intervalMap[interval] || { limit: 2000, aggregate: 60 };
+  const intervalConfig = intervalMap[interval] || { endpoint: 'histohour', limit: 2000, aggregate: 1 };
   
   const allKlines: any[] = [];
-  let currentStart = Math.floor(startTime / 1000); // CryptoCompare uses seconds
-  const endTimeSeconds = Math.floor(endTime / 1000);
+  let currentEnd = Math.floor(endTime / 1000); // CryptoCompare uses seconds
+  const startTimeSeconds = Math.floor(startTime / 1000);
 
-  while (currentStart < endTimeSeconds) {
-    const url = `https://min-api.cryptocompare.com/data/v2/histominute?fsym=${baseSymbol}&tsym=USDT&limit=${intervalConfig.limit}&aggregate=${intervalConfig.aggregate}&toTs=${endTimeSeconds}`;
+  while (currentEnd > startTimeSeconds) {
+    const url = `https://min-api.cryptocompare.com/data/v2/${intervalConfig.endpoint}?fsym=${baseSymbol}&tsym=USDT&limit=${Math.min(intervalConfig.limit, 2000)}&aggregate=${intervalConfig.aggregate}&toTs=${currentEnd}`;
     console.log(`Fetching klines from CryptoCompare for ${symbol}: ${url}`);
 
     try {
@@ -92,8 +92,9 @@ async function fetchCryptoCompareKlines(
           k.high.toString(),
           k.low.toString(),
           k.close.toString(),
-          k.volumeto.toString(), // volume in USDT
-        ]);
+          (k.volumeto || k.volumefrom || '0').toString(), // volume in USDT or base currency
+        ])
+        .sort((a: any, b: any) => parseInt(a[0]) - parseInt(b[0])); // Sort by timestamp
 
       if (klines.length === 0) {
         break;
@@ -101,18 +102,21 @@ async function fetchCryptoCompareKlines(
 
       allKlines.push(...klines);
 
-      const lastTimestamp = parseInt(klines[klines.length - 1][0]);
-      if (lastTimestamp >= endTime || klines.length < intervalConfig.limit) {
-        break; // Reached end time or got all data
+      const firstTimestamp = parseInt(klines[0][0]);
+      if (firstTimestamp <= startTime || klines.length < intervalConfig.limit) {
+        break; // Reached start time or got all data
       }
 
-      currentStart = Math.floor(lastTimestamp / 1000) + 1;
+      currentEnd = Math.floor(firstTimestamp / 1000) - 1;
       await new Promise(resolve => setTimeout(resolve, 200));
     } catch (error) {
       console.error(`Error fetching klines from CryptoCompare for ${symbol}:`, error);
       throw error;
     }
   }
+
+  // Sort all klines by timestamp (oldest first)
+  allKlines.sort((a: any, b: any) => parseInt(a[0]) - parseInt(b[0]));
 
   return allKlines;
 }
