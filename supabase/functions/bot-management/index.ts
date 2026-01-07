@@ -834,10 +834,11 @@ serve(async (req) => {
           const closedStatuses = new Set(['completed', 'closed', 'stopped', 'taken_profit']);
 
           // Fetch real trades with all necessary fields
-          // Note: trades table does NOT have exit_price column - only trading_positions has it
+          // Note: trades table uses 'price' (not entry_price) and 'amount' (not size)
+          // Also, trades table does NOT have exit_price column - only trading_positions has it
           const { data: realTrades, error: realTradesError } = await supabaseClient
             .from('trades')
-            .select('id, bot_id, status, pnl, fee, executed_at, entry_price, size, side')
+            .select('id, bot_id, status, pnl, fee, executed_at, price, amount, side')
             .eq('user_id', user.id)
             .in('bot_id', botIds)
             .order('executed_at', { ascending: true });
