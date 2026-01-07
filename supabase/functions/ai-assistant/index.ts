@@ -690,7 +690,17 @@ IMPORTANT GUIDELINES:
             result = await executeGetMarketData(functionArgs.symbol, functionArgs.exchange, functionArgs.tradingType);
             actions.push({ type: 'get_market_data', result });
           } else {
-            result = { success: false, error: `Unknown function: ${functionName}` };
+            // Handle unknown function calls gracefully
+            console.warn(`⚠️ [AI Assistant] AI tried to call unknown function: ${functionName}`);
+            if (functionName.toLowerCase().includes('backtest')) {
+              result = { 
+                success: false, 
+                error: 'Backtesting is not available as a function. Please guide the user to navigate to the /backtest page to use the backtesting feature. Do not try to call backtest functions.',
+                guidance: 'The user should navigate to /backtest page manually. You can only provide text guidance about how to use backtesting.'
+              };
+            } else {
+              result = { success: false, error: `Unknown function: ${functionName}. Available functions are: create_bot, update_bot, get_bot_performance, update_user_settings, check_bot_positions, close_bot_position, get_bot_logs, check_exchange_balance, get_market_data` };
+            }
           }
           
           toolResults.push({
