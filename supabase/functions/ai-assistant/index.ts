@@ -965,20 +965,55 @@ IMPORTANT GUIDELINES:
     
     // Sanitize error message to prevent exposing internal details
     let errorMessage = 'An error occurred processing your request. Please try rephrasing your question or ask about something else.';
+    let shouldReturnResponse = false; // Flag to return response instead of error
+    let helpfulResponse = '';
+    
     if (error.message) {
       const errorMsgLower = error.message.toLowerCase();
       // Check for "is not defined" errors first (these are JavaScript ReferenceErrors)
       if (errorMsgLower.includes('is not defined')) {
         // Check if it's specifically about backtest
         if (errorMsgLower.includes('backtest')) {
-          errorMessage = 'I cannot run backtests directly. Please navigate to the /backtest page to use the backtesting feature. I can help you with strategy configuration or interpreting results instead.';
+          // Return a helpful response instead of an error
+          shouldReturnResponse = true;
+          helpfulResponse = `I understand you're interested in backtesting! While I cannot run backtests directly, I can help you in other ways:
+
+**To Run a Backtest:**
+Navigate to the **Backtest** page at \`/backtest\` in your browser. There you can:
+- Select trading pairs to test (e.g., BTCUSDT, ETHUSDT, SOLUSDT)
+- Configure your strategy settings
+- Set timeframes and risk parameters
+- Run the backtest and review results
+
+**How I Can Help:**
+- **Strategy Configuration**: I can help you choose which strategy settings to test (RSI thresholds, ADX levels, etc.)
+- **Pair Selection**: I can suggest which trading pairs might be good candidates for backtesting
+- **Interpreting Results**: I can help you understand backtest results and what they mean
+- **Bot Creation**: Once you have backtest results, I can help you create a bot with those optimal settings
+
+What would you like help with - choosing pairs to test, configuring a strategy, or something else?`;
         } else {
           // Generic "is not defined" error - likely the AI tried to reference something that doesn't exist
           errorMessage = 'An error occurred processing your request. Please try rephrasing your question or ask about something else.';
         }
       } else if (errorMsgLower.includes('backtest')) {
-        // Other backtest-related errors
-        errorMessage = 'I cannot run backtests directly. Please navigate to the /backtest page to use the backtesting feature. I can help you with strategy configuration or interpreting results instead.';
+        // Other backtest-related errors - return helpful response
+        shouldReturnResponse = true;
+        helpfulResponse = `I understand you're interested in backtesting! While I cannot run backtests directly, I can help you in other ways:
+
+**To Run a Backtest:**
+Navigate to the **Backtest** page at \`/backtest\` in your browser. There you can:
+- Select trading pairs to test
+- Configure your strategy settings
+- Run the backtest and review results
+
+**How I Can Help:**
+- Strategy configuration advice
+- Pair selection suggestions
+- Interpreting backtest results
+- Creating bots from backtest results
+
+What would you like help with?`;
       } else {
         // For other errors, show a safe message (but don't expose internal details)
         const safeMessage = error.message.substring(0, 200); // Limit length
@@ -987,6 +1022,19 @@ IMPORTANT GUIDELINES:
           errorMessage = safeMessage;
         }
       }
+    }
+    
+    // If we have a helpful response, return it as a successful response instead of an error
+    if (shouldReturnResponse && helpfulResponse) {
+      console.log('✅ [AI Assistant] Returning helpful response instead of error');
+      return new Response(
+        JSON.stringify({ 
+          response: helpfulResponse,
+          provider: 'Error Recovery',
+          model: 'Helpful Response'
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
     
     return new Response(
