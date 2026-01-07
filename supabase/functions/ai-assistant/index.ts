@@ -2113,10 +2113,15 @@ async function executeRunBacktest(supabaseClient: any, userId: string, params: a
       const days = daysMatch ? parseInt(daysMatch[1]) : 30; // Default to 30 days
       
       const now = new Date();
+      // Set endDate to current date/time
       endDate = now.toISOString();
-      const start = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+      // Set startDate to exactly N days ago
+      const start = new Date(now);
+      start.setUTCDate(start.getUTCDate() - days);
+      start.setUTCHours(0, 0, 0, 0); // Start of day
       startDate = start.toISOString();
       console.log(`🔧 [executeRunBacktest] Auto-calculated dates: ${days} days ago = ${startDate} to ${endDate}`);
+      console.log(`🔧 [executeRunBacktest] Current date: ${now.toISOString()}, Calculated start: ${startDate}`);
     }
     
     // Final validation - dates should always be set by now
