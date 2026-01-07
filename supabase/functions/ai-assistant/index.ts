@@ -2101,17 +2101,19 @@ async function executeRunBacktest(supabaseClient: any, userId: string, params: a
       return { success: false, error: 'No valid trading pairs provided. Please provide symbols like ["BTCUSDT", "ETHUSDT"]' };
     }
     
-    // Auto-calculate dates if not provided
+    // Auto-calculate dates - always recalculate if "last X days" is mentioned or dates are missing/invalid
     let startDate = params.startDate;
     let endDate = params.endDate;
     
-    // Always calculate dates if not provided - default to last 30 days
-    if (!startDate || !endDate) {
-      // Try to extract "last X days" from any string parameter
-      const dateString = JSON.stringify(params);
-      const daysMatch = dateString.match(/last\s+(\d+)\s+days?/i);
-      const days = daysMatch ? parseInt(daysMatch[1]) : 30; // Default to 30 days
-      
+    // Check if "last X days" is mentioned in the request (from user message or params)
+    const dateString = JSON.stringify(params);
+    const daysMatch = dateString.match(/last\s+(\d+)\s+days?/i);
+    const days = daysMatch ? parseInt(daysMatch[1]) : 30; // Default to 30 days
+    
+    // Always recalculate if dates are missing, or if "last X days" is mentioned (to ensure we use current date)
+    const shouldRecalculate = !startDate || !endDate || daysMatch;
+    
+    if (shouldRecalculate) {
       const now = new Date();
       // Set endDate to current date/time
       endDate = now.toISOString();
@@ -2122,6 +2124,21 @@ async function executeRunBacktest(supabaseClient: any, userId: string, params: a
       startDate = start.toISOString();
       console.log(`🔧 [executeRunBacktest] Auto-calculated dates: ${days} days ago = ${startDate} to ${endDate}`);
       console.log(`🔧 [executeRunBacktest] Current date: ${now.toISOString()}, Calculated start: ${startDate}`);
+    } else {
+      // Validate provided dates are not too old (more than 1 year old)
+      const providedStart = new Date(startDate);
+      const now = new Date();
+      const oneYearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+      
+      if (providedStart < oneYearAgo) {
+        console.warn(`⚠️ [executeRunBacktest] Provided start date ${startDate} is more than 1 year old, recalculating...`);
+        const start = new Date(now);
+        start.setUTCDate(start.getUTCDate() - days);
+        start.setUTCHours(0, 0, 0, 0);
+        startDate = start.toISOString();
+        endDate = now.toISOString();
+        console.log(`🔧 [executeRunBacktest] Recalculated dates: ${startDate} to ${endDate}`);
+      }
     }
     
     // Final validation - dates should always be set by now
