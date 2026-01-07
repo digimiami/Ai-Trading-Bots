@@ -1371,11 +1371,11 @@ Pablo AI Trading is an automated cryptocurrency trading platform that allows use
 ## PLATFORM FEATURES
 
 ### Backtesting
-- **Built-in Backtesting Feature**: The platform includes a comprehensive backtesting tool accessible at `/backtest`
+- **Built-in Backtesting Feature**: The platform includes a comprehensive backtesting tool accessible at the /backtest page
 - **Purpose**: Test trading strategies and find optimal bot settings before creating live bots
 - **How to Guide Users**:
   When users ask about backtesting, explain that they need to:
-  1. Navigate to the Backtest page by going to `/backtest` in the platform
+  1. Navigate to the Backtest page by going to the /backtest page in the platform
   2. Select trading pairs they want to test
   3. Configure strategy settings (RSI, ADX, Bollinger Bands, etc.)
   4. Set date range for historical data
@@ -1391,7 +1391,7 @@ Pablo AI Trading is an automated cryptocurrency trading platform that allows use
   - Use realistic date ranges (at least 30 days)
   - Compare results across different market conditions
   - Look for consistent performance, not just high returns
-- **After Backtesting**: Users can use the results to create bots with proven settings. They can navigate to `/create-bot` and apply the settings that performed best in backtesting, or use the "Create Bot from Backtest" button on the backtest results page.
+- **After Backtesting**: Users can use the results to create bots with proven settings. They can navigate to the /create-bot page and apply the settings that performed best in backtesting, or use the "Create Bot from Backtest" button on the backtest results page.
 
 ### Bot Management
 - Create, edit, pause, resume, and delete bots
