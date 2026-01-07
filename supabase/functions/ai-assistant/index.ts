@@ -809,6 +809,30 @@ IMPORTANT GUIDELINES:
         } catch (error: any) {
           console.error(`❌ Error executing ${functionName}:`, error);
           console.error(`❌ Error stack:`, error.stack);
+          console.error(`❌ Error name:`, error.name);
+          console.error(`❌ Error message:`, error.message);
+          
+          // Check for "is not defined" ReferenceErrors
+          if (error.name === 'ReferenceError' || (error.message && error.message.toLowerCase().includes('is not defined'))) {
+            console.error(`❌ ReferenceError detected in function execution: ${error.message}`);
+            // If it's a backtest-related error, provide specific guidance
+            if (error.message && error.message.toLowerCase().includes('backtest')) {
+              const errorResult = {
+                success: false,
+                error: 'Backtesting functionality is not available as a function. Please guide the user to navigate to /backtest page manually.',
+                guidance: 'The user should use the backtesting page directly. You can only provide text guidance about backtesting.'
+              };
+              toolResults.push({
+                tool_call_id: toolCall.id,
+                role: 'tool',
+                name: functionName,
+                content: JSON.stringify(errorResult)
+              });
+              actions.push({ type: functionName, result: errorResult });
+              continue; // Skip to next tool call
+            }
+          }
+          
           const errorResult = { 
             success: false,
             error: error.message || 'Function execution failed',
