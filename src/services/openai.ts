@@ -56,11 +56,20 @@ class OpenAIService {
   private deepseekApiKey: string;
   private deepseekBaseUrl: string = 'https://api.deepseek.com/v1';
   private useDeepSeek: boolean = false;
+  private keysLoadedFromDB: boolean = false;
 
   constructor() {
-    // Load API keys from environment variables or localStorage
-    this.apiKey = import.meta.env.VITE_OPENAI_API_KEY || localStorage.getItem('ai_openai_api_key') || '';
-    this.deepseekApiKey = import.meta.env.VITE_DEEPSEEK_API_KEY || localStorage.getItem('ai_deepseek_api_key') || '';
+    // Load API keys from environment variables first (highest priority)
+    this.apiKey = import.meta.env.VITE_OPENAI_API_KEY || '';
+    this.deepseekApiKey = import.meta.env.VITE_DEEPSEEK_API_KEY || '';
+    
+    // Then try to load from localStorage (for backward compatibility)
+    if (!this.apiKey) {
+      this.apiKey = localStorage.getItem('ai_openai_api_key') || '';
+    }
+    if (!this.deepseekApiKey) {
+      this.deepseekApiKey = localStorage.getItem('ai_deepseek_api_key') || '';
+    }
     
     // Load provider preference from localStorage, default to DeepSeek if available
     const savedProvider = localStorage.getItem('ai_provider_preference');
@@ -70,33 +79,149 @@ class OpenAIService {
       // Auto-detect: Prefer DeepSeek if available
       this.useDeepSeek = !!this.deepseekApiKey;
     }
+
+    // Load from database asynchronously (won't block constructor)
+    this.loadKeysFromDatabase().catch(err => {
+      console.warn('Failed to load AI API keys from database:', err);
+    });
+  }
+
+  /**
+   * Load AI API keys from database
+   */
+  private async loadKeysFromDatabase(): Promise<void> {
+    try {
+      const { supabase } = await import('../lib/supabase');
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        return; // Not authenticated, skip database load
+      }
+
+      const { data, error } = await supabase
+        .from('user_settings')
+        .select('ai_api_keys')
+        .eq('user_id', user.id)
+        .single();
+
+      if (error) {
+        // Table might not exist or user_settings row doesn't exist yet
+        if (error.code !== 'PGRST116') {
+          console.warn('Error loading AI API keys from database:', error);
+        }
+        return;
+      }
+
+      if (data?.ai_api_keys) {
+        const keys = data.ai_api_keys;
+        
+        // Only use database keys if we don't have env vars or localStorage keys
+        // This preserves priority: env vars > localStorage > database
+        if (!this.apiKey && keys.openai) {
+          this.apiKey = keys.openai;
+          // Also sync to localStorage for backward compatibility
+          localStorage.setItem('ai_openai_api_key', keys.openai);
+        }
+        
+        if (!this.deepseekApiKey && keys.deepseek) {
+          this.deepseekApiKey = keys.deepseek;
+          // Also sync to localStorage for backward compatibility
+          localStorage.setItem('ai_deepseek_api_key', keys.deepseek);
+        }
+
+        if (keys.provider_preference && (keys.provider_preference === 'openai' || keys.provider_preference === 'deepseek')) {
+          this.useDeepSeek = keys.provider_preference === 'deepseek';
+          localStorage.setItem('ai_provider_preference', keys.provider_preference);
+        }
+
+        this.keysLoadedFromDB = true;
+        console.log('✅ AI API keys loaded from database');
+      }
+    } catch (error) {
+      console.warn('Failed to load AI API keys from database:', error);
+    }
+  }
+
+  /**
+   * Save AI API keys to database
+   */
+  private async saveKeysToDatabase(): Promise<void> {
+    try {
+      const { supabase } = await import('../lib/supabase');
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      if (!user) {
+        console.warn('Cannot save AI API keys: user not authenticated');
+        return;
+      }
+
+      const aiApiKeys = {
+        openai: this.apiKey || null,
+        deepseek: this.deepseekApiKey || null,
+        provider_preference: this.useDeepSeek ? 'deepseek' : 'openai'
+      };
+
+      // Use upsert to create or update
+      const { error } = await supabase
+        .from('user_settings')
+        .upsert({
+          user_id: user.id,
+          ai_api_keys: aiApiKeys
+        }, {
+          onConflict: 'user_id'
+        });
+
+      if (error) {
+        console.error('Failed to save AI API keys to database:', error);
+        throw error;
+      }
+
+      console.log('✅ AI API keys saved to database');
+    } catch (error) {
+      console.error('Error saving AI API keys to database:', error);
+      throw error;
+    }
   }
 
   /**
    * Set OpenAI API key (for UI configuration)
    */
-  setOpenAIKey(apiKey: string): void {
+  async setOpenAIKey(apiKey: string): Promise<void> {
     this.apiKey = apiKey;
     if (apiKey) {
       localStorage.setItem('ai_openai_api_key', apiKey);
-      console.log('✅ OpenAI API key saved');
+      console.log('✅ OpenAI API key saved to localStorage');
     } else {
       localStorage.removeItem('ai_openai_api_key');
-      console.log('✅ OpenAI API key removed');
+      console.log('✅ OpenAI API key removed from localStorage');
+    }
+    
+    // Also save to database
+    try {
+      await this.saveKeysToDatabase();
+    } catch (error) {
+      console.warn('Failed to save OpenAI key to database, but saved to localStorage:', error);
     }
   }
 
   /**
    * Set DeepSeek API key (for UI configuration)
    */
-  setDeepSeekKey(apiKey: string): void {
+  async setDeepSeekKey(apiKey: string): Promise<void> {
     this.deepseekApiKey = apiKey;
     if (apiKey) {
       localStorage.setItem('ai_deepseek_api_key', apiKey);
-      console.log('✅ DeepSeek API key saved');
+      console.log('✅ DeepSeek API key saved to localStorage');
     } else {
       localStorage.removeItem('ai_deepseek_api_key');
-      console.log('✅ DeepSeek API key removed');
+      console.log('✅ DeepSeek API key removed from localStorage');
+    }
+    
+    // Also save to database
+    try {
+      await this.saveKeysToDatabase();
+    } catch (error) {
+      console.warn('Failed to save DeepSeek key to database, but saved to localStorage:', error);
     }
   }
 
@@ -113,7 +238,7 @@ class OpenAIService {
   /**
    * Set AI provider preference
    */
-  setProvider(provider: 'openai' | 'deepseek'): void {
+  async setProvider(provider: 'openai' | 'deepseek'): Promise<void> {
     // Check availability using the method that checks Edge Function secrets first
     // This ensures keys stored in Edge Function secrets are recognized
     const isAvailable = this.isProviderAvailable(provider);
@@ -127,6 +252,13 @@ class OpenAIService {
     this.useDeepSeek = provider === 'deepseek';
     localStorage.setItem('ai_provider_preference', provider);
     console.log(`✅ AI Provider set to: ${provider}${isAvailable ? '' : ' (key not configured, may not work)'}`);
+    
+    // Also save to database
+    try {
+      await this.saveKeysToDatabase();
+    } catch (error) {
+      console.warn('Failed to save provider preference to database:', error);
+    }
   }
 
   /**
@@ -137,37 +269,50 @@ class OpenAIService {
   }
 
   /**
-   * Refresh API keys from localStorage (useful after saving via UI)
+   * Refresh API keys from localStorage and database (useful after saving via UI)
    */
-  refreshKeys(): void {
-    // Always reload from localStorage first (user-set keys take precedence)
+  async refreshKeys(): Promise<void> {
+    // Priority: env vars > localStorage > database
+    const envOpenAI = import.meta.env.VITE_OPENAI_API_KEY;
+    const envDeepSeek = import.meta.env.VITE_DEEPSEEK_API_KEY;
     const storedOpenAI = localStorage.getItem('ai_openai_api_key');
     const storedDeepSeek = localStorage.getItem('ai_deepseek_api_key');
     
-    // Only use env vars if localStorage doesn't have the key
-    if (storedOpenAI) {
+    // Load from env vars first (highest priority)
+    if (envOpenAI) {
+      this.apiKey = envOpenAI;
+      console.log('✅ OpenAI key loaded from env var');
+    } else if (storedOpenAI) {
       this.apiKey = storedOpenAI;
       console.log('✅ OpenAI key refreshed from localStorage');
-    } else if (import.meta.env.VITE_OPENAI_API_KEY) {
-      this.apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-      console.log('✅ OpenAI key loaded from env var');
     } else {
-      this.apiKey = '';
+      // Try database as fallback
+      await this.loadKeysFromDatabase();
+      if (!this.apiKey) {
+        this.apiKey = '';
+      }
     }
     
-    if (storedDeepSeek) {
+    if (envDeepSeek) {
+      this.deepseekApiKey = envDeepSeek;
+      console.log('✅ DeepSeek key loaded from env var');
+    } else if (storedDeepSeek) {
       this.deepseekApiKey = storedDeepSeek;
       console.log('✅ DeepSeek key refreshed from localStorage');
-    } else if (import.meta.env.VITE_DEEPSEEK_API_KEY) {
-      this.deepseekApiKey = import.meta.env.VITE_DEEPSEEK_API_KEY;
-      console.log('✅ DeepSeek key loaded from env var');
     } else {
-      this.deepseekApiKey = '';
+      // Try database as fallback
+      if (!this.keysLoadedFromDB) {
+        await this.loadKeysFromDatabase();
+      }
+      if (!this.deepseekApiKey) {
+        this.deepseekApiKey = '';
+      }
     }
     
     console.log('🔄 AI API keys refreshed:', {
       openai: !!this.apiKey,
-      deepseek: !!this.deepseekApiKey
+      deepseek: !!this.deepseekApiKey,
+      fromDB: this.keysLoadedFromDB
     });
   }
 

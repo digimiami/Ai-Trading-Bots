@@ -263,8 +263,16 @@ export default function Settings() {
     };
     checkKeys();
     
-    // Also refresh from localStorage (fallback)
-    openAIService.refreshKeys();
+    // Also refresh from database and localStorage (database takes priority over localStorage)
+    const loadKeys = async () => {
+      try {
+        await openAIService.refreshKeys();
+        setAiKeysRefresh(prev => prev + 1);
+      } catch (error) {
+        console.warn('Failed to load AI keys from database:', error);
+      }
+    };
+    loadKeys();
     // Only run on mount - remove aiKeysRefresh from dependencies to prevent infinite loop
   }, []); // Empty array = run only once on mount
 
@@ -958,28 +966,34 @@ export default function Settings() {
     setAiSettings(prev => ({ ...prev, [key]: value }));
   };
 
-  const handleAiSave = () => {
+  const handleAiSave = async () => {
     try {
       // Save OpenAI API key
       if (aiSettings.openaiApiKey) {
-        openAIService.setOpenAIKey(aiSettings.openaiApiKey);
+        await openAIService.setOpenAIKey(aiSettings.openaiApiKey);
+      } else {
+        // If empty, clear the key
+        await openAIService.setOpenAIKey('');
       }
 
       // Save DeepSeek API key
       if (aiSettings.deepseekApiKey) {
-        openAIService.setDeepSeekKey(aiSettings.deepseekApiKey);
+        await openAIService.setDeepSeekKey(aiSettings.deepseekApiKey);
+      } else {
+        // If empty, clear the key
+        await openAIService.setDeepSeekKey('');
       }
 
-      // Refresh keys from localStorage to ensure sync
-      openAIService.refreshKeys();
+      // Refresh keys from database to ensure sync
+      await openAIService.refreshKeys();
       
       // Trigger UI update
       setAiKeysRefresh(prev => prev + 1);
 
       setShowAiConfig(false);
-      alert('AI API keys saved successfully!');
+      alert('AI API keys saved successfully! They will be available on all your devices.');
       
-      // Small delay before reload to ensure localStorage is written and UI updates
+      // Small delay before reload to ensure database is written and UI updates
       setTimeout(() => {
         window.location.reload();
       }, 200);
