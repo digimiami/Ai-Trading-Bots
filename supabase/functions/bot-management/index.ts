@@ -392,6 +392,41 @@ serve(async (req) => {
 
         console.log('Table exists, proceeding with insert...')
 
+        // Fetch user's risk management settings
+        let userRiskSettings: any = null;
+        try {
+          const { data: userSettings } = await supabaseClient
+            .from('user_settings')
+            .select('risk_settings')
+            .eq('user_id', user.id)
+            .single();
+          
+          if (userSettings?.risk_settings) {
+            userRiskSettings = userSettings.risk_settings as any;
+            console.log('✅ Loaded user risk management settings:', userRiskSettings);
+          }
+        } catch (error) {
+          console.warn('⚠️ Could not load user risk settings, using defaults:', error);
+        }
+
+        // Merge user risk settings into strategy_config
+        let finalStrategyConfig: any = strategyConfig || {};
+        if (userRiskSettings) {
+          // Map user_settings.risk_settings to strategy_config risk management fields
+          finalStrategyConfig = {
+            ...finalStrategyConfig,
+            // Apply risk management from user_settings
+            daily_loss_limit_pct: finalStrategyConfig.daily_loss_limit_pct ?? (userRiskSettings.maxDailyLoss ? userRiskSettings.maxDailyLoss / 100 : 3.0),
+            max_position_size: finalStrategyConfig.max_position_size ?? userRiskSettings.maxPositionSize ?? 1000,
+            stop_loss_percentage: finalStrategyConfig.stop_loss_percentage ?? userRiskSettings.stopLossPercentage ?? 5.0,
+            take_profit_percentage: finalStrategyConfig.take_profit_percentage ?? userRiskSettings.takeProfitPercentage ?? 10.0,
+            max_concurrent: finalStrategyConfig.max_concurrent ?? userRiskSettings.maxOpenPositions ?? 5,
+            risk_per_trade_pct: finalStrategyConfig.risk_per_trade_pct ?? (userRiskSettings.riskPerTrade ? userRiskSettings.riskPerTrade / 100 : 0.02),
+            emergency_stop_loss: finalStrategyConfig.emergency_stop_loss ?? userRiskSettings.emergencyStopLoss ?? 20.0
+          };
+          console.log('✅ Merged risk management settings into strategy_config');
+        }
+
         // Prepare insert data
         const insertData: any = {
           user_id: user.id,
@@ -406,7 +441,7 @@ serve(async (req) => {
           stop_loss: stopLoss || 2.0,
           take_profit: takeProfit || 4.0,
           strategy: JSON.stringify(strategy),
-          strategy_config: strategyConfig ? JSON.stringify(strategyConfig) : null,
+          strategy_config: JSON.stringify(finalStrategyConfig),
           paper_trading: paperTrading || false,
           sound_notifications_enabled: soundNotificationsEnabled || false,
           status: status || 'running', // Auto-start bots instead of 'stopped'
@@ -544,11 +579,55 @@ serve(async (req) => {
             ? JSON.parse(updates.strategyConfig)
             : updates.strategyConfig;
           
+          // Fetch user's risk management settings
+          let userRiskSettings: any = null;
+          try {
+            const { data: userSettings } = await supabaseClient
+              .from('user_settings')
+              .select('risk_settings')
+              .eq('user_id', user.id)
+              .single();
+            
+            if (userSettings?.risk_settings) {
+              userRiskSettings = userSettings.risk_settings as any;
+              console.log('✅ Loaded user risk management settings for update:', userRiskSettings);
+            }
+          } catch (error) {
+            console.warn('⚠️ Could not load user risk settings, using existing values:', error);
+          }
+
           // Merge existing config with new updates
-          const mergedConfig = {
+          let mergedConfig: any = {
             ...existingConfig,
             ...newConfig
           };
+
+          // Apply user's risk management settings (overrides any existing values if not explicitly set in newConfig)
+          if (userRiskSettings) {
+            // Only apply risk management if not explicitly provided in newConfig
+            if (!newConfig.hasOwnProperty('daily_loss_limit_pct')) {
+              mergedConfig.daily_loss_limit_pct = mergedConfig.daily_loss_limit_pct ?? (userRiskSettings.maxDailyLoss ? userRiskSettings.maxDailyLoss / 100 : 3.0);
+            }
+            if (!newConfig.hasOwnProperty('max_position_size')) {
+              mergedConfig.max_position_size = mergedConfig.max_position_size ?? userRiskSettings.maxPositionSize ?? 1000;
+            }
+            if (!newConfig.hasOwnProperty('stop_loss_percentage')) {
+              mergedConfig.stop_loss_percentage = mergedConfig.stop_loss_percentage ?? userRiskSettings.stopLossPercentage ?? 5.0;
+            }
+            if (!newConfig.hasOwnProperty('take_profit_percentage')) {
+              mergedConfig.take_profit_percentage = mergedConfig.take_profit_percentage ?? userRiskSettings.takeProfitPercentage ?? 10.0;
+            }
+            if (!newConfig.hasOwnProperty('max_concurrent')) {
+              mergedConfig.max_concurrent = mergedConfig.max_concurrent ?? userRiskSettings.maxOpenPositions ?? 5;
+            }
+            if (!newConfig.hasOwnProperty('risk_per_trade_pct')) {
+              mergedConfig.risk_per_trade_pct = mergedConfig.risk_per_trade_pct ?? (userRiskSettings.riskPerTrade ? userRiskSettings.riskPerTrade / 100 : 0.02);
+            }
+            if (!newConfig.hasOwnProperty('emergency_stop_loss')) {
+              mergedConfig.emergency_stop_loss = mergedConfig.emergency_stop_loss ?? userRiskSettings.emergencyStopLoss ?? 20.0;
+            }
+            console.log('✅ Applied risk management settings to updated bot');
+          }
           
           // Ensure required fields have defaults if missing (for validation)
           // This prevents validation errors when updating partial configs
@@ -564,6 +643,54 @@ serve(async (req) => {
           
           // Store as JSONB (Supabase will handle it automatically)
           dbUpdates.strategy_config = mergedConfig
+        } else {
+          // Even if strategyConfig is not being updated, ensure risk management is applied
+          // Fetch user's risk management settings
+          let userRiskSettings: any = null;
+          try {
+            const { data: userSettings } = await supabaseClient
+              .from('user_settings')
+              .select('risk_settings')
+              .eq('user_id', user.id)
+              .single();
+            
+            if (userSettings?.risk_settings) {
+              userRiskSettings = userSettings.risk_settings as any;
+            }
+          } catch (error) {
+            console.warn('⚠️ Could not load user risk settings:', error);
+          }
+
+          // Get existing strategy_config to merge risk management
+          if (userRiskSettings) {
+            const { data: botData } = await supabaseClient
+              .from('trading_bots')
+              .select('strategy_config')
+              .eq('id', id)
+              .single()
+            
+            let existingConfig: any = {}
+            if (botData?.strategy_config) {
+              existingConfig = typeof botData.strategy_config === 'string'
+                ? JSON.parse(botData.strategy_config)
+                : botData.strategy_config
+            }
+
+            // Apply risk management settings to existing config
+            const updatedConfig: any = {
+              ...existingConfig,
+              daily_loss_limit_pct: existingConfig.daily_loss_limit_pct ?? (userRiskSettings.maxDailyLoss ? userRiskSettings.maxDailyLoss / 100 : 3.0),
+              max_position_size: existingConfig.max_position_size ?? userRiskSettings.maxPositionSize ?? 1000,
+              stop_loss_percentage: existingConfig.stop_loss_percentage ?? userRiskSettings.stopLossPercentage ?? 5.0,
+              take_profit_percentage: existingConfig.take_profit_percentage ?? userRiskSettings.takeProfitPercentage ?? 10.0,
+              max_concurrent: existingConfig.max_concurrent ?? userRiskSettings.maxOpenPositions ?? 5,
+              risk_per_trade_pct: existingConfig.risk_per_trade_pct ?? (userRiskSettings.riskPerTrade ? userRiskSettings.riskPerTrade / 100 : 0.02),
+              emergency_stop_loss: existingConfig.emergency_stop_loss ?? userRiskSettings.emergencyStopLoss ?? 20.0
+            };
+
+            dbUpdates.strategy_config = updatedConfig;
+            console.log('✅ Applied risk management settings to bot (no strategyConfig update)');
+          }
         }
         
         // Handle AI/ML field

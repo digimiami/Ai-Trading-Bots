@@ -8,6 +8,8 @@ import { useBots } from '../../hooks/useBots';
 import AutoOptimizer from '../../components/bot/AutoOptimizer';
 import { STRATEGY_PRESETS, type StrategyPreset } from '../../constants/strategyPresets';
 import HelpTooltip from '../../components/ui/HelpTooltip';
+import { useEmailNotifications } from '../../hooks/useEmailNotifications';
+import { supabase } from '../../lib/supabase';
 
 export default function EditBotPage() {
   const navigate = useNavigate();
@@ -158,6 +160,24 @@ export default function EditBotPage() {
             sl_atr_mult: bot.strategyConfig.sl_atr_mult ?? prev.sl_atr_mult
           }));
         }
+
+        // Apply risk management settings from user_settings if available
+        // This ensures risk management is always up-to-date when editing
+        if (userSettings?.risk_settings) {
+          const riskSettings = userSettings.risk_settings;
+          setAdvancedConfig(prev => ({
+            ...prev,
+            // Map user_settings.risk_settings to strategy_config fields
+            daily_loss_limit_pct: prev.daily_loss_limit_pct ?? (riskSettings.maxDailyLoss ? riskSettings.maxDailyLoss / 100 : 3.0),
+            max_position_size: prev.max_position_size ?? riskSettings.maxPositionSize ?? 1000,
+            stop_loss_percentage: prev.stop_loss_percentage ?? riskSettings.stopLossPercentage ?? 5.0,
+            take_profit_percentage: prev.take_profit_percentage ?? riskSettings.takeProfitPercentage ?? 10.0,
+            max_concurrent: prev.max_concurrent ?? riskSettings.maxOpenPositions ?? 5,
+            risk_per_trade_pct: prev.risk_per_trade_pct ?? (riskSettings.riskPerTrade ? riskSettings.riskPerTrade / 100 : 0.02),
+            emergency_stop_loss: prev.emergency_stop_loss ?? riskSettings.emergencyStopLoss ?? 20.0
+          }));
+          console.log('✅ Applied risk management settings from user_settings to edit form');
+        }
         
         // Load sound notifications setting
         setSoundNotificationsEnabled(bot.soundNotificationsEnabled || false);
@@ -167,7 +187,7 @@ export default function EditBotPage() {
         console.log('Edit bot: Bot not found with ID:', botId);
       }
     }
-  }, [botId, bots]);
+  }, [botId, bots, userSettings]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
