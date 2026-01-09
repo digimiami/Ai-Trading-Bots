@@ -15,6 +15,7 @@ export default function EditBotPage() {
   const navigate = useNavigate();
   const { botId } = useParams<{ botId: string }>();
   const { bots, updateBot } = useBots();
+  const { settings: userSettings } = useEmailNotifications();
   const [formData, setFormData] = useState({
     name: '',
     exchange: 'bybit' as 'bybit' | 'okx' | 'bitunix' | 'mexc',
