@@ -110,28 +110,50 @@ serve(async (req) => {
   }
 
   try {
+    // Check if this is an internal service call (from bot-executor or other Edge Functions)
+    const authHeader = req.headers.get('Authorization') || req.headers.get('authorization') || ''
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    const isInternalCall = authHeader && serviceRoleKey && authHeader.includes(serviceRoleKey) && serviceRoleKey.length > 0
+    
+    // Use service role key for internal calls, anon key for user calls
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      {
-        global: {
-          headers: { Authorization: req.headers.get('Authorization')! },
-        },
-      }
+      isInternalCall ? (Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '') : (Deno.env.get('SUPABASE_ANON_KEY') ?? ''),
+      isInternalCall || !authHeader
+        ? undefined
+        : {
+            global: {
+              headers: { Authorization: authHeader },
+            },
+          }
     )
 
-    const { data: { user } } = await supabaseClient.auth.getUser()
-    if (!user) {
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
+    // For internal calls, skip user authentication
+    // For user calls, require authentication
+    let user = null;
+    if (!isInternalCall) {
+      const { data: { user: authUser } } = await supabaseClient.auth.getUser()
+      if (!authUser) {
+        return new Response(
+          JSON.stringify({ error: 'Unauthorized' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+      user = authUser;
     }
 
     const url = new URL(req.url)
     const action = url.searchParams.get('action') || 'predict'
 
     if (req.method === 'GET') {
+      // GET endpoints require user authentication (not for internal calls)
+      if (!user) {
+        return new Response(
+          JSON.stringify({ error: 'User authentication required for GET requests' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
       if (action === 'get_predictions') {
         const limit = parseInt(url.searchParams.get('limit') || '50')
         const { data: predictions, error: predictionsError } = await supabaseClient
@@ -181,6 +203,26 @@ serve(async (req) => {
           throw new Error('Symbol is required')
         }
 
+        // For internal calls, get user_id from bot_id
+        let userId = user?.id;
+        if (isInternalCall && bot_id) {
+          const { data: botData, error: botError } = await supabaseClient
+            .from('trading_bots')
+            .select('user_id')
+            .eq('id', bot_id)
+            .single();
+          
+          if (botError || !botData) {
+            throw new Error(`Failed to get user_id from bot_id: ${botError?.message || 'Bot not found'}`);
+          }
+          userId = botData.user_id;
+          console.log(`✅ Internal call: Retrieved user_id ${userId} from bot_id ${bot_id}`);
+        }
+
+        if (!userId) {
+          throw new Error('User ID is required. Either authenticate as a user or provide a valid bot_id for internal calls.');
+        }
+
         // Use provided features if available, otherwise generate them
         // This allows bot-executor to pass real market data (RSI, ADX, etc.)
         let features: MLFeatures;
@@ -217,7 +259,7 @@ serve(async (req) => {
         const { data: predictionData, error: predictionError } = await supabaseClient
           .from('ml_predictions')
           .insert({
-            user_id: user.id,
+            user_id: userId,
             bot_id: bot_id || null,
             symbol: symbol,
             prediction: prediction.prediction,
