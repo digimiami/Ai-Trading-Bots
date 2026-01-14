@@ -2958,7 +2958,22 @@ class BotExecutor {
       
       if (isPaperTrading) {
         // PAPER TRADING MODE - Use real market data but simulate trades
+        // ⚠️ CRITICAL: Paper trading must behave EXACTLY like real trading, respecting all bot settings
         console.log(`📝 [PAPER TRADING MODE] Bot: ${bot.name}`);
+        
+        // 🔍 CRITICAL: Log to database immediately to track execution
+        await this.addBotLog(bot.id, {
+          level: 'info',
+          category: 'system',
+          message: `📝 PAPER TRADING MODE - Execution started`,
+          details: { 
+            mode: 'paper',
+            bot_name: bot.name,
+            symbol: bot.symbol,
+            exchange: bot.exchange,
+            timestamp: new Date().toISOString()
+          }
+        });
         
         // Early validation: Check if user exists before creating PaperTradingExecutor
         // This prevents foreign key constraint violations
@@ -3004,36 +3019,370 @@ class BotExecutor {
         // Create PaperTradingExecutor with bot's user_id (not executor's user)
         const paperExecutor = new PaperTradingExecutor(this.supabaseClient, { id: bot.user_id });
         
-        // Get REAL market data from MAINNET (same functions as real trading)
-        const tradingType = bot.tradingType || bot.trading_type || 'futures';
+        // 🚀 ALWAYS TRADE MODE: Check if we should bypass cooldown and trading hours (SAME AS REAL TRADING)
+        const config = bot?.strategy_config || {};
+        let alwaysTrade = config.always_trade === true;
+        if (!alwaysTrade && bot.strategy) {
+          // Quick check of strategy string/object for always_trade indicators
+          const strategyStr = typeof bot.strategy === 'string' ? bot.strategy : JSON.stringify(bot.strategy);
+          alwaysTrade = strategyStr.includes('always_trade') || 
+                        strategyStr.includes('Always Trade Strategy') ||
+                        strategyStr.includes('Trade All Conditions');
+        }
+        
+        // ⏱️ COOLDOWN BARS CHECK - Check if enough bars have passed since last trade (SAME AS REAL TRADING)
+        // Skip cooldown check if Always Trade mode is enabled
+        if (!alwaysTrade) {
+          console.log(`⏱️ [PAPER] [${bot.name}] Checking cooldown bars...`);
+          await this.addBotLog(bot.id, {
+            level: 'info',
+            category: 'system',
+            message: `⏱️ Checking cooldown bars...`,
+            details: { step: 'cooldown_check', bot_name: bot.name, paper_trading: true }
+          });
+          
+          let cooldownCheck;
+          try {
+            cooldownCheck = await this.checkCooldownBars(bot);
+            console.log(`⏱️ [PAPER] [${bot.name}] Cooldown check result:`, JSON.stringify(cooldownCheck, null, 2));
+          } catch (cooldownError) {
+            console.error(`❌ [PAPER] [${bot.name}] Error during cooldown check:`, cooldownError);
+            await this.addBotLog(bot.id, {
+              level: 'error',
+              category: 'system',
+              message: `❌ Error checking cooldown: ${cooldownError instanceof Error ? cooldownError.message : String(cooldownError)}`,
+              details: { step: 'cooldown_check', error: cooldownError instanceof Error ? cooldownError.stack : String(cooldownError), paper_trading: true }
+            });
+            // On error, allow trading (fail open)
+            cooldownCheck = { canTrade: true, reason: 'Cooldown check error - allowing trade' };
+          }
+          
+          if (!cooldownCheck.canTrade) {
+            console.log(`⏸️ [PAPER] Cooldown active for ${bot.name}: ${cooldownCheck.reason}`);
+            await this.addBotLog(bot.id, {
+              level: 'info',
+              category: 'system',
+              message: `⏸️ Cooldown active: ${cooldownCheck.reason}`,
+              details: { ...cooldownCheck, step: 'cooldown_check', stopped: true, paper_trading: true }
+            });
+            // Update paper positions but don't trade (with 20s time budget)
+            await paperExecutor.updatePaperPositions(bot.id, Date.now(), 20000);
+            return; // Stop execution - wait for cooldown
+          }
+          console.log(`✅ [PAPER] [${bot.name}] Cooldown check passed - can trade`);
+          await this.addBotLog(bot.id, {
+            level: 'info',
+            category: 'system',
+            message: `✅ Cooldown check passed - can trade`,
+            details: { step: 'cooldown_check', passed: true, paper_trading: true }
+          });
+        } else {
+          console.log(`🚀 [PAPER] [${bot.name}] Always Trade mode enabled - skipping cooldown check`);
+          await this.addBotLog(bot.id, {
+            level: 'info',
+            category: 'system',
+            message: `🚀 Always Trade mode enabled - skipping cooldown check`,
+            details: { step: 'cooldown_check', always_trade: true, paper_trading: true }
+          });
+        }
+        
+        // 🕐 TRADING HOURS CHECK - Check if current hour is in allowed trading hours (SAME AS REAL TRADING)
+        // Skip trading hours check if Always Trade mode is enabled
+        if (!alwaysTrade) {
+          console.log(`🕐 [PAPER] [${bot.name}] Checking trading hours...`);
+          await this.addBotLog(bot.id, {
+            level: 'info',
+            category: 'system',
+            message: `🕐 Checking trading hours...`,
+            details: { step: 'trading_hours_check', bot_name: bot.name, paper_trading: true }
+          });
+          
+          const tradingHoursCheck = this.checkTradingHours(bot);
+          console.log(`🕐 [PAPER] [${bot.name}] Trading hours check result:`, JSON.stringify(tradingHoursCheck, null, 2));
+          
+          if (!tradingHoursCheck.canTrade) {
+            console.log(`🕐 [PAPER] Outside trading hours for ${bot.name}: ${tradingHoursCheck.reason}`);
+            await this.addBotLog(bot.id, {
+              level: 'info',
+              category: 'system',
+              message: `🕐 Outside trading hours: ${tradingHoursCheck.reason}`,
+              details: { ...tradingHoursCheck, step: 'trading_hours_check', stopped: true, paper_trading: true }
+            });
+            // Update paper positions but don't trade (with 20s time budget)
+            await paperExecutor.updatePaperPositions(bot.id, Date.now(), 20000);
+            return; // Stop execution - outside allowed hours
+          }
+        } else {
+          console.log(`🚀 [PAPER] [${bot.name}] Always Trade mode enabled - skipping trading hours check`);
+          await this.addBotLog(bot.id, {
+            level: 'info',
+            category: 'system',
+            message: `🚀 Always Trade mode enabled - skipping trading hours check`,
+            details: { step: 'trading_hours_check', always_trade: true, paper_trading: true }
+          });
+        }
+        console.log(`✅ [PAPER] [${bot.name}] Trading hours check passed - can trade`);
+        await this.addBotLog(bot.id, {
+          level: 'info',
+          category: 'system',
+          message: `✅ Trading hours check passed - can trade`,
+          details: { step: 'trading_hours_check', passed: true, paper_trading: true }
+        });
+        
+        // COMPREHENSIVE SETTINGS VALIDATION & LOGGING (SAME AS REAL TRADING)
+        console.log(`\n📋 [PAPER] Bot Settings Validation:`);
+        console.log(`   Timeframe: ${bot.timeframe || bot.timeFrame || '1h (default)'}`);
+        console.log(`   Trade Amount: $${bot.trade_amount || bot.tradeAmount || 100}`);
+        console.log(`   Leverage: ${bot.leverage || 1}x`);
+        console.log(`   Stop Loss: ${bot.stop_loss || bot.stopLoss || 2.0}%`);
+        console.log(`   Take Profit: ${bot.take_profit || bot.takeProfit || 4.0}%`);
+        console.log(`   Risk Level: ${bot.risk_level || bot.riskLevel || 'low'}`);
+        console.log(`   Strategy: ${JSON.stringify(bot.strategy || {}, null, 2)}`);
+        if (bot.strategy_config) {
+          console.log(`   Advanced Config: ${JSON.stringify(bot.strategy_config, null, 2)}`);
+        }
+        
+        // Add execution log with settings validation
+        await this.addBotLog(bot.id, {
+          level: 'info',
+          category: 'system',
+          message: 'Bot execution started',
+          details: { 
+            timestamp: TimeSync.getCurrentTimeISO(),
+            settings: {
+              timeframe: bot.timeframe || bot.timeFrame || '1h',
+              trade_amount: bot.trade_amount || bot.tradeAmount || 100,
+              leverage: bot.leverage || 1,
+              stop_loss: bot.stop_loss || bot.stopLoss || 2.0,
+              take_profit: bot.take_profit || bot.takeProfit || 4.0,
+              risk_level: bot.risk_level || bot.riskLevel || 'low'
+            },
+            paper_trading: true
+          }
+        });
+        
+        // 🛡️ SAFETY CHECKS - Check before any trading (SAME POSITION AS REAL TRADING)
+        console.log(`🛡️ [PAPER] [${bot.name}] Checking safety limits...`);
+        await this.addBotLog(bot.id, {
+          level: 'info',
+          category: 'system',
+          message: `🛡️ Checking safety limits...`,
+          details: { step: 'safety_check', bot_name: bot.name, paper_trading: true }
+        });
+        
+        const safetyCheck = await this.checkSafetyLimits(bot);
+        console.log(`🛡️ [PAPER] [${bot.name}] Safety check result:`, JSON.stringify(safetyCheck, null, 2));
+        
+        if (!safetyCheck.canTrade) {
+          console.warn(`⚠️ [PAPER] Trading blocked for ${bot.name}: ${safetyCheck.reason}`);
+          await this.addBotLog(bot.id, {
+            level: 'warning',
+            category: 'system',
+            message: `⚠️ Trading blocked: ${safetyCheck.reason}`,
+            details: { ...safetyCheck, step: 'safety_check', stopped: true, paper_trading: true }
+          });
+          
+          // Auto-pause bot if critical safety limit is breached (SAME AS REAL TRADING)
+          if (safetyCheck.shouldPause) {
+            await this.pauseBotForSafety(bot.id, safetyCheck.reason);
+          }
+          // Update paper positions but don't trade (with 20s time budget)
+          await paperExecutor.updatePaperPositions(bot.id, Date.now(), 20000);
+          return; // Stop execution
+        }
+        console.log(`✅ [PAPER] [${bot.name}] Safety checks passed - can trade`);
+        await this.addBotLog(bot.id, {
+          level: 'info',
+          category: 'system',
+          message: `✅ Safety checks passed - can trade`,
+          details: { step: 'safety_check', passed: true, paper_trading: true }
+        });
+        
+        // Fetch market data (SAME AS REAL TRADING)
+        console.log(`📊 [PAPER] [${bot.name}] Starting market data fetch...`);
+        await this.addBotLog(bot.id, {
+          level: 'info',
+          category: 'system',
+          message: `📊 Starting market data fetch...`,
+          details: { step: 'market_data_fetch', bot_name: bot.name, symbol: bot.symbol, paper_trading: true }
+        });
+        
+        const tradingType = bot.tradingType || bot.trading_type || 'spot';
+        console.log(`🤖 [PAPER] Bot ${bot.name} trading type: ${tradingType}`);
+        
+        // CRITICAL FIX: Use bot's configured timeframe for all market data fetching
         const timeframe = bot.timeframe || bot.timeFrame || '1h';
         console.log(`📊 [PAPER] Using timeframe: ${timeframe} for ${bot.symbol}`);
         
-        // Pass logging callback to track CoinGecko fallback usage
-        const currentPrice = await MarketDataFetcher.fetchPrice(
-          bot.symbol, 
-          bot.exchange, 
-          tradingType,
-          async (message: string, details?: any) => {
-            await this.addBotLog(bot.id, {
-              level: 'info',
-              category: 'market',
-              message: message,
-              details: details
-            });
-          }
-        );
-        const rsi = await MarketDataFetcher.fetchRSI(bot.symbol, bot.exchange, timeframe);
-        const adx = await MarketDataFetcher.fetchADX(bot.symbol, bot.exchange, timeframe);
+        let currentPrice: number;
+        let rsi: number;
+        let adx: number;
+        
+        try {
+          console.log(`📊 [PAPER] [${bot.name}] Fetching price for ${bot.symbol}...`);
+          await this.addBotLog(bot.id, {
+            level: 'info',
+            category: 'market',
+            message: `📊 Fetching price for ${bot.symbol}...`,
+            details: { step: 'fetch_price', symbol: bot.symbol, exchange: bot.exchange, paper_trading: true }
+          });
+          
+          // Pass logging callback to track CoinGecko fallback usage
+          currentPrice = await MarketDataFetcher.fetchPrice(
+            bot.symbol, 
+            bot.exchange, 
+            tradingType,
+            async (message: string, details?: any) => {
+              await this.addBotLog(bot.id, {
+                level: 'info',
+                category: 'market',
+                message: message,
+                details: { ...details, paper_trading: true }
+              });
+            }
+          );
+          console.log(`✅ [PAPER] [${bot.name}] Price fetched: ${currentPrice}`);
+          await this.addBotLog(bot.id, {
+            level: 'info',
+            category: 'market',
+            message: `✅ Price fetched: ${currentPrice}`,
+            details: { step: 'fetch_price', price: currentPrice, symbol: bot.symbol, paper_trading: true }
+          });
+          
+          console.log(`📊 [PAPER] [${bot.name}] Fetching RSI for ${bot.symbol}...`);
+          await this.addBotLog(bot.id, {
+            level: 'info',
+            category: 'market',
+            message: `📊 Fetching RSI for ${bot.symbol}...`,
+            details: { step: 'fetch_rsi', symbol: bot.symbol, timeframe, paper_trading: true }
+          });
+          
+          rsi = await MarketDataFetcher.fetchRSI(bot.symbol, bot.exchange, timeframe);
+          console.log(`✅ [PAPER] [${bot.name}] RSI fetched: ${rsi}`);
+          await this.addBotLog(bot.id, {
+            level: 'info',
+            category: 'market',
+            message: `✅ RSI fetched: ${rsi}`,
+            details: { step: 'fetch_rsi', rsi, symbol: bot.symbol, paper_trading: true }
+          });
+          
+          console.log(`📊 [PAPER] [${bot.name}] Fetching ADX for ${bot.symbol}...`);
+          await this.addBotLog(bot.id, {
+            level: 'info',
+            category: 'market',
+            message: `📊 Fetching ADX for ${bot.symbol}...`,
+            details: { step: 'fetch_adx', symbol: bot.symbol, timeframe, paper_trading: true }
+          });
+          
+          adx = await MarketDataFetcher.fetchADX(bot.symbol, bot.exchange, timeframe);
+          console.log(`✅ [PAPER] [${bot.name}] ADX fetched: ${adx}`);
+          await this.addBotLog(bot.id, {
+            level: 'info',
+            category: 'market',
+            message: `✅ ADX fetched: ${adx}`,
+            details: { step: 'fetch_adx', adx, symbol: bot.symbol, paper_trading: true }
+          });
+        } catch (marketDataError: any) {
+          console.error(`❌ [PAPER] [${bot.name}] Market data fetch failed:`, marketDataError);
+          await this.addBotLog(bot.id, {
+            level: 'error',
+            category: 'market',
+            message: `❌ Market data fetch error: ${marketDataError?.message || String(marketDataError)}`,
+            details: {
+              error: marketDataError?.message || String(marketDataError),
+              symbol: bot.symbol,
+              exchange: bot.exchange,
+              tradingType,
+              timeframe,
+              step: 'market_data_fetch',
+              stopped: true,
+              paper_trading: true
+            }
+          });
+          throw marketDataError; // Re-throw to be caught by outer catch
+        }
         
         await this.addBotLog(bot.id, {
           level: 'info',
           category: 'market',
-          message: `📝 [PAPER] Market data: Price=${currentPrice}, RSI=${rsi.toFixed(2)}, ADX=${adx.toFixed(2)}`,
+          message: `Market data: Price=${currentPrice}, RSI=${rsi.toFixed(2)}, ADX=${adx.toFixed(2)}`,
           details: { price: currentPrice, rsi, adx, paper_trading: true }
         });
         
-        // Same strategy evaluation as real trading
+        console.log(`📊 [PAPER] Bot ${bot.name} market data: Price=${currentPrice}, RSI=${rsi.toFixed(2)}, ADX=${adx.toFixed(2)}`);
+        
+        // Validate market data before strategy evaluation (SAME AS REAL TRADING)
+        if (!currentPrice || currentPrice === 0 || !isFinite(currentPrice)) {
+          console.error(`❌ [PAPER] Invalid price for ${bot.symbol}: ${currentPrice}. Skipping strategy evaluation.`);
+          
+          // Check if symbol might be incomplete (e.g., "ETH" instead of "ETHUSDT")
+          const symbolUpper = bot.symbol.toUpperCase().trim();
+          const commonCoins = ['BTC', 'ETH', 'BNB', 'SOL', 'ADA', 'XRP', 'DOGE', 'DOT', 'MATIC', 'AVAX', 'LINK', 'UNI', 'ATOM', 'ALGO', 'NEAR', 'FTM', 'SAND', 'MANA', 'AXS', 'GALA', 'ENJ', 'CHZ', 'HBAR', 'ICP', 'FLOW', 'THETA', 'FIL', 'EOS', 'TRX', 'LTC', 'BCH', 'XLM', 'VET', 'AAVE', 'MKR', 'COMP', 'SNX', 'CRV', 'SUSHI', '1INCH', 'PEPE', 'SHIB', 'FLOKI', 'BONK', 'WIF', 'HMAR', 'STRK', 'ARB', 'OP', 'SUI', 'APT', 'INJ', 'TIA', 'SEI', 'RENDER', 'FET'];
+          const isIncompleteSymbol = commonCoins.includes(symbolUpper) && !symbolUpper.endsWith('USDT') && !symbolUpper.endsWith('USD') && !symbolUpper.endsWith('BUSD');
+          const suggestedSymbol = isIncompleteSymbol ? `${symbolUpper}USDT` : null;
+          
+          await this.addBotLog(bot.id, {
+            level: 'error',
+            category: 'market',
+            message: `Invalid price data: ${currentPrice}. Cannot evaluate strategy.${suggestedSymbol ? ` Symbol "${bot.symbol}" appears incomplete. Try "${suggestedSymbol}" instead.` : ''}${bot.exchange === 'bitunix' ? ' Bitunix API may be unavailable or symbol format may be incorrect.' : ''}`,
+            details: { 
+              price: currentPrice, 
+              symbol: bot.symbol,
+              suggested_symbol: suggestedSymbol,
+              exchange: bot.exchange,
+              trading_type: bot.trading_type || bot.tradingType,
+              paper_trading: true
+            }
+          });
+          // Update paper positions but don't trade
+          await paperExecutor.updatePaperPositions(bot.id, Date.now(), 20000);
+          return;
+        }
+        
+        if (!isFinite(rsi) || rsi < 0 || rsi > 100) {
+          console.error(`❌ [PAPER] Invalid RSI for ${bot.symbol}: ${rsi}. Skipping strategy evaluation.`);
+          await this.addBotLog(bot.id, {
+            level: 'error',
+            category: 'market',
+            message: `Invalid RSI data: ${rsi}. Cannot evaluate strategy.`,
+            details: { rsi, symbol: bot.symbol, paper_trading: true }
+          });
+          // Update paper positions but don't trade
+          await paperExecutor.updatePaperPositions(bot.id, Date.now(), 20000);
+          return;
+        }
+        
+        if (!isFinite(adx) || adx < 0) {
+          console.error(`❌ [PAPER] Invalid ADX for ${bot.symbol}: ${adx}. Skipping strategy evaluation.`);
+          await this.addBotLog(bot.id, {
+            level: 'error',
+            category: 'market',
+            message: `Invalid ADX data: ${adx}. Cannot evaluate strategy.`,
+            details: { adx, symbol: bot.symbol, paper_trading: true }
+          });
+          // Update paper positions but don't trade
+          await paperExecutor.updatePaperPositions(bot.id, Date.now(), 20000);
+          return;
+        }
+        
+        console.log(`✅ [PAPER] Market data validated. Proceeding with strategy evaluation...`);
+        
+        await this.addBotLog(bot.id, {
+          level: 'info',
+          category: 'system',
+          message: `✅ Market data validated. Proceeding with strategy evaluation...`,
+          details: { 
+            step: 'market_data_validated',
+            price: currentPrice,
+            rsi,
+            adx,
+            symbol: bot.symbol,
+            paper_trading: true
+          }
+        });
+        
+        // 🤖 AI/ML PREDICTION INTEGRATION FOR PAPER TRADING (SAME AS REAL TRADING)
+        let mlPrediction = null;
         let strategy = bot.strategy;
         if (typeof strategy === 'string') {
           try {
@@ -3057,8 +3406,6 @@ class BotExecutor {
           }
         }
         
-        // 🤖 AI/ML PREDICTION INTEGRATION FOR PAPER TRADING
-        let mlPrediction = null;
         if (strategy.useMLPrediction === true) {
           try {
             console.log(`🤖 [PAPER] Fetching ML prediction for ${bot.symbol}...`);
@@ -3097,90 +3444,203 @@ class BotExecutor {
           }
         }
         
-        // 🛡️ SAFETY CHECKS FOR PAPER TRADING - Check before any trading
-        console.log(`🛡️ [PAPER] Checking safety limits for ${bot.name}...`);
-        const safetyCheck = await this.checkSafetyLimits(bot);
-        if (!safetyCheck.canTrade) {
-          console.warn(`⚠️ [PAPER] Trading blocked for ${bot.name}: ${safetyCheck.reason}`);
+        // Execute trading strategy - handle potential double-encoding and malformed data (SAME AS REAL TRADING)
+        console.log(`\n🔍 [PAPER] [${bot.name}] === STARTING STRATEGY PARSING ===`);
+        console.log(`📋 [PAPER] [${bot.name}] Parsing strategy configuration...`);
+        console.log(`📋 [PAPER] [${bot.name}] Bot strategy exists: ${!!bot.strategy}`);
+        console.log(`📋 [PAPER] [${bot.name}] Bot strategy type: ${typeof bot.strategy}`);
+        
+        try {
           await this.addBotLog(bot.id, {
-            level: 'warning',
-            category: 'system',
-            message: `📝 [PAPER] Trading blocked: ${safetyCheck.reason}`,
-            details: { ...safetyCheck, paper_trading: true }
+            level: 'info',
+            category: 'strategy',
+            message: `📋 Parsing strategy configuration...`,
+            details: { step: 'strategy_parsing', bot_name: bot.name, paper_trading: true }
           });
-          // Update paper positions but don't trade (with 20s time budget)
-          await paperExecutor.updatePaperPositions(bot.id, Date.now(), 20000);
-          return; // Stop execution
+        } catch (logError) {
+          console.error(`❌ Failed to log strategy parsing start:`, logError);
+          // Continue execution even if logging fails
         }
-
-        const shouldTrade = await this.evaluateStrategy(strategy, { price: currentPrice, rsi, adx, mlPrediction }, bot);
         
-        // Enhance decision with ML prediction if available
-        if (mlPrediction && shouldTrade.shouldTrade) {
-          // If ML prediction conflicts with strategy signal, adjust confidence
-          const mlSignal = mlPrediction.prediction.toLowerCase();
-          const strategySignal = shouldTrade.side.toLowerCase();
+        console.log(`📋 [PAPER] [${bot.name}] Strategy value type: ${typeof bot.strategy}`);
+        console.log(`📋 [PAPER] [${bot.name}] Strategy value (first 200 chars): ${typeof bot.strategy === 'string' ? bot.strategy.substring(0, 200) : JSON.stringify(bot.strategy).substring(0, 200)}`);
+        
+        // Re-parse strategy if needed (strategy already declared above)
+        strategy = bot.strategy;
+        if (typeof strategy === 'string') {
+          try {
+            strategy = JSON.parse(strategy);
+            // Check if result is still a string (double-encoded)
+            if (typeof strategy === 'string') {
+              strategy = JSON.parse(strategy);
+            }
+            // Check if strategy is an object with numeric keys (character array issue)
+            if (strategy && typeof strategy === 'object' && !Array.isArray(strategy)) {
+              const keys = Object.keys(strategy);
+              // If all keys are numeric, it's likely a character array - try to reconstruct
+              if (keys.length > 0 && keys.every(k => !isNaN(parseInt(k)))) {
+                console.warn('⚠️ [PAPER] Strategy appears to be a character array, attempting to reconstruct...');
+                // Try to get the original string and parse it properly
+                const strategyStr = bot.strategy;
+                // Remove any JSON.stringify wrapper and parse again
+                try {
+                  const reconstructed = JSON.parse(strategyStr);
+                  if (reconstructed && typeof reconstructed === 'object' && !reconstructed['0']) {
+                    strategy = reconstructed;
+                  } else {
+                    // Still malformed, use default
+                    throw new Error('Cannot reconstruct strategy');
+                  }
+                } catch {
+                  // Use default strategy
+                  throw new Error('Strategy parsing failed');
+                }
+              }
+            }
+          } catch (error) {
+            console.error('Error parsing strategy:', error);
+            console.error('Strategy value:', typeof bot.strategy === 'string' ? bot.strategy.substring(0, 100) : bot.strategy);
+            // Try to use SUPER LENIENT default strategy if parsing fails
+            // This ensures bots can still trade even if strategy parsing fails
+            strategy = {
+              rsiThreshold: 50, // Lowered from 70 - will always generate signal
+              adxThreshold: 0, // Lowered from 25 - no ADX restriction
+              bbWidthThreshold: 0, // Lowered from 0.02 - no BB restriction
+              emaSlope: 0, // Lowered from 0.5 - no EMA slope restriction
+              atrPercentage: 0, // Lowered from 2.5 - no ATR restriction
+              vwapDistance: 0, // Lowered from 1.2 - no VWAP restriction
+              momentumThreshold: 0, // Lowered from 0.8 - no momentum restriction
+              useMLPrediction: false,
+              minSamplesForML: 100,
+              type: 'default',
+              immediate_execution: true,
+              super_aggressive: true
+            };
+            console.warn('⚠️ [PAPER] Using super lenient default strategy due to parsing error');
+          }
+        }
+        
+        console.log(`✅ [PAPER] [${bot.name}] Strategy parsing completed. Type: ${typeof strategy}`);
+        console.log('[PAPER] Bot strategy:', JSON.stringify(strategy, null, 2));
+        
+        try {
+          await this.addBotLog(bot.id, {
+            level: 'info',
+            category: 'strategy',
+            message: `📋 Strategy parsed successfully`,
+            details: { 
+              step: 'strategy_parsed',
+              strategy_type: typeof strategy,
+              has_rsi: !!strategy?.rsiThreshold,
+              has_adx: !!strategy?.adxThreshold,
+              strategy_keys: strategy && typeof strategy === 'object' ? Object.keys(strategy).slice(0, 10) : null,
+              paper_trading: true
+            }
+          });
+        } catch (logError) {
+          console.error(`❌ Failed to log strategy parsed:`, logError);
+          // Continue execution even if logging fails
+        }
+        
+        // Evaluate strategy with error handling (SAME AS REAL TRADING)
+        console.log(`🔍 [PAPER] Evaluating strategy for ${bot.name} (${bot.symbol})...`);
+        await this.addBotLog(bot.id, {
+          level: 'info',
+          category: 'strategy',
+          message: `🔍 Evaluating strategy...`,
+          details: { 
+            step: 'strategy_evaluation_start',
+            bot_name: bot.name,
+            symbol: bot.symbol,
+            market_data: { price: currentPrice, rsi, adx },
+            paper_trading: true
+          }
+        });
+        
+        let shouldTrade: any;
+        try {
+          shouldTrade = await this.evaluateStrategy(strategy, { price: currentPrice, rsi, adx, mlPrediction }, bot);
+          console.log(`✅ [PAPER] Strategy evaluation completed for ${bot.name}`);
           
-          if ((mlSignal === 'buy' && strategySignal === 'sell') || 
-              (mlSignal === 'sell' && strategySignal === 'buy')) {
-            // ML conflicts with strategy - reduce confidence
-            shouldTrade.confidence = shouldTrade.confidence * 0.5;
-            shouldTrade.reason += ` (ML suggests ${mlSignal}, reducing confidence)`;
-            console.log(`⚠️ [PAPER] ML prediction conflicts with strategy signal`);
-          } else if (mlSignal === strategySignal || mlSignal === 'hold') {
-            // ML confirms strategy or suggests hold - boost confidence
-            shouldTrade.confidence = Math.min(shouldTrade.confidence * 1.2, 1.0);
-            shouldTrade.reason += ` (ML confirms: ${mlSignal})`;
-            console.log(`✅ [PAPER] ML prediction confirms strategy signal`);
+          // Enhance decision with ML prediction if available (SAME AS REAL TRADING)
+          if (mlPrediction && shouldTrade.shouldTrade) {
+            // If ML prediction conflicts with strategy signal, adjust confidence
+            const mlSignal = mlPrediction.prediction.toLowerCase();
+            const strategySignal = shouldTrade.side.toLowerCase();
+            
+            if ((mlSignal === 'buy' && strategySignal === 'sell') || 
+                (mlSignal === 'sell' && strategySignal === 'buy')) {
+              // ML conflicts with strategy - reduce confidence
+              shouldTrade.confidence = shouldTrade.confidence * 0.5;
+              shouldTrade.reason += ` (ML suggests ${mlSignal}, reducing confidence)`;
+              console.log(`⚠️ [PAPER] ML prediction conflicts with strategy signal`);
+            } else if (mlSignal === strategySignal || mlSignal === 'hold') {
+              // ML confirms strategy or suggests hold - boost confidence
+              shouldTrade.confidence = Math.min(shouldTrade.confidence * 1.2, 1.0);
+              shouldTrade.reason += ` (ML confirms: ${mlSignal})`;
+              console.log(`✅ [PAPER] ML prediction confirms strategy signal`);
+            }
           }
+          await this.addBotLog(bot.id, {
+            level: 'info',
+            category: 'strategy',
+            message: `✅ Strategy evaluation completed`,
+            details: { 
+              step: 'strategy_evaluation_complete',
+              should_trade: shouldTrade?.shouldTrade,
+              side: shouldTrade?.side,
+              reason: shouldTrade?.reason,
+              paper_trading: true
+            }
+          });
+        } catch (strategyError: any) {
+          const errorMsg = strategyError?.message || String(strategyError);
+          console.error(`❌ [PAPER] Strategy evaluation failed for ${bot.name}:`, errorMsg);
+          await this.addBotLog(bot.id, {
+            level: 'error',
+            category: 'strategy',
+            message: `Strategy evaluation error: ${errorMsg}`,
+            details: { 
+              error: errorMsg,
+              strategy: strategy,
+              marketData: { price: currentPrice, rsi, adx },
+              paper_trading: true
+            }
+          });
+          // Update paper positions but don't trade
+          await paperExecutor.updatePaperPositions(bot.id, Date.now(), 20000);
+          return; // Don't throw - just return to allow position updates
         }
         
-        // 🚀 ALWAYS TRADE MODE: Bypass cooldown and trading hours checks
-        const config = bot?.strategy_config || {};
-        const alwaysTrade = config.always_trade === true || 
-                            strategy.always_trade === true ||
-                            strategy.type === 'always_trade' ||
-                            strategy.name === 'Always Trade Strategy' ||
-                            strategy.name === 'Trade All Conditions';
+        console.log(`\n📊 [PAPER] === STRATEGY EVALUATION RESULT ===`);
+        console.log(`   Bot: ${bot.name} (${bot.symbol})`);
+        console.log(`   Should Trade: ${shouldTrade?.shouldTrade ? 'YES ✅' : 'NO ❌'}`);
+        console.log(`   Side: ${shouldTrade?.side || 'N/A'}`);
+        console.log(`   Reason: ${shouldTrade?.reason || 'N/A'}`);
+        console.log(`   Confidence: ${shouldTrade?.confidence || 0}`);
+        console.log(`   Full Result:`, JSON.stringify(shouldTrade, null, 2));
+        console.log(`=== END STRATEGY RESULT ===\n`);
         
-        // ⏱️ COOLDOWN BARS CHECK - Check if enough bars have passed since last trade (for paper trading too)
-        // Skip cooldown check if Always Trade mode is enabled
-        if (!alwaysTrade) {
-          const cooldownCheck = await this.checkCooldownBars(bot);
-          if (!cooldownCheck.canTrade) {
-            console.log(`⏸️ [PAPER] Cooldown active for ${bot.name}: ${cooldownCheck.reason}`);
-            await this.addBotLog(bot.id, {
-              level: 'info',
-              category: 'system',
-              message: `📝 [PAPER] Cooldown active: ${cooldownCheck.reason}`,
-              details: { ...cooldownCheck, paper_trading: true }
-            });
-            // Update paper positions but don't trade (with 20s time budget)
-            await paperExecutor.updatePaperPositions(bot.id, Date.now(), 20000);
-            return; // Stop execution - wait for cooldown
+        // Apply bias_mode filter to all strategies (safety check) - SAME AS REAL TRADING
+        if (shouldTrade?.shouldTrade && shouldTrade?.side) {
+          const biasMode = config.bias_mode;
+          const signalSide = shouldTrade.side.toLowerCase();
+          
+          if (biasMode === 'long-only' && (signalSide === 'sell' || signalSide === 'short')) {
+            console.log(`🚫 [PAPER] Bias mode filter: Blocking ${signalSide} trade (bias_mode: long-only)`);
+            shouldTrade = {
+              shouldTrade: false,
+              reason: `Bias mode 'long-only' blocks ${signalSide} trades`,
+              confidence: 0
+            };
+          } else if (biasMode === 'short-only' && (signalSide === 'buy' || signalSide === 'long')) {
+            console.log(`🚫 [PAPER] Bias mode filter: Blocking ${signalSide} trade (bias_mode: short-only)`);
+            shouldTrade = {
+              shouldTrade: false,
+              reason: `Bias mode 'short-only' blocks ${signalSide} trades`,
+              confidence: 0
+            };
           }
-        } else {
-          console.log(`🚀 [PAPER] Always Trade mode enabled - skipping cooldown check`);
-        }
-        
-        // 🕐 TRADING HOURS CHECK - Check if current hour is in allowed trading hours (for paper trading too)
-        // Skip trading hours check if Always Trade mode is enabled
-        if (!alwaysTrade) {
-          const tradingHoursCheck = this.checkTradingHours(bot);
-          if (!tradingHoursCheck.canTrade) {
-            console.log(`🕐 [PAPER] Outside trading hours for ${bot.name}: ${tradingHoursCheck.reason}`);
-            await this.addBotLog(bot.id, {
-              level: 'info',
-              category: 'system',
-              message: `📝 [PAPER] Outside trading hours: ${tradingHoursCheck.reason}`,
-              details: { ...tradingHoursCheck, paper_trading: true }
-            });
-            // Update paper positions but don't trade (with 20s time budget)
-            await paperExecutor.updatePaperPositions(bot.id, Date.now(), 20000);
-            return; // Stop execution - outside allowed hours
-          }
-        } else {
-          console.log(`🚀 [PAPER] Always Trade mode enabled - skipping trading hours check`);
         }
         
         // Ensure shouldTrade always has a reason
@@ -3197,7 +3657,25 @@ class BotExecutor {
             : 'No trading signals detected (all strategy parameters checked)';
         }
         
-        if (shouldTrade.shouldTrade) {
+        // Log strategy result to bot activity logs
+        await this.addBotLog(bot.id, {
+          level: shouldTrade?.shouldTrade ? 'info' : 'info',
+          category: 'strategy',
+          message: shouldTrade?.shouldTrade 
+            ? `✅ Strategy signal: ${shouldTrade.side.toUpperCase()} - ${shouldTrade.reason || 'Trading conditions met'}`
+            : `⏸️ Strategy signal: ${shouldTrade?.reason || 'Trading conditions not met'}`,
+          details: {
+            shouldTrade: shouldTrade?.shouldTrade,
+            side: shouldTrade?.side,
+            reason: shouldTrade?.reason,
+            confidence: shouldTrade?.confidence,
+            marketData: { price: currentPrice, rsi, adx },
+            paper_trading: true
+          }
+        });
+        
+        if (shouldTrade?.shouldTrade) {
+          console.log(`🚀 [PAPER] Trading conditions met - executing ${shouldTrade.side.toUpperCase()} trade for ${bot.name}`);
           // Double check: don't open multiple positions for the same symbol/bot if not intended
           // Skip max concurrent check if Always Trade mode is enabled (but still respect it as a soft limit)
           const openPositions = await this.getOpenPositions(bot.id, true);
@@ -3215,15 +3693,28 @@ class BotExecutor {
             if (alwaysTrade && openPositions >= maxConcurrent) {
               console.log(`⚠️ [PAPER] Always Trade mode: Max concurrent positions (${openPositions}/${maxConcurrent}) reached, but proceeding anyway`);
             }
-            await paperExecutor.executePaperTrade(bot, shouldTrade);
+            try {
+              await paperExecutor.executePaperTrade(bot, shouldTrade);
+              console.log(`✅ [PAPER] Trade execution completed for ${bot.name}`);
+            } catch (tradeError: any) {
+              const tradeErrorMsg = tradeError?.message || String(tradeError);
+              console.error(`❌ [PAPER] Trade execution failed for ${bot.name}:`, tradeErrorMsg);
+              await this.addBotLog(bot.id, {
+                level: 'error',
+                category: 'trade',
+                message: `❌ [PAPER] Trade execution failed: ${tradeErrorMsg}`,
+                details: { 
+                  error: tradeErrorMsg,
+                  shouldTrade,
+                  paper_trading: true
+                }
+              });
+              // Don't throw - allow position updates to continue
+            }
           }
         } else {
-          await this.addBotLog(bot.id, {
-            level: 'info',
-            category: 'strategy',
-            message: `📝 [PAPER] Strategy conditions not met: ${shouldTrade.reason || 'No reason provided'}`,
-            details: { ...shouldTrade, paper_trading: true, ml_prediction: mlPrediction }
-          });
+          console.log(`⏸️ [PAPER] Trading conditions not met for ${bot.name}: ${shouldTrade?.reason || 'Unknown reason'}`);
+          // Already logged above, no need to log again
         }
         
         // Update existing paper positions (with 20s time budget)
