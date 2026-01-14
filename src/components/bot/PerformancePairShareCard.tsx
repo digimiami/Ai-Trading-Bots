@@ -158,9 +158,9 @@ export default function PerformancePairShareCard({ pair, isOpen, onClose }: Perf
           <div className="text-center mb-4 relative z-10">
             <div className="flex items-center justify-center gap-2 mb-2">
               <i className="ri-rocket-2-fill text-2xl text-blue-400"></i>
-              <p className="text-lg font-bold">Join PabloBots.com</p>
+              <p className="text-lg font-bold text-white">Join PabloBots.com</p>
             </div>
-            <p className="text-gray-300 text-xs">Automated Trading Made Simple</p>
+            <p className="text-gray-200 text-xs font-medium">Automated Trading Made Simple</p>
           </div>
 
           {/* Pair Performance Information - Compact */}
@@ -176,26 +176,26 @@ export default function PerformancePairShareCard({ pair, isOpen, onClose }: Perf
             
             <div className="grid grid-cols-2 gap-2 text-xs mt-2">
               <div>
-                <p className="text-gray-400 text-[10px] mb-0.5">Win Rate</p>
-                <p className={`font-semibold ${pair.winRate >= 50 ? 'text-green-400' : 'text-red-400'}`}>
+                <p className="text-gray-300 text-[10px] mb-0.5 font-medium">Win Rate</p>
+                <p className={`font-bold text-sm ${pair.winRate >= 50 ? 'text-green-400' : 'text-red-400'}`}>
                   {pair.winRate.toFixed(1)}%
                 </p>
               </div>
               <div>
-                <p className="text-gray-400 text-[10px] mb-0.5">Total Trades</p>
-                <p className="font-semibold text-white">
+                <p className="text-gray-300 text-[10px] mb-0.5 font-medium">Total Trades</p>
+                <p className="font-bold text-sm text-white">
                   {pair.totalTrades} ({pair.winningTrades}W / {pair.losingTrades}L)
                 </p>
               </div>
               <div>
-                <p className="text-gray-400 text-[10px] mb-0.5">Profit Factor</p>
-                <p className={`font-semibold ${pair.profitFactor >= 1 ? 'text-green-400' : 'text-red-400'}`}>
+                <p className="text-gray-300 text-[10px] mb-0.5 font-medium">Profit Factor</p>
+                <p className={`font-bold text-sm ${pair.profitFactor >= 1 ? 'text-green-400' : 'text-red-400'}`}>
                   {pair.profitFactor.toFixed(2)}x
                 </p>
               </div>
               <div>
-                <p className="text-gray-400 text-[10px] mb-0.5">Open Positions</p>
-                <p className="font-semibold text-white">{pair.openPositions}</p>
+                <p className="text-gray-300 text-[10px] mb-0.5 font-medium">Open Positions</p>
+                <p className="font-bold text-sm text-white">{pair.openPositions}</p>
               </div>
             </div>
 
@@ -203,12 +203,12 @@ export default function PerformancePairShareCard({ pair, isOpen, onClose }: Perf
               <div className="mt-2 pt-2 border-t border-gray-700/50">
                 <div className="flex gap-3 text-xs">
                   <div>
-                    <p className="text-gray-400 text-[10px] mb-0.5">Volume</p>
-                    <p className="font-semibold text-white">${pair.totalVolume.toFixed(2)}</p>
+                    <p className="text-gray-300 text-[10px] mb-0.5 font-medium">Volume</p>
+                    <p className="font-bold text-sm text-white">${pair.totalVolume.toFixed(2)}</p>
                   </div>
                   <div>
-                    <p className="text-gray-400 text-[10px] mb-0.5">Fees</p>
-                    <p className="font-semibold text-red-400">${pair.totalFees.toFixed(2)}</p>
+                    <p className="text-gray-300 text-[10px] mb-0.5 font-medium">Fees</p>
+                    <p className="font-bold text-sm text-red-400">${pair.totalFees.toFixed(2)}</p>
                   </div>
                 </div>
               </div>
@@ -227,7 +227,7 @@ export default function PerformancePairShareCard({ pair, isOpen, onClose }: Perf
                 fgColor="#000000"
               />
             </div>
-            <p className="text-gray-400 text-[10px] mt-2 text-center">
+            <p className="text-gray-200 text-xs mt-2 text-center font-medium">
               Scan to visit PabloBots.com
             </p>
           </div>

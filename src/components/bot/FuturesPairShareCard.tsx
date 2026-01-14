@@ -159,9 +159,9 @@ export default function FuturesPairShareCard({ pair, suggestedSettings, isOpen, 
           <div className="text-center mb-4 relative z-10">
             <div className="flex items-center justify-center gap-2 mb-2">
               <i className="ri-rocket-2-fill text-2xl text-blue-400"></i>
-              <p className="text-lg font-bold">Active this Bot on PabloBots.com</p>
+              <p className="text-lg font-bold text-white">Active this Bot on PabloBots.com</p>
             </div>
-            <p className="text-gray-300 text-xs">Automated Trading Made Simple</p>
+            <p className="text-gray-200 text-xs font-medium">Automated Trading Made Simple</p>
           </div>
 
           {/* Pair Information - Compact */}
@@ -175,22 +175,22 @@ export default function FuturesPairShareCard({ pair, suggestedSettings, isOpen, 
             
             <div className="grid grid-cols-2 gap-2 text-xs mt-2">
               <div>
-                <p className="text-gray-400 text-[10px] mb-0.5">Current Price</p>
-                <p className="font-semibold text-white">${pair.currentPrice.toFixed(4)}</p>
+                <p className="text-gray-300 text-[10px] mb-0.5 font-medium">Current Price</p>
+                <p className="font-bold text-sm text-white">${pair.currentPrice.toFixed(4)}</p>
               </div>
               <div>
-                <p className="text-gray-400 text-[10px] mb-0.5">24h Change</p>
-                <p className={`font-semibold ${pair.priceChange24h >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                <p className="text-gray-300 text-[10px] mb-0.5 font-medium">24h Change</p>
+                <p className={`font-bold text-sm ${pair.priceChange24h >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                   {pair.priceChange24h >= 0 ? '+' : ''}{pair.priceChange24h.toFixed(2)}%
                 </p>
               </div>
               <div>
-                <p className="text-gray-400 text-[10px] mb-0.5">Performance Score</p>
-                <p className="font-semibold text-blue-400">{pair.performanceScore.toFixed(1)}</p>
+                <p className="text-gray-300 text-[10px] mb-0.5 font-medium">Performance Score</p>
+                <p className="font-bold text-sm text-blue-400">{pair.performanceScore.toFixed(1)}</p>
               </div>
               <div>
-                <p className="text-gray-400 text-[10px] mb-0.5">24h Volume</p>
-                <p className="font-semibold text-white">${(pair.volume24h / 1000000).toFixed(2)}M</p>
+                <p className="text-gray-300 text-[10px] mb-0.5 font-medium">24h Volume</p>
+                <p className="font-bold text-sm text-white">${(pair.volume24h / 1000000).toFixed(2)}M</p>
               </div>
             </div>
 
@@ -198,12 +198,12 @@ export default function FuturesPairShareCard({ pair, suggestedSettings, isOpen, 
               <div className="mt-2 pt-2 border-t border-gray-700/50">
                 <div className="flex gap-3 text-xs">
                   <div>
-                    <p className="text-gray-400 text-[10px] mb-0.5">Leverage</p>
-                    <p className="font-semibold text-white">{suggestedSettings.leverage}x</p>
+                    <p className="text-gray-300 text-[10px] mb-0.5 font-medium">Leverage</p>
+                    <p className="font-bold text-sm text-white">{suggestedSettings.leverage}x</p>
                   </div>
                   <div>
-                    <p className="text-gray-400 text-[10px] mb-0.5">Risk</p>
-                    <p className={`font-semibold ${
+                    <p className="text-gray-300 text-[10px] mb-0.5 font-medium">Risk</p>
+                    <p className={`font-bold text-sm ${
                       suggestedSettings.riskLevel === 'low' ? 'text-green-400' :
                       suggestedSettings.riskLevel === 'medium' ? 'text-yellow-400' :
                       'text-red-400'
@@ -228,7 +228,7 @@ export default function FuturesPairShareCard({ pair, suggestedSettings, isOpen, 
                 fgColor="#000000"
               />
             </div>
-            <p className="text-gray-400 text-[10px] mt-2 text-center">
+            <p className="text-gray-200 text-xs mt-2 text-center font-medium">
               Scan to visit PabloBots.com
             </p>
           </div>

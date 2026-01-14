@@ -112,12 +112,12 @@ export default function BotShareCard({ bot, isOpen, onClose }: BotShareCardProps
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={onClose}>
       <div className="bg-white rounded-lg max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-white">Share Bot Card</h2>
+          <h2 className="text-xl font-bold text-gray-900">Share Bot Card</h2>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
-            <i className="ri-close-line text-xl text-gray-300"></i>
+            <i className="ri-close-line text-xl text-gray-700"></i>
           </button>
         </div>
 
@@ -148,9 +148,9 @@ export default function BotShareCard({ bot, isOpen, onClose }: BotShareCardProps
           <div className="text-center mb-4 relative z-10">
             <div className="flex items-center justify-center gap-2 mb-2">
               <i className="ri-rocket-2-fill text-2xl text-blue-400"></i>
-              <p className="text-lg font-bold">Join PabloBots.com</p>
+              <p className="text-lg font-bold text-white">Join PabloBots.com</p>
             </div>
-            <p className="text-gray-300 text-xs">Automated Trading Made Simple</p>
+            <p className="text-gray-200 text-xs font-medium">Automated Trading Made Simple</p>
           </div>
 
           {/* Bot Information - Compact */}
@@ -160,14 +160,14 @@ export default function BotShareCard({ bot, isOpen, onClose }: BotShareCardProps
             <div className="grid grid-cols-2 gap-2 text-xs">
               {bot.symbol && (
                 <div>
-                  <p className="text-gray-400 text-[10px] mb-0.5">Symbol</p>
-                  <p className="font-semibold text-white">{bot.symbol}</p>
+                  <p className="text-gray-300 text-[10px] mb-0.5 font-medium">Symbol</p>
+                  <p className="font-bold text-white text-sm">{bot.symbol}</p>
                 </div>
               )}
               {bot.pnl !== undefined && (
                 <div>
-                  <p className="text-gray-400 text-[10px] mb-0.5">PnL</p>
-                  <p className={`font-semibold ${bot.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  <p className="text-gray-300 text-[10px] mb-0.5 font-medium">PnL</p>
+                  <p className={`font-bold text-sm ${bot.pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                     {bot.pnl >= 0 ? '+' : ''}${bot.pnl.toFixed(2)}
                   </p>
                 </div>
@@ -178,14 +178,14 @@ export default function BotShareCard({ bot, isOpen, onClose }: BotShareCardProps
               <div className="flex gap-3 mt-2 pt-2 border-t border-gray-700/50">
                 {bot.winRate !== undefined && (
                   <div>
-                    <p className="text-gray-400 text-[10px] mb-0.5">Win Rate</p>
-                    <p className="font-semibold text-xs text-white">{bot.winRate.toFixed(1)}%</p>
+                    <p className="text-gray-300 text-[10px] mb-0.5 font-medium">Win Rate</p>
+                    <p className="font-bold text-sm text-white">{bot.winRate.toFixed(1)}%</p>
                   </div>
                 )}
                 {bot.totalTrades !== undefined && (
                   <div>
-                    <p className="text-gray-400 text-[10px] mb-0.5">Trades</p>
-                    <p className="font-semibold text-xs text-white">{bot.totalTrades}</p>
+                    <p className="text-gray-300 text-[10px] mb-0.5 font-medium">Trades</p>
+                    <p className="font-bold text-sm text-white">{bot.totalTrades}</p>
                   </div>
                 )}
               </div>
@@ -204,7 +204,7 @@ export default function BotShareCard({ bot, isOpen, onClose }: BotShareCardProps
                 fgColor="#000000"
               />
             </div>
-            <p className="text-gray-400 text-[10px] mt-2 text-center">
+            <p className="text-gray-200 text-xs mt-2 text-center font-medium">
               Scan to visit PabloBots.com
             </p>
           </div>
