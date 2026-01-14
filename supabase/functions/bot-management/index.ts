@@ -774,6 +774,25 @@ serve(async (req) => {
           throw new Error('Bot not found or access denied')
         }
 
+        // Before updating, ensure strategy_config is valid if it exists
+        // This prevents database constraint errors
+        if (dbUpdates.strategy_config) {
+          const config = dbUpdates.strategy_config;
+          // Validate and fix enum fields
+          if (config.bias_mode && !['long-only', 'short-only', 'both', 'auto'].includes(config.bias_mode)) {
+            config.bias_mode = 'auto';
+            console.warn(`⚠️ Fixed invalid bias_mode, set to 'auto'`);
+          }
+          if (config.regime_mode && !['trend', 'mean-reversion', 'auto'].includes(config.regime_mode)) {
+            config.regime_mode = 'auto';
+            console.warn(`⚠️ Fixed invalid regime_mode, set to 'auto'`);
+          }
+          if (config.htf_timeframe && !['15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d', '1w'].includes(config.htf_timeframe)) {
+            config.htf_timeframe = '4h';
+            console.warn(`⚠️ Fixed invalid htf_timeframe, set to '4h'`);
+          }
+        }
+        
         // Now update the bot
         const { data: bots, error } = await supabaseClient
           .from('trading_bots')
