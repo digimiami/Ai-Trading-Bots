@@ -16,6 +16,7 @@ import { supabase, getAuthTokenFast } from '../../lib/supabase';
 import DropdownMenu, { DropdownMenuItem } from '../../components/ui/DropdownMenu';
 import HelpTooltip from '../../components/ui/HelpTooltip';
 import BotShareCard from '../../components/bot/BotShareCard';
+import AiMlActivityModal from '../../components/bot/AiMlActivityModal';
 
 export default function BotsPage() {
   const navigate = useNavigate();
@@ -45,6 +46,7 @@ export default function BotsPage() {
   const [cloning, setCloning] = useState(false);
   const [sharingBotId, setSharingBotId] = useState<string | null>(null);
   const [expandedErrorBotId, setExpandedErrorBotId] = useState<string | null>(null);
+  const [aiMlActivityBotId, setAiMlActivityBotId] = useState<string | null>(null);
   const isWebhookView = viewMode === 'webhook';
   
   // Get trade limits for all bots
@@ -2358,21 +2360,33 @@ export default function BotsPage() {
                       <i className="ri-brain-line text-purple-600"></i>
                       <span className="text-sm font-medium text-gray-700">AI/ML System</span>
                     </div>
-                    <button
-                      onClick={() => handleToggleAiMl(bot.id, bot.aiMlEnabled || false)}
-                      disabled={togglingAiMl === bot.id}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        togglingAiMl === bot.id ? 'opacity-50 cursor-not-allowed' : ''
-                      } ${
-                        bot.aiMlEnabled ? 'bg-purple-600' : 'bg-gray-300'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          bot.aiMlEnabled ? 'translate-x-6' : 'translate-x-1'
+                    <div className="flex items-center gap-2">
+                      {bot.aiMlEnabled && (
+                        <button
+                          onClick={() => setAiMlActivityBotId(bot.id)}
+                          className="px-2 py-1 text-xs font-medium text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded transition-colors"
+                          title="View AI/ML Activity"
+                        >
+                          <i className="ri-eye-line mr-1"></i>
+                          Activity
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleToggleAiMl(bot.id, bot.aiMlEnabled || false)}
+                        disabled={togglingAiMl === bot.id}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          togglingAiMl === bot.id ? 'opacity-50 cursor-not-allowed' : ''
+                        } ${
+                          bot.aiMlEnabled ? 'bg-purple-600' : 'bg-gray-300'
                         }`}
-                      />
-                    </button>
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            bot.aiMlEnabled ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
                   </div>
                   
                   {/* Paper Trading Toggle */}
@@ -2623,6 +2637,21 @@ export default function BotsPage() {
             }}
             isOpen={true}
             onClose={() => setSharingBotId(null)}
+          />
+        );
+      })()}
+
+      {/* AI/ML Activity Modal */}
+      {aiMlActivityBotId && (() => {
+        const botForActivity = bots.find(b => b.id === aiMlActivityBotId);
+        if (!botForActivity) return null;
+        
+        return (
+          <AiMlActivityModal
+            botId={botForActivity.id}
+            botName={botForActivity.name}
+            isOpen={!!aiMlActivityBotId}
+            onClose={() => setAiMlActivityBotId(null)}
           />
         );
       })()}
