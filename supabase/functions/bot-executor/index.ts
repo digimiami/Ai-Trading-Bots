@@ -3681,7 +3681,8 @@ class BotExecutor {
       console.log(`📋 [${bot.name}] Strategy value type: ${typeof bot.strategy}`);
       console.log(`📋 [${bot.name}] Strategy value (first 200 chars): ${typeof bot.strategy === 'string' ? bot.strategy.substring(0, 200) : JSON.stringify(bot.strategy).substring(0, 200)}`);
       
-      let strategy = bot.strategy;
+      // Re-parse strategy if needed (strategy already declared above at line 3589)
+      strategy = bot.strategy;
       if (typeof strategy === 'string') {
         try {
           strategy = JSON.parse(strategy);
