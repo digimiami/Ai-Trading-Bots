@@ -1,0 +1,52 @@
+# robots.txt for Pablo AI Trading Bots
+# https://pablobots.com
+
+User-agent: *
+Allow: /
+Allow: /academy
+Allow: /pricing
+Allow: /crypto-news
+Allow: /help
+Allow: /contact
+Allow: /privacy
+Allow: /terms
+Allow: /risk
+Allow: /cookies
+Allow: /disclaimer
+Allow: /adwords
+Allow: /campaign
+
+# Disallow private/authenticated pages
+Disallow: /dashboard
+Disallow: /auth
+Disallow: /onboarding
+Disallow: /bots
+Disallow: /create-bot
+Disallow: /edit-bot/
+Disallow: /settings
+Disallow: /trades
+Disallow: /reports
+Disallow: /performance
+Disallow: /transaction-log
+Disallow: /paper-trading
+Disallow: /webhook-test
+Disallow: /futures-pairs-finder
+Disallow: /messages
+Disallow: /admin
+Disallow: /pablo-ready
+Disallow: /market-dashboard
+Disallow: /crypto-bubbles
+Disallow: /ai-assistant
+Disallow: /ai-ml/
+Disallow: /subscription
+Disallow: /wallet
+Disallow: /backtest
+Disallow: /bot-activity
+Disallow: /funnel/
+Disallow: /t/
+
+# Sitemap location
+Sitemap: https://pablobots.com/sitemap.xml
+
+# Crawl-delay (optional, adjust as needed)
+Crawl-delay: 1
