@@ -359,17 +359,24 @@ serve(async (req) => {
       }
 
       if (action === 'check_retrain') {
-        const { bot_id } = body
+        const { bot_id, days = 7 } = body
         
         // Check if retraining is needed based on recent accuracy
-        const { data: recentPredictions, error: predictionsError } = await supabaseClient
+        const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+        const query = supabaseClient
           .from('ml_predictions')
-          .select('prediction, actual_outcome, confidence')
+          .select('prediction, actual_outcome, confidence, features')
           .eq('user_id', user.id)
           .not('actual_outcome', 'is', null)
-          .gte('timestamp', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()) // Last 7 days
+          .gte('timestamp', cutoffDate.toISOString())
           .order('timestamp', { ascending: false })
-          .limit(100)
+          .limit(100);
+        
+        if (bot_id) {
+          query.eq('bot_id', bot_id);
+        }
+        
+        const { data: recentPredictions, error: predictionsError } = await query;
         
         if (predictionsError) throw predictionsError
         
@@ -391,6 +398,12 @@ serve(async (req) => {
         ).length;
         const recentAccuracy = correct / recentPredictions.length;
         
+        // Advanced analytics: Feature importance analysis
+        const featureImportance = analyzeFeatureImportance(recentPredictions);
+        
+        // Confidence calibration: Check if confidence correlates with accuracy
+        const confidenceCalibration = analyzeConfidenceCalibration(recentPredictions);
+        
         // Retrain if accuracy drops below 55% (threshold)
         const shouldRetrain = recentAccuracy < 0.55;
         
@@ -402,9 +415,67 @@ serve(async (req) => {
             recent_predictions: recentPredictions.length,
             correct_predictions: correct,
             threshold: 0.55,
+            feature_importance: featureImportance,
+            confidence_calibration: confidenceCalibration,
             reason: shouldRetrain 
               ? `Recent accuracy (${(recentAccuracy * 100).toFixed(1)}%) is below threshold (55%)`
               : `Recent accuracy (${(recentAccuracy * 100).toFixed(1)}%) is acceptable`
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
+      if (action === 'get_analytics') {
+        const { bot_id, days = 30 } = body
+        
+        const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+        const query = supabaseClient
+          .from('ml_predictions')
+          .select('prediction, actual_outcome, confidence, features, trade_pnl, trade_result')
+          .eq('user_id', user.id)
+          .not('actual_outcome', 'is', null)
+          .gte('timestamp', cutoffDate.toISOString());
+        
+        if (bot_id) {
+          query.eq('bot_id', bot_id);
+        }
+        
+        const { data: predictions, error } = await query;
+        
+        if (error) throw error
+        
+        if (!predictions || predictions.length === 0) {
+          return new Response(
+            JSON.stringify({ 
+              success: true,
+              analytics: {
+                total_predictions: 0,
+                message: 'No predictions with outcomes found'
+              }
+            }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        
+        // Feature importance analysis
+        const featureImportance = analyzeFeatureImportance(predictions);
+        
+        // Confidence calibration
+        const confidenceCalibration = analyzeConfidenceCalibration(predictions);
+        
+        // Market regime detection (trending vs ranging)
+        const marketRegime = detectMarketRegime(predictions);
+        
+        return new Response(
+          JSON.stringify({ 
+            success: true,
+            analytics: {
+              total_predictions: predictions.length,
+              feature_importance: featureImportance,
+              confidence_calibration: confidenceCalibration,
+              market_regime: marketRegime,
+              period_days: days
+            }
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
@@ -459,6 +530,133 @@ serve(async (req) => {
     )
   }
 })
+
+/**
+ * Analyze feature importance based on prediction outcomes
+ */
+function analyzeFeatureImportance(predictions: any[]): Record<string, number> {
+  const features = ['rsi', 'adx', 'macd', 'bollinger_position', 'volume_trend', 'price_momentum', 'ema_diff'];
+  const importance: Record<string, number> = {};
+  
+  // Group predictions by correctness
+  const correct = predictions.filter(p => 
+    p.prediction.toLowerCase() === p.actual_outcome.toLowerCase()
+  );
+  const incorrect = predictions.filter(p => 
+    p.prediction.toLowerCase() !== p.actual_outcome.toLowerCase()
+  );
+  
+  if (correct.length === 0 || incorrect.length === 0) {
+    // Not enough data, return equal importance
+    features.forEach(f => importance[f] = 1.0 / features.length);
+    return importance;
+  }
+  
+  // Calculate average feature values for correct vs incorrect predictions
+  features.forEach(feature => {
+    const correctAvg = correct.reduce((sum, p) => {
+      const val = p.features?.[feature] || 0;
+      return sum + (typeof val === 'number' ? val : 0);
+    }, 0) / correct.length;
+    
+    const incorrectAvg = incorrect.reduce((sum, p) => {
+      const val = p.features?.[feature] || 0;
+      return sum + (typeof val === 'number' ? val : 0);
+    }, 0) / incorrect.length;
+    
+    // Importance = difference between correct and incorrect averages
+    // Higher difference = more important feature
+    importance[feature] = Math.abs(correctAvg - incorrectAvg);
+  });
+  
+  // Normalize to 0-1 range
+  const maxImportance = Math.max(...Object.values(importance));
+  if (maxImportance > 0) {
+    Object.keys(importance).forEach(key => {
+      importance[key] = importance[key] / maxImportance;
+    });
+  }
+  
+  return importance;
+}
+
+/**
+ * Analyze confidence calibration
+ * Checks if high confidence predictions are actually more accurate
+ */
+function analyzeConfidenceCalibration(predictions: any[]): {
+  high_confidence_accuracy: number;
+  medium_confidence_accuracy: number;
+  low_confidence_accuracy: number;
+  calibration_score: number;
+} {
+  const highConf = predictions.filter(p => (p.confidence || 0) >= 0.7);
+  const mediumConf = predictions.filter(p => (p.confidence || 0) >= 0.5 && (p.confidence || 0) < 0.7);
+  const lowConf = predictions.filter(p => (p.confidence || 0) < 0.5);
+  
+  const calcAccuracy = (group: any[]) => {
+    if (group.length === 0) return 0;
+    const correct = group.filter(p => 
+      p.prediction.toLowerCase() === p.actual_outcome.toLowerCase()
+    ).length;
+    return correct / group.length;
+  };
+  
+  const highAcc = calcAccuracy(highConf);
+  const mediumAcc = calcAccuracy(mediumConf);
+  const lowAcc = calcAccuracy(lowConf);
+  
+  // Calibration score: how well confidence predicts accuracy
+  // Ideal: high confidence = high accuracy, low confidence = low accuracy
+  const calibrationScore = highAcc > mediumAcc && mediumAcc > lowAcc ? 1.0 : 
+                          highAcc > lowAcc ? 0.5 : 0.0;
+  
+  return {
+    high_confidence_accuracy: highAcc,
+    medium_confidence_accuracy: mediumAcc,
+    low_confidence_accuracy: lowAcc,
+    calibration_score: calibrationScore
+  };
+}
+
+/**
+ * Detect market regime (trending vs ranging)
+ */
+function detectMarketRegime(predictions: any[]): {
+  regime: 'trending' | 'ranging' | 'mixed';
+  confidence: number;
+  adx_avg: number;
+} {
+  if (predictions.length === 0) {
+    return { regime: 'mixed', confidence: 0, adx_avg: 0 };
+  }
+  
+  // Calculate average ADX (trend strength indicator)
+  const adxValues = predictions
+    .map(p => p.features?.adx || 0)
+    .filter(v => v > 0);
+  
+  const adxAvg = adxValues.length > 0 
+    ? adxValues.reduce((a, b) => a + b, 0) / adxValues.length 
+    : 0;
+  
+  // ADX > 25 = trending, ADX < 20 = ranging
+  let regime: 'trending' | 'ranging' | 'mixed';
+  let confidence = 0.5;
+  
+  if (adxAvg > 25) {
+    regime = 'trending';
+    confidence = Math.min(0.9, 0.5 + (adxAvg - 25) / 50);
+  } else if (adxAvg < 20) {
+    regime = 'ranging';
+    confidence = Math.min(0.9, 0.5 + (20 - adxAvg) / 20);
+  } else {
+    regime = 'mixed';
+    confidence = 0.5;
+  }
+  
+  return { regime, confidence, adx_avg: adxAvg };
+}
 
 /**
  * Update performance metrics after a prediction outcome is recorded

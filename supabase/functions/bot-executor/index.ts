@@ -2617,31 +2617,27 @@ class BotExecutor {
         return this.fallbackMLPrediction(marketData);
       }
       
-      // Prepare real market features for ML prediction
-      // Calculate price momentum (simplified - would need historical data for better accuracy)
-      const priceMomentum = 0; // TODO: Calculate from price history
-      
-      // Calculate Bollinger position (simplified - would need BB bands)
-      const bollingerPosition = 0.5; // Neutral position (TODO: Calculate from BB bands)
-      
-      // Calculate volume trend (simplified)
-      const volumeTrend = marketData.volume ? 1.0 : 1.0; // Neutral if no volume data
-      
-      // Calculate MACD (simplified - would need EMA calculations)
-      const macd = 0; // TODO: Calculate MACD from price history
-      
-      // Calculate EMA difference (simplified)
-      const emaDiff = 0; // TODO: Calculate EMA fast - EMA slow
+      // Calculate real market features for ML prediction
+      const timeframe = marketData.timeframe || bot.timeframe || bot.timeFrame || '1h';
+      const calculatedFeatures = await this.calculateMLFeatures(
+        bot.symbol,
+        bot.exchange,
+        timeframe,
+        marketData.price,
+        marketData.rsi,
+        marketData.adx,
+        marketData.volume
+      );
       
       // Prepare real features to pass to ML Edge Function
       const realFeatures = {
         rsi: marketData.rsi,
         adx: marketData.adx,
-        macd: macd,
-        bollinger_position: bollingerPosition,
-        volume_trend: volumeTrend,
-        price_momentum: priceMomentum,
-        ema_diff: emaDiff
+        macd: calculatedFeatures.macd,
+        bollinger_position: calculatedFeatures.bollingerPosition,
+        volume_trend: calculatedFeatures.volumeTrend,
+        price_momentum: calculatedFeatures.priceMomentum,
+        ema_diff: calculatedFeatures.emaDiff
       };
       
       // Call ml-predictions Edge Function with real market features
@@ -2681,6 +2677,98 @@ class BotExecutor {
       console.error('❌ ML prediction Edge Function call failed:', error);
       // Fallback to simple calculation if Edge Function fails
       return this.fallbackMLPrediction(marketData);
+    }
+  }
+  
+  /**
+   * Calculate ML features from market data
+   * Implements MACD, Bollinger Bands, price momentum, EMA difference, and volume trend
+   */
+  private async calculateMLFeatures(
+    symbol: string,
+    exchange: string,
+    timeframe: string,
+    currentPrice: number,
+    rsi: number,
+    adx: number,
+    volume?: number
+  ): Promise<{
+    macd: number;
+    bollingerPosition: number;
+    priceMomentum: number;
+    emaDiff: number;
+    volumeTrend: number;
+  }> {
+    try {
+      // Fetch historical klines for calculations
+      const klines = await MarketDataFetcher.fetchKlines(symbol, exchange, timeframe, 200);
+      
+      if (klines.length < 26) {
+        // Not enough data, return neutral values
+        return {
+          macd: 0,
+          bollingerPosition: 0.5,
+          priceMomentum: 0,
+          emaDiff: 0,
+          volumeTrend: 1.0
+        };
+      }
+      
+      const closes = klines.map(k => k[4]); // Close prices
+      const volumes = klines.map(k => k[5]); // Volumes
+      const currentClose = closes[closes.length - 1];
+      
+      // Calculate EMA Fast (12) and EMA Slow (26) for MACD
+      const ema12 = this.calculateEMA(closes, 12);
+      const ema26 = this.calculateEMA(closes, 26);
+      const macd = ema12 - ema26;
+      
+      // Calculate EMA difference (normalized)
+      const emaDiff = ema26 > 0 ? (ema12 - ema26) / ema26 : 0;
+      
+      // Calculate Bollinger Bands
+      const bb = this.calculateBollingerBands(closes, 20, 2.0);
+      // Calculate position within Bollinger Bands (0 = lower band, 1 = upper band)
+      const bollingerPosition = bb.upper !== bb.lower 
+        ? (currentClose - bb.lower) / (bb.upper - bb.lower)
+        : 0.5; // Neutral if bands are equal
+      
+      // Calculate price momentum (percentage change over last 10 periods)
+      const momentumPeriods = Math.min(10, closes.length - 1);
+      const pastPrice = closes.length > momentumPeriods 
+        ? closes[closes.length - 1 - momentumPeriods] 
+        : closes[0];
+      const priceMomentum = pastPrice > 0 ? (currentClose - pastPrice) / pastPrice : 0;
+      
+      // Calculate volume trend (current volume vs average)
+      let volumeTrend = 1.0; // Default neutral
+      if (volumes.length >= 20 && volume) {
+        const avgVolume = volumes.slice(-20).reduce((a, b) => a + b, 0) / 20;
+        volumeTrend = avgVolume > 0 ? volume / avgVolume : 1.0;
+      } else if (volumes.length >= 20) {
+        // Use recent volume from klines
+        const recentVolume = volumes[volumes.length - 1];
+        const avgVolume = volumes.slice(-20).reduce((a, b) => a + b, 0) / 20;
+        volumeTrend = avgVolume > 0 ? recentVolume / avgVolume : 1.0;
+      }
+      
+      return {
+        macd,
+        bollingerPosition: Math.max(0, Math.min(1, bollingerPosition)), // Clamp to 0-1
+        priceMomentum,
+        emaDiff,
+        volumeTrend
+      };
+    } catch (error) {
+      console.error('❌ Error calculating ML features:', error);
+      // Return neutral values on error
+      return {
+        macd: 0,
+        bollingerPosition: 0.5,
+        priceMomentum: 0,
+        emaDiff: 0,
+        volumeTrend: 1.0
+      };
     }
   }
   

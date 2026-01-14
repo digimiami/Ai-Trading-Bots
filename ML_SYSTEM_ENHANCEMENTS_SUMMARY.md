@@ -327,29 +327,44 @@ if (should_retrain) {
 
 ---
 
-## 🚀 Next Steps (Future Enhancements)
+## 🚀 Next Steps (Future Enhancements) - ✅ IMPLEMENTED!
 
-1. **Calculate Additional Features**
-   - Implement MACD calculation
-   - Calculate Bollinger Band position
-   - Calculate price momentum from history
-   - Calculate EMA difference
+### ✅ 1. Calculate Additional Features - COMPLETE
+- ✅ Implemented MACD calculation (EMA12 - EMA26)
+- ✅ Calculate Bollinger Band position (0-1 normalized)
+- ✅ Calculate price momentum from history (10-period change)
+- ✅ Calculate EMA difference (normalized percentage)
 
-2. **Automatic Retraining**
-   - Schedule periodic retrain checks
-   - Automatically trigger retraining when needed
-   - Update model weights based on recent performance
+**Implementation**: `calculateMLFeatures()` method in bot-executor
 
-3. **Advanced Analytics**
-   - Feature importance analysis
-   - Prediction confidence calibration
-   - Market regime detection
-   - Symbol-specific model tuning
+### ✅ 2. Automatic Retraining - COMPLETE
+- ✅ Created `ml-auto-retrain` Edge Function for scheduled checks
+- ✅ Checks all active bots with ML enabled
+- ✅ Evaluates recent accuracy (last 7 days)
+- ✅ Logs retrain recommendations to bot activity logs
+- ✅ Returns summary of bots needing retraining
 
-4. **Real-time Monitoring**
-   - Dashboard for ML performance
-   - Alerts when accuracy drops
-   - Performance comparison charts
+**Setup**: See `ML_AUTO_RETRAIN_SETUP.md` for cron job configuration
+
+### ✅ 3. Advanced Analytics - COMPLETE
+- ✅ Feature importance analysis (`analyzeFeatureImportance()`)
+- ✅ Prediction confidence calibration (`analyzeConfidenceCalibration()`)
+- ✅ Market regime detection (`detectMarketRegime()`)
+- ✅ New `get_analytics` action in ml-predictions Edge Function
+
+**Usage**: `POST /ml-predictions?action=get_analytics`
+
+### ✅ 4. Real-time Monitoring - COMPLETE
+- ✅ Created `ml-monitoring` Edge Function
+- ✅ Dashboard with overall ML performance stats
+- ✅ Alerts for bots with low accuracy (< 55%)
+- ✅ Performance tracking by bot/symbol
+- ✅ Alert notifications to bot activity logs
+
+**Endpoints**:
+- `GET /ml-monitoring?action=dashboard` - Full dashboard data
+- `GET /ml-monitoring?action=alerts` - Active alerts
+- `POST /ml-monitoring?action=check_alerts` - Check and log alerts
 
 ---
 
