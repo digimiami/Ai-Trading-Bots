@@ -44,41 +44,49 @@ supabase functions deploy ml-monitoring
 
 ### Step 2: Set Up Cron Job for Auto-Retrain
 
-Create a cron job to run the auto-retrain check daily:
+**RECOMMENDED: Run the migration file**
 
-**Option A: Using Supabase Cron Jobs**
+Execute the migration file in Supabase SQL Editor:
+```sql
+-- Run: supabase/migrations/20250127_setup_ml_auto_retrain_cron.sql
+```
 
-1. Go to Supabase Dashboard → Database → Cron Jobs
-2. Create new cron job:
-   - **Name**: `ml-auto-retrain-check`
-   - **Schedule**: `0 2 * * *` (Daily at 2 AM UTC)
-   - **SQL**:
-   ```sql
-   SELECT
-     net.http_post(
-       url := 'https://YOUR_PROJECT.supabase.co/functions/v1/ml-auto-retrain',
-       headers := jsonb_build_object(
-         'Content-Type', 'application/json',
-         'x-cron-secret', 'YOUR_CRON_SECRET'
-       ),
-       body := '{}'::jsonb
-     ) AS request_id;
-   ```
+This will set up the cron job automatically. Then choose one of the options below:
 
-**Option B: Using External Cron Service**
+**Option A: Using Supabase Dashboard (Easiest)**
+
+1. Go to Supabase Dashboard → Edge Functions → ml-auto-retrain
+2. Click "Schedules" tab
+3. Create new schedule:
+   - **Schedule Name**: `ml-auto-retrain-check`
+   - **Cron Expression**: `0 2 * * *` (Daily at 2 AM UTC)
+   - **HTTP Method**: `POST`
+   - **Headers**:
+     - Key: `x-cron-secret`
+     - Value: `[SAME VALUE as CRON_SECRET environment variable]`
+   - **Enabled**: ✅ Yes
+4. Click "Save"
+
+**Option B: Using SQL Migration (If pg_cron available)**
+
+Run the migration file `supabase/migrations/20250127_setup_ml_auto_retrain_cron.sql` in Supabase SQL Editor.
+
+**Option C: Using External Cron Service**
 
 Set up a cron job on your server or use a service like:
 - GitHub Actions (scheduled workflows)
 - Vercel Cron
 - AWS EventBridge
 - Google Cloud Scheduler
+- EasyCron.com
 
 Example cron command:
 ```bash
 # Daily at 2 AM UTC
 0 2 * * * curl -X POST https://YOUR_PROJECT.supabase.co/functions/v1/ml-auto-retrain \
   -H "x-cron-secret: YOUR_CRON_SECRET" \
-  -H "Content-Type: application/json"
+  -H "Content-Type: application/json" \
+  -d '{}'
 ```
 
 ### Step 3: Configure Environment Variables
