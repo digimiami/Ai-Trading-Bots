@@ -631,13 +631,14 @@ serve(async (req) => {
           
           // Ensure required fields have defaults if missing (for validation)
           // This prevents validation errors when updating partial configs
-          if (!mergedConfig.bias_mode) {
+          // Validate and fix bias_mode - must be one of the valid values
+          if (!mergedConfig.bias_mode || !['long-only', 'short-only', 'both', 'auto'].includes(mergedConfig.bias_mode)) {
             mergedConfig.bias_mode = 'auto';
           }
-          if (!mergedConfig.regime_mode) {
+          if (!mergedConfig.regime_mode || !['trend', 'mean-reversion', 'auto'].includes(mergedConfig.regime_mode)) {
             mergedConfig.regime_mode = 'auto';
           }
-          if (!mergedConfig.htf_timeframe) {
+          if (!mergedConfig.htf_timeframe || !['15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d', '1w'].includes(mergedConfig.htf_timeframe)) {
             mergedConfig.htf_timeframe = '4h';
           }
           
@@ -688,6 +689,17 @@ serve(async (req) => {
               emergency_stop_loss: existingConfig.emergency_stop_loss ?? userRiskSettings.emergencyStopLoss ?? 20.0
             };
 
+            // Validate and fix enum fields to prevent database constraint errors
+            if (!updatedConfig.bias_mode || !['long-only', 'short-only', 'both', 'auto'].includes(updatedConfig.bias_mode)) {
+              updatedConfig.bias_mode = 'auto';
+            }
+            if (!updatedConfig.regime_mode || !['trend', 'mean-reversion', 'auto'].includes(updatedConfig.regime_mode)) {
+              updatedConfig.regime_mode = 'auto';
+            }
+            if (!updatedConfig.htf_timeframe || !['15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d', '1w'].includes(updatedConfig.htf_timeframe)) {
+              updatedConfig.htf_timeframe = '4h';
+            }
+
             dbUpdates.strategy_config = updatedConfig;
             console.log('✅ Applied risk management settings to bot (no strategyConfig update)');
           }
@@ -701,6 +713,35 @@ serve(async (req) => {
         // Handle paper trading toggle
         if (updates.paperTrading !== undefined) {
           dbUpdates.paper_trading = updates.paperTrading
+          
+          // When toggling paper trading, ensure strategy_config is valid
+          // This prevents database constraint errors if existing config has invalid values
+          if (!dbUpdates.strategy_config) {
+            const { data: botData } = await supabaseClient
+              .from('trading_bots')
+              .select('strategy_config')
+              .eq('id', id)
+              .single()
+            
+            if (botData?.strategy_config) {
+              let existingConfig: any = typeof botData.strategy_config === 'string'
+                ? JSON.parse(botData.strategy_config)
+                : botData.strategy_config
+              
+              // Validate and fix enum fields
+              if (!existingConfig.bias_mode || !['long-only', 'short-only', 'both', 'auto'].includes(existingConfig.bias_mode)) {
+                existingConfig.bias_mode = 'auto';
+              }
+              if (!existingConfig.regime_mode || !['trend', 'mean-reversion', 'auto'].includes(existingConfig.regime_mode)) {
+                existingConfig.regime_mode = 'auto';
+              }
+              if (!existingConfig.htf_timeframe || !['15m', '30m', '1h', '2h', '4h', '6h', '12h', '1d', '1w'].includes(existingConfig.htf_timeframe)) {
+                existingConfig.htf_timeframe = '4h';
+              }
+              
+              dbUpdates.strategy_config = existingConfig;
+            }
+          }
         }
 
         // Handle sound notifications toggle
