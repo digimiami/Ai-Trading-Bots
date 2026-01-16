@@ -403,12 +403,32 @@ serve(async (req) => {
       if (action === 'check_retrain') {
         const { bot_id, days = 7 } = body
         
+        // For internal calls, get user_id from bot_id
+        let userId = user?.id;
+        if (isInternalCall && bot_id) {
+          const { data: botData, error: botError } = await supabaseClient
+            .from('trading_bots')
+            .select('user_id')
+            .eq('id', bot_id)
+            .single();
+          
+          if (botError || !botData) {
+            throw new Error(`Failed to get user_id from bot_id: ${botError?.message || 'Bot not found'}`);
+          }
+          userId = botData.user_id;
+          console.log(`✅ Internal call: Retrieved user_id ${userId} from bot_id ${bot_id}`);
+        }
+        
+        if (!userId) {
+          throw new Error('User ID is required. Either authenticate as a user or provide a valid bot_id for internal calls.');
+        }
+        
         // Check if retraining is needed based on recent accuracy
         const cutoffDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
         const query = supabaseClient
           .from('ml_predictions')
           .select('prediction, actual_outcome, confidence, features')
-          .eq('user_id', user.id)
+          .eq('user_id', userId)
           .not('actual_outcome', 'is', null)
           .gte('timestamp', cutoffDate.toISOString())
           .order('timestamp', { ascending: false })
