@@ -69,7 +69,7 @@ LOG_DIR=/var/log/bot-scheduler
 
 **Get Required Values:**
 - **SERVICE_ROLE_KEY**: Supabase Dashboard → Settings → API → `service_role` key
-- **CRON_SECRET**: Supabase Dashboard → Edge Functions → Secrets → `CRON_SECRET`
+- **CRON_SECRET**: See `SETUP_CRON_SECRET.md` for instructions (Supabase hides secrets after saving, so you may need to generate a new one)
 
 **Step 3: Add to crontab**
 

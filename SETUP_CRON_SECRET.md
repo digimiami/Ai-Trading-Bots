@@ -1,100 +1,129 @@
-# 🔐 Setting Up CRON_SECRET for Position Sync
+# 🔐 Setup CRON_SECRET for ML Auto-Retrain
 
-Since Supabase masks secret values after saving, you need to set a new CRON_SECRET value and use it in the cron schedule.
+## Problem
+Supabase hides secret values after saving them for security. If you don't have the CRON_SECRET value, you need to set a new one.
 
-## Step 1: Generate a Secure CRON_SECRET
+## Solution: Generate and Set New CRON_SECRET
 
-Generate a random secret value. You can use one of these methods:
+### Step 1: Generate a Secure Secret
 
-**Option A: Use an online generator**
-- Go to: https://www.random.org/strings/
-- Generate a random string (32+ characters)
-- Copy it
+On your server, run this command to generate a secure random secret:
 
-**Option B: Use PowerShell (Windows)**
-```powershell
--join ((48..57) + (65..90) + (97..122) | Get-Random -Count 32 | ForEach-Object {[char]$_})
+```bash
+# Generate a secure 64-character random secret
+openssl rand -hex 32
 ```
 
-**Option C: Use a simple value (less secure but works)**
+**Example output:**
 ```
-pablo-trading-cron-secret-2025
+a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456
 ```
 
-## Step 2: Set CRON_SECRET in Edge Function
+**Copy this value** - you'll need it in both places!
 
-1. Go to **Supabase Dashboard** → **Edge Functions** → **position-sync**
-2. Click **Settings** (or **Secrets** tab)
-3. Find **CRON_SECRET** in the environment variables list
-4. Click **Edit** or **Add Secret**
-5. **Paste your generated secret value**
-6. Click **Save**
+### Step 2: Set CRON_SECRET in Supabase Edge Function
 
-⚠️ **Important**: Copy the value BEFORE saving, as it will be masked after saving!
+1. Go to: **https://supabase.com/dashboard/project/dkawxgwdqiirgmmjbvhc/functions/ml-auto-retrain**
+2. Click **Settings** tab (gear icon)
+3. Scroll to **Environment Variables** section
+4. Look for `CRON_SECRET`:
+   - If it exists: Click **Edit** → Paste your new secret → **Save**
+   - If it doesn't exist: Click **Add new variable**:
+     - **Name**: `CRON_SECRET`
+     - **Value**: Paste the secret you generated
+     - Click **Save**
 
-## Step 3: Use Same Value in Cron Schedule
+### Step 3: Set CRON_SECRET in Your Server's .env.cron
 
-1. Still in **position-sync** function, go to **Schedules** tab
-2. Click **Create Schedule** (or edit existing)
-3. In the **Headers** section, add:
-   - **Key**: `x-cron-secret`
-   - **Value**: `[Paste the EXACT same value you used in Step 2]`
-4. Fill in other fields:
-   - Schedule Name: `position-sync-schedule`
-   - Cron Expression: `*/5 * * * *`
-   - HTTP Method: `POST`
-   - Enabled: Yes
-5. Click **Save**
+On your server:
 
-## Step 4: Verify It Works
+```bash
+# Edit .env.cron file
+nano /root/.env.cron
+```
 
-1. Wait 5-10 minutes
-2. Go to **position-sync** → **Logs** tab
-3. Look for:
-   - ✅ `Position Sync Cron Job STARTED` (success)
-   - ❌ `Unauthorized` or `Authentication failed` (secret mismatch)
+Add or update this line (use the SAME value from Step 1):
+
+```bash
+CRON_SECRET=a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456
+```
+
+Save and exit (Ctrl+X, Y, Enter)
+
+### Step 4: Test the Setup
+
+Test that everything works:
+
+```bash
+# Test the script manually
+/root/scripts/call-ml-auto-retrain.sh
+
+# Check the logs
+tail -20 /var/log/bot-scheduler/ml-auto-retrain.log
+```
+
+You should see:
+```
+✅ ML Auto-Retrain completed successfully (HTTP 200, X.XXs)
+```
+
+If you see `❌ ERROR: CRON_SECRET not set` or `401 Unauthorized`, double-check:
+- The value in Supabase matches the value in `/root/.env.cron`
+- There are no extra spaces or quotes
+- The script has execute permissions: `chmod +x /root/scripts/call-ml-auto-retrain.sh`
+
+## Alternative: Use a Simple Secret (Less Secure)
+
+If you don't have `openssl`, you can use a simple secret:
+
+```bash
+# Generate a simple secret (less secure but works)
+echo "ml-retrain-$(date +%s | sha256sum | base64 | head -c 32)"
+```
+
+Or just make up a long random string:
+```
+ml-auto-retrain-secret-2026-abc123xyz789
+```
+
+**Important**: Use the SAME value in both Supabase and your `.env.cron` file!
+
+## Verify CRON_SECRET is Set Correctly
+
+### Check Supabase:
+1. Go to Edge Functions → `ml-auto-retrain` → Settings
+2. Look for `CRON_SECRET` in Environment Variables
+3. You should see it listed (value will be hidden with dots)
+
+### Check Server:
+```bash
+# Check if CRON_SECRET is in .env.cron
+grep CRON_SECRET /root/.env.cron
+
+# Should output:
+# CRON_SECRET=your-secret-value-here
+```
 
 ## Troubleshooting
 
-### If you see "Unauthorized" errors:
+### Error: "CRON_SECRET not set"
+- Make sure `/root/.env.cron` has the `CRON_SECRET=` line
+- Make sure there are no quotes around the value
+- Make sure there are no extra spaces
 
-The CRON_SECRET in the schedule header doesn't match the one in function secrets.
+### Error: "401 Unauthorized"
+- The CRON_SECRET in Supabase doesn't match the one in `.env.cron`
+- Check for typos or extra spaces
+- Make sure both values are exactly the same
 
-**Solution:**
-1. Generate a NEW secret value
-2. Update BOTH places:
-   - Edge Function Secrets → CRON_SECRET
-   - Schedule Headers → x-cron-secret
-3. Make sure they match EXACTLY (copy-paste to avoid typos)
+### Error: "Function not found" or "404"
+- Make sure the Edge Function `ml-auto-retrain` is deployed
+- Check the Supabase URL is correct in your script
 
-### If you can't see the secret value:
+## Quick Reference
 
-This is normal - Supabase masks secrets for security. You have two options:
+**Where to set CRON_SECRET:**
+1. ✅ Supabase Dashboard → Edge Functions → `ml-auto-retrain` → Settings → Environment Variables
+2. ✅ Server file: `/root/.env.cron`
 
-**Option 1: Set a new value** (Recommended)
-- Generate a new secret
-- Update both the function secret AND the schedule header
-- Use the same value in both places
-
-**Option 2: Check other functions**
-- Check if `bot-scheduler` has CRON_SECRET set
-- You can use the SAME secret value for all cron jobs
-- Just make sure it matches in both the function secrets and schedule headers
-
-## Quick Setup Script
-
-If you want to use the same secret for all cron jobs, here's a recommended value:
-
-```
-pablo-ai-trading-cron-2025-secure-key-xyz123
-```
-
-Replace `xyz123` with random characters if you want more security.
-
-## Important Notes
-
-- ✅ The CRON_SECRET value can be any string (no special requirements)
-- ✅ You can use the same CRON_SECRET for multiple functions
-- ✅ The value in function secrets MUST match the value in schedule headers
-- ⚠️ If they don't match, cron jobs will fail with "Unauthorized"
-- ⚠️ Once saved, you can't see the value again (it's masked)
+**Both must have the EXACT SAME value!**
