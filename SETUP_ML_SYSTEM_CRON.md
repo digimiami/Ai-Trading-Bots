@@ -63,13 +63,15 @@ Add these lines (replace with your actual values):
 ```bash
 SUPABASE_URL=https://dkawxgwdqiirgmmjbvhc.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here
-CRON_SECRET=your_cron_secret_here
+ML_AUTO_RETRAIN_SECRET=your_ml_auto_retrain_secret_here
 LOG_DIR=/var/log/bot-scheduler
 ```
 
+**Note**: We use `ML_AUTO_RETRAIN_SECRET` instead of `CRON_SECRET` to avoid conflicts with bot-executor. The script also accepts `CRON_SECRET` as a fallback.
+
 **Get Required Values:**
 - **SERVICE_ROLE_KEY**: Supabase Dashboard → Settings → API → `service_role` key
-- **CRON_SECRET**: See `SETUP_CRON_SECRET.md` for instructions (Supabase hides secrets after saving, so you may need to generate a new one)
+- **ML_AUTO_RETRAIN_SECRET**: See `SETUP_CRON_SECRET.md` for instructions (uses `ML_AUTO_RETRAIN_SECRET` instead of `CRON_SECRET` to avoid conflicts with bot-executor)
 
 **Step 3: Add to crontab**
 

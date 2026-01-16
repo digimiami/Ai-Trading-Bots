@@ -25,7 +25,8 @@ fi
 # Default values (override with .env.cron)
 SUPABASE_URL="${SUPABASE_URL:-https://dkawxgwdqiirgmmjbvhc.supabase.co}"
 SUPABASE_SERVICE_ROLE_KEY="${SUPABASE_SERVICE_ROLE_KEY:-}"
-CRON_SECRET="${CRON_SECRET:-}"
+# Use ML_AUTO_RETRAIN_SECRET to avoid conflicts with CRON_SECRET used by bot-executor
+ML_AUTO_RETRAIN_SECRET="${ML_AUTO_RETRAIN_SECRET:-${CRON_SECRET:-}}"
 LOG_DIR="${LOG_DIR:-/var/log/bot-scheduler}"
 LOG_FILE="${LOG_DIR}/ml-auto-retrain.log"
 RESPONSE_LOG="${LOG_DIR}/ml-auto-retrain-response.log"
@@ -42,8 +43,8 @@ if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
     exit 1
 fi
 
-if [ -z "$CRON_SECRET" ]; then
-    echo "[$TIMESTAMP] ❌ ERROR: CRON_SECRET not set" >> "$LOG_FILE"
+if [ -z "$ML_AUTO_RETRAIN_SECRET" ]; then
+    echo "[$TIMESTAMP] ❌ ERROR: ML_AUTO_RETRAIN_SECRET not set (also checked CRON_SECRET as fallback)" >> "$LOG_FILE"
     exit 1
 fi
 
@@ -53,7 +54,7 @@ FULL_URL="${SUPABASE_URL}/functions/v1/ml-auto-retrain"
 # Build headers
 HEADERS=(-H "Content-Type: application/json")
 HEADERS+=(-H "Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}")
-HEADERS+=(-H "x-cron-secret: ${CRON_SECRET}")
+HEADERS+=(-H "x-cron-secret: ${ML_AUTO_RETRAIN_SECRET}")
 
 # Make the request and capture response
 RESPONSE=$(curl -X POST "$FULL_URL" \

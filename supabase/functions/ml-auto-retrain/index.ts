@@ -26,17 +26,19 @@ serve(async (req) => {
 
   try {
     // Verify cron secret for scheduled execution
+    // Using ML_AUTO_RETRAIN_SECRET to avoid conflicts with CRON_SECRET used by bot-executor
     const cronSecret = req.headers.get('x-cron-secret');
-    const expectedSecret = Deno.env.get('CRON_SECRET');
+    const expectedSecret = Deno.env.get('ML_AUTO_RETRAIN_SECRET') || Deno.env.get('CRON_SECRET'); // Fallback for backward compatibility
     
-    console.log('🔐 Checking cron secret:', {
+    console.log('🔐 Checking ML auto-retrain secret:', {
       hasSecret: !!cronSecret,
       hasExpectedSecret: !!expectedSecret,
-      matches: cronSecret === expectedSecret
+      matches: cronSecret === expectedSecret,
+      usingMLSecret: !!Deno.env.get('ML_AUTO_RETRAIN_SECRET')
     });
     
     if (expectedSecret && cronSecret !== expectedSecret) {
-      console.error('❌ Unauthorized: Cron secret mismatch');
+      console.error('❌ Unauthorized: ML auto-retrain secret mismatch');
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
