@@ -13,7 +13,14 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
+  console.log('📥 ML Auto-Retrain function called:', {
+    method: req.method,
+    url: req.url,
+    timestamp: new Date().toISOString()
+  });
+
   if (req.method === 'OPTIONS') {
+    console.log('✅ CORS preflight request handled');
     return new Response('ok', { headers: corsHeaders })
   }
 
@@ -22,7 +29,14 @@ serve(async (req) => {
     const cronSecret = req.headers.get('x-cron-secret');
     const expectedSecret = Deno.env.get('CRON_SECRET');
     
+    console.log('🔐 Checking cron secret:', {
+      hasSecret: !!cronSecret,
+      hasExpectedSecret: !!expectedSecret,
+      matches: cronSecret === expectedSecret
+    });
+    
     if (expectedSecret && cronSecret !== expectedSecret) {
+      console.error('❌ Unauthorized: Cron secret mismatch');
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

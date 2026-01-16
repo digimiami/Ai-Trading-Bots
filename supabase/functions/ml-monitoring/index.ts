@@ -13,7 +13,14 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
+  console.log('📥 ML Monitoring function called:', {
+    method: req.method,
+    url: req.url,
+    timestamp: new Date().toISOString()
+  });
+
   if (req.method === 'OPTIONS') {
+    console.log('✅ CORS preflight request handled');
     return new Response('ok', { headers: corsHeaders })
   }
 
@@ -28,16 +35,27 @@ serve(async (req) => {
       }
     )
 
-    const { data: { user } } = await supabaseClient.auth.getUser()
+    console.log('🔐 Checking user authentication...');
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser();
+    
+    if (authError) {
+      console.error('❌ Auth error:', authError);
+    }
+    
     if (!user) {
+      console.error('❌ Unauthorized: No user found');
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
+    console.log('✅ User authenticated:', user.id);
+
     const url = new URL(req.url)
     const action = url.searchParams.get('action') || 'dashboard'
+    
+    console.log('🎯 Action:', action);
 
     if (req.method === 'GET') {
       if (action === 'dashboard') {
