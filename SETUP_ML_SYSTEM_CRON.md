@@ -33,12 +33,75 @@ The AI/ML system has two Edge Functions that need to be scheduled:
    - **Enabled**: ✅ Yes
 5. Click **"Save"**
 
-#### Option B: External Cron Job (Recommended for Production)
+#### Option B: External Cron Job with Script (Recommended for Production)
 
-Add to your server's crontab (`crontab -e`):
+**Step 1: Upload the script to your server**
+
+The script `scripts/call-ml-auto-retrain.sh` is already created. Upload it to your server:
 
 ```bash
-# ML Auto-Retrain - Daily at 2 AM UTC
+# On your local machine, upload the script
+scp scripts/call-ml-auto-retrain.sh root@srv853835:/root/scripts/
+
+# Or if you're already on the server, create it:
+mkdir -p /root/scripts
+# Then copy the script content to /root/scripts/call-ml-auto-retrain.sh
+chmod +x /root/scripts/call-ml-auto-retrain.sh
+```
+
+**Step 2: Set up environment variables**
+
+Create or update `/root/.env.cron` with your credentials:
+
+```bash
+# On your server
+nano /root/.env.cron
+```
+
+Add these lines (replace with your actual values):
+
+```bash
+SUPABASE_URL=https://dkawxgwdqiirgmmjbvhc.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here
+CRON_SECRET=your_cron_secret_here
+LOG_DIR=/var/log/bot-scheduler
+```
+
+**Get Required Values:**
+- **SERVICE_ROLE_KEY**: Supabase Dashboard → Settings → API → `service_role` key
+- **CRON_SECRET**: Supabase Dashboard → Edge Functions → Secrets → `CRON_SECRET`
+
+**Step 3: Add to crontab**
+
+```bash
+# Edit crontab
+crontab -e
+
+# Add this line (daily at 2 AM UTC):
+0 2 * * * /root/scripts/call-ml-auto-retrain.sh
+
+# Save and exit (Ctrl+X, then Y, then Enter)
+```
+
+**Step 4: Test the script manually**
+
+```bash
+# Test the script
+/root/scripts/call-ml-auto-retrain.sh
+
+# Check the logs
+tail -f /var/log/bot-scheduler/ml-auto-retrain.log
+```
+
+#### Option C: Direct Cron Command (Alternative)
+
+If you prefer a direct cron command instead of a script:
+
+```bash
+# Edit crontab
+crontab -e
+
+# Add this line (replace YOUR_SERVICE_ROLE_KEY and YOUR_CRON_SECRET_VALUE):
 0 2 * * * curl -X POST https://dkawxgwdqiirgmmjbvhc.supabase.co/functions/v1/ml-auto-retrain \
   -H "Authorization: Bearer YOUR_SERVICE_ROLE_KEY" \
   -H "x-cron-secret: YOUR_CRON_SECRET_VALUE" \
@@ -46,10 +109,6 @@ Add to your server's crontab (`crontab -e`):
   -d '{}' \
   >> /var/log/ml-auto-retrain.log 2>&1
 ```
-
-**Get Required Values:**
-- **SERVICE_ROLE_KEY**: Supabase Dashboard → Settings → API → `service_role` key
-- **CRON_SECRET**: Supabase Dashboard → Edge Functions → Secrets → `CRON_SECRET`
 
 #### Alternative Cron Schedules
 
