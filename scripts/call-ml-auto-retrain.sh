@@ -2,7 +2,11 @@
 
 # ML Auto-Retrain Cron Job Script
 # This script calls the ml-auto-retrain Edge Function to check and retrain ML models
-# Run this via cron daily: 0 2 * * * /path/to/scripts/call-ml-auto-retrain.sh
+# Recommended cron schedules:
+#   Every 6 hours: 0 */6 * * * /path/to/scripts/call-ml-auto-retrain.sh
+#   Every 4 hours: 0 */4 * * * /path/to/scripts/call-ml-auto-retrain.sh
+#   Twice daily: 0 2,14 * * * /path/to/scripts/call-ml-auto-retrain.sh
+#   Daily at 2 AM: 0 2 * * * /path/to/scripts/call-ml-auto-retrain.sh
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -1,94 +1,167 @@
-# 🔐 Fix Secret Mismatch - SUBSCRIPTION_RENEWAL_SECRET
+# Fix ML Auto-Retrain Secret Mismatch
 
 ## Problem
-You're getting `{"error":"Unauthorized"}` because the `SUBSCRIPTION_RENEWAL_SECRET` value in Supabase doesn't match the value in your cron job.
+The logs show:
+- `hasSecret: true` ✅ (Header is being sent)
+- `hasExpectedSecret: true` ✅ (Edge Function has secret configured)
+- `matches: false` ❌ (But they don't match!)
 
-**Current Situation:**
-- **Supabase Secret Value**: Starts with `66dc4bcfee03509dd6423b82c8e98d09234f293a3819...`
-- **Cron Job Value**: `22ad6fb976c39c8355a736a1837e5d2775ebd48ec9f0124a9bd7d41b958385fc`
+## Solution: Verify Secret Values Match
 
-## Solution: Update Supabase Secret
+### Step 1: Get the Secret from Edge Function
 
-### Option 1: Update Supabase Secret to Match Cron Job (Recommended)
+1. Go to **Supabase Dashboard** → **Edge Functions** → **ml-auto-retrain**
+2. Click **Secrets** tab
+3. Find `ML_AUTO_RETRAIN_SECRET`
+4. **Copy the exact value** (be careful with spaces/line breaks)
 
-1. Go to: **Supabase Dashboard** → **Project Settings** → **Edge Functions** → **Secrets**
-2. Find: `SUBSCRIPTION_RENEWAL_SECRET`
-3. Click: **Edit** (or delete and recreate)
-4. Update the value to: `22ad6fb976c39c8355a736a1837e5d2775ebd48ec9f0124a9bd7d41b958385fc`
-5. Click: **Save**
-6. Wait 1-2 minutes for propagation
+### Step 2: Check Your SQL Function
 
-### Option 2: Update Cron Job to Match Supabase Secret
+1. Go to **Supabase Dashboard** → **SQL Editor**
+2. Run this query to see what secret value is in your function:
 
-If you prefer to keep the existing Supabase secret:
-
-1. Get the full secret value from Supabase (click "Show" to reveal it)
-2. Update your cron job with the correct value:
-
-```bash
-# Remove old cron job
-crontab -e
-# Delete the subscription-renewal line(s)
-
-# Add new cron job with correct secret
-(crontab -l 2>/dev/null; echo "0 2 * * * curl -X POST https://dkawxgwdqiirgmmjbvhc.supabase.co/functions/v1/subscription-renewal -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRrYXd4Z3dkcWlpcmdtbWpidmhjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MDgxOTI2NiwiZXhwIjoyMDc2Mzk1MjY2fQ.bVkrjuQJ4HJ8hzeBMe1AqC8e_Dv7m6gKq5I05ONM07U\" -H \"x-cron-secret: YOUR_FULL_SECRET_FROM_SUPABASE\" -H \"Content-Type: application/json\" -d '{}' >> /var/log/subscription-renewal.log 2>&1") | crontab -
+```sql
+SELECT 
+  prosrc 
+FROM pg_proc 
+WHERE proname = 'trigger_ml_auto_retrain';
 ```
 
-## Fix Duplicate Cron Job
+Look for the line with `ml_secret := '...'` and check the value.
 
-You have the cron job added twice. Clean it up:
+### Step 3: Update the Secret
 
-```bash
-# Edit crontab
-crontab -e
+You have two options:
 
-# Remove one of the duplicate lines, keep only one
-# Save and exit
+#### Option A: Update Database Settings (Recommended)
+
+Run this in SQL Editor (replace with your actual secret):
+
+```sql
+ALTER DATABASE postgres SET app.ml_auto_retrain_secret = 'YOUR_ACTUAL_SECRET_VALUE_HERE';
 ```
 
-Or use this command to remove duplicates:
+Make sure to:
+- Use single quotes around the value
+- Copy the exact value from Edge Function secrets
+- No extra spaces or line breaks
 
-```bash
-crontab -l | grep -v subscription-renewal | crontab -
-(crontab -l 2>/dev/null; echo "0 2 * * * curl -X POST https://dkawxgwdqiirgmmjbvhc.supabase.co/functions/v1/subscription-renewal -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRrYXd4Z3dkcWlpcmdtbWpidmhjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MDgxOTI2NiwiZXhwIjoyMDc2Mzk1MjY2fQ.bVkrjuQJ4HJ8hzeBMe1AqC8e_Dv7m6gKq5I05ONM07U\" -H \"x-cron-secret: 22ad6fb976c39c8355a736a1837e5d2775ebd48ec9f0124a9bd7d41b958385fc\" -H \"Content-Type: application/json\" -d '{}' >> /var/log/subscription-renewal.log 2>&1") | crontab -
+#### Option B: Update Function Directly
+
+1. Find the function in SQL Editor:
+```sql
+SELECT prosrc FROM pg_proc WHERE proname = 'trigger_ml_auto_retrain';
 ```
 
-## Test After Fixing
+2. Update the function with the correct secret:
 
-After updating the secret in Supabase (Option 1), wait 1-2 minutes, then test:
-
-```bash
-curl -X POST https://dkawxgwdqiirgmmjbvhc.supabase.co/functions/v1/subscription-renewal \
-  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRrYXd4Z3dkcWlpcmdtbWpidmhjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MDgxOTI2NiwiZXhwIjoyMDc2Mzk1MjY2fQ.bVkrjuQJ4HJ8hzeBMe1AqC8e_Dv7m6gKq5I05ONM07U" \
-  -H "x-cron-secret: 22ad6fb976c39c8355a736a1837e5d2775ebd48ec9f0124a9bd7d41b958385fc" \
-  -H "Content-Type: application/json" \
-  -d '{}'
+```sql
+CREATE OR REPLACE FUNCTION trigger_ml_auto_retrain()
+RETURNS void AS $$
+DECLARE
+  supabase_url TEXT;
+  service_role_key TEXT;
+  ml_secret TEXT;
+  response_id BIGINT;
+BEGIN
+  supabase_url := current_setting('app.supabase_url', true);
+  service_role_key := current_setting('app.service_role_key', true);
+  ml_secret := current_setting('app.ml_auto_retrain_secret', true);
+  
+  IF supabase_url IS NULL THEN
+    supabase_url := 'https://dkawxgwdqiirgmmjbvhc.supabase.co';
+  END IF;
+  
+  IF service_role_key IS NULL THEN
+    service_role_key := 'YOUR_SERVICE_ROLE_KEY';
+  END IF;
+  
+  IF ml_secret IS NULL THEN
+    -- ⚠️ REPLACE THIS WITH YOUR ACTUAL SECRET FROM EDGE FUNCTION SECRETS
+    ml_secret := 'YOUR_ACTUAL_ML_AUTO_RETRAIN_SECRET_VALUE';
+  END IF;
+  
+  SELECT net.http_post(
+    url := supabase_url || '/functions/v1/ml-auto-retrain',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'Authorization', 'Bearer ' || service_role_key,
+      'apikey', service_role_key,
+      'x-cron-secret', ml_secret
+    ),
+    body := '{}'::jsonb
+  ) INTO response_id;
+  
+  RAISE NOTICE 'ML auto-retrain triggered: Request ID %', response_id;
+  
+EXCEPTION
+  WHEN OTHERS THEN
+    RAISE WARNING 'Failed to trigger ML auto-retrain: %', SQLERRM;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 ```
 
-**Expected Response** (after fixing):
-```json
-{
-  "message": "Subscription renewal check complete",
-  "checked": 0,
-  "renewed": 0,
-  "errors": []
-}
+Replace `YOUR_ACTUAL_ML_AUTO_RETRAIN_SECRET_VALUE` with the exact value from Edge Function secrets.
+
+### Step 4: Test Again
+
+After updating, test manually:
+
+```sql
+SELECT trigger_ml_auto_retrain();
 ```
 
-## Quick Fix Commands
+Then check the Edge Function logs. You should see:
+- `matches: true` ✅
 
-Run these on your VPS:
+## Common Issues
 
-```bash
-# 1. Remove duplicate cron jobs
-crontab -l | grep -v subscription-renewal | crontab -
+### 1. Extra Spaces
+Make sure there are no leading/trailing spaces in the secret value.
 
-# 2. Add single cron job with correct secret
-(crontab -l 2>/dev/null; echo "0 2 * * * curl -X POST https://dkawxgwdqiirgmmjbvhc.supabase.co/functions/v1/subscription-renewal -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRrYXd4Z3dkcWlpcmdtbWpidmhjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MDgxOTI2NiwiZXhwIjoyMDc2Mzk1MjY2fQ.bVkrjuQJ4HJ8hzeBMe1AqC8e_Dv7m6gKq5I05ONM07U\" -H \"x-cron-secret: 22ad6fb976c39c8355a736a1837e5d2775ebd48ec9f0124a9bd7d41b958385fc\" -H \"Content-Type: application/json\" -d '{}' >> /var/log/subscription-renewal.log 2>&1") | crontab -
+### 2. Line Breaks
+If you copied the secret with line breaks, remove them.
 
-# 3. Verify
-crontab -l | grep subscription-renewal
+### 3. Quotes
+Make sure you're using single quotes `'...'` not double quotes `"..."` in SQL.
+
+### 4. Special Characters
+If your secret has special characters, they should be fine, but make sure they're copied exactly.
+
+## Quick Debug Query
+
+Run this to see what values are being used:
+
+```sql
+SELECT 
+  current_setting('app.ml_auto_retrain_secret', true) as db_secret,
+  current_setting('app.service_role_key', true) as service_key,
+  current_setting('app.supabase_url', true) as supabase_url;
 ```
 
-Then update Supabase secret to match (see Option 1 above).
+If `db_secret` is NULL, the function will use the hardcoded fallback value.
 
+## Verify Secret Match
+
+To double-check, you can temporarily add logging:
+
+```sql
+CREATE OR REPLACE FUNCTION trigger_ml_auto_retrain()
+RETURNS void AS $$
+DECLARE
+  supabase_url TEXT;
+  service_role_key TEXT;
+  ml_secret TEXT;
+  response_id BIGINT;
+BEGIN
+  -- ... (get values) ...
+  
+  -- Log the secret (first 10 chars only for security)
+  RAISE NOTICE 'Using secret: %...', LEFT(ml_secret, 10);
+  
+  -- ... (rest of function) ...
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+```
+
+Then compare the first 10 characters with your Edge Function secret to verify they match.

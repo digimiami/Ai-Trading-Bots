@@ -48,7 +48,7 @@ serve(async (req) => {
     // Get ALL trades (not just filled/closed) to show accurate total counts
     const { data: tradesData } = await supabaseClient
       .from('trades')
-      .select('pnl, fee, amount, price, bot_id, symbol, exchange, created_at, executed_at, status, entry_price, exit_price, side, size')
+      .select('id, pnl, fee, amount, price, bot_id, symbol, exchange, created_at, executed_at, status, entry_price, exit_price, side, size')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(10000) // Limit to prevent excessive data
@@ -56,7 +56,7 @@ serve(async (req) => {
     // Get paper trading trades and merge with real trades
     const { data: paperTradesData } = await supabaseClient
       .from('paper_trading_trades')
-      .select('pnl, fees, quantity, entry_price, exit_price, bot_id, symbol, exchange, created_at, executed_at, status, side')
+      .select('id, pnl, fees, quantity, entry_price, exit_price, bot_id, symbol, exchange, created_at, executed_at, status, side')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .limit(10000)
@@ -72,6 +72,29 @@ serve(async (req) => {
         fee: pt.fees || pt.fee || 0
       }))
     ]
+
+    const { data: closedPositionsData } = await supabaseClient
+      .from('trading_positions')
+      .select('id, bot_id, trade_id, symbol, exchange, realized_pnl, fees, closed_at')
+      .eq('user_id', user.id)
+      .eq('status', 'closed')
+      .not('realized_pnl', 'is', null)
+      .order('closed_at', { ascending: false })
+      .limit(10000)
+
+    const positionByTradeId = new Map<string, { pnl: number; fees: number }>()
+
+    if (closedPositionsData && closedPositionsData.length > 0) {
+      for (const position of closedPositionsData) {
+        if (position.trade_id) {
+          positionByTradeId.set(position.trade_id, {
+            pnl: parseFloat(position.realized_pnl || 0),
+            fees: parseFloat(position.fees || 0)
+          })
+        }
+
+      }
+    }
     
     console.log(`📊 Bot Report: Found ${tradesData?.length || 0} real trades and ${paperTradesData?.length || 0} paper trades (${mergedTradesData.length} total)`)
     
@@ -156,7 +179,7 @@ serve(async (req) => {
     if (botIds.length > 0) {
       const { data: realTrades } = await supabaseClient
         .from('trades')
-        .select('symbol, exchange, pnl, fee, amount, price, bot_id, executed_at, status, entry_price, exit_price, side, created_at')
+        .select('id, symbol, exchange, pnl, fee, amount, price, bot_id, executed_at, status, entry_price, exit_price, side, created_at')
         .eq('user_id', user.id)
         .in('bot_id', botIds)
         .limit(10000)
@@ -165,7 +188,7 @@ serve(async (req) => {
       // Get paper trading trades for contract summary
       const { data: paperTradesForContract } = await supabaseClient
         .from('paper_trading_trades')
-        .select('symbol, exchange, pnl, fees, quantity, entry_price, exit_price, bot_id, executed_at, status, side, created_at')
+        .select('id, symbol, exchange, pnl, fees, quantity, entry_price, exit_price, bot_id, executed_at, status, side, created_at')
         .eq('user_id', user.id)
         .in('bot_id', botIds)
         .limit(10000)
@@ -184,7 +207,7 @@ serve(async (req) => {
     if (allTradesForContract.length === 0) {
       const { data: realTrades } = await supabaseClient
         .from('trades')
-        .select('symbol, exchange, pnl, fee, amount, price, bot_id, executed_at, status, entry_price, exit_price, side, created_at')
+        .select('id, symbol, exchange, pnl, fee, amount, price, bot_id, executed_at, status, entry_price, exit_price, side, created_at')
         .eq('user_id', user.id)
         .limit(10000)
       allTradesForContract = realTrades || []
@@ -192,7 +215,7 @@ serve(async (req) => {
       // Also get paper trading trades
       const { data: paperTradesForContract } = await supabaseClient
         .from('paper_trading_trades')
-        .select('symbol, exchange, pnl, fees, quantity, entry_price, exit_price, bot_id, executed_at, status, side, created_at')
+        .select('id, symbol, exchange, pnl, fees, quantity, entry_price, exit_price, bot_id, executed_at, status, side, created_at')
         .eq('user_id', user.id)
         .limit(10000)
       
@@ -221,6 +244,7 @@ serve(async (req) => {
     
     // Group by contract
     const contractSummary: any = {}
+    const usedPositionTradeIds = new Set<string>()
     
     console.log(`📊 Processing ${tradesForContract.length} trades for contract summary...`)
     
@@ -288,6 +312,15 @@ serve(async (req) => {
               tradePnL = (entryPrice - exitPrice) * size - tradeFee
             }
           }
+        }
+
+        if ((tradePnL === 0 || trade.pnl === null || trade.pnl === undefined) && trade.id && positionByTradeId.has(trade.id)) {
+          const positionData = positionByTradeId.get(trade.id)!
+          tradePnL = positionData.pnl
+          if (!fee && positionData.fees) {
+            fee = positionData.fees
+          }
+          usedPositionTradeIds.add(trade.id)
         }
         
         contractSummary[contract].total_net_pnl += tradePnL
@@ -362,6 +395,54 @@ serve(async (req) => {
       console.log(`📊 Contract keys:`, Object.keys(contractSummary))
     } else {
       console.log(`⚠️ No trades found for contract summary`)
+    }
+
+    if (closedPositionsData && closedPositionsData.length > 0) {
+      for (const position of closedPositionsData) {
+        if (!position.symbol || !position.exchange) continue
+        if (position.trade_id && usedPositionTradeIds.has(position.trade_id)) {
+          continue
+        }
+        const contract = `${position.symbol}_${position.exchange}`
+        if (!contractSummary[contract]) {
+          contractSummary[contract] = {
+            contract: position.symbol,
+            exchange: position.exchange,
+            total_trades: 0,
+            total_net_pnl: 0,
+            total_fees_paid: 0,
+            net_profit_loss: 0,
+            win_trades: 0,
+            loss_trades: 0,
+            win_rate: 0,
+            drawdown: 0,
+            drawdown_percentage: 0,
+            peak_pnl: 0,
+            current_pnl: 0,
+            trades: []
+          }
+        }
+
+        const pnlValue = parseFloat(position.realized_pnl || 0)
+        const feeValue = parseFloat(position.fees || 0)
+        if (!Number.isNaN(pnlValue)) {
+          contractSummary[contract].total_trades++
+          contractSummary[contract].total_net_pnl += pnlValue
+          contractSummary[contract].total_fees_paid += Number.isNaN(feeValue) ? 0 : feeValue
+          contractSummary[contract].net_profit_loss = contractSummary[contract].total_net_pnl - contractSummary[contract].total_fees_paid
+
+          contractSummary[contract].trades.push({
+            pnl: pnlValue,
+            executed_at: position.closed_at || new Date().toISOString()
+          })
+
+          if (pnlValue > 0) {
+            contractSummary[contract].win_trades++
+          } else if (pnlValue < 0) {
+            contractSummary[contract].loss_trades++
+          }
+        }
+      }
     }
     
     // Update contract summary with bot P&L if trades don't have P&L
@@ -464,7 +545,7 @@ serve(async (req) => {
         // Calculate win/loss trades and drawdown
         // Process ALL trades and calculate PnL where possible (same logic as Performance page)
         // First, try to calculate PnL from entry/exit prices for trades that don't have it
-        const processedTrades = allBotTrades.map(t => {
+        let processedTrades = allBotTrades.map(t => {
           let calculatedPnL = parseFloat(t.pnl) || 0
           
           // CRITICAL: If PnL is 0 or null, try to calculate from entry/exit prices
@@ -492,9 +573,31 @@ serve(async (req) => {
               calculatedPnL = storedPnL
             }
           }
+
+          if ((calculatedPnL === 0 || t.pnl === null || t.pnl === undefined) && t.id && positionByTradeId.has(t.id)) {
+            calculatedPnL = positionByTradeId.get(t.id)!.pnl
+          }
           
           return { ...t, calculatedPnL }
         })
+
+        const botTradeIds = new Set(allBotTrades.map((t: any) => t.id).filter(Boolean))
+        const positionFallbackTrades = (closedPositionsData || [])
+          .filter((position: any) => position.bot_id === bot.id && (!position.trade_id || !botTradeIds.has(position.trade_id)))
+          .map((position: any) => ({
+            id: position.trade_id || `pos-${position.id}`,
+            bot_id: position.bot_id,
+            calculatedPnL: parseFloat(position.realized_pnl || 0),
+            executed_at: position.closed_at || new Date().toISOString(),
+            amount: 0,
+            price: 0,
+            fee: parseFloat(position.fees || 0),
+            side: 'long'
+          }))
+
+        if (positionFallbackTrades.length > 0) {
+          processedTrades = [...processedTrades, ...positionFallbackTrades]
+        }
         
         console.log(`📊 Bot ${bot.name}: Processing ${allBotTrades.length} trades, checking for PnL...`)
         const tradesWithStoredPnL = allBotTrades.filter(t => {
@@ -682,6 +785,7 @@ serve(async (req) => {
         let avgWin = 0
         let avgLoss = 0
         let totalVolume = 0
+        let sharpeRatio = 0
         
         if (tradesWithPnL.length > 0) {
           const winningTrades = tradesWithPnL.filter(t => (t as any).calculatedPnL > 0)
@@ -700,6 +804,23 @@ serve(async (req) => {
             const price = parseFloat(t.price || (t as any).entry_price || 0)
             return sum + (amount * price)
           }, 0)
+
+          const returns = tradesWithPnL
+            .map((t: any) => {
+              const amount = parseFloat(t.amount || t.size || t.quantity || 0)
+              const price = parseFloat(t.price || t.entry_price || 0)
+              const tradeValue = amount * price
+              if (tradeValue <= 0) return null
+              return ((t as any).calculatedPnL || 0) / tradeValue
+            })
+            .filter((value: number | null) => value !== null) as number[]
+
+          if (returns.length > 1) {
+            const avgReturn = returns.reduce((sum, r) => sum + r, 0) / returns.length
+            const variance = returns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / returns.length
+            const stdDev = Math.sqrt(variance)
+            sharpeRatio = stdDev > 0 ? avgReturn / stdDev : 0
+          }
         } else {
           // Fallback: estimate from bot PnL if available
           if (bot.pnl !== null && bot.pnl !== undefined && bot.pnl !== 0) {
@@ -728,8 +849,10 @@ serve(async (req) => {
         
         console.log(`📊 Bot ${bot.name}: ProfitFactor=${profitFactor.toFixed(2)}, AvgWin=$${avgWin.toFixed(2)}, AvgLoss=$${avgLoss.toFixed(2)}, Volume=$${totalVolume.toFixed(2)}`)
         
-        const botPnL = bot.pnl || 0
-        const netProfitLoss = botPnL - botFees
+        const tradesPnL = processedTrades.reduce((sum, t) => sum + ((t as any).calculatedPnL || 0), 0)
+        const botPnLFromBot = bot.pnl ?? 0
+        const resolvedPnL = botPnLFromBot !== 0 ? botPnLFromBot : tradesPnL
+        const netProfitLoss = resolvedPnL - botFees
         
         return {
           id: bot.id,
@@ -738,7 +861,7 @@ serve(async (req) => {
           exchange: bot.exchange,
           trading_type: bot.trading_type,
           status: bot.status,
-          pnl: botPnL,
+          pnl: Math.round(resolvedPnL * 100) / 100,
           total_fees: Math.round(botFees * 100) / 100,
           net_profit_loss: Math.round(netProfitLoss * 100) / 100,
           total_trades: allBotTrades.length || bot.total_trades || 0,
@@ -748,6 +871,7 @@ serve(async (req) => {
           profit_factor: Math.round(profitFactor * 100) / 100,
           avg_win: Math.round(avgWin * 100) / 100,
           avg_loss: Math.round(avgLoss * 100) / 100,
+          sharpe_ratio: Math.round(sharpeRatio * 100) / 100,
           total_volume: Math.round(totalVolume * 100) / 100,
           drawdown: Math.round(drawdown * 100) / 100,
           drawdown_percentage: Math.round(drawdownPercentage * 10) / 10,

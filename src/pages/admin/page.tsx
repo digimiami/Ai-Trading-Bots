@@ -22,6 +22,7 @@ import ManualTrading from './components/ManualTrading';
 import AdminNotifications from './components/AdminNotifications';
 import TrackingScripts from './components/TrackingScripts';
 import TrackingUrlGenerator from './components/TrackingUrlGenerator';
+import PromoAutoPoster from './components/PromoAutoPoster';
 
 interface User {
   id: string;
@@ -1124,6 +1125,7 @@ export default function AdminPage() {
     { id: 'bots', label: 'Trading Bots', icon: 'ri-robot-line' },
     { id: 'pablo-ready', label: 'Pablo Ready', icon: 'ri-star-line' },
     { id: 'crypto-news', label: 'Crypto News', icon: 'ri-newspaper-line' },
+    { id: 'promo-autopost', label: 'Promo Auto-Posting', icon: 'ri-megaphone-line' },
     { id: 'latest-trades', label: 'Latest Trades', icon: 'ri-exchange-line' },
     { id: 'webhook-test', label: 'Webhook Test', icon: 'ri-send-plane-line' },
     { id: 'analytics', label: 'Analytics', icon: 'ri-bar-chart-line' },
@@ -2850,6 +2852,11 @@ export default function AdminPage() {
         {/* Crypto News Tab */}
         {activeTab === 'crypto-news' && (
           <CryptoNewsManager />
+        )}
+
+        {/* Promo Auto-Posting Tab */}
+        {activeTab === 'promo-autopost' && (
+          <PromoAutoPoster />
         )}
 
         {/* Email Center Tab */}

@@ -23,8 +23,11 @@ The AI/ML system has two Edge Functions that need to be scheduled:
 2. Click **"Edge Functions"** → **"ml-auto-retrain"** → **"Schedules"** tab
 3. Click **"Create Schedule"** or **"New Schedule"**
 4. Configure:
-   - **Schedule Name**: `ml-auto-retrain-daily`
-   - **Cron Expression**: `0 2 * * *` (Daily at 2 AM UTC)
+   - **Schedule Name**: `ml-auto-retrain-6h`
+   - **Cron Expression**: `0 */6 * * *` (Every 6 hours - recommended)
+     - Alternative: `0 */4 * * *` (Every 4 hours - more responsive)
+     - Alternative: `0 2,14 * * *` (Twice daily at 2 AM and 2 PM UTC)
+     - Alternative: `0 2 * * *` (Daily at 2 AM UTC - minimum)
    - **HTTP Method**: `POST`
    - **Headers**:
      ```
@@ -79,8 +82,17 @@ LOG_DIR=/var/log/bot-scheduler
 # Edit crontab
 crontab -e
 
-# Add this line (daily at 2 AM UTC):
-0 2 * * * /root/scripts/call-ml-auto-retrain.sh
+# Recommended: Every 6 hours (4 times per day)
+0 */6 * * * /root/scripts/call-ml-auto-retrain.sh
+
+# Alternative: Every 4 hours (6 times per day - more responsive)
+# 0 */4 * * * /root/scripts/call-ml-auto-retrain.sh
+
+# Alternative: Twice daily at 2 AM and 2 PM UTC
+# 0 2,14 * * * /root/scripts/call-ml-auto-retrain.sh
+
+# Alternative: Daily at 2 AM UTC (minimum)
+# 0 2 * * * /root/scripts/call-ml-auto-retrain.sh
 
 # Save and exit (Ctrl+X, then Y, then Enter)
 ```
@@ -112,12 +124,14 @@ crontab -e
   >> /var/log/ml-auto-retrain.log 2>&1
 ```
 
-#### Alternative Cron Schedules
+#### Recommended Cron Schedules
 
-- **Every 6 hours**: `0 */6 * * *`
-- **Every 12 hours**: `0 */12 * * *`
-- **Daily at 2 AM UTC**: `0 2 * * *` (recommended)
-- **Twice daily (2 AM and 2 PM UTC)**: `0 2,14 * * *`
+For ML model retraining in trading, more frequent checks are recommended:
+
+- **Every 6 hours**: `0 */6 * * *` ⭐ **Recommended** (4 times per day - good balance)
+- **Every 4 hours**: `0 */4 * * *` (6 times per day - more responsive)
+- **Twice daily (2 AM and 2 PM UTC)**: `0 2,14 * * *` (2 times per day)
+- **Daily at 2 AM UTC**: `0 2 * * *` (1 time per day - minimum)
 
 ### 2. Setup ML Monitoring (Optional - On-Demand)
 

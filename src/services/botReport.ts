@@ -29,6 +29,10 @@ export interface BotReport {
     win_rate: number;
     win_trades?: number;
     loss_trades?: number;
+    profit_factor?: number;
+    avg_win?: number;
+    avg_loss?: number;
+    sharpe_ratio?: number;
     drawdown?: number;
     drawdown_percentage?: number;
     peak_pnl?: number;

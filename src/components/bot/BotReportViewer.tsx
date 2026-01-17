@@ -72,9 +72,9 @@ export default function BotReportViewer() {
       // Active Bots Section
       if (reportData.active_bots && reportData.active_bots.length > 0) {
         csv += 'ACTIVE BOTS\n';
-        csv += 'Bot Name,Symbol,Exchange,P&L,Total Fees,Net Profit/Loss,Total Trades,Win Rate\n';
+        csv += 'Bot Name,Symbol,Exchange,P&L,Total Fees,Net Profit/Loss,Total Trades,Win Rate,Profit Factor,Avg Win,Avg Loss,Sharpe Ratio\n';
         reportData.active_bots.forEach((bot) => {
-          csv += `${bot.name},${bot.symbol},${bot.exchange},${bot.pnl.toFixed(2)},${(bot.total_fees || 0).toFixed(2)},${(bot.net_profit_loss || 0).toFixed(2)},${bot.total_trades},${bot.win_rate.toFixed(2)}%\n`;
+          csv += `${bot.name},${bot.symbol},${bot.exchange},${bot.pnl.toFixed(2)},${(bot.total_fees || 0).toFixed(2)},${(bot.net_profit_loss || 0).toFixed(2)},${bot.total_trades},${bot.win_rate.toFixed(2)}%,${(bot.profit_factor || 0).toFixed(2)},${(bot.avg_win || 0).toFixed(2)},${(bot.avg_loss || 0).toFixed(2)},${(bot.sharpe_ratio || 0).toFixed(2)}\n`;
         });
       }
       
@@ -264,6 +264,9 @@ export default function BotReportViewer() {
                       <th className="text-right py-2 px-3">Trades</th>
                       <th className="text-right py-2 px-3">Win/Loss</th>
                       <th className="text-right py-2 px-3">Win Rate</th>
+                      <th className="text-right py-2 px-3">Profit Factor</th>
+                      <th className="text-right py-2 px-3">Avg Win/Loss</th>
+                      <th className="text-right py-2 px-3">Sharpe</th>
                       <th className="text-right py-2 px-3">Drawdown</th>
                       <th className="text-right py-2 px-3">Peak/Current P&L</th>
                     </tr>
@@ -291,6 +294,16 @@ export default function BotReportViewer() {
                           <span className={`font-medium ${bot.win_rate >= 50 ? 'text-green-600' : 'text-red-600'}`}>
                             {bot.win_rate.toFixed(1)}%
                           </span>
+                        </td>
+                        <td className="py-2 px-3 text-right font-medium text-gray-700">
+                          {(bot.profit_factor || 0).toFixed(2)}
+                        </td>
+                        <td className="py-2 px-3 text-right">
+                          <div className="text-green-600 font-medium">{formatCurrency(bot.avg_win || 0)}</div>
+                          <div className="text-red-600 text-xs font-medium">{formatCurrency(bot.avg_loss || 0)}</div>
+                        </td>
+                        <td className="py-2 px-3 text-right font-medium text-gray-700">
+                          {(bot.sharpe_ratio || 0).toFixed(2)}
                         </td>
                         <td className="py-2 px-3 text-right">
                           <div className="text-red-600 font-medium">{formatCurrency(bot.drawdown || 0)}</div>

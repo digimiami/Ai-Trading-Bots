@@ -329,7 +329,10 @@ export default function BotsPage() {
   // Extract cooldown information from bot logs
   const getCooldownInfo = (bot: TradingBot) => {
     const activity = getBotActivity(bot.id);
-    if (!activity || !activity.logs) return null;
+    const configuredBars = getCurrentCooldownBars(bot);
+    if (!activity || !activity.logs) {
+      return getCooldownInfoFromLastTrade(bot, configuredBars);
+    }
 
     // Look for cooldown messages in recent logs
     const cooldownLog = activity.logs.find(log => 
@@ -339,16 +342,19 @@ export default function BotsPage() {
       )
     );
 
-    if (!cooldownLog) return null;
+    if (!cooldownLog) {
+      return getCooldownInfoFromLastTrade(bot, configuredBars);
+    }
 
     // Parse cooldown message: "Cooldown active: X/Y bars passed since last trade"
     const message = cooldownLog.message;
     const match = message.match(/(\d+)\/(\d+)\s+bars/);
-    if (!match) return null;
+    if (!match) {
+      return getCooldownInfoFromLastTrade(bot, configuredBars);
+    }
 
     const barsPassed = parseInt(match[1], 10);
     const requiredBarsFromLog = parseInt(match[2], 10);
-    const configuredBars = getCurrentCooldownBars(bot);
     const requiredBars = configuredBars > 0 ? configuredBars : requiredBarsFromLog;
     const progress = requiredBars > 0
       ? Math.min(100, (barsPassed / requiredBars) * 100)
@@ -360,6 +366,52 @@ export default function BotsPage() {
       progress,
       isActive: requiredBars > 0 && barsPassed < requiredBars
     };
+  };
+
+  const getCooldownInfoFromLastTrade = (bot: TradingBot, configuredBars: number) => {
+    if (!configuredBars || configuredBars <= 0 || !bot.lastTradeAt) {
+      return null;
+    }
+
+    const minutesPerBar = resolveTimeframeMinutes(bot.timeframe || '1h');
+    if (!minutesPerBar) {
+      return null;
+    }
+
+    const lastTradeMs = Date.parse(bot.lastTradeAt);
+    if (Number.isNaN(lastTradeMs)) {
+      return null;
+    }
+
+    const barsPassed = Math.max(0, Math.floor((Date.now() - lastTradeMs) / (minutesPerBar * 60 * 1000)));
+    const requiredBars = configuredBars;
+    const progress = Math.min(100, (barsPassed / requiredBars) * 100);
+
+    return {
+      barsPassed,
+      requiredBars,
+      progress,
+      isActive: barsPassed < requiredBars
+    };
+  };
+
+  const resolveTimeframeMinutes = (timeframe: string): number | null => {
+    const match = timeframe.match(/^(\d+)(m|h|d|w)$/);
+    if (!match) return null;
+    const value = parseInt(match[1], 10);
+    if (Number.isNaN(value)) return null;
+    switch (match[2]) {
+      case 'm':
+        return value;
+      case 'h':
+        return value * 60;
+      case 'd':
+        return value * 60 * 24;
+      case 'w':
+        return value * 60 * 24 * 7;
+      default:
+        return null;
+    }
   };
 
   const getLogLevelColor = (level: string) => {

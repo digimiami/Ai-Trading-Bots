@@ -9433,7 +9433,8 @@ class BotExecutor {
             // Generate fresh nonce/timestamp/sign for every HTTP request attempt.
             const timestamp = (Date.now() + ((BotExecutor as any).bitunixServerTimeOffset || 0)).toString();
             const nonce = this.generateNonce();
-            const queryParams = endpoint.params; // Include marginCoin for futures account
+            const queryParamsRaw = endpoint.params; // Include marginCoin for futures account
+            const queryParams = this.normalizeBitunixQueryParams(queryParamsRaw);
             const body = ''; // Empty for GET requests
             const signature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, body, apiSecret);
             
@@ -11720,9 +11721,10 @@ class BotExecutor {
             const timestamp = (Date.now() + BotExecutor.bitunixServerTimeOffset).toString();
             const nonce = this.generateNonce();
             const body = '';
-            const signature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, body, apiSecret);
+            const normalizedQueryParams = this.normalizeBitunixQueryParams(queryParams);
+            const signature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, normalizedQueryParams, body, apiSecret);
             
-            const url = queryParams ? `${baseUrl}${endpoint}?${queryParams}` : `${baseUrl}${endpoint}`;
+            const url = normalizedQueryParams ? `${baseUrl}${endpoint}?${normalizedQueryParams}` : `${baseUrl}${endpoint}`;
             const response = await fetch(url, {
               method: 'GET',
               headers: {
@@ -12679,7 +12681,8 @@ class BotExecutor {
                       try {
                         const tpslTimestamp = (Date.now() + BotExecutor.bitunixServerTimeOffset).toString();
                         const tpslNonce = this.generateNonce();
-                        const tpslQueryParams = `symbol=${symbol.toUpperCase()}`;
+                        const tpslQueryParamsRaw = `symbol=${symbol.toUpperCase()}`;
+                        const tpslQueryParams = this.normalizeBitunixQueryParams(tpslQueryParamsRaw);
                         const tpslBody = '';
                         const tpslSig = await this.createBitunixSignatureDoubleSHA256(tpslNonce, tpslTimestamp, apiKey, tpslQueryParams, tpslBody, apiSecret);
                         
@@ -13436,6 +13439,26 @@ class BotExecutor {
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
   }
+
+  /**
+   * Bitunix signing requires query parameters to be sorted alphabetically.
+   * IMPORTANT: The exact query string used in the URL must match what we sign,
+   * otherwise Bitunix may return Code 10007 (Signature Error) or even Code 2.
+   */
+  private normalizeBitunixQueryParams(queryParams: string): string {
+    if (!queryParams || !queryParams.includes('=')) return queryParams || '';
+
+    const params = queryParams.split('&').filter(Boolean);
+    const paramMap: Record<string, string> = {};
+    for (const param of params) {
+      const [key, value] = param.split('=');
+      if (key) paramMap[key] = value || '';
+    }
+    return Object.keys(paramMap)
+      .sort()
+      .map((key) => `${key}=${paramMap[key]}`)
+      .join('&');
+  }
   
   private async createBitunixSignatureDoubleSHA256(nonce: string, timestamp: string, apiKey: string, queryParams: string, body: string, secretKey: string): Promise<string> {
     // According to Bitunix official docs:
@@ -13445,19 +13468,7 @@ class BotExecutor {
     // CRITICAL: Query parameters must be sorted alphabetically for GET requests
     
     // Step 1: Sort query parameters alphabetically (if present)
-    let sortedQueryParams = queryParams;
-    if (queryParams && queryParams.includes('=')) {
-      const params = queryParams.split('&');
-      const paramMap: { [key: string]: string } = {};
-      for (const param of params) {
-        const [key, value] = param.split('=');
-        if (key) {
-          paramMap[key] = value || '';
-        }
-      }
-      const sortedKeys = Object.keys(paramMap).sort();
-      sortedQueryParams = sortedKeys.map(key => `${key}=${paramMap[key]}`).join('&');
-    }
+    const sortedQueryParams = this.normalizeBitunixQueryParams(queryParams);
     
     // Step 2: Create digest with sorted query params
     const digestInput = nonce + timestamp + apiKey + sortedQueryParams + body;

@@ -514,6 +514,102 @@ export function useAdmin() {
     }
   };
 
+  const callPromoAutopost = async (action: string, params: any = {}) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL;
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session) {
+        throw new Error('No active session');
+      }
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/promo-autopost-manager`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action, ...params }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || 'Promo autopost request failed');
+      }
+
+      const data = await response.json();
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+
+      return data;
+    } catch (err: any) {
+      const errorMessage = err.message || 'Promo autopost request failed';
+      setError(errorMessage);
+      throw new Error(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getPromoAutopostSettings = async () => {
+    const data = await callPromoAutopost('getSettings');
+    return data.settings;
+  };
+
+  const savePromoAutopostSettings = async (settings: {
+    enabled: boolean;
+    min_win_rate: number;
+    min_pnl: number;
+    lookback_days: number;
+    include_bot_settings: boolean;
+    include_all_users: boolean;
+  }) => {
+    const data = await callPromoAutopost('saveSettings', settings);
+    return data.settings;
+  };
+
+  const listPromoAutopostTargets = async () => {
+    const data = await callPromoAutopost('listTargets');
+    return data.targets || [];
+  };
+
+  const upsertPromoAutopostTarget = async (target: {
+    id?: string;
+    label: string;
+    bot_token: string;
+    chat_id: string;
+    enabled: boolean;
+  }) => {
+    const data = await callPromoAutopost('upsertTarget', target);
+    return data.target;
+  };
+
+  const deletePromoAutopostTarget = async (id: string) => {
+    const data = await callPromoAutopost('deleteTarget', { id });
+    return data.success;
+  };
+
+  const previewPromoAutopostBots = async (settings: {
+    enabled?: boolean;
+    min_win_rate: number;
+    min_pnl: number;
+    lookback_days: number;
+    include_bot_settings: boolean;
+    include_all_users: boolean;
+  }) => {
+    const data = await callPromoAutopost('previewEligibleBots', settings);
+    return data.bots || [];
+  };
+
+  const runPromoAutopostNow = async () => {
+    const data = await callPromoAutopost('runNow');
+    return data;
+  };
+
   return {
     loading,
     error,
@@ -556,6 +652,14 @@ export function useAdmin() {
     getEmails,
     createMailbox,
     updateMailbox,
-    deleteMailbox
+    deleteMailbox,
+    // Promo auto-post
+    getPromoAutopostSettings,
+    savePromoAutopostSettings,
+    listPromoAutopostTargets,
+    upsertPromoAutopostTarget,
+    deletePromoAutopostTarget,
+    previewPromoAutopostBots,
+    runPromoAutopostNow
   };
 }

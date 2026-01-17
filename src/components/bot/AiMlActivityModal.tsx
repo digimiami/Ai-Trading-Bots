@@ -68,6 +68,26 @@ export default function AiMlActivityModal({ botId, botName, isOpen, onClose }: A
         return;
       }
 
+      // Fetch ML monitoring dashboard data (this will generate logs)
+      try {
+        const monitoringResponse = await fetch(
+          `${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/ml-monitoring?action=dashboard`,
+          {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+        if (monitoringResponse.ok) {
+          const monitoringData = await monitoringResponse.json();
+          console.log('ML Monitoring data:', monitoringData);
+        }
+      } catch (monitoringError) {
+        console.warn('ML Monitoring fetch failed (non-critical):', monitoringError);
+      }
+
       // Fetch optimization logs
       const { data: logsData, error: logsError } = await supabase
         .from('bot_activity_logs')
