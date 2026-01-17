@@ -27,7 +27,10 @@ const CARD_HEIGHT = 450;
 const RESVG_WASM_URL = "https://esm.sh/@resvg/resvg-wasm@2.6.2/index_bg.wasm";
 const LOGO_URL = "https://dkawxgwdqiirgmmjbvhc.supabase.co/storage/v1/object/public/pablobots-logo/logo_no_bg.png";
 const QR_URL = "https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=https://pablobots.com";
-const FONT_URL = "https://raw.githubusercontent.com/google/fonts/main/ofl/inter/Inter-Regular.ttf";
+const FONT_URLS = [
+  "https://raw.githubusercontent.com/google/fonts/main/ofl/inter/Inter-Regular.ttf",
+  "https://raw.githubusercontent.com/google/fonts/main/ofl/inter/Inter-Medium.ttf",
+];
 
 type PromoSettings = typeof DEFAULT_SETTINGS;
 
@@ -85,12 +88,21 @@ const ensureWasmReady = () => {
 
 const loadFont = async () => {
   if (fontData) return fontData;
-  const response = await fetch(FONT_URL);
-  if (!response.ok) {
-    throw new Error(`Failed to load font: ${response.status}`);
+  let lastError: Error | null = null;
+  for (const fontUrl of FONT_URLS) {
+    try {
+      const response = await fetch(fontUrl);
+      if (!response.ok) {
+        lastError = new Error(`Failed to load font: ${response.status}`);
+        continue;
+      }
+      fontData = await response.arrayBuffer();
+      return fontData;
+    } catch (error: any) {
+      lastError = error;
+    }
   }
-  fontData = await response.arrayBuffer();
-  return fontData;
+  throw new Error(lastError?.message || "Failed to load font");
 };
 
 const fetchAsDataUrl = async (url: string) => {
@@ -106,10 +118,20 @@ const fetchAsDataUrl = async (url: string) => {
 
 const loadImages = async () => {
   if (!logoDataUrl) {
-    logoDataUrl = await fetchAsDataUrl(LOGO_URL);
+    try {
+      logoDataUrl = await fetchAsDataUrl(LOGO_URL);
+    } catch (error) {
+      console.warn("⚠️ Logo load failed:", error);
+      logoDataUrl = null;
+    }
   }
   if (!qrDataUrl) {
-    qrDataUrl = await fetchAsDataUrl(QR_URL);
+    try {
+      qrDataUrl = await fetchAsDataUrl(QR_URL);
+    } catch (error) {
+      console.warn("⚠️ QR load failed:", error);
+      qrDataUrl = null;
+    }
   }
   return { logoDataUrl, qrDataUrl };
 };
@@ -168,7 +190,9 @@ const buildBotCardSvg = async (bot: EligibleBot) => {
       h(
         "div",
         { style: { display: "flex", alignItems: "center", gap: "12px" } },
-        h("img", { src: logoDataUrl, width: 42, height: 42, style: { borderRadius: "8px" } }),
+        logoDataUrl
+          ? h("img", { src: logoDataUrl, width: 42, height: 42, style: { borderRadius: "8px" } })
+          : h("div", { style: { width: "42px", height: "42px", borderRadius: "8px", backgroundColor: "#ffffff" } }),
         h("div", { style: { fontSize: "20px", fontWeight: 700 } }, "PabloBots"),
       ),
       h(
@@ -201,7 +225,9 @@ const buildBotCardSvg = async (bot: EligibleBot) => {
         "div",
         { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: "10px" } },
         h("div", { style: { fontSize: "18px", color: "#e2e8f0" } }, `Trades: ${bot.totalTrades}`),
-        h("img", { src: qrDataUrl, width: 120, height: 120, style: { backgroundColor: "#ffffff", padding: "10px", borderRadius: "12px" } }),
+        qrDataUrl
+          ? h("img", { src: qrDataUrl, width: 120, height: 120, style: { backgroundColor: "#ffffff", padding: "10px", borderRadius: "12px" } })
+          : h("div", { style: { width: "120px", height: "120px", borderRadius: "12px", backgroundColor: "#ffffff" } }),
       ),
     ),
     {
@@ -245,7 +271,9 @@ const buildPerformanceCardSvg = async (bot: EligibleBot, lookbackDays: number) =
       h(
         "div",
         { style: { display: "flex", alignItems: "center", gap: "12px" } },
-        h("img", { src: logoDataUrl, width: 42, height: 42, style: { borderRadius: "8px" } }),
+        logoDataUrl
+          ? h("img", { src: logoDataUrl, width: 42, height: 42, style: { borderRadius: "8px" } })
+          : h("div", { style: { width: "42px", height: "42px", borderRadius: "8px", backgroundColor: "#ffffff" } }),
         h("div", { style: { fontSize: "20px", fontWeight: 700 } }, "PabloBots Performance"),
       ),
       h(
@@ -273,7 +301,9 @@ const buildPerformanceCardSvg = async (bot: EligibleBot, lookbackDays: number) =
       h(
         "div",
         { style: { display: "flex", justifyContent: "flex-end" } },
-        h("img", { src: qrDataUrl, width: 120, height: 120, style: { backgroundColor: "#ffffff", padding: "10px", borderRadius: "12px" } }),
+        qrDataUrl
+          ? h("img", { src: qrDataUrl, width: 120, height: 120, style: { backgroundColor: "#ffffff", padding: "10px", borderRadius: "12px" } })
+          : h("div", { style: { width: "120px", height: "120px", borderRadius: "12px", backgroundColor: "#ffffff" } }),
       ),
     ),
     {
@@ -335,6 +365,29 @@ const sendTelegramMessage = async (target: PromoTarget, message: string) => {
   const result = await response.json();
   if (!result.ok) {
     throw new Error(result.description || "Failed to send Telegram message");
+  }
+  return result;
+};
+
+const sendTelegramPhoto = async (target: PromoTarget, file: { name: string; data: Uint8Array; caption?: string }) => {
+  const form = new FormData();
+  form.append("chat_id", target.chat_id);
+  if (file.caption) {
+    form.append("caption", file.caption);
+    form.append("parse_mode", "HTML");
+  }
+  form.append("photo", new Blob([file.data], { type: "image/png" }), `${file.name}.png`);
+
+  const response = await fetch(
+    `https://api.telegram.org/bot${target.bot_token}/sendPhoto`,
+    {
+      method: "POST",
+      body: form,
+    },
+  );
+  const result = await response.json();
+  if (!result.ok) {
+    throw new Error(result.description || "Failed to send Telegram photo");
   }
   return result;
 };
@@ -700,6 +753,7 @@ serve(async (req) => {
           const caption = buildCaption(bot, settings.include_bot_settings);
           let botCard: Uint8Array | null = null;
           let performanceCard: Uint8Array | null = null;
+          let renderErrorMessage: string | null = null;
 
           try {
             const [botSvg, performanceSvg] = await Promise.all([
@@ -709,16 +763,23 @@ serve(async (req) => {
             botCard = await renderSvgToPng(botSvg);
             performanceCard = await renderSvgToPng(performanceSvg);
           } catch (renderError) {
+            renderErrorMessage = renderError?.message || String(renderError);
             console.warn("⚠️ Card rendering failed, falling back to text only.", renderError);
           }
 
           for (const target of (targets || []) as PromoTarget[]) {
             try {
               if (botCard && performanceCard) {
-                await sendTelegramMediaGroup(target, [
-                  { name: "bot_card", data: botCard, caption },
-                  { name: "performance_card", data: performanceCard },
-                ]);
+                try {
+                  await sendTelegramMediaGroup(target, [
+                    { name: "bot_card", data: botCard, caption },
+                    { name: "performance_card", data: performanceCard },
+                  ]);
+                } catch (mediaError: any) {
+                  console.warn("⚠️ Media group failed, trying single photos:", mediaError);
+                  await sendTelegramPhoto(target, { name: "bot_card", data: botCard, caption });
+                  await sendTelegramPhoto(target, { name: "performance_card", data: performanceCard });
+                }
               } else {
                 await sendTelegramMessage(target, caption);
               }
@@ -730,17 +791,22 @@ serve(async (req) => {
                 status: "sent",
                 message: "Promo auto-post sent (manual run)",
                 sent_at: new Date().toISOString(),
-                payload: { caption },
+                payload: { caption, render_error: renderErrorMessage },
               });
               results.push({ bot_id: bot.id, target_id: target.id, status: "sent" });
             } catch (sendError: any) {
+              try {
+                await sendTelegramMessage(target, caption);
+              } catch (fallbackError) {
+                console.warn("⚠️ Media and text send failed:", fallbackError);
+              }
               await logResult(supabaseClient, {
                 target_id: target.id,
                 bot_id: bot.id,
                 user_id: bot.user_id,
                 status: "failed",
                 error_message: sendError?.message || String(sendError),
-                payload: { caption },
+                payload: { caption, render_error: renderErrorMessage },
               });
               results.push({
                 bot_id: bot.id,
