@@ -2,6 +2,10 @@
 // @ts-nocheck
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import satori from "https://esm.sh/satori@0.10.14";
+import { h } from "https://esm.sh/preact@10.19.3";
+import { Resvg, initWasm } from "https://esm.sh/@resvg/resvg-wasm@2.6.2";
+import { encode as b64encode } from "https://deno.land/std@0.168.0/encoding/base64.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -9,6 +13,12 @@ const corsHeaders = {
 };
 
 const DEFAULT_LOOKBACK_DAYS = 7;
+const CARD_WIDTH = 800;
+const CARD_HEIGHT = 450;
+const RESVG_WASM_URL = "https://esm.sh/@resvg/resvg-wasm@2.6.2/index_bg.wasm";
+const LOGO_URL = "https://dkawxgwdqiirgmmjbvhc.supabase.co/storage/v1/object/public/pablobots-logo/logo_no_bg.png";
+const QR_URL = "https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=https://pablobots.com";
+const FONT_URL = "https://raw.githubusercontent.com/google/fonts/main/ofl/inter/Inter-Regular.ttf";
 
 type PromoSettings = {
   enabled: boolean;
@@ -59,6 +69,49 @@ type BotStats = {
 
 type EligibleBot = BotRow & BotStats;
 
+let wasmReady: Promise<void> | null = null;
+let fontData: ArrayBuffer | null = null;
+let logoDataUrl: string | null = null;
+let qrDataUrl: string | null = null;
+
+const ensureWasmReady = () => {
+  if (!wasmReady) {
+    wasmReady = initWasm(fetch(RESVG_WASM_URL));
+  }
+  return wasmReady;
+};
+
+const loadFont = async () => {
+  if (fontData) return fontData;
+  const response = await fetch(FONT_URL);
+  if (!response.ok) {
+    throw new Error(`Failed to load font: ${response.status}`);
+  }
+  fontData = await response.arrayBuffer();
+  return fontData;
+};
+
+const fetchAsDataUrl = async (url: string) => {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to load image: ${response.status}`);
+  }
+  const contentType = response.headers.get("content-type") || "image/png";
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  const base64 = b64encode(bytes);
+  return `data:${contentType};base64,${base64}`;
+};
+
+const loadImages = async () => {
+  if (!logoDataUrl) {
+    logoDataUrl = await fetchAsDataUrl(LOGO_URL);
+  }
+  if (!qrDataUrl) {
+    qrDataUrl = await fetchAsDataUrl(QR_URL);
+  }
+  return { logoDataUrl, qrDataUrl };
+};
+
 const escapeHtml = (value: string) =>
   value
     .replaceAll("&", "&amp;")
@@ -89,80 +142,161 @@ const buildSettingsLines = (bot: BotRow) => {
   return lines;
 };
 
-const buildBotCardSvg = (bot: EligibleBot) => {
+const buildBotCardSvg = async (bot: EligibleBot) => {
+  const { logoDataUrl, qrDataUrl } = await loadImages();
+  const font = await loadFont();
   const pnlColor = bot.totalPnL >= 0 ? "#22c55e" : "#ef4444";
-  return `
-<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450">
-  <defs>
-    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
-      <stop offset="0%" stop-color="#0f172a"/>
-      <stop offset="100%" stop-color="#111827"/>
-    </linearGradient>
-  </defs>
-  <rect width="800" height="450" fill="url(#bg)" rx="24"/>
-  <text x="40" y="70" fill="#e2e8f0" font-size="28" font-family="Arial, sans-serif" font-weight="bold">
-    PabloBots Share Card
-  </text>
-  <text x="40" y="120" fill="#ffffff" font-size="36" font-family="Arial, sans-serif" font-weight="bold">
-    ${escapeHtml(bot.name)}
-  </text>
-  <text x="40" y="165" fill="#94a3b8" font-size="22" font-family="Arial, sans-serif">
-    ${escapeHtml(bot.symbol)} • ${escapeHtml(bot.exchange)} • ${escapeHtml(bot.trading_type)}
-  </text>
-  <text x="40" y="230" fill="${pnlColor}" font-size="48" font-family="Arial, sans-serif" font-weight="bold">
-    ${formatCurrency(bot.totalPnL)}
-  </text>
-  <text x="40" y="270" fill="#e2e8f0" font-size="20" font-family="Arial, sans-serif">
-    7d PnL
-  </text>
-  <text x="320" y="230" fill="#38bdf8" font-size="36" font-family="Arial, sans-serif" font-weight="bold">
-    ${formatWinRate(bot.winRate)}
-  </text>
-  <text x="320" y="270" fill="#e2e8f0" font-size="20" font-family="Arial, sans-serif">
-    Win Rate (${bot.winTrades}W / ${bot.lossTrades}L)
-  </text>
-  <text x="40" y="340" fill="#e2e8f0" font-size="22" font-family="Arial, sans-serif">
-    Trades: ${bot.totalTrades}
-  </text>
-  <text x="40" y="390" fill="#94a3b8" font-size="18" font-family="Arial, sans-serif">
-    Auto-shared by PabloBots Admin
-  </text>
-</svg>`;
+
+  const svg = await satori(
+    h(
+      "div",
+      {
+        style: {
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          padding: "36px",
+          background: "linear-gradient(135deg, #0f172a 0%, #111827 100%)",
+          color: "#f8fafc",
+          fontFamily: "Inter",
+        },
+      },
+      h(
+        "div",
+        { style: { display: "flex", alignItems: "center", gap: "12px" } },
+        h("img", { src: logoDataUrl, width: 42, height: 42, style: { borderRadius: "8px" } }),
+        h("div", { style: { fontSize: "20px", fontWeight: 700 } }, "PabloBots"),
+      ),
+      h(
+        "div",
+        { style: { marginTop: "10px", display: "flex", flexDirection: "column", gap: "8px" } },
+        h("div", { style: { fontSize: "30px", fontWeight: 700 } }, bot.name),
+        h(
+          "div",
+          { style: { fontSize: "18px", color: "#94a3b8" } },
+          `${bot.symbol} • ${bot.exchange} • ${bot.trading_type}`,
+        ),
+      ),
+      h(
+        "div",
+        { style: { display: "flex", gap: "24px", marginTop: "12px" } },
+        h(
+          "div",
+          { style: { display: "flex", flexDirection: "column", gap: "6px" } },
+          h("div", { style: { fontSize: "36px", fontWeight: 700, color: pnlColor } }, formatCurrency(bot.totalPnL)),
+          h("div", { style: { fontSize: "16px", color: "#e2e8f0" } }, "7d PnL"),
+        ),
+        h(
+          "div",
+          { style: { display: "flex", flexDirection: "column", gap: "6px" } },
+          h("div", { style: { fontSize: "28px", fontWeight: 700, color: "#38bdf8" } }, formatWinRate(bot.winRate)),
+          h("div", { style: { fontSize: "16px", color: "#e2e8f0" } }, `Win Rate (${bot.winTrades}W / ${bot.lossTrades}L)`),
+        ),
+      ),
+      h(
+        "div",
+        { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: "10px" } },
+        h("div", { style: { fontSize: "18px", color: "#e2e8f0" } }, `Trades: ${bot.totalTrades}`),
+        h("img", { src: qrDataUrl, width: 120, height: 120, style: { backgroundColor: "#ffffff", padding: "10px", borderRadius: "12px" } }),
+      ),
+    ),
+    {
+      width: CARD_WIDTH,
+      height: CARD_HEIGHT,
+      fonts: [
+        {
+          name: "Inter",
+          data: font,
+          weight: 400,
+          style: "normal",
+        },
+      ],
+    },
+  );
+
+  return svg;
 };
 
-const buildPerformanceCardSvg = (bot: EligibleBot, lookbackDays: number) => {
+const buildPerformanceCardSvg = async (bot: EligibleBot, lookbackDays: number) => {
+  const { logoDataUrl, qrDataUrl } = await loadImages();
+  const font = await loadFont();
   const pnlColor = bot.totalPnL >= 0 ? "#22c55e" : "#ef4444";
-  return `
-<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450">
-  <defs>
-    <linearGradient id="bg2" x1="0" x2="1" y1="0" y2="1">
-      <stop offset="0%" stop-color="#111827"/>
-      <stop offset="100%" stop-color="#1f2937"/>
-    </linearGradient>
-  </defs>
-  <rect width="800" height="450" fill="url(#bg2)" rx="24"/>
-  <text x="40" y="70" fill="#f8fafc" font-size="28" font-family="Arial, sans-serif" font-weight="bold">
-    Bot Performance (${lookbackDays}d)
-  </text>
-  <text x="40" y="130" fill="#ffffff" font-size="32" font-family="Arial, sans-serif" font-weight="bold">
-    ${escapeHtml(bot.symbol)}
-  </text>
-  <text x="40" y="175" fill="#94a3b8" font-size="20" font-family="Arial, sans-serif">
-    ${escapeHtml(bot.exchange)} • ${escapeHtml(bot.trading_type)}
-  </text>
-  <text x="40" y="245" fill="${pnlColor}" font-size="46" font-family="Arial, sans-serif" font-weight="bold">
-    ${formatCurrency(bot.totalPnL)}
-  </text>
-  <text x="40" y="285" fill="#e2e8f0" font-size="20" font-family="Arial, sans-serif">
-    Total PnL • Fees: $${bot.totalFees.toFixed(2)}
-  </text>
-  <text x="40" y="350" fill="#38bdf8" font-size="32" font-family="Arial, sans-serif" font-weight="bold">
-    ${formatWinRate(bot.winRate)}
-  </text>
-  <text x="40" y="390" fill="#e2e8f0" font-size="20" font-family="Arial, sans-serif">
-    ${bot.totalTrades} trades in last ${lookbackDays} days
-  </text>
-</svg>`;
+
+  const svg = await satori(
+    h(
+      "div",
+      {
+        style: {
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          padding: "36px",
+          background: "linear-gradient(135deg, #111827 0%, #1f2937 100%)",
+          color: "#f8fafc",
+          fontFamily: "Inter",
+        },
+      },
+      h(
+        "div",
+        { style: { display: "flex", alignItems: "center", gap: "12px" } },
+        h("img", { src: logoDataUrl, width: 42, height: 42, style: { borderRadius: "8px" } }),
+        h("div", { style: { fontSize: "20px", fontWeight: 700 } }, "PabloBots Performance"),
+      ),
+      h(
+        "div",
+        { style: { marginTop: "10px", display: "flex", flexDirection: "column", gap: "8px" } },
+        h("div", { style: { fontSize: "28px", fontWeight: 700 } }, bot.symbol),
+        h("div", { style: { fontSize: "18px", color: "#94a3b8" } }, `${bot.exchange} • ${bot.trading_type}`),
+      ),
+      h(
+        "div",
+        { style: { display: "flex", gap: "24px", marginTop: "12px" } },
+        h(
+          "div",
+          { style: { display: "flex", flexDirection: "column", gap: "6px" } },
+          h("div", { style: { fontSize: "34px", fontWeight: 700, color: pnlColor } }, formatCurrency(bot.totalPnL)),
+          h("div", { style: { fontSize: "16px", color: "#e2e8f0" } }, `Fees: $${bot.totalFees.toFixed(2)}`),
+        ),
+        h(
+          "div",
+          { style: { display: "flex", flexDirection: "column", gap: "6px" } },
+          h("div", { style: { fontSize: "26px", fontWeight: 700, color: "#38bdf8" } }, formatWinRate(bot.winRate)),
+          h("div", { style: { fontSize: "16px", color: "#e2e8f0" } }, `${bot.totalTrades} trades in ${lookbackDays}d`),
+        ),
+      ),
+      h(
+        "div",
+        { style: { display: "flex", justifyContent: "flex-end" } },
+        h("img", { src: qrDataUrl, width: 120, height: 120, style: { backgroundColor: "#ffffff", padding: "10px", borderRadius: "12px" } }),
+      ),
+    ),
+    {
+      width: CARD_WIDTH,
+      height: CARD_HEIGHT,
+      fonts: [
+        {
+          name: "Inter",
+          data: font,
+          weight: 400,
+          style: "normal",
+        },
+      ],
+    },
+  );
+
+  return svg;
+};
+
+const renderSvgToPng = async (svg: string) => {
+  await ensureWasmReady();
+  const resvg = new Resvg(svg, {
+    fitTo: { mode: "width", value: CARD_WIDTH },
+  });
+  return resvg.render().asPng();
 };
 
 const buildCaption = (bot: EligibleBot, includeSettings: boolean) => {
@@ -199,6 +333,38 @@ const sendTelegramMessage = async (target: PromoTarget, message: string) => {
   const result = await response.json();
   if (!result.ok) {
     throw new Error(result.description || "Failed to send Telegram message");
+  }
+  return result;
+};
+
+const sendTelegramMediaGroup = async (
+  target: PromoTarget,
+  files: { name: string; data: Uint8Array; caption?: string }[],
+) => {
+  const media = files.map((file, idx) => ({
+    type: "photo",
+    media: `attach://${file.name}`,
+    caption: idx === 0 ? file.caption : undefined,
+    parse_mode: idx === 0 ? "HTML" : undefined,
+  }));
+
+  const form = new FormData();
+  form.append("chat_id", target.chat_id);
+  form.append("media", JSON.stringify(media));
+  files.forEach((file) => {
+    form.append(file.name, new Blob([file.data], { type: "image/png" }), `${file.name}.png`);
+  });
+
+  const response = await fetch(
+    `https://api.telegram.org/bot${target.bot_token}/sendMediaGroup`,
+    {
+      method: "POST",
+      body: form,
+    },
+  );
+  const result = await response.json();
+  if (!result.ok) {
+    throw new Error(result.description || "Failed to send Telegram media group");
   }
   return result;
 };
@@ -382,9 +548,29 @@ serve(async (req) => {
     const results: any[] = [];
     for (const bot of eligibleBots) {
       const caption = buildCaption(bot, settings.include_bot_settings);
+      let botCard: Uint8Array | null = null;
+      let performanceCard: Uint8Array | null = null;
+
+      try {
+        const [botSvg, performanceSvg] = await Promise.all([
+          buildBotCardSvg(bot),
+          buildPerformanceCardSvg(bot, settings.lookback_days),
+        ]);
+        botCard = await renderSvgToPng(botSvg);
+        performanceCard = await renderSvgToPng(performanceSvg);
+      } catch (renderError) {
+        console.warn("⚠️ Card rendering failed, falling back to text only.", renderError);
+      }
       for (const target of targets) {
         try {
-          await sendTelegramMessage(target, caption);
+          if (botCard && performanceCard) {
+            await sendTelegramMediaGroup(target, [
+              { name: "bot_card", data: botCard, caption },
+              { name: "performance_card", data: performanceCard },
+            ]);
+          } else {
+            await sendTelegramMessage(target, caption);
+          }
 
           await logResult(supabaseClient, {
             target_id: target.id,
