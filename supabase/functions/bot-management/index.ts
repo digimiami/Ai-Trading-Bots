@@ -109,6 +109,9 @@ serve(async (req) => {
           peakEquity: number;
           hasClosed: boolean;
         }>();
+        const seenTradeIds = new Set<string>();
+        const countedTradeIds = new Set<string>();
+        const tradeFeesById = new Map<string, number>();
 
         const ensureStats = (botId: string) => {
           if (!statsMap.has(botId)) {
@@ -133,7 +136,7 @@ serve(async (req) => {
 
           const { data: realTrades, error: realTradesError } = await supabaseClient
             .from('trades')
-            .select('bot_id, status, pnl, fee, executed_at')
+            .select('id, bot_id, status, pnl, fee, executed_at, amount, side, price')
             .eq('user_id', user.id)
             .in('bot_id', botIds)
             .order('executed_at', { ascending: true });
@@ -144,10 +147,32 @@ serve(async (req) => {
             for (const trade of realTrades) {
               if (!trade || !trade.bot_id) continue;
               const stats = ensureStats(trade.bot_id);
+              if (trade.id) {
+                seenTradeIds.add(trade.id);
+              }
               const status = (trade.status || '').toString().toLowerCase();
-              const pnlValue = trade.pnl !== null && trade.pnl !== undefined ? parseFloat(trade.pnl) : NaN;
+              let pnlValue = trade.pnl !== null && trade.pnl !== undefined ? parseFloat(trade.pnl) : NaN;
               const feeValue = trade.fee !== null && trade.fee !== undefined ? parseFloat(trade.fee) : 0;
-              // Note: trades table doesn't have exit_price column
+              if (trade.id && !Number.isNaN(feeValue)) {
+                tradeFeesById.set(trade.id, feeValue);
+              }
+              const hasExitPrice = trade.exit_price !== null && trade.exit_price !== undefined;
+              if (Number.isNaN(pnlValue) && hasExitPrice) {
+                const entryPrice = parseFloat(trade.entry_price || trade.price || 0);
+                const exitPrice = parseFloat(trade.exit_price || 0);
+                const size = parseFloat(trade.amount || trade.size || 0);
+                const side = (trade.side || 'long').toLowerCase();
+                if (entryPrice > 0 && exitPrice > 0 && size > 0) {
+                  if (side === 'short' || side === 'sell') {
+                    pnlValue = (entryPrice - exitPrice) * size;
+                  } else {
+                    pnlValue = (exitPrice - entryPrice) * size;
+                  }
+                  if (!Number.isNaN(feeValue)) {
+                    pnlValue -= feeValue;
+                  }
+                }
+              }
 
               // Count as executed if status is in executedStatuses
               if (executedStatuses.has(status)) {
@@ -158,7 +183,9 @@ serve(async (req) => {
               // Count as closed if:
               // 1. Status is in closedStatuses, OR
               // 2. Trade has a PnL value (meaning it's been closed)
-              const isClosed = closedStatuses.has(status) || (!Number.isNaN(pnlValue) && pnlValue !== 0);
+              const isClosed = closedStatuses.has(status)
+                || (!Number.isNaN(pnlValue) && pnlValue !== 0)
+                || hasExitPrice;
               
               if (isClosed && !Number.isNaN(pnlValue)) {
                 stats.closedTrades += 1;
@@ -168,6 +195,9 @@ serve(async (req) => {
                   stats.winTrades += 1;
                 } else if (pnlValue < 0) {
                   stats.lossTrades += 1;
+                }
+                if (trade.id) {
+                  countedTradeIds.add(trade.id);
                 }
               }
 
@@ -182,7 +212,7 @@ serve(async (req) => {
 
           const { data: paperTrades, error: paperTradesError } = await supabaseClient
             .from('paper_trading_trades')
-            .select('bot_id, status, pnl, fees, executed_at, exit_price')
+            .select('id, bot_id, status, pnl, fees, executed_at, exit_price, entry_price, quantity, side')
             .eq('user_id', user.id)
             .in('bot_id', botIds)
             .order('executed_at', { ascending: true });
@@ -193,10 +223,32 @@ serve(async (req) => {
             for (const trade of paperTrades) {
               if (!trade || !trade.bot_id) continue;
               const stats = ensureStats(trade.bot_id);
+              if (trade.id) {
+                seenTradeIds.add(trade.id);
+              }
               const status = (trade.status || '').toString().toLowerCase();
-              const pnlValue = trade.pnl !== null && trade.pnl !== undefined ? parseFloat(trade.pnl) : NaN;
+              let pnlValue = trade.pnl !== null && trade.pnl !== undefined ? parseFloat(trade.pnl) : NaN;
               const feeValue = trade.fees !== null && trade.fees !== undefined ? parseFloat(trade.fees) : 0;
               const hasExitPrice = trade.exit_price !== null && trade.exit_price !== undefined;
+              if (Number.isNaN(pnlValue) && hasExitPrice) {
+                const entryPrice = parseFloat(trade.entry_price || 0);
+                const exitPrice = parseFloat(trade.exit_price || 0);
+                const quantity = parseFloat(trade.quantity || 0);
+                const side = (trade.side || 'long').toLowerCase();
+                if (entryPrice > 0 && exitPrice > 0 && quantity > 0) {
+                  if (side === 'short' || side === 'sell') {
+                    pnlValue = (entryPrice - exitPrice) * quantity;
+                  } else {
+                    pnlValue = (exitPrice - entryPrice) * quantity;
+                  }
+                  if (!Number.isNaN(feeValue)) {
+                    pnlValue -= feeValue;
+                  }
+                }
+              }
+              if (trade.id && !Number.isNaN(feeValue)) {
+                tradeFeesById.set(trade.id, feeValue);
+              }
 
               // Count as executed if status is in executedStatuses
               if (executedStatuses.has(status)) {
@@ -208,7 +260,9 @@ serve(async (req) => {
               // 1. Status is in closedStatuses, OR
               // 2. Trade has a PnL value (meaning it's been closed), OR
               // 3. Trade has an exit_price (meaning position was closed)
-              const isClosed = closedStatuses.has(status) || (!Number.isNaN(pnlValue) && pnlValue !== 0) || hasExitPrice;
+              const isClosed = closedStatuses.has(status)
+                || (!Number.isNaN(pnlValue) && pnlValue !== 0)
+                || hasExitPrice;
               
               if (isClosed && !Number.isNaN(pnlValue)) {
                 stats.closedTrades += 1;
@@ -219,6 +273,9 @@ serve(async (req) => {
                 } else if (pnlValue < 0) {
                   stats.lossTrades += 1;
                 }
+                if (trade.id) {
+                  countedTradeIds.add(trade.id);
+                }
               }
 
               // Calculate drawdown: track peak equity and current drawdown
@@ -226,6 +283,88 @@ serve(async (req) => {
                 stats.peakEquity = Math.max(stats.peakEquity, stats.pnl);
                 const currentDrawdown = stats.peakEquity - stats.pnl;
                 stats.maxDrawdown = Math.max(stats.maxDrawdown, currentDrawdown);
+              }
+            }
+          }
+
+          const { data: closedPositions, error: positionsError } = await supabaseClient
+            .from('trading_positions')
+            .select('bot_id, trade_id, realized_pnl, fees, entry_price, exit_price, quantity, side')
+            .eq('user_id', user.id)
+            .in('bot_id', botIds)
+            .in('status', ['closed', 'stopped', 'taken_profit', 'manual_close', 'liquidated']);
+
+          if (positionsError) {
+            console.warn('Error fetching closed positions for stats:', positionsError);
+          } else if (closedPositions) {
+            const positionsWithPnL = closedPositions.filter(p => p.realized_pnl !== null && p.realized_pnl !== undefined);
+            const positionsWithExit = closedPositions.filter(p => p.exit_price !== null && p.exit_price !== undefined);
+            console.log(`📊 Closed positions: total=${closedPositions.length}, withPnL=${positionsWithPnL.length}, withExitPrice=${positionsWithExit.length}`);
+            for (const position of closedPositions) {
+              if (!position || !position.bot_id) continue;
+              const stats = ensureStats(position.bot_id);
+              let pnlValue = position.realized_pnl !== null && position.realized_pnl !== undefined
+                ? parseFloat(position.realized_pnl)
+                : NaN;
+              if (Number.isNaN(pnlValue)) {
+                const entryPrice = parseFloat(position.entry_price || 0);
+                const exitPrice = parseFloat(position.exit_price || 0);
+                const quantity = parseFloat(position.quantity || 0);
+                const side = (position.side || 'long').toLowerCase();
+                if (entryPrice > 0 && exitPrice > 0 && quantity > 0) {
+                  if (side === 'short' || side === 'sell') {
+                    pnlValue = (entryPrice - exitPrice) * quantity;
+                  } else {
+                    pnlValue = (exitPrice - entryPrice) * quantity;
+                  }
+                  const feeValue = parseFloat(position.fees || 0);
+                  if (!Number.isNaN(feeValue)) {
+                    pnlValue -= feeValue;
+                  }
+                }
+              }
+              if (Number.isNaN(pnlValue)) continue;
+
+              const tradeId = position.trade_id;
+              if (tradeId && countedTradeIds.has(tradeId)) {
+                continue;
+              }
+
+              stats.closedTrades += 1;
+              stats.pnl += pnlValue;
+              stats.hasClosed = true;
+              if (pnlValue > 0) {
+                stats.winTrades += 1;
+              } else if (pnlValue < 0) {
+                stats.lossTrades += 1;
+              }
+
+              if (!tradeId || !seenTradeIds.has(tradeId)) {
+                stats.totalTrades += 1;
+              }
+
+              const feeValue = position.fees !== null && position.fees !== undefined
+                ? parseFloat(position.fees)
+                : 0;
+              if (!Number.isNaN(feeValue) && feeValue > 0) {
+                if (tradeId && seenTradeIds.has(tradeId)) {
+                  const existingFee = tradeFeesById.get(tradeId) ?? 0;
+                  if (!existingFee) {
+                    stats.totalFees += feeValue;
+                  }
+                } else {
+                  stats.totalFees += feeValue;
+                }
+              }
+
+              if (stats.hasClosed) {
+                stats.peakEquity = Math.max(stats.peakEquity, stats.pnl);
+                const currentDrawdown = stats.peakEquity - stats.pnl;
+                stats.maxDrawdown = Math.max(stats.maxDrawdown, currentDrawdown);
+              }
+
+              if (tradeId) {
+                countedTradeIds.add(tradeId);
               }
             }
           }
@@ -311,6 +450,14 @@ serve(async (req) => {
           lastTradeAt: bot.last_trade_at,
           riskLevel: bot.risk_level || 'medium',
           strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy,
+          strategyConfig: bot.strategy_config
+            ? (typeof bot.strategy_config === 'string' ? JSON.parse(bot.strategy_config) : bot.strategy_config)
+            : undefined,
+          strategy_config: bot.strategy_config ?? null,
+          strategyConfig: bot.strategy_config
+            ? (typeof bot.strategy_config === 'string' ? JSON.parse(bot.strategy_config) : bot.strategy_config)
+            : undefined,
+          strategy_config: bot.strategy_config ?? null,
           aiMlEnabled: bot.ai_ml_enabled || false,
           paperTrading: bot.paper_trading || false,
           soundNotificationsEnabled: bot.sound_notifications_enabled || false,
@@ -513,7 +660,10 @@ serve(async (req) => {
           lastTradeAt: bot.last_trade_at,
           riskLevel: bot.risk_level || 'medium',
           strategy: typeof bot.strategy === 'string' ? JSON.parse(bot.strategy) : bot.strategy,
-          strategyConfig: bot.strategy_config ? (typeof bot.strategy_config === 'string' ? JSON.parse(bot.strategy_config) : bot.strategy_config) : undefined,
+          strategyConfig: bot.strategy_config
+            ? (typeof bot.strategy_config === 'string' ? JSON.parse(bot.strategy_config) : bot.strategy_config)
+            : undefined,
+          strategy_config: bot.strategy_config ?? null,
           aiMlEnabled: bot.ai_ml_enabled || false,
           paperTrading: bot.paper_trading || false,
           soundNotificationsEnabled: bot.sound_notifications_enabled || false,
@@ -992,6 +1142,32 @@ serve(async (req) => {
           )
         }
 
+      const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? ''
+      const POSITION_SYNC_SECRET = Deno.env.get('POSITION_SYNC_SECRET') ?? Deno.env.get('CRON_SECRET') ?? ''
+
+      if (SUPABASE_URL && POSITION_SYNC_SECRET) {
+        try {
+          console.log('🔄 Triggering position-sync before stats refresh...');
+          const syncResponse = await fetch(`${SUPABASE_URL}/functions/v1/position-sync`, {
+            method: 'POST',
+            headers: {
+              'x-cron-secret': POSITION_SYNC_SECRET,
+              'Content-Type': 'application/json'
+            }
+          });
+          const syncText = await syncResponse.text();
+          if (!syncResponse.ok) {
+            console.warn(`⚠️ position-sync failed: ${syncResponse.status} ${syncText}`);
+          } else {
+            console.log(`✅ position-sync triggered: ${syncText.substring(0, 200)}`);
+          }
+        } catch (syncError: any) {
+          console.warn('⚠️ Failed to call position-sync:', syncError?.message || syncError);
+        }
+      } else {
+        console.warn('⚠️ position-sync not triggered (missing SUPABASE_URL or POSITION_SYNC_SECRET)');
+      }
+
         console.log(`🔄 Refreshing stats for ${bots.length} bot(s)`);
         const botIds = bots.map((bot: any) => bot.id);
         const statsMap = new Map<string, {
@@ -1005,6 +1181,9 @@ serve(async (req) => {
           peakEquity: number;
           hasClosed: boolean;
         }>();
+        const seenTradeIds = new Set<string>();
+        const countedTradeIds = new Set<string>();
+        const tradeFeesById = new Map<string, number>();
 
         const ensureStats = (botId: string) => {
           if (!statsMap.has(botId)) {
@@ -1031,25 +1210,53 @@ serve(async (req) => {
           console.log('📊 Step 1: Fetching closed positions to update trades with missing PnL...');
           const { data: closedPositions, error: positionsError } = await supabaseClient
             .from('trading_positions')
-            .select('id, bot_id, trade_id, realized_pnl, exit_price, fees, status, closed_at')
+            .select('id, bot_id, trade_id, realized_pnl, exit_price, entry_price, quantity, side, fees, status, closed_at')
             .eq('user_id', user.id)
             .in('bot_id', botIds)
-            .eq('status', 'closed')
-            .not('realized_pnl', 'is', null);
+            .in('status', ['closed', 'stopped', 'taken_profit', 'manual_close', 'liquidated']);
 
           if (positionsError) {
             console.warn('⚠️ Error fetching closed positions:', positionsError);
           } else if (closedPositions && closedPositions.length > 0) {
-            console.log(`📊 Found ${closedPositions.length} closed positions with PnL`);
+            const positionsWithPnL = closedPositions.filter(p => p.realized_pnl !== null && p.realized_pnl !== undefined);
+            const positionsWithExit = closedPositions.filter(p => p.exit_price !== null && p.exit_price !== undefined);
+            console.log(`📊 Closed positions: total=${closedPositions.length}, withPnL=${positionsWithPnL.length}, withExitPrice=${positionsWithExit.length}`);
             
             // Update trades with PnL from positions
             const tradesToUpdateFromPositions: Array<{ id: string; pnl: number; fee: number; status: string }> = [];
+            const positionsToUpdate: Array<{ id: string; realized_pnl: number; fees: number }> = [];
             
             for (const position of closedPositions) {
-              if (position.trade_id && position.realized_pnl !== null && position.realized_pnl !== undefined) {
-                const realizedPnL = parseFloat(position.realized_pnl);
+              if (position.trade_id) {
+                let realizedPnL = position.realized_pnl !== null && position.realized_pnl !== undefined
+                  ? parseFloat(position.realized_pnl)
+                  : NaN;
                 const fees = parseFloat(position.fees || 0);
+                if (Number.isNaN(realizedPnL)) {
+                  const entryPrice = parseFloat(position.entry_price || 0);
+                  const exitPrice = parseFloat(position.exit_price || 0);
+                  const quantity = parseFloat(position.quantity || 0);
+                  const side = (position.side || 'long').toLowerCase();
+                  if (entryPrice > 0 && exitPrice > 0 && quantity > 0) {
+                    if (side === 'short' || side === 'sell') {
+                      realizedPnL = (entryPrice - exitPrice) * quantity;
+                    } else {
+                      realizedPnL = (exitPrice - entryPrice) * quantity;
+                    }
+                    if (!Number.isNaN(fees)) {
+                      realizedPnL -= fees;
+                    }
+                  }
+                }
                 
+                if ((position.realized_pnl === null || position.realized_pnl === undefined) && !Number.isNaN(realizedPnL)) {
+                  positionsToUpdate.push({
+                    id: position.id,
+                    realized_pnl: realizedPnL,
+                    fees: Number.isNaN(fees) ? 0 : fees
+                  });
+                }
+
                 // Only update if PnL is not zero (zero might mean it's already set or position had no PnL)
                 if (!Number.isNaN(realizedPnL)) {
                   tradesToUpdateFromPositions.push({
@@ -1093,6 +1300,25 @@ serve(async (req) => {
                 }
               }
             }
+
+            if (positionsToUpdate.length > 0) {
+              console.log(`📊 Updating ${positionsToUpdate.length} closed positions with computed PnL`);
+              for (const positionUpdate of positionsToUpdate) {
+                try {
+                  await supabaseClient
+                    .from('trading_positions')
+                    .update({
+                      realized_pnl: positionUpdate.realized_pnl,
+                      fees: positionUpdate.fees,
+                      updated_at: new Date().toISOString()
+                    })
+                    .eq('id', positionUpdate.id)
+                    .eq('user_id', user.id);
+                } catch (updateError) {
+                  console.warn(`⚠️ Failed to update position ${positionUpdate.id} with PnL:`, updateError);
+                }
+              }
+            }
           }
 
           // STEP 2: Fetch real trades with all necessary fields
@@ -1112,10 +1338,32 @@ serve(async (req) => {
             for (const trade of realTrades) {
               if (!trade || !trade.bot_id) continue;
               const stats = ensureStats(trade.bot_id);
+              if (trade.id) {
+                seenTradeIds.add(trade.id);
+              }
               const status = (trade.status || '').toString().toLowerCase();
-              const pnlValue = trade.pnl !== null && trade.pnl !== undefined ? parseFloat(trade.pnl) : NaN;
+              let pnlValue = trade.pnl !== null && trade.pnl !== undefined ? parseFloat(trade.pnl) : NaN;
               const feeValue = trade.fee !== null && trade.fee !== undefined ? parseFloat(trade.fee) : 0;
-              // Note: trades table doesn't have exit_price column
+              if (trade.id && !Number.isNaN(feeValue)) {
+                tradeFeesById.set(trade.id, feeValue);
+              }
+              const hasExitPrice = trade.exit_price !== null && trade.exit_price !== undefined;
+              if (Number.isNaN(pnlValue) && hasExitPrice) {
+                const entryPrice = parseFloat(trade.entry_price || trade.price || 0);
+                const exitPrice = parseFloat(trade.exit_price || 0);
+                const size = parseFloat(trade.amount || trade.size || 0);
+                const side = (trade.side || 'long').toLowerCase();
+                if (entryPrice > 0 && exitPrice > 0 && size > 0) {
+                  if (side === 'short' || side === 'sell') {
+                    pnlValue = (entryPrice - exitPrice) * size;
+                  } else {
+                    pnlValue = (exitPrice - entryPrice) * size;
+                  }
+                  if (!Number.isNaN(feeValue)) {
+                    pnlValue -= feeValue;
+                  }
+                }
+              }
 
               // Count as executed if status is in executedStatuses
               if (executedStatuses.has(status)) {
@@ -1126,7 +1374,9 @@ serve(async (req) => {
               // Count as closed if:
               // 1. Status is in closedStatuses, OR
               // 2. Trade has a PnL value (meaning it's been closed)
-              const isClosed = closedStatuses.has(status) || (!Number.isNaN(pnlValue) && pnlValue !== 0);
+              const isClosed = closedStatuses.has(status)
+                || (!Number.isNaN(pnlValue) && pnlValue !== 0)
+                || hasExitPrice;
               
               if (isClosed && !Number.isNaN(pnlValue)) {
                 stats.closedTrades += 1;
@@ -1136,6 +1386,9 @@ serve(async (req) => {
                   stats.winTrades += 1;
                 } else if (pnlValue < 0) {
                   stats.lossTrades += 1;
+                }
+                if (trade.id) {
+                  countedTradeIds.add(trade.id);
                 }
               }
 
@@ -1234,10 +1487,16 @@ serve(async (req) => {
             for (const trade of paperTrades) {
               if (!trade || !trade.bot_id) continue;
               const stats = ensureStats(trade.bot_id);
+              if (trade.id) {
+                seenTradeIds.add(trade.id);
+              }
               const status = (trade.status || '').toString().toLowerCase();
               const pnlValue = trade.pnl !== null && trade.pnl !== undefined ? parseFloat(trade.pnl) : NaN;
               const feeValue = trade.fees !== null && trade.fees !== undefined ? parseFloat(trade.fees) : 0;
               const hasExitPrice = trade.exit_price !== null && trade.exit_price !== undefined;
+              if (trade.id && !Number.isNaN(feeValue)) {
+                tradeFeesById.set(trade.id, feeValue);
+              }
 
               // Count as executed if status is in executedStatuses
               if (executedStatuses.has(status)) {
@@ -1260,6 +1519,9 @@ serve(async (req) => {
                 } else if (pnlValue < 0) {
                   stats.lossTrades += 1;
                 }
+                if (trade.id) {
+                  countedTradeIds.add(trade.id);
+                }
               }
 
               // Calculate drawdown: track peak equity and current drawdown
@@ -1267,6 +1529,76 @@ serve(async (req) => {
                 stats.peakEquity = Math.max(stats.peakEquity, stats.pnl);
                 const currentDrawdown = stats.peakEquity - stats.pnl;
                 stats.maxDrawdown = Math.max(stats.maxDrawdown, currentDrawdown);
+              }
+            }
+          }
+
+          if (closedPositions && closedPositions.length > 0) {
+            for (const position of closedPositions) {
+              if (!position || !position.bot_id) continue;
+              const stats = ensureStats(position.bot_id);
+              let pnlValue = position.realized_pnl !== null && position.realized_pnl !== undefined
+                ? parseFloat(position.realized_pnl)
+                : NaN;
+              if (Number.isNaN(pnlValue)) {
+                const entryPrice = parseFloat(position.entry_price || 0);
+                const exitPrice = parseFloat(position.exit_price || 0);
+                const quantity = parseFloat(position.quantity || 0);
+                const side = (position.side || 'long').toLowerCase();
+                if (entryPrice > 0 && exitPrice > 0 && quantity > 0) {
+                  if (side === 'short' || side === 'sell') {
+                    pnlValue = (entryPrice - exitPrice) * quantity;
+                  } else {
+                    pnlValue = (exitPrice - entryPrice) * quantity;
+                  }
+                  const feeValue = parseFloat(position.fees || 0);
+                  if (!Number.isNaN(feeValue)) {
+                    pnlValue -= feeValue;
+                  }
+                }
+              }
+              if (Number.isNaN(pnlValue)) continue;
+
+              const tradeId = position.trade_id;
+              if (tradeId && countedTradeIds.has(tradeId)) {
+                continue;
+              }
+
+              stats.closedTrades += 1;
+              stats.pnl += pnlValue;
+              stats.hasClosed = true;
+              if (pnlValue > 0) {
+                stats.winTrades += 1;
+              } else if (pnlValue < 0) {
+                stats.lossTrades += 1;
+              }
+
+              if (!tradeId || !seenTradeIds.has(tradeId)) {
+                stats.totalTrades += 1;
+              }
+
+              const feeValue = position.fees !== null && position.fees !== undefined
+                ? parseFloat(position.fees)
+                : 0;
+              if (!Number.isNaN(feeValue) && feeValue > 0) {
+                if (tradeId && seenTradeIds.has(tradeId)) {
+                  const existingFee = tradeFeesById.get(tradeId) ?? 0;
+                  if (!existingFee) {
+                    stats.totalFees += feeValue;
+                  }
+                } else {
+                  stats.totalFees += feeValue;
+                }
+              }
+
+              if (stats.hasClosed) {
+                stats.peakEquity = Math.max(stats.peakEquity, stats.pnl);
+                const currentDrawdown = stats.peakEquity - stats.pnl;
+                stats.maxDrawdown = Math.max(stats.maxDrawdown, currentDrawdown);
+              }
+
+              if (tradeId) {
+                countedTradeIds.add(tradeId);
               }
             }
           }

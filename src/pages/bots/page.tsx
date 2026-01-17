@@ -347,14 +347,18 @@ export default function BotsPage() {
     if (!match) return null;
 
     const barsPassed = parseInt(match[1], 10);
-    const requiredBars = parseInt(match[2], 10);
-    const progress = Math.min(100, (barsPassed / requiredBars) * 100);
+    const requiredBarsFromLog = parseInt(match[2], 10);
+    const configuredBars = getCurrentCooldownBars(bot);
+    const requiredBars = configuredBars > 0 ? configuredBars : requiredBarsFromLog;
+    const progress = requiredBars > 0
+      ? Math.min(100, (barsPassed / requiredBars) * 100)
+      : 0;
 
     return {
       barsPassed,
       requiredBars,
       progress,
-      isActive: barsPassed < requiredBars
+      isActive: requiredBars > 0 && barsPassed < requiredBars
     };
   };
 

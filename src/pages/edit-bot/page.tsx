@@ -14,7 +14,7 @@ import { supabase } from '../../lib/supabase';
 export default function EditBotPage() {
   const navigate = useNavigate();
   const { botId } = useParams<{ botId: string }>();
-  const { bots, updateBot } = useBots();
+  const { bots, updateBot, getBotById } = useBots();
   const { settings: userSettings } = useEmailNotifications();
   const [formData, setFormData] = useState({
     name: '',
@@ -124,71 +124,105 @@ export default function EditBotPage() {
     'BNBUSDT', 'XRPUSDT', 'MATICUSDT', 'LINKUSDT', 'UNIUSDT', 'LTCUSDT'
   ];
 
+  const applyBotToForm = (bot: TradingBot) => {
+    setFormData({
+      name: bot.name,
+      exchange: bot.exchange as 'bybit' | 'okx',
+      tradingType: bot.tradingType as 'spot' | 'futures',
+      symbol: bot.symbol,
+      timeframe: bot.timeframe || '1h',
+      leverage: bot.leverage || 5,
+      riskLevel: bot.riskLevel as 'low' | 'medium' | 'high',
+      tradeAmount: bot.tradeAmount || 100,
+      stopLoss: bot.stopLoss || 2.0,
+      takeProfit: bot.takeProfit || 4.0
+    });
+    
+    if (bot.strategy) {
+      setStrategy(bot.strategy as TradingStrategy);
+    }
+    
+    const strategyConfig = (bot.strategyConfig || (bot as any).strategy_config) ?? null;
+    if (strategyConfig) {
+      setAdvancedConfig(prev => ({
+        ...prev,
+        ...strategyConfig,
+        atr_period: strategyConfig.atr_period ?? prev.atr_period ?? 14,
+        atr_tp_multiplier: strategyConfig.atr_tp_multiplier ?? prev.atr_tp_multiplier ?? 3,
+        ema_fast_period: strategyConfig.ema_fast_period ?? prev.ema_fast_period,
+        rsi_period: strategyConfig.rsi_period ?? prev.rsi_period ?? 14,
+        rsi_overbought: strategyConfig.rsi_overbought ?? prev.rsi_overbought ?? 70,
+        rsi_oversold: strategyConfig.rsi_oversold ?? prev.rsi_oversold ?? 30,
+        sl_atr_mult: strategyConfig.sl_atr_mult ?? prev.sl_atr_mult
+      }));
+    }
+
+    // Apply risk management settings from user_settings if available
+    // This ensures risk management is always up-to-date when editing
+    if (userSettings?.risk_settings) {
+      const riskSettings = userSettings.risk_settings;
+      setAdvancedConfig(prev => ({
+        ...prev,
+        // Map user_settings.risk_settings to strategy_config fields
+        daily_loss_limit_pct: prev.daily_loss_limit_pct ?? (riskSettings.maxDailyLoss ? riskSettings.maxDailyLoss / 100 : 3.0),
+        max_position_size: prev.max_position_size ?? riskSettings.maxPositionSize ?? 1000,
+        stop_loss_percentage: prev.stop_loss_percentage ?? riskSettings.stopLossPercentage ?? 5.0,
+        take_profit_percentage: prev.take_profit_percentage ?? riskSettings.takeProfitPercentage ?? 10.0,
+        max_concurrent: prev.max_concurrent ?? riskSettings.maxOpenPositions ?? 5,
+        risk_per_trade_pct: prev.risk_per_trade_pct ?? (riskSettings.riskPerTrade ? riskSettings.riskPerTrade / 100 : 0.02),
+        emergency_stop_loss: prev.emergency_stop_loss ?? riskSettings.emergencyStopLoss ?? 20.0
+      }));
+      console.log('✅ Applied risk management settings from user_settings to edit form');
+    }
+    
+    // Load sound notifications setting
+    setSoundNotificationsEnabled(bot.soundNotificationsEnabled || false);
+    
+    console.log('Edit bot: Form data set:', formData);
+  };
+
   // Load bot data when component mounts
   useEffect(() => {
-    if (botId && bots.length > 0) {
-      const bot = bots.find(b => b.id === botId);
-      console.log('Edit bot: Found bot:', bot);
-      if (bot) {
-        setFormData({
-          name: bot.name,
-          exchange: bot.exchange as 'bybit' | 'okx',
-          tradingType: bot.tradingType as 'spot' | 'futures',
-          symbol: bot.symbol,
-          timeframe: bot.timeframe || '1h',
-          leverage: bot.leverage || 5,
-          riskLevel: bot.riskLevel as 'low' | 'medium' | 'high',
-          tradeAmount: bot.tradeAmount || 100,
-          stopLoss: bot.stopLoss || 2.0,
-          takeProfit: bot.takeProfit || 4.0
-        });
-        
-        if (bot.strategy) {
-          setStrategy(bot.strategy as TradingStrategy);
-        }
-        
-        // Load advanced config from strategyConfig
-        if (bot.strategyConfig) {
-          setAdvancedConfig(prev => ({
-            ...prev,
-            ...bot.strategyConfig,
-            atr_period: bot.strategyConfig.atr_period ?? prev.atr_period ?? 14,
-            atr_tp_multiplier: bot.strategyConfig.atr_tp_multiplier ?? prev.atr_tp_multiplier ?? 3,
-            ema_fast_period: bot.strategyConfig.ema_fast_period ?? prev.ema_fast_period,
-            rsi_period: bot.strategyConfig.rsi_period ?? prev.rsi_period ?? 14,
-            rsi_overbought: bot.strategyConfig.rsi_overbought ?? prev.rsi_overbought ?? 70,
-            rsi_oversold: bot.strategyConfig.rsi_oversold ?? prev.rsi_oversold ?? 30,
-            sl_atr_mult: bot.strategyConfig.sl_atr_mult ?? prev.sl_atr_mult
-          }));
-        }
-
-        // Apply risk management settings from user_settings if available
-        // This ensures risk management is always up-to-date when editing
-        if (userSettings?.risk_settings) {
-          const riskSettings = userSettings.risk_settings;
-          setAdvancedConfig(prev => ({
-            ...prev,
-            // Map user_settings.risk_settings to strategy_config fields
-            daily_loss_limit_pct: prev.daily_loss_limit_pct ?? (riskSettings.maxDailyLoss ? riskSettings.maxDailyLoss / 100 : 3.0),
-            max_position_size: prev.max_position_size ?? riskSettings.maxPositionSize ?? 1000,
-            stop_loss_percentage: prev.stop_loss_percentage ?? riskSettings.stopLossPercentage ?? 5.0,
-            take_profit_percentage: prev.take_profit_percentage ?? riskSettings.takeProfitPercentage ?? 10.0,
-            max_concurrent: prev.max_concurrent ?? riskSettings.maxOpenPositions ?? 5,
-            risk_per_trade_pct: prev.risk_per_trade_pct ?? (riskSettings.riskPerTrade ? riskSettings.riskPerTrade / 100 : 0.02),
-            emergency_stop_loss: prev.emergency_stop_loss ?? riskSettings.emergencyStopLoss ?? 20.0
-          }));
-          console.log('✅ Applied risk management settings from user_settings to edit form');
-        }
-        
-        // Load sound notifications setting
-        setSoundNotificationsEnabled(bot.soundNotificationsEnabled || false);
-        
-        console.log('Edit bot: Form data set:', formData);
-      } else {
-        console.log('Edit bot: Bot not found with ID:', botId);
-      }
+    if (!botId) {
+      return;
     }
-  }, [botId, bots, userSettings]);
+
+    let isActive = true;
+
+    const loadBot = async () => {
+      const botFromList = bots.find(b => b.id === botId);
+      console.log('Edit bot: Found bot:', botFromList);
+
+      if (botFromList) {
+        applyBotToForm(botFromList);
+        const hasStrategyConfig = !!(botFromList.strategyConfig || (botFromList as any).strategy_config);
+        if (hasStrategyConfig) {
+          return;
+        }
+      }
+
+      try {
+        const fetched = await getBotById(botId);
+        if (!isActive) return;
+        if (fetched) {
+          console.log('Edit bot: Fetched bot from API:', fetched);
+          applyBotToForm(fetched);
+        } else {
+          console.log('Edit bot: Bot not found with ID:', botId);
+        }
+      } catch (error) {
+        console.error('Edit bot: Failed to fetch bot by ID:', error);
+      }
+    };
+
+    if (bots.length > 0 || botId) {
+      void loadBot();
+    }
+
+    return () => {
+      isActive = false;
+    };
+  }, [botId, bots, userSettings, getBotById]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
