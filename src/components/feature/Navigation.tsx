@@ -120,6 +120,7 @@ export default function Navigation() {
   const mainNavItems = [
     { path: '/dashboard', icon: 'ri-home-line', label: t('nav.home') },
     { path: '/bots', icon: 'ri-robot-line', label: t('nav.bots') },
+    { path: '/positions', icon: 'ri-stack-line', label: 'Positions' },
     { path: '/pablo-ready', icon: 'ri-star-line', label: 'Pablo Ready' },
     { path: '/settings', icon: 'ri-settings-line', label: t('nav.settings') }
   ];
@@ -133,7 +134,6 @@ export default function Navigation() {
     { path: '/backtest', icon: 'ri-test-tube-line', label: 'Backtest' },
     { path: '/bot-activity', icon: 'ri-file-list-line', label: 'Activity' },
     { path: '/trades', icon: 'ri-exchange-line', label: t('nav.trades') },
-    { path: '/positions', icon: 'ri-stack-line', label: 'Positions' },
     { path: '/performance', icon: 'ri-line-chart-line', label: t('nav.performance') },
     { path: '/transaction-log', icon: 'ri-bar-chart-2-line', label: 'Log' },
     { path: '/paper-trading', icon: 'ri-edit-box-line', label: t('nav.paperTrading') },
