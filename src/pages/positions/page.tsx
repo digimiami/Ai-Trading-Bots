@@ -5,7 +5,7 @@ import Navigation from '../../components/feature/Navigation';
 import NotificationBell from '../../components/feature/NotificationBell';
 import Card from '../../components/base/Card';
 import Button from '../../components/base/Button';
-import { usePositions, type ExchangePosition } from '../../hooks/usePositions';
+import { usePositions, type ExchangePosition, type ClosedPosition } from '../../hooks/usePositions';
 import PortfolioPnLChart from '../../components/positions/PortfolioPnLChart';
 
 export default function PositionsPage() {
@@ -14,7 +14,7 @@ export default function PositionsPage() {
   const [sortBy, setSortBy] = useState<'pnl' | 'size' | 'exchange' | 'symbol'>('pnl');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [closingPositionId, setClosingPositionId] = useState<string | null>(null);
-  const { positions, loading, error, fetchPositions, closePosition } = usePositions(exchangeFilter);
+  const { positions, closedPositions, loading, closedLoading, error, fetchPositions, fetchClosedPositions, closePosition } = usePositions(exchangeFilter);
 
   const filteredPositions = useMemo(() => {
     let filtered = [...positions];
@@ -354,6 +354,96 @@ export default function PositionsPage() {
               )}
             </>
           )}
+
+          {/* Recently Closed Positions */}
+          <Card className="overflow-hidden">
+            <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Recently Closed Positions</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">View your recently closed positions with fees and PnL</p>
+            </div>
+            {closedLoading ? (
+              <div className="p-6 text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                <p className="text-gray-600 dark:text-gray-400">Loading closed positions...</p>
+              </div>
+            ) : closedPositions.length === 0 ? (
+              <div className="p-12 text-center">
+                <i className="ri-archive-line text-4xl text-gray-400 mb-4"></i>
+                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No closed positions found</h3>
+                <p className="text-gray-500 dark:text-gray-400">Closed positions will appear here once trades are completed.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Exchange</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Symbol</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Side</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Size</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Entry Price</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Exit Price</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Fees</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">PnL</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">PnL %</th>
+                      <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Closed At</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
+                    {closedPositions.map((position, index) => (
+                      <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                        <td className="px-4 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <i className={`${getExchangeIcon(position.exchange)} text-lg mr-2`}></i>
+                            <span className="text-sm font-medium text-gray-900 dark:text-white">
+                              {position.exchange.toUpperCase()}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap">
+                          <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                            {position.symbol}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap">
+                          <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                            position.side === 'long' 
+                              ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
+                              : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
+                          }`}>
+                            {position.side.toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap text-right text-sm text-gray-900 dark:text-white">
+                          {position.size.toFixed(4)}
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap text-right text-sm text-gray-900 dark:text-white">
+                          {formatPrice(position.entryPrice).replace('$', '$')}
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap text-right text-sm text-gray-900 dark:text-white">
+                          {formatPrice(position.exitPrice).replace('$', '$')}
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap text-right text-sm text-red-600 dark:text-red-400">
+                          {formatPrice(position.fees).replace('$', '$')}
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-semibold">
+                          {formatPnL(position.pnl)}
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-semibold">
+                          <span className={position.pnlPercentage >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                            {position.pnlPercentage >= 0 ? '+' : ''}{position.pnlPercentage.toFixed(2)}%
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 whitespace-nowrap text-right text-sm text-gray-500 dark:text-gray-400">
+                          {new Date(position.closedAt).toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
         </div>
       </main>
 

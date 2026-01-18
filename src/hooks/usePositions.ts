@@ -18,9 +18,25 @@ export interface ExchangePosition {
   openedAt?: string;
 }
 
+export interface ClosedPosition {
+  exchange: string;
+  symbol: string;
+  side: 'long' | 'short';
+  size: number;
+  entryPrice: number;
+  exitPrice: number;
+  pnl: number;
+  pnlPercentage: number;
+  fees: number;
+  leverage: number;
+  closedAt: string;
+}
+
 export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix' = 'all') {
   const [positions, setPositions] = useState<ExchangePosition[]>([]);
+  const [closedPositions, setClosedPositions] = useState<ClosedPosition[]>([]);
   const [loading, setLoading] = useState(true);
+  const [closedLoading, setClosedLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { user, loading: authLoading } = useAuth();
 
@@ -124,20 +140,60 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
     }
   };
 
+  const fetchClosedPositions = useCallback(async (limit: number = 20) => {
+    if (authLoading || !user) {
+      return;
+    }
+
+    try {
+      setClosedLoading(true);
+
+      const accessToken = await requireAccessToken();
+      const url = `${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/positions?action=closed-positions&exchange=${exchangeFilter}&limit=${limit}`;
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to fetch closed positions: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      setClosedPositions(data.closedPositions || []);
+    } catch (err) {
+      console.error('Error fetching closed positions:', err);
+      setClosedPositions([]);
+    } finally {
+      setClosedLoading(false);
+    }
+  }, [user, authLoading, exchangeFilter]);
+
   useEffect(() => {
     fetchPositions();
+    fetchClosedPositions(20);
 
     // Auto-refresh every 60 seconds
-    const interval = setInterval(fetchPositions, 60000);
+    const interval = setInterval(() => {
+      fetchPositions();
+      fetchClosedPositions(20);
+    }, 60000);
 
     return () => clearInterval(interval);
-  }, [fetchPositions]);
+  }, [fetchPositions, fetchClosedPositions]);
 
   return {
     positions,
+    closedPositions,
     loading,
+    closedLoading,
     error,
     fetchPositions,
+    fetchClosedPositions,
     closePosition,
   };
 }

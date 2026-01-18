@@ -33,6 +33,20 @@ interface ExchangePosition {
   openedAt?: string;
 }
 
+interface ClosedPosition {
+  exchange: string;
+  symbol: string;
+  side: 'long' | 'short';
+  size: number;
+  entryPrice: number;
+  exitPrice: number;
+  pnl: number;
+  pnlPercentage: number;
+  fees: number;
+  leverage: number;
+  closedAt: string;
+}
+
 /**
  * Create Bybit signature for API requests
  */
@@ -674,21 +688,104 @@ serve(async (req) => {
           });
         }
 
+      return new Response(JSON.stringify({ 
+        success: true,
+        message: 'Position closed successfully',
+        result 
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    } catch (error: any) {
+      return new Response(JSON.stringify({ 
+        error: `Failed to close position: ${error.message || String(error)}` 
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+  }
+
+    // GET: Fetch closed positions
+    if (req.method === 'GET' && action === 'closed-positions') {
+      const exchangeFilter = url.searchParams.get('exchange') || 'all';
+      const limit = parseInt(url.searchParams.get('limit') || '20');
+
+      // Fetch closed trades from database
+      let query = supabaseClient
+        .from('trades')
+        .select(`
+          id,
+          exchange,
+          symbol,
+          side,
+          amount,
+          entry_price,
+          exit_price,
+          pnl,
+          fee,
+          leverage,
+          status,
+          closed_at,
+          executed_at
+        `)
+        .eq('user_id', user.id)
+        .in('status', ['closed', 'filled', 'completed'])
+        .not('exit_price', 'is', null)
+        .not('pnl', 'is', null)
+        .order('closed_at', { ascending: false, nullsFirst: false })
+        .order('executed_at', { ascending: false, nullsFirst: false })
+        .limit(limit);
+
+      // Apply exchange filter if specified
+      if (exchangeFilter !== 'all') {
+        query = query.eq('exchange', exchangeFilter.toLowerCase());
+      }
+
+      const { data: closedTrades, error: tradesError } = await query;
+
+      if (tradesError) {
         return new Response(JSON.stringify({ 
-          success: true,
-          message: 'Position closed successfully',
-          result 
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
-      } catch (error: any) {
-        return new Response(JSON.stringify({ 
-          error: `Failed to close position: ${error.message || String(error)}` 
+          error: `Failed to fetch closed positions: ${tradesError.message}` 
         }), {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         });
       }
+
+      // Transform trades to ClosedPosition format
+      const closedPositions: ClosedPosition[] = (closedTrades || []).map((trade: any) => {
+        const entryPrice = parseFloat(trade.entry_price || 0);
+        const exitPrice = parseFloat(trade.exit_price || 0);
+        const size = parseFloat(trade.amount || 0);
+        const fees = parseFloat(trade.fee || 0);
+        const pnl = parseFloat(trade.pnl || 0);
+        
+        // Calculate PnL percentage if not already calculated
+        const pnlPercentage = entryPrice > 0 && size > 0
+          ? (pnl / (entryPrice * size)) * 100
+          : 0;
+
+        return {
+          exchange: trade.exchange || 'unknown',
+          symbol: trade.symbol || '',
+          side: (trade.side || 'long').toLowerCase() === 'buy' ? 'long' : 'short',
+          size,
+          entryPrice,
+          exitPrice,
+          pnl,
+          pnlPercentage,
+          fees,
+          leverage: parseFloat(trade.leverage || 1),
+          closedAt: trade.closed_at || trade.executed_at || new Date().toISOString()
+        };
+      });
+
+      return new Response(JSON.stringify({ 
+        closedPositions,
+        count: closedPositions.length
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
     }
 
     return new Response(JSON.stringify({ error: 'Invalid action' }), {
