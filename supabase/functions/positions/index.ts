@@ -711,7 +711,7 @@ serve(async (req) => {
       const limit = Math.max(10, parseInt(url.searchParams.get('limit') || '10')); // At least 10
 
       // Fetch closed trades from database
-      // Note: trades table uses 'price' (not entry_price) and 'amount' (not size)
+      // Note: trades table uses 'price' (not entry_price), 'amount' (not size), and doesn't have 'leverage'
       let query = supabaseClient
         .from('trades')
         .select(`
@@ -723,7 +723,6 @@ serve(async (req) => {
           price,
           pnl,
           fee,
-          leverage,
           status,
           executed_at,
           created_at
@@ -777,7 +776,7 @@ serve(async (req) => {
           pnl,
           pnlPercentage,
           fees,
-          leverage: parseFloat(trade.leverage || 1),
+          leverage: 1, // Leverage not stored in trades table, default to 1
           closedAt: trade.executed_at || trade.created_at || new Date().toISOString()
         };
       });
