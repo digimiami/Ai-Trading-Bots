@@ -105,7 +105,7 @@ export default function Navigation() {
 
   // Don't render navigation until user data is loaded (for authenticated routes)
   // But be more lenient to prevent blank screens - only return null if loading is true
-  const authRequiredRoutes = ['/dashboard', '/bots', '/settings', '/admin', '/trades', '/performance', '/pablo-ready', '/ai-assistant', '/backtest', '/bot-activity', '/transaction-log', '/paper-trading', '/futures-pairs-finder', '/messages', '/pricing', '/subscription'];
+  const authRequiredRoutes = ['/dashboard', '/bots', '/settings', '/admin', '/trades', '/positions', '/performance', '/pablo-ready', '/ai-assistant', '/backtest', '/bot-activity', '/transaction-log', '/paper-trading', '/futures-pairs-finder', '/messages', '/pricing', '/subscription'];
   const isAuthRequired = authRequiredRoutes.some(route => location.pathname.startsWith(route));
   
   // Only return null if we're actively loading - don't block on missing user/role
@@ -121,7 +121,6 @@ export default function Navigation() {
     { path: '/dashboard', icon: 'ri-home-line', label: t('nav.home') },
     { path: '/bots', icon: 'ri-robot-line', label: t('nav.bots') },
     { path: '/pablo-ready', icon: 'ri-star-line', label: 'Pablo Ready' },
-    { path: '/ai-assistant', icon: 'ri-robot-2-line', label: 'AI Assistant' },
     { path: '/settings', icon: 'ri-settings-line', label: t('nav.settings') }
   ];
 
@@ -134,6 +133,7 @@ export default function Navigation() {
     { path: '/backtest', icon: 'ri-test-tube-line', label: 'Backtest' },
     { path: '/bot-activity', icon: 'ri-file-list-line', label: 'Activity' },
     { path: '/trades', icon: 'ri-exchange-line', label: t('nav.trades') },
+    { path: '/positions', icon: 'ri-stack-line', label: 'Positions' },
     { path: '/performance', icon: 'ri-line-chart-line', label: t('nav.performance') },
     { path: '/transaction-log', icon: 'ri-bar-chart-2-line', label: 'Log' },
     { path: '/paper-trading', icon: 'ri-edit-box-line', label: t('nav.paperTrading') },
