@@ -711,6 +711,7 @@ serve(async (req) => {
       const limit = Math.max(10, parseInt(url.searchParams.get('limit') || '10')); // At least 10
 
       // Fetch closed trades from database
+      // Note: trades table uses 'price' (not entry_price) and 'amount' (not size)
       let query = supabaseClient
         .from('trades')
         .select(`
@@ -719,21 +720,19 @@ serve(async (req) => {
           symbol,
           side,
           amount,
-          entry_price,
-          exit_price,
+          price,
           pnl,
           fee,
           leverage,
           status,
-          closed_at,
-          executed_at
+          executed_at,
+          created_at
         `)
         .eq('user_id', user.id)
         .in('status', ['closed', 'filled', 'completed'])
-        .not('exit_price', 'is', null)
         .not('pnl', 'is', null)
-        .order('closed_at', { ascending: false, nullsFirst: false })
         .order('executed_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false, nullsFirst: false })
         .limit(limit);
 
       // Apply exchange filter if specified
@@ -753,9 +752,12 @@ serve(async (req) => {
       }
 
       // Transform trades to ClosedPosition format
+      // Note: trades table uses 'price' for entry price, and may not have exit_price
       const closedPositions: ClosedPosition[] = (closedTrades || []).map((trade: any) => {
-        const entryPrice = parseFloat(trade.entry_price || 0);
-        const exitPrice = parseFloat(trade.exit_price || 0);
+        const entryPrice = parseFloat(trade.price || trade.entry_price || 0);
+        // Exit price may not exist in trades table - use entry price if not available
+        // (PnL is already calculated, so exit price is less critical for display)
+        const exitPrice = parseFloat(trade.exit_price || trade.price || entryPrice);
         const size = parseFloat(trade.amount || 0);
         const fees = parseFloat(trade.fee || 0);
         const pnl = parseFloat(trade.pnl || 0);
@@ -776,7 +778,7 @@ serve(async (req) => {
           pnlPercentage,
           fees,
           leverage: parseFloat(trade.leverage || 1),
-          closedAt: trade.closed_at || trade.executed_at || new Date().toISOString()
+          closedAt: trade.executed_at || trade.created_at || new Date().toISOString()
         };
       });
 
