@@ -194,6 +194,46 @@ export default function BotsPage() {
     }
   };
 
+  const formatDuration = (ms: number): string => {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) {
+      return `${days}d ${hours % 24}h`;
+    } else if (hours > 0) {
+      return `${hours}h ${minutes % 60}m`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds % 60}s`;
+    } else {
+      return `${seconds}s`;
+    }
+  };
+
+  const getBotRunningTime = (bot: any): { startTime: string; runningFor: string } | null => {
+    // Try both camelCase and snake_case for created_at
+    const createdAt = (bot as any).created_at || (bot as any).createdAt;
+    if (!createdAt) return null;
+
+    try {
+      const startDate = new Date(createdAt);
+      const now = new Date();
+      const runningForMs = now.getTime() - startDate.getTime();
+      
+      // Only show running time if bot is currently running
+      const isRunning = bot.status === 'running';
+      const runningFor = isRunning ? formatDuration(runningForMs) : '—';
+      
+      return {
+        startTime: formatDateTime(createdAt),
+        runningFor
+      };
+    } catch {
+      return null;
+    }
+  };
+
   const getSentiment = (rsi?: number, adx?: number) => {
     if (rsi === undefined) return null;
     
@@ -1453,6 +1493,33 @@ export default function BotsPage() {
                     </p>
                   </div>
                 </div>
+
+                {/* Bot Timestamp - Start Time and Running Duration */}
+                {(() => {
+                  const botTime = getBotRunningTime(bot);
+                  if (!botTime) return null;
+                  
+                  return (
+                    <div className="pt-3 border-t border-gray-100">
+                      <div className="flex items-center justify-between text-xs text-gray-600">
+                        <div className="flex items-center gap-4">
+                          <span className="flex items-center gap-1">
+                            <i className="ri-time-line"></i>
+                            <span className="font-medium">Started:</span>
+                            <span>{botTime.startTime}</span>
+                          </span>
+                          {bot.status === 'running' && (
+                            <span className="flex items-center gap-1">
+                              <i className="ri-play-circle-line text-green-600"></i>
+                              <span className="font-medium">Running for:</span>
+                              <span className="text-green-700 font-semibold">{botTime.runningFor}</span>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Trade Limit Status */}
                 {!isWebhookView && (() => {
