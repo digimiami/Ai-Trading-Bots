@@ -9,6 +9,7 @@ import { useSoundNotifications } from './hooks/useSoundNotifications';
 import { ONBOARDING_ENABLED } from './constants/featureFlags';
 import CookieConsent from './components/ui/CookieConsent';
 import PopupDisplay from './components/ui/PopupDisplay';
+import AiAssistantWidget from './components/ai/AiAssistantWidget';
 import { supabase } from './lib/supabase';
 import { sendDebugTelemetry } from './utils/debugTelemetry';
 
@@ -237,6 +238,7 @@ function AppRoutes() {
       </div>
     }>
       {element}
+      <AiAssistantWidget />
     </Suspense>
   );
 }

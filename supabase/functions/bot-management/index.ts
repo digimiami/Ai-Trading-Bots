@@ -264,13 +264,34 @@ serve(async (req) => {
                 || (!Number.isNaN(pnlValue) && pnlValue !== 0)
                 || hasExitPrice;
               
-              if (isClosed && !Number.isNaN(pnlValue)) {
+              // If trade is closed but PnL is NaN, try to calculate it again from entry/exit prices
+              if (isClosed && Number.isNaN(pnlValue) && hasExitPrice) {
+                const entryPrice = parseFloat(trade.entry_price || 0);
+                const exitPrice = parseFloat(trade.exit_price || 0);
+                const quantity = parseFloat(trade.quantity || 0);
+                const side = (trade.side || 'long').toLowerCase();
+                if (entryPrice > 0 && exitPrice > 0 && quantity > 0) {
+                  if (side === 'short' || side === 'sell') {
+                    pnlValue = (entryPrice - exitPrice) * quantity;
+                  } else {
+                    pnlValue = (exitPrice - entryPrice) * quantity;
+                  }
+                  if (!Number.isNaN(feeValue)) {
+                    pnlValue -= feeValue;
+                  }
+                }
+              }
+              
+              // Count as closed if it's marked as closed, even if PnL calculation failed
+              if (isClosed) {
+                // Use 0 as default PnL if calculation failed but trade is clearly closed
+                const finalPnL = Number.isNaN(pnlValue) ? 0 : pnlValue;
                 stats.closedTrades += 1;
-                stats.pnl += pnlValue;
+                stats.pnl += finalPnL;
                 stats.hasClosed = true;
-                if (pnlValue > 0) {
+                if (finalPnL > 0) {
                   stats.winTrades += 1;
-                } else if (pnlValue < 0) {
+                } else if (finalPnL < 0) {
                   stats.lossTrades += 1;
                 }
                 if (trade.id) {
@@ -1580,13 +1601,34 @@ serve(async (req) => {
               // 3. Trade has an exit_price (meaning position was closed)
               const isClosed = closedStatuses.has(status) || (!Number.isNaN(pnlValue) && pnlValue !== 0) || hasExitPrice;
               
-              if (isClosed && !Number.isNaN(pnlValue)) {
+              // If trade is closed but PnL is NaN, try to calculate it from entry/exit prices
+              let finalPnLValue = pnlValue;
+              if (isClosed && Number.isNaN(pnlValue) && hasExitPrice) {
+                const entryPrice = parseFloat(trade.entry_price || 0);
+                const exitPrice = parseFloat(trade.exit_price || 0);
+                const quantity = parseFloat(trade.quantity || 0);
+                const side = (trade.side || 'long').toLowerCase();
+                if (entryPrice > 0 && exitPrice > 0 && quantity > 0) {
+                  if (side === 'short' || side === 'sell') {
+                    finalPnLValue = (entryPrice - exitPrice) * quantity;
+                  } else {
+                    finalPnLValue = (exitPrice - entryPrice) * quantity;
+                  }
+                  if (!Number.isNaN(feeValue)) {
+                    finalPnLValue -= feeValue;
+                  }
+                }
+              }
+              
+              // Count as closed if it's marked as closed, using 0 as default if PnL calculation failed
+              if (isClosed) {
+                const finalPnL = Number.isNaN(finalPnLValue) ? 0 : finalPnLValue;
                 stats.closedTrades += 1;
-                stats.pnl += pnlValue;
+                stats.pnl += finalPnL;
                 stats.hasClosed = true;
-                if (pnlValue > 0) {
+                if (finalPnL > 0) {
                   stats.winTrades += 1;
-                } else if (pnlValue < 0) {
+                } else if (finalPnL < 0) {
                   stats.lossTrades += 1;
                 }
                 if (trade.id) {

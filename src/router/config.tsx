@@ -18,6 +18,7 @@ const EditBot = lazy(() => import('../pages/edit-bot/page'));
 const BotActivity = lazy(() => import('../pages/bot-activity/page'));
 const Backtest = lazy(() => import('../pages/backtest/page'));
 const Trades = lazy(() => import('../pages/trades/page'));
+const Positions = lazy(() => import('../pages/positions/page'));
 const Reports = lazy(() => import('../pages/reports/page'));
 const Performance = lazy(() => import('../pages/performance/page'));
 const TransactionLog = lazy(() => import('../pages/transaction-log/page'));
@@ -111,6 +112,10 @@ const routes: RouteObject[] = [
   {
     path: '/trades',
     element: <Trades />
+  },
+  {
+    path: '/positions',
+    element: <Positions />
   },
   {
     path: '/transaction-log',

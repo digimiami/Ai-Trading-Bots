@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Header from '../../components/feature/Header';
 import Navigation from '../../components/feature/Navigation';
 import Card from '../../components/base/Card';
@@ -76,6 +76,8 @@ interface Attachment {
 
 export default function AiAssistantPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const isEmbedded = searchParams.get('embed') === '1';
   const { user } = useAuth();
   const { fetchBots } = useBots();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -572,15 +574,19 @@ What would you like to know?`,
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <Header 
-        title="AI Assistant" 
-        subtitle="Get help with bot settings and trading questions"
-        showBack
-      />
-      <Navigation />
+    <div className={`${isEmbedded ? 'h-full' : 'min-h-screen'} bg-gray-50 dark:bg-gray-900`}>
+      {!isEmbedded && (
+        <>
+          <Header 
+            title="AI Assistant" 
+            subtitle="Get help with bot settings and trading questions"
+            showBack
+          />
+          <Navigation />
+        </>
+      )}
       
-      <div className="container mx-auto px-4 py-6 max-w-4xl pb-24">
+      <div className={`${isEmbedded ? 'px-4 py-4 h-full' : 'container mx-auto px-4 py-6 max-w-4xl pb-24'}`}>
         {!apiConfigured && (
           <Card className="p-4 mb-4 bg-yellow-50 border-yellow-200 border-2">
             <div className="flex items-start">
@@ -602,7 +608,7 @@ What would you like to know?`,
           </Card>
         )}
 
-        <Card className="p-0 overflow-hidden flex flex-col" style={{ height: 'calc(100vh - 250px)' }}>
+        <Card className="p-0 overflow-hidden flex flex-col" style={{ height: isEmbedded ? 'calc(100vh - 140px)' : 'calc(100vh - 250px)' }}>
           {/* Action Notifications */}
           {pendingActions.length > 0 && (
             <div className="bg-green-50 dark:bg-green-900/20 border-b border-green-200 dark:border-green-800 p-3">
