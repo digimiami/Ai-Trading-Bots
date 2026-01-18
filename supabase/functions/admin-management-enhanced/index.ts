@@ -44,7 +44,16 @@ serve(async (req) => {
       .eq('id', user.id)
       .single()
 
-    if (userError || userData?.role !== 'admin') {
+    const roleFromAuth = (user.app_metadata?.role || user.user_metadata?.role || '').toString().toLowerCase()
+    const isAdmin = userData?.role === 'admin' || roleFromAuth === 'admin'
+
+    if (!isAdmin) {
+      console.warn('Admin access denied', {
+        userId: user.id,
+        dbRole: userData?.role,
+        authRole: roleFromAuth || null,
+        userError: userError?.message || null
+      })
       return new Response(JSON.stringify({ error: 'Admin access required' }), {
         status: 403,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -1507,21 +1516,58 @@ serve(async (req) => {
         }
 
         try {
+          console.log('🔄 Upgrade subscription request', { userId, planId })
           // Find user's subscription
           const { data: subscription, error: subError } = await supabaseClient
             .from('user_subscriptions')
-            .select(`
-              *,
-              subscription_plans!user_subscriptions_plan_id_fkey(*),
-              users!user_subscriptions_user_id_fkey(email)
-            `)
+            .select('*')
             .eq('user_id', userId)
             .order('created_at', { ascending: false })
             .limit(1)
-            .single()
+            .maybeSingle()
+
+          // Check if error is NOT "no rows found" (which is expected when creating new subscription)
+          // PGRST116 means no rows found - that's fine, we'll create one
+          if (subError && subError.code !== 'PGRST116') {
+            console.error('Error fetching subscription:', subError)
+            return new Response(JSON.stringify({
+              error: 'Failed to fetch subscription',
+              details: subError.message,
+              code: subError.code || null,
+              hint: subError.hint || null
+            }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            })
+          }
+
+          // If subscription exists, fetch related data separately
+          if (subscription) {
+            // Fetch plan details
+            const { data: plan, error: planError } = await supabaseClient
+              .from('subscription_plans')
+              .select('*')
+              .eq('id', subscription.plan_id)
+              .single()
+            
+            if (!planError && plan) {
+              subscription.subscription_plans = plan
+            }
+
+            // Fetch user email
+            const { data: user, error: userError } = await supabaseClient
+              .from('users')
+              .select('email')
+              .eq('id', subscription.user_id)
+              .single()
+            
+            if (!userError && user) {
+              subscription.users = { email: user.email }
+            }
+          }
 
           // If no subscription exists, create one
-          if (subError || !subscription) {
+          if (!subscription) {
             // Fetch plan details
             const { data: plan, error: planError } = await supabaseClient
               .from('subscription_plans')
@@ -1551,18 +1597,41 @@ serve(async (req) => {
                 expires_at: expiresAt.toISOString(),
                 started_at: new Date().toISOString()
               })
-              .select(`
-                *,
-                subscription_plans!user_subscriptions_plan_id_fkey(*),
-                users!user_subscriptions_user_id_fkey(email)
-              `)
+              .select('*')
               .single()
+
+            // Fetch related data separately
+            if (newSubscription && !createError) {
+              // Fetch plan details
+              const { data: plan } = await supabaseClient
+                .from('subscription_plans')
+                .select('*')
+                .eq('id', newSubscription.plan_id)
+                .single()
+              
+              if (plan) {
+                newSubscription.subscription_plans = plan
+              }
+
+              // Fetch user email
+              const { data: user } = await supabaseClient
+                .from('users')
+                .select('email')
+                .eq('id', newSubscription.user_id)
+                .single()
+              
+              if (user) {
+                newSubscription.users = { email: user.email }
+              }
+            }
 
             if (createError) {
               console.error('Error creating subscription:', createError)
               return new Response(JSON.stringify({
                 error: 'Failed to create subscription',
-                details: createError.message
+                details: createError.message,
+                code: createError.code || null,
+                hint: createError.hint || null
               }), {
                 status: 500,
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -1625,18 +1694,41 @@ serve(async (req) => {
               updated_at: new Date().toISOString()
             })
             .eq('id', subscription.id)
-            .select(`
-              *,
-              subscription_plans!user_subscriptions_plan_id_fkey(*),
-              users!user_subscriptions_user_id_fkey(email)
-            `)
+            .select('*')
             .single()
+
+          // Fetch related data separately if update succeeded
+          if (updatedSubscription && !updateError) {
+            // Fetch plan details
+            const { data: plan } = await supabaseClient
+              .from('subscription_plans')
+              .select('*')
+              .eq('id', updatedSubscription.plan_id)
+              .single()
+            
+            if (plan) {
+              updatedSubscription.subscription_plans = plan
+            }
+
+            // Fetch user email
+            const { data: user } = await supabaseClient
+              .from('users')
+              .select('email')
+              .eq('id', updatedSubscription.user_id)
+              .single()
+            
+            if (user) {
+              updatedSubscription.users = { email: user.email }
+            }
+          }
 
           if (updateError) {
             console.error('Error updating subscription:', updateError)
             return new Response(JSON.stringify({
               error: 'Failed to update subscription',
-              details: updateError.message
+              details: updateError.message,
+              code: updateError.code || null,
+              hint: updateError.hint || null
             }), {
               status: 500,
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -1658,9 +1750,20 @@ serve(async (req) => {
 
         } catch (error: any) {
           console.error('Error in upgradeUserSubscription:', error)
-          return new Response(JSON.stringify({
+          console.error('Error stack:', error?.stack)
+          console.error('Error code:', error?.code)
+          console.error('Error details:', error?.details)
+          
+          const errorResponse: any = {
             error: error?.message || 'Failed to upgrade subscription'
-          }), {
+          }
+          
+          if (error?.details) errorResponse.details = error.details
+          if (error?.code) errorResponse.code = error.code
+          if (error?.hint) errorResponse.hint = error.hint
+          if (error?.stack) errorResponse.stack = error.stack
+          
+          return new Response(JSON.stringify(errorResponse), {
             status: 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })

@@ -4,6 +4,7 @@ import Card from '../../components/base/Card';
 import Button from '../../components/base/Button';
 import Navigation from '../../components/feature/Navigation';
 import Header from '../../components/feature/Header';
+import NotificationBell from '../../components/feature/NotificationBell';
 import { useAcademy, getLessonStatus, LessonProgress } from '../../hooks/useAcademy';
 import { parseQuizPayload } from '../../utils/academy';
 import type { QuizPayload } from '../../types/academy';

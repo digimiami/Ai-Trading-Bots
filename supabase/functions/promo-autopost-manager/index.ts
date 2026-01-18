@@ -28,6 +28,7 @@ const RESVG_WASM_URL = "https://esm.sh/@resvg/resvg-wasm@2.6.2/index_bg.wasm";
 const LOGO_URL = "https://dkawxgwdqiirgmmjbvhc.supabase.co/storage/v1/object/public/pablobots-logo/logo_no_bg.png";
 const QR_URL = "https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=https://pablobots.com";
 const FONT_URLS = [
+  "https://fonts.gstatic.com/s/inter/v18/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfAZNhjQ.ttf",
   "https://raw.githubusercontent.com/google/fonts/main/ofl/inter/Inter-Regular.ttf",
   "https://raw.githubusercontent.com/google/fonts/main/ofl/inter/Inter-Medium.ttf",
 ];

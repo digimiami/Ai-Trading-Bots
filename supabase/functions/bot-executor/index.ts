@@ -499,6 +499,31 @@ function getRiskMultiplier(bot: any): number {
   return 1;
 }
 
+function clamp(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(Math.max(value, min), max);
+}
+
+type RiskContext = {
+  atrPercent: number;
+  volatilityRegime: 'low' | 'normal' | 'high';
+  liquidityScore: number;
+  spreadBps: number;
+  depthNotional: number;
+  drawdownPct: number;
+  consecutiveLosses: number;
+  sizeMultiplier: number;
+  reasons: string[];
+};
+
+type ExecutionPlan = {
+  orderType: 'market' | 'limit';
+  limitPrice?: number;
+  sizeMultiplier: number;
+  slippageBps?: number;
+  reason: string;
+};
+
 type TradeSizingResult = {
   quantity: number;
   rawQuantity: number;
@@ -512,6 +537,8 @@ type TradeSizingResult = {
   steps: SymbolSteps;
   isFutures: boolean;
   leverage: number; // Actual leverage used (after exchange-specific limits)
+  adaptiveMultiplier: number;
+  riskContext?: RiskContext;
 };
 
 // Resolve leverage based on exchange and trading type
@@ -537,7 +564,7 @@ function resolveLeverage(exchange?: string, tradingType?: string, userLeverage?:
   return 1; // Spot trading
 }
 
-function calculateTradeSizing(bot: any, price: number): TradeSizingResult {
+function calculateTradeSizing(bot: any, price: number, riskContext?: RiskContext): TradeSizingResult {
   const userLeverage = bot.leverage || 1;
   const riskMultiplier = getRiskMultiplier(bot);
   const tradingType = bot.tradingType || bot.trading_type;
@@ -555,8 +582,12 @@ function calculateTradeSizing(bot: any, price: number): TradeSizingResult {
   const minTradeAmount = isFutures ? 50 : 10;
   const effectiveBaseAmount = Math.max(minTradeAmount, baseAmount);
 
+  const adaptiveMultiplier = riskContext?.sizeMultiplier && Number.isFinite(riskContext.sizeMultiplier)
+    ? clamp(riskContext.sizeMultiplier, 0.2, 2)
+    : 1;
+
   // Use actual leverage (not userLeverage) for calculations
-  const totalAmount = effectiveBaseAmount * actualLeverage * riskMultiplier;
+  const totalAmount = effectiveBaseAmount * actualLeverage * riskMultiplier * adaptiveMultiplier;
   const rawQuantity = totalAmount / price;
 
   const quantityConstraints = getQuantityConstraints(bot.symbol);
@@ -607,12 +638,14 @@ function calculateTradeSizing(bot: any, price: number): TradeSizingResult {
     constraints: quantityConstraints,
     steps,
     isFutures,
-    leverage: actualLeverage // Add leverage field
+    leverage: actualLeverage, // Add leverage field
+    adaptiveMultiplier,
+    riskContext
   };
 }
 
-function calculateTradeQuantity(bot: any, price: number): number {
-  return calculateTradeSizing(bot, price).quantity;
+function calculateTradeQuantity(bot: any, price: number, riskContext?: RiskContext): number {
+  return calculateTradeSizing(bot, price, riskContext).quantity;
 }
 
 type SlippageOptions = {
@@ -2499,6 +2532,53 @@ class MarketDataFetcher {
       console.error(`❌ Error calculating ADX for ${symbol}:`, error);
       return 20; // Return weak trend on error
     }
+  }
+
+  static async fetchOrderBook(symbol: string, exchange: string, tradingType: string = 'spot', limit: number = 25): Promise<{ bids: number[][]; asks: number[][] } | null> {
+    try {
+      const exchangeLower = (exchange || '').toLowerCase();
+      if (exchangeLower !== 'bybit') {
+        return null;
+      }
+
+      const bybitCategory = tradingType === 'futures' || tradingType === 'linear' ? 'linear' : 'spot';
+      const symbolVariants = this.normalizeSymbol(symbol, exchangeLower, bybitCategory === 'linear' ? 'futures' : 'spot');
+      const baseDomains = ['https://api.bybit.com'];
+
+      for (const symbolVariant of symbolVariants) {
+        for (const baseDomain of baseDomains) {
+          try {
+            const url = `${baseDomain}/v5/market/orderbook?category=${bybitCategory}&symbol=${symbolVariant}&limit=${limit}`;
+            const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+            const contentType = response.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+              if (response.status === 403) {
+                console.warn(`⚠️ Bybit orderbook 403 for ${symbolVariant} (${bybitCategory})`);
+                continue;
+              }
+              const errorText = await response.text().catch(() => '');
+              console.warn(`⚠️ Bybit orderbook non-JSON (${contentType}) for ${symbolVariant}: ${errorText.substring(0, 120)}`);
+              continue;
+            }
+
+            const data = await response.json();
+            const orderbook = data?.result;
+            if (data?.retCode === 0 && orderbook?.b && orderbook?.a) {
+              const bids = orderbook.b.map((b: any[]) => [parseFloat(b[0]), parseFloat(b[1])]).filter((b: number[]) => b[0] > 0 && b[1] > 0);
+              const asks = orderbook.a.map((a: any[]) => [parseFloat(a[0]), parseFloat(a[1])]).filter((a: number[]) => a[0] > 0 && a[1] > 0);
+              if (bids.length && asks.length) {
+                return { bids, asks };
+              }
+            }
+          } catch (err) {
+            continue;
+          }
+        }
+      }
+    } catch (error) {
+      console.warn(`⚠️ Error fetching orderbook for ${symbol}:`, error);
+    }
+    return null;
   }
 }
 
@@ -4447,6 +4527,9 @@ class BotExecutor {
   
   private async evaluateStrategy(strategy: any, marketData: any, bot: any = null): Promise<any> {
     const { rsi, adx, price, mlPrediction } = marketData;
+    const strategyConfig = this.parseStrategyConfig(bot);
+    const timeframe = bot?.timeframe || bot?.timeFrame || '1h';
+    const signalWeights = this.getSignalWeights(strategyConfig, bot?.symbol, timeframe);
     
     // Validate strategy object
     if (!strategy || typeof strategy !== 'object') {
@@ -4460,7 +4543,7 @@ class BotExecutor {
     
     // 🚀 ALWAYS TRADE MODE: Trade on all conditions (highest priority)
     // This mode bypasses all strategy conditions and always generates a trade signal
-    const config = bot?.strategy_config || {};
+    const config = strategyConfig;
     const alwaysTrade = config.always_trade === true || 
                         strategy.always_trade === true ||
                         strategy.type === 'always_trade' ||
@@ -4471,6 +4554,8 @@ class BotExecutor {
       // Determine side based on RSI direction (simple rule)
       // RSI > 50 = sell/short, RSI <= 50 = buy/long
       const side = rsi > 50 ? 'sell' : 'buy';
+      const weight = signalWeights.always_trade ?? 1;
+      const weightedConfidence = clamp(0.6 * weight, 0, 1);
       console.log(`🚀 [ALWAYS TRADE MODE] Generating ${side.toUpperCase()} signal regardless of conditions (RSI: ${rsi.toFixed(2)})`);
       return {
         shouldTrade: true,
@@ -4481,7 +4566,14 @@ class BotExecutor {
         stopLoss: side === 'buy' ? price * 0.98 : price * 1.02,
         takeProfit1: side === 'buy' ? price * 1.02 : price * 0.98,
         takeProfit2: side === 'buy' ? price * 1.05 : price * 0.95,
-        indicators: { rsi, adx, price }
+        indicators: { rsi, adx, price },
+        signalComponents: [{
+          source: 'always_trade',
+          side,
+          confidence: 0.6,
+          weight,
+          weightedConfidence
+        }]
       };
     }
     
@@ -4502,6 +4594,7 @@ class BotExecutor {
       if (rsi < rsiOversold) {
         // RSI oversold - BUY signal
         console.log(`📝 [PAPER TRADING] BUY signal: RSI ${rsi.toFixed(2)} < ${rsiOversold}`);
+        const weight = signalWeights.paper_rsi ?? 1;
         return {
           shouldTrade: true,
           side: 'buy',
@@ -4511,11 +4604,19 @@ class BotExecutor {
           stopLoss: price * 0.98,
           takeProfit1: price * 1.02,
           takeProfit2: price * 1.05,
-          indicators: { rsi, adx, price }
+          indicators: { rsi, adx, price },
+          signalComponents: [{
+            source: 'paper_rsi',
+            side: 'buy',
+            confidence: 0.7,
+            weight,
+            weightedConfidence: clamp(0.7 * weight, 0, 1)
+          }]
         };
       } else if (rsi > rsiOverbought) {
         // RSI overbought - SELL signal
         console.log(`📝 [PAPER TRADING] SELL signal: RSI ${rsi.toFixed(2)} > ${rsiOverbought}`);
+        const weight = signalWeights.paper_rsi ?? 1;
         return {
           shouldTrade: true,
           side: 'sell',
@@ -4525,7 +4626,14 @@ class BotExecutor {
           stopLoss: price * 1.02,
           takeProfit1: price * 0.98,
           takeProfit2: price * 0.95,
-          indicators: { rsi, adx, price }
+          indicators: { rsi, adx, price },
+          signalComponents: [{
+            source: 'paper_rsi',
+            side: 'sell',
+            confidence: 0.7,
+            weight,
+            weightedConfidence: clamp(0.7 * weight, 0, 1)
+          }]
         };
       } else {
         // RSI neutral - NO signal
@@ -4714,16 +4822,26 @@ class BotExecutor {
       const mlSignal = mlPrediction.prediction?.toLowerCase();
       
       if (mlSignal === 'buy' && mlConfidence > 0.6) {
+        const baseConfidence = mlConfidence * 0.3;
+        const weight = signalWeights.ml ?? 1;
         signals.push({
           side: 'buy',
           reason: `ML predicts BUY (${(mlConfidence * 100).toFixed(1)}% confidence)`,
-          confidence: mlConfidence * 0.3 // Weight ML prediction at 30% of total confidence
+          confidence: baseConfidence, // Weight ML prediction at 30% of total confidence
+          source: 'ml',
+          weight,
+          weightedConfidence: clamp(baseConfidence * weight, 0, 1)
         });
       } else if (mlSignal === 'sell' && mlConfidence > 0.6) {
+        const baseConfidence = mlConfidence * 0.3;
+        const weight = signalWeights.ml ?? 1;
         signals.push({
           side: 'sell',
           reason: `ML predicts SELL (${(mlConfidence * 100).toFixed(1)}% confidence)`,
-          confidence: mlConfidence * 0.3 // Weight ML prediction at 30% of total confidence
+          confidence: baseConfidence, // Weight ML prediction at 30% of total confidence
+          source: 'ml',
+          weight,
+          weightedConfidence: clamp(baseConfidence * weight, 0, 1)
         });
       }
     }
@@ -4732,17 +4850,27 @@ class BotExecutor {
     // With rsiThreshold=50: RSI > 50 = sell, RSI <= 50 = buy (always generates signal!)
     if (strategy.rsiThreshold) {
       if (rsi >= strategy.rsiThreshold) {
+        const baseConfidence = Math.min((rsi - strategy.rsiThreshold) / 10 + 0.1, 1);
+        const weight = signalWeights.rsi ?? 1;
         signals.push({
           side: 'sell',
           reason: `RSI overbought (${rsi.toFixed(2)} >= ${strategy.rsiThreshold})`,
-          confidence: Math.min((rsi - strategy.rsiThreshold) / 10 + 0.1, 1) // Add 0.1 base confidence
+          confidence: baseConfidence, // Add 0.1 base confidence
+          source: 'rsi',
+          weight,
+          weightedConfidence: clamp(baseConfidence * weight, 0, 1)
         });
       } else {
         // RSI < threshold = buy signal (always true if RSI < threshold)
+        const baseConfidence = Math.min(((strategy.rsiThreshold - rsi) / 10) + 0.1, 1);
+        const weight = signalWeights.rsi ?? 1;
         signals.push({
           side: 'buy',
           reason: `RSI oversold (${rsi.toFixed(2)} < ${strategy.rsiThreshold})`,
-          confidence: Math.min(((strategy.rsiThreshold - rsi) / 10) + 0.1, 1) // Add 0.1 base confidence
+          confidence: baseConfidence, // Add 0.1 base confidence
+          source: 'rsi',
+          weight,
+          weightedConfidence: clamp(baseConfidence * weight, 0, 1)
         });
       }
     }
@@ -4753,17 +4881,27 @@ class BotExecutor {
       // If threshold is very low (<=5), be very lenient - allow any ADX > 0
       if (adxThreshold <= 5) {
         if (adx > 0) {
+          const baseConfidence = Math.min((adx / 20) + 0.2, 1);
+          const weight = signalWeights.adx ?? 1;
           signals.push({
             side: rsi > 50 ? 'sell' : 'buy',
             reason: `Trend detected (ADX: ${adx.toFixed(2)} > 0, threshold: ${adxThreshold})`,
-            confidence: Math.min((adx / 20) + 0.2, 1) // Base 0.2 confidence, scales with ADX
+            confidence: baseConfidence, // Base 0.2 confidence, scales with ADX
+            source: 'adx',
+            weight,
+            weightedConfidence: clamp(baseConfidence * weight, 0, 1)
           });
         }
       } else if (adx >= adxThreshold) {
+        const baseConfidence = Math.min((adx - adxThreshold) / 20 + 0.3, 1);
+        const weight = signalWeights.adx ?? 1;
         signals.push({
           side: rsi > 50 ? 'sell' : 'buy',
           reason: `Strong trend detected (ADX: ${adx.toFixed(2)} >= ${adxThreshold})`,
-          confidence: Math.min((adx - adxThreshold) / 20 + 0.3, 1)
+          confidence: baseConfidence,
+          source: 'adx',
+          weight,
+          weightedConfidence: clamp(baseConfidence * weight, 0, 1)
         });
       }
     }
@@ -4774,10 +4912,15 @@ class BotExecutor {
       // For now, simulate BB width check
       const bbWidth = marketData.bbWidth || (Math.random() * 5); // Placeholder
       if (bbWidth > strategy.bbWidthThreshold) {
+        const baseConfidence = Math.min((bbWidth - strategy.bbWidthThreshold) / 5, 1) * 0.5;
+        const weight = signalWeights.bb_width ?? 1;
         signals.push({
           side: rsi > 50 ? 'sell' : 'buy',
           reason: `High volatility (BB width: ${bbWidth.toFixed(2)} > ${strategy.bbWidthThreshold})`,
-          confidence: Math.min((bbWidth - strategy.bbWidthThreshold) / 5, 1) * 0.5
+          confidence: baseConfidence,
+          source: 'bb_width',
+          weight,
+          weightedConfidence: clamp(baseConfidence * weight, 0, 1)
         });
       }
     }
@@ -4788,10 +4931,15 @@ class BotExecutor {
       // For now, simulate EMA slope check
       const emaSlope = marketData.emaSlope || (Math.random() * 2 - 1); // Placeholder
       if (Math.abs(emaSlope) > strategy.emaSlope) {
+        const baseConfidence = Math.min(Math.abs(emaSlope - strategy.emaSlope) / 2, 1) * 0.5;
+        const weight = signalWeights.ema_slope ?? 1;
         signals.push({
           side: emaSlope > 0 ? 'buy' : 'sell',
           reason: `Strong EMA slope (${emaSlope.toFixed(2)} > ${strategy.emaSlope})`,
-          confidence: Math.min(Math.abs(emaSlope - strategy.emaSlope) / 2, 1) * 0.5
+          confidence: baseConfidence,
+          source: 'ema_slope',
+          weight,
+          weightedConfidence: clamp(baseConfidence * weight, 0, 1)
         });
       }
     }
@@ -4801,10 +4949,15 @@ class BotExecutor {
       // TODO: Fetch ATR from market data
       const atrPercent = marketData.atrPercent || (Math.random() * 5); // Placeholder
       if (atrPercent > strategy.atrPercentage) {
+        const baseConfidence = Math.min((atrPercent - strategy.atrPercentage) / 5, 1) * 0.5;
+        const weight = signalWeights.atr ?? 1;
         signals.push({
           side: rsi > 50 ? 'sell' : 'buy',
           reason: `High volatility (ATR: ${atrPercent.toFixed(2)}% > ${strategy.atrPercentage}%)`,
-          confidence: Math.min((atrPercent - strategy.atrPercentage) / 5, 1) * 0.5
+          confidence: baseConfidence,
+          source: 'atr',
+          weight,
+          weightedConfidence: clamp(baseConfidence * weight, 0, 1)
         });
       }
     }
@@ -4814,10 +4967,15 @@ class BotExecutor {
       // TODO: Fetch VWAP distance from market data
       const vwapDist = marketData.vwapDistance || (Math.random() * 2); // Placeholder
       if (Math.abs(vwapDist) > strategy.vwapDistance) {
+        const baseConfidence = Math.min((Math.abs(vwapDist) - strategy.vwapDistance) / 2, 1) * 0.5;
+        const weight = signalWeights.vwap_distance ?? 1;
         signals.push({
           side: vwapDist > 0 ? 'sell' : 'buy', // Above VWAP = sell, below = buy
           reason: `Price far from VWAP (${vwapDist.toFixed(2)}% > ${strategy.vwapDistance}%)`,
-          confidence: Math.min((Math.abs(vwapDist) - strategy.vwapDistance) / 2, 1) * 0.5
+          confidence: baseConfidence,
+          source: 'vwap_distance',
+          weight,
+          weightedConfidence: clamp(baseConfidence * weight, 0, 1)
         });
       }
     }
@@ -4827,10 +4985,15 @@ class BotExecutor {
       // TODO: Fetch momentum from market data
       const momentum = marketData.momentum || (Math.random() * 4 - 2); // Placeholder
       if (Math.abs(momentum) > strategy.momentumThreshold) {
+        const baseConfidence = Math.min((Math.abs(momentum) - strategy.momentumThreshold) / 2, 1) * 0.5;
+        const weight = signalWeights.momentum ?? 1;
         signals.push({
           side: momentum > 0 ? 'buy' : 'sell',
           reason: `Strong momentum (${momentum.toFixed(2)} > ${strategy.momentumThreshold})`,
-          confidence: Math.min((Math.abs(momentum) - strategy.momentumThreshold) / 2, 1) * 0.5
+          confidence: baseConfidence,
+          source: 'momentum',
+          weight,
+          weightedConfidence: clamp(baseConfidence * weight, 0, 1)
         });
       }
     }
@@ -4840,15 +5003,19 @@ class BotExecutor {
       // Group signals by side
       const buySignals = signals.filter(s => s.side === 'buy');
       const sellSignals = signals.filter(s => s.side === 'sell');
+      const buyScore = buySignals.reduce((sum, s) => sum + (s.weightedConfidence ?? s.confidence), 0);
+      const sellScore = sellSignals.reduce((sum, s) => sum + (s.weightedConfidence ?? s.confidence), 0);
       
       // Determine final side based on majority
-      const finalSide = buySignals.length > sellSignals.length ? 'buy' : 
-                       sellSignals.length > buySignals.length ? 'sell' : 
+      const finalSide = buyScore > sellScore ? 'buy' :
+                       sellScore > buyScore ? 'sell' :
+                       buySignals.length > sellSignals.length ? 'buy' :
+                       sellSignals.length > buySignals.length ? 'sell' :
                        signals[0].side;
       
       // Calculate average confidence
       const relevantSignals = finalSide === 'buy' ? buySignals : sellSignals;
-      confidence = relevantSignals.reduce((sum, s) => sum + s.confidence, 0) / relevantSignals.length;
+      confidence = relevantSignals.reduce((sum, s) => sum + (s.weightedConfidence ?? s.confidence), 0) / relevantSignals.length;
       
       // Combine reasons
       reason = relevantSignals.map(s => s.reason).join('; ');
@@ -4858,7 +5025,15 @@ class BotExecutor {
         side: finalSide,
         reason: reason,
         confidence: Math.min(confidence, 1),
-        signalsCount: signals.length
+        signalsCount: signals.length,
+        signalComponents: relevantSignals.map((s: any) => ({
+          source: s.source,
+          side: s.side,
+          confidence: s.confidence,
+          weight: s.weight,
+          weightedConfidence: s.weightedConfidence
+        })),
+        signalWeights
       };
     }
     
@@ -6196,6 +6371,303 @@ class BotExecutor {
     // Return predicted value for next period (x = n)
     return slope * n + intercept;
   }
+
+  private parseStrategyConfig(bot: any): any {
+    try {
+      if (!bot?.strategy_config) return {};
+      if (typeof bot.strategy_config === 'string') {
+        return JSON.parse(bot.strategy_config);
+      }
+      return bot.strategy_config || {};
+    } catch (error) {
+      console.warn('⚠️ Failed to parse strategy_config, using empty config:', error);
+      return {};
+    }
+  }
+
+  private async getAtrPercentSnapshot(symbol: string, exchange: string, timeframe: string, currentPrice: number): Promise<number> {
+    try {
+      if (!currentPrice || currentPrice <= 0) return 0;
+      const klines = await MarketDataFetcher.fetchKlines(symbol, exchange, timeframe, 60);
+      if (!klines || klines.length < 15) return 0;
+
+      const highs = klines.map(k => k[2]).filter(v => Number.isFinite(v));
+      const lows = klines.map(k => k[3]).filter(v => Number.isFinite(v));
+      const closes = klines.map(k => k[4]).filter(v => Number.isFinite(v));
+      if (highs.length < 15 || lows.length < 15 || closes.length < 15) return 0;
+
+      const atr = this.calculateATR(highs, lows, closes, 14);
+      if (!Number.isFinite(atr) || atr <= 0) return 0;
+      return (atr / currentPrice) * 100;
+    } catch (error) {
+      console.warn(`⚠️ Failed to compute ATR% for ${symbol}:`, error);
+      return 0;
+    }
+  }
+
+  private async getRecentDrawdownPct(botId: string, isPaperTrading: boolean): Promise<number> {
+    try {
+      const tableName = isPaperTrading ? 'paper_trading_trades' : 'trades';
+      const { data: trades } = await this.supabaseClient
+        .from(tableName)
+        .select('pnl, executed_at, created_at, status')
+        .eq('bot_id', botId)
+        .in('status', ['closed', 'completed'])
+        .not('pnl', 'is', null)
+        .order('executed_at', { ascending: false })
+        .limit(60);
+
+      if (!trades || trades.length === 0) return 0;
+
+      const sorted = [...trades].sort((a, b) => {
+        const dateA = new Date(a.executed_at || a.created_at || 0).getTime();
+        const dateB = new Date(b.executed_at || b.created_at || 0).getTime();
+        return dateA - dateB;
+      });
+
+      let peakPnL = 0;
+      let runningPnL = 0;
+      let maxDrawdown = 0;
+
+      for (const t of sorted) {
+        runningPnL += parseFloat(t.pnl || 0) || 0;
+        if (runningPnL > peakPnL) peakPnL = runningPnL;
+        const drawdown = peakPnL - runningPnL;
+        if (drawdown > maxDrawdown) maxDrawdown = drawdown;
+      }
+
+      return peakPnL > 0 ? (maxDrawdown / peakPnL) * 100 : 0;
+    } catch (error) {
+      console.warn('⚠️ Failed to compute recent drawdown:', error);
+      return 0;
+    }
+  }
+
+  private async getLiquiditySnapshot(bot: any, currentPrice: number, expectedNotional: number): Promise<{ liquidityScore: number; spreadBps: number; depthNotional: number; bestBid: number; bestAsk: number; orderbook: { bids: number[][]; asks: number[][] } | null; }> {
+    const tradingType = bot.tradingType || bot.trading_type || 'spot';
+    const orderbook = await MarketDataFetcher.fetchOrderBook(bot.symbol, bot.exchange, tradingType, 25);
+    if (!orderbook || !orderbook.bids.length || !orderbook.asks.length) {
+      const lowLiquidity = isLowLiquiditySymbol(bot.symbol);
+      return {
+        liquidityScore: lowLiquidity ? 0.3 : 0.55,
+        spreadBps: lowLiquidity ? 60 : 25,
+        depthNotional: 0,
+        bestBid: 0,
+        bestAsk: 0,
+        orderbook: null
+      };
+    }
+
+    const bestBid = orderbook.bids[0][0];
+    const bestAsk = orderbook.asks[0][0];
+    const mid = (bestBid + bestAsk) / 2;
+    const spreadBps = mid > 0 ? ((bestAsk - bestBid) / mid) * 10000 : 0;
+
+    const depthLevels = 10;
+    const bidDepth = orderbook.bids.slice(0, depthLevels).reduce((sum, [price, qty]) => sum + price * qty, 0);
+    const askDepth = orderbook.asks.slice(0, depthLevels).reduce((sum, [price, qty]) => sum + price * qty, 0);
+    const depthNotional = Math.min(bidDepth, askDepth);
+
+    const targetNotional = expectedNotional > 0 ? expectedNotional * 2.5 : (currentPrice * 10);
+    const liquidityScore = clamp(targetNotional > 0 ? depthNotional / targetNotional : 0, 0, 1);
+
+    return { liquidityScore, spreadBps, depthNotional, bestBid, bestAsk, orderbook };
+  }
+
+  private async buildRiskContext(bot: any, currentPrice: number): Promise<RiskContext> {
+    const strategyConfig = this.parseStrategyConfig(bot);
+    const riskConfig = strategyConfig.risk_engine || {};
+    const timeframe = bot.timeframe || bot.timeFrame || '1h';
+    const isPaperTrading = bot.paper_trading === true;
+
+    const atrPercent = await this.getAtrPercentSnapshot(bot.symbol, bot.exchange, timeframe, currentPrice);
+    const volatilityLow = riskConfig.volatility_low ?? 0.6;
+    const volatilityHigh = riskConfig.volatility_high ?? 2.5;
+    const volatilityRegime = atrPercent > volatilityHigh ? 'high' : atrPercent > 0 && atrPercent < volatilityLow ? 'low' : 'normal';
+
+    const userLeverage = bot.leverage || 1;
+    const actualLeverage = resolveLeverage(bot.exchange, bot.tradingType || bot.trading_type, userLeverage);
+    const expectedNotional = (bot.trade_amount || bot.tradeAmount || 100) * actualLeverage * getRiskMultiplier(bot);
+    const liquiditySnapshot = await this.getLiquiditySnapshot(bot, currentPrice, expectedNotional);
+
+    const consecutiveLosses = await this.getConsecutiveLosses(bot.id, isPaperTrading);
+    const drawdownPct = await this.getRecentDrawdownPct(bot.id, isPaperTrading);
+
+    let sizeMultiplier = 1;
+    const reasons: string[] = [];
+
+    if (volatilityRegime === 'high') {
+      const multiplier = riskConfig.high_volatility_multiplier ?? 0.75;
+      sizeMultiplier *= multiplier;
+      reasons.push(`High volatility (${atrPercent.toFixed(2)}% ATR)`);
+    } else if (volatilityRegime === 'low' && atrPercent > 0) {
+      const multiplier = riskConfig.low_volatility_multiplier ?? 1.05;
+      sizeMultiplier *= multiplier;
+      reasons.push(`Low volatility (${atrPercent.toFixed(2)}% ATR)`);
+    }
+
+    const maxSpreadBps = riskConfig.max_spread_bps ?? 20;
+    if (liquiditySnapshot.spreadBps > maxSpreadBps) {
+      const multiplier = riskConfig.spread_penalty_multiplier ?? 0.75;
+      sizeMultiplier *= multiplier;
+      reasons.push(`Wide spread (${liquiditySnapshot.spreadBps.toFixed(1)} bps)`);
+    }
+
+    if (liquiditySnapshot.liquidityScore < 0.35) {
+      const multiplier = riskConfig.low_liquidity_multiplier ?? 0.6;
+      sizeMultiplier *= multiplier;
+      reasons.push(`Thin depth (score ${liquiditySnapshot.liquidityScore.toFixed(2)})`);
+    } else if (liquiditySnapshot.liquidityScore < 0.6) {
+      const multiplier = riskConfig.medium_liquidity_multiplier ?? 0.8;
+      sizeMultiplier *= multiplier;
+      reasons.push(`Moderate depth (score ${liquiditySnapshot.liquidityScore.toFixed(2)})`);
+    }
+
+    const drawdownModerate = riskConfig.drawdown_moderate ?? 10;
+    const drawdownSevere = riskConfig.drawdown_severe ?? 20;
+    if (drawdownPct >= drawdownSevere) {
+      const multiplier = riskConfig.severe_drawdown_multiplier ?? 0.6;
+      sizeMultiplier *= multiplier;
+      reasons.push(`Severe drawdown (${drawdownPct.toFixed(1)}%)`);
+    } else if (drawdownPct >= drawdownModerate) {
+      const multiplier = riskConfig.moderate_drawdown_multiplier ?? 0.8;
+      sizeMultiplier *= multiplier;
+      reasons.push(`Drawdown ${drawdownPct.toFixed(1)}%`);
+    }
+
+    const lossThreshold = riskConfig.loss_streak_threshold ?? 3;
+    const lossStep = riskConfig.loss_streak_step ?? 0.15;
+    if (consecutiveLosses >= lossThreshold) {
+      const lossPenalty = 1 - ((consecutiveLosses - lossThreshold + 1) * lossStep);
+      const lossMultiplier = clamp(lossPenalty, 0.35, 1);
+      sizeMultiplier *= lossMultiplier;
+      reasons.push(`De-risk after ${consecutiveLosses} losses`);
+    }
+
+    const minMultiplier = riskConfig.min_size_multiplier ?? 0.35;
+    const maxMultiplier = riskConfig.max_size_multiplier ?? 1.5;
+    sizeMultiplier = clamp(sizeMultiplier, minMultiplier, maxMultiplier);
+
+    return {
+      atrPercent,
+      volatilityRegime,
+      liquidityScore: liquiditySnapshot.liquidityScore,
+      spreadBps: liquiditySnapshot.spreadBps,
+      depthNotional: liquiditySnapshot.depthNotional,
+      drawdownPct,
+      consecutiveLosses,
+      sizeMultiplier,
+      reasons
+    };
+  }
+
+  private estimateOrderbookSlippage(orderbook: { bids: number[][]; asks: number[][] }, side: string, quantity: number): { slippageBps: number; avgPrice: number; mid: number; bestBid: number; bestAsk: number; filledQty: number; } {
+    const bids = orderbook.bids || [];
+    const asks = orderbook.asks || [];
+    const bestBid = bids.length ? bids[0][0] : 0;
+    const bestAsk = asks.length ? asks[0][0] : 0;
+    const mid = bestBid && bestAsk ? (bestBid + bestAsk) / 2 : 0;
+    const levels = side === 'buy' ? asks : bids;
+
+    let remaining = Math.max(0, quantity);
+    let cost = 0;
+    let filledQty = 0;
+    for (const [price, qty] of levels) {
+      if (remaining <= 0) break;
+      const takeQty = Math.min(qty, remaining);
+      cost += takeQty * price;
+      filledQty += takeQty;
+      remaining -= takeQty;
+    }
+
+    const avgPrice = filledQty > 0 ? cost / filledQty : 0;
+    let slippageBps = mid > 0 && avgPrice > 0
+      ? Math.abs((avgPrice - mid) / mid) * 10000
+      : 0;
+    if (remaining > 0) {
+      slippageBps = Math.max(slippageBps, 100); // not enough depth, treat as high slippage
+    }
+
+    return { slippageBps, avgPrice, mid, bestBid, bestAsk, filledQty };
+  }
+
+  private async buildExecutionPlan(bot: any, tradeSignal: any, currentPrice: number, quantity: number, riskContext: RiskContext): Promise<ExecutionPlan> {
+    const strategyConfig = this.parseStrategyConfig(bot);
+    const riskConfig = strategyConfig.risk_engine || {};
+    const tradingType = bot.tradingType || bot.trading_type || 'spot';
+    const orderbook = await MarketDataFetcher.fetchOrderBook(bot.symbol, bot.exchange, tradingType, 25);
+
+    if (!orderbook || !orderbook.bids.length || !orderbook.asks.length) {
+      return {
+        orderType: 'market',
+        sizeMultiplier: 1,
+        reason: 'No orderbook data; default to market'
+      };
+    }
+
+    const side = (tradeSignal?.side || '').toLowerCase();
+    const slippageEstimate = this.estimateOrderbookSlippage(orderbook, side, quantity);
+    const maxSlippageBps = riskConfig.max_slippage_bps ?? 25;
+
+    let sizeMultiplier = 1;
+    if (slippageEstimate.slippageBps > maxSlippageBps && slippageEstimate.slippageBps > 0) {
+      const ratio = maxSlippageBps / slippageEstimate.slippageBps;
+      const minExecMultiplier = riskConfig.min_execution_size_multiplier ?? 0.35;
+      sizeMultiplier = clamp(ratio, minExecMultiplier, 1);
+    }
+
+    const spreadBps = slippageEstimate.mid > 0
+      ? ((slippageEstimate.bestAsk - slippageEstimate.bestBid) / slippageEstimate.mid) * 10000
+      : 0;
+    const limitSpreadBps = riskConfig.limit_spread_bps ?? 8;
+
+    const allowLimit = spreadBps > 0
+      && spreadBps <= limitSpreadBps
+      && riskContext.liquidityScore >= 0.6
+      && riskContext.volatilityRegime !== 'high';
+
+    if (allowLimit) {
+      const limitPrice = side === 'buy' ? slippageEstimate.bestAsk : slippageEstimate.bestBid;
+      return {
+        orderType: 'limit',
+        limitPrice,
+        sizeMultiplier,
+        slippageBps: slippageEstimate.slippageBps,
+        reason: `Limit ${side.toUpperCase()} on tight spread (${spreadBps.toFixed(1)} bps)`
+      };
+    }
+
+    return {
+      orderType: 'market',
+      sizeMultiplier,
+      slippageBps: slippageEstimate.slippageBps,
+      reason: slippageEstimate.slippageBps > maxSlippageBps
+        ? `Market order with size trim (slippage ${slippageEstimate.slippageBps.toFixed(1)} bps)`
+        : 'Market order (spread/volatility)'
+    };
+  }
+
+  private getSignalWeights(strategyConfig: any, symbol: string, timeframe: string): Record<string, number> {
+    const defaults: Record<string, number> = {
+      ml: 1,
+      rsi: 1,
+      adx: 1,
+      bb_width: 1,
+      ema_slope: 1,
+      atr: 1,
+      vwap_distance: 1,
+      momentum: 1,
+      always_trade: 1,
+      paper_rsi: 1
+    };
+
+    const weights = strategyConfig?.signal_weights || {};
+    const globalWeights = weights.global || {};
+    const key = symbol && timeframe ? `${symbol}|${timeframe}` : '';
+    const symbolTimeframeWeights = key && weights.by_symbol_timeframe ? (weights.by_symbol_timeframe[key] || {}) : {};
+
+    return { ...defaults, ...globalWeights, ...symbolTimeframeWeights };
+  }
   
   public async executeTrade(bot: any, tradeSignal: any): Promise<{ success: boolean; skipped?: boolean; reason?: string; trade?: any }> {
     try {
@@ -6380,12 +6852,39 @@ class BotExecutor {
       }
       
       console.log(`✅ Current price for ${bot.symbol}: $${currentPrice}`);
+
+      const riskContext = await this.buildRiskContext(bot, currentPrice);
+      if (riskContext?.reasons?.length) {
+        console.log(`🧠 Risk context: ${riskContext.reasons.join(' | ')}`);
+      }
       
-      const tradeAmountRaw = this.calculateTradeAmount(bot, currentPrice);
+      let tradeAmountRaw = this.calculateTradeAmount(bot, currentPrice, riskContext);
+
+      const signalSizeMultiplier = tradeSignal?.sizeMultiplier ? Number(tradeSignal.sizeMultiplier) : 1;
+      if (Number.isFinite(signalSizeMultiplier) && signalSizeMultiplier > 0 && signalSizeMultiplier !== 1) {
+        tradeAmountRaw = tradeAmountRaw * signalSizeMultiplier;
+        console.log(`🎚️ Signal size multiplier applied: ${signalSizeMultiplier.toFixed(2)}x`);
+      }
+
+      const executionPlan = await this.buildExecutionPlan(bot, tradeSignal, currentPrice, tradeAmountRaw, riskContext);
+      if (executionPlan.sizeMultiplier !== 1) {
+        tradeAmountRaw = tradeAmountRaw * executionPlan.sizeMultiplier;
+        console.log(`🧩 Execution size adjustment: ${executionPlan.sizeMultiplier.toFixed(2)}x (${executionPlan.reason})`);
+      }
+
+      const executionPrice = executionPlan.orderType === 'limit' && executionPlan.limitPrice && executionPlan.limitPrice > 0
+        ? executionPlan.limitPrice
+        : currentPrice;
+
+      const enrichedSignal = {
+        ...tradeSignal,
+        executionPlan,
+        riskContext
+      };
       
       // Validate calculated quantity
       if (!tradeAmountRaw || !isFinite(tradeAmountRaw) || tradeAmountRaw <= 0) {
-        throw new Error(`Invalid quantity calculated for ${bot.symbol}: ${tradeAmountRaw}. Price: $${currentPrice}`);
+        throw new Error(`Invalid quantity calculated for ${bot.symbol}: ${tradeAmountRaw}. Price: $${executionPrice}`);
       }
       
       // Normalize qty/price to reduce exchange rejections
@@ -6393,7 +6892,7 @@ class BotExecutor {
       const { stepSize, tickSize } = getSymbolSteps(bot.symbol);
       const normalized = normalizeOrderParams(
         tradeAmountRaw,
-        currentPrice,
+        executionPrice,
         { minQty: basicConstraints.min, maxQty: basicConstraints.max, qtyStep: stepSize, tickSize: tickSize }
       );
       const tradeAmount = normalized.qty;
@@ -6413,6 +6912,7 @@ class BotExecutor {
       console.log(`📈 Side: ${tradeSignal.side}`);
       console.log(`💰 Quantity: ${tradeAmount}`);
       console.log(`💵 Price: $${normalizedPrice}`);
+      console.log(`🧭 Execution: ${executionPlan.orderType.toUpperCase()} (${executionPlan.reason})`);
       console.log(`🏦 Exchange: ${bot.exchange}`);
       console.log(`📊 Trading Type: ${tradingType}`);
       
@@ -6424,7 +6924,7 @@ class BotExecutor {
       while (retryCount < maxRetries) {
         try {
           console.log(`\n🔄 Attempt ${retryCount + 1}/${maxRetries}: Placing order...`);
-          orderResult = await this.placeOrder(bot, tradeSignal, tradeAmount, normalizedPrice);
+          orderResult = await this.placeOrder(bot, enrichedSignal, tradeAmount, normalizedPrice);
           
           // Check if order was skipped (e.g., symbol not available on exchange)
           if (orderResult && orderResult.status === 'skipped') {
@@ -6595,7 +7095,7 @@ class BotExecutor {
         level: 'success',
         category: 'trade',
         message: `${tradeSignal.side.toUpperCase()} order placed: ${tradeAmount} ${bot.symbol} at $${currentPrice}`,
-        details: { trade, signal: tradeSignal, orderResult }
+        details: { trade, signal: enrichedSignal, orderResult }
       });
 
       // Send Telegram notification for trade execution
@@ -8204,7 +8704,7 @@ class BotExecutor {
       }
       
       // Use actual Bybit step size if available, otherwise fall back to configured
-      const { stepSize: configuredStepSize } = getSymbolSteps(symbol);
+      const { stepSize: configuredStepSize, tickSize: configuredTickSize } = getSymbolSteps(symbol);
       
       // Validate actual step size from Bybit - if it's 0 or invalid, use configured value
       let stepSize = configuredStepSize;
@@ -8445,12 +8945,26 @@ class BotExecutor {
         }
       }
       
+      const requestedOrderType = tradeSignal?.executionPlan?.orderType || 'market';
+      let isLimitOrder = requestedOrderType === 'limit';
+      let orderType = isLimitOrder ? 'Limit' : 'Market';
+      let effectiveLimitPrice = isLimitOrder && price > 0 ? price : (tradeSignal?.executionPlan?.limitPrice || 0);
+      if (isLimitOrder && (!effectiveLimitPrice || effectiveLimitPrice <= 0)) {
+        console.warn(`⚠️ Limit order requested but no valid price supplied, falling back to market order`);
+        isLimitOrder = false;
+        orderType = 'Market';
+        effectiveLimitPrice = 0;
+      }
+      const priceDecimals = configuredTickSize && configuredTickSize < 1
+        ? configuredTickSize.toString().split('.')[1]?.length || 0
+        : 2;
+
       // Order parameters for the request BODY (and the signature string)
       const requestBody: any = {
         category: bybitCategory, // 'linear' for perpetual futures, 'spot' for spot
         symbol: symbol,
         side: capitalizedSide, // "Buy" or "Sell" (capitalized for Bybit V5)
-        orderType: 'Market',
+        orderType
       };
       
       // For spot trading with market orders, use marketUnit to specify quote currency amount
@@ -8460,9 +8974,18 @@ class BotExecutor {
       if (bybitCategory === 'spot') {
         const minOrderValue = this.getMinimumOrderValue(symbol, bybitCategory);
         
-        // For buy orders, use quoteCoin (USDT amount) - this is the default
-        // For sell orders, use baseCoin (base currency quantity) - this is the default
-        if (capitalizedSide === 'Buy') {
+        // Limit orders use base currency qty with explicit price
+        if (orderType === 'Limit') {
+          const finalQtyValue = parseFloat(formattedQty);
+          if (isNaN(finalQtyValue) || finalQtyValue < minQty || finalQtyValue > maxQty) {
+            throw new Error(`Invalid formatted quantity ${formattedQty} for ${symbol}. Min: ${minQty}, Max: ${maxQty}`);
+          }
+          requestBody.qty = formattedQty.toString();
+          requestBody.price = effectiveLimitPrice.toFixed(priceDecimals);
+          requestBody.timeInForce = 'GTC';
+          console.log(`💰 Spot LIMIT order: qty=${formattedQty}, price=$${requestBody.price}`);
+        } else if (capitalizedSide === 'Buy') {
+          // For buy orders, use quoteCoin (USDT amount) - this is the default
           // Buy orders: marketUnit='quoteCoin' means qty is in USDT (quote currency)
           // For manual orders, 'amount' parameter may already be in USDT (not converted to quantity)
           // Check if amount is reasonable for USDT (typically >= 10) vs quantity (could be very small like 0.001)
@@ -8540,7 +9063,13 @@ class BotExecutor {
         // For linear/futures, ensure quantity is properly formatted as string with correct precision
         // Bybit requires qty as string, not number, and must match step size precisely
         requestBody.qty = formattedQty.toString(); // Ensure it's a string
-        console.log(`💰 Futures order using qty: ${formattedQty}`);
+        if (orderType === 'Limit') {
+          requestBody.price = effectiveLimitPrice.toFixed(priceDecimals);
+          requestBody.timeInForce = 'GTC';
+          console.log(`💰 Futures LIMIT order: qty=${formattedQty}, price=$${requestBody.price}`);
+        } else {
+          console.log(`💰 Futures MARKET order using qty: ${formattedQty}`);
+        }
       }
       
       // NOTE: SL/TP disabled for now - will be implemented after position is opened
@@ -13529,14 +14058,18 @@ class BotExecutor {
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toLowerCase();
   }
   
-  private calculateTradeAmount(bot: any, price: number): number {
-    const sizing = calculateTradeSizing(bot, price);
+  private calculateTradeAmount(bot: any, price: number, riskContext?: RiskContext): number {
+    const sizing = calculateTradeSizing(bot, price, riskContext);
 
     if (sizing.baseAmount < sizing.minTradeAmount) {
       console.log(`⚠️ Trade amount $${sizing.baseAmount} below minimum $${sizing.minTradeAmount} for ${(bot.tradingType || bot.trading_type) || 'spot'} trading. Using $${sizing.effectiveBaseAmount}.`);
     }
 
-    console.log(`💰 Trade calculation: Base=$${sizing.effectiveBaseAmount} (min=$${sizing.minTradeAmount}), Leverage=${sizing.leverageMultiplier}x, Risk=${bot.risk_level || bot.riskLevel || 'medium'}(${sizing.riskMultiplier}x) = Total=$${sizing.totalAmount}`);
+    if (sizing.adaptiveMultiplier && sizing.adaptiveMultiplier !== 1) {
+      console.log(`🧠 Adaptive risk multiplier: ${sizing.adaptiveMultiplier.toFixed(2)} (${sizing.riskContext?.reasons?.join(' | ') || 'context-driven'})`);
+    }
+
+    console.log(`💰 Trade calculation: Base=$${sizing.effectiveBaseAmount} (min=$${sizing.minTradeAmount}), Leverage=${sizing.leverageMultiplier}x, Risk=${bot.risk_level || bot.riskLevel || 'medium'}(${sizing.riskMultiplier}x), Adaptive=${sizing.adaptiveMultiplier.toFixed(2)}x = Total=$${sizing.totalAmount}`);
     console.log(`📏 Quantity constraints for ${bot.symbol}: min=${sizing.constraints.min}, max=${sizing.constraints.max}, calculated=${sizing.rawQuantity.toFixed(6)}, final=${sizing.quantity.toFixed(6)}`);
 
     return sizing.quantity;
@@ -14005,9 +14538,104 @@ class BotExecutor {
         currentPnL: runningPnL
       }
     });
+
+    await this.updateSignalWeightsFromTrade(botId, trade);
     
     // Update pair statistics if enabled
     await this.updatePairStatistics(botId, trade);
+  }
+
+  private async getSignalContextForTrade(botId: string, tradeId: string): Promise<any | null> {
+    try {
+      if (!tradeId) return null;
+      const { data: logs } = await this.supabaseClient
+        .from('bot_activity_logs')
+        .select('details, created_at')
+        .eq('bot_id', botId)
+        .eq('category', 'trade')
+        .order('created_at', { ascending: false })
+        .limit(80);
+
+      if (!logs || logs.length === 0) return null;
+
+      for (const log of logs) {
+        const details = log.details || {};
+        const loggedTradeId = details?.trade?.id || details?.trade?.trade_id;
+        if (loggedTradeId === tradeId && details?.signal?.signalComponents?.length) {
+          return details.signal;
+        }
+      }
+    } catch (error) {
+      console.warn('⚠️ Failed to fetch signal context for trade:', error);
+    }
+    return null;
+  }
+
+  private async updateSignalWeightsFromTrade(botId: string, trade: any): Promise<void> {
+    try {
+      if (!trade?.id || trade?.pnl === undefined || trade?.pnl === null) return;
+      const status = (trade.status || '').toLowerCase();
+      if (!['closed', 'completed'].includes(status)) return;
+
+      const pnlValue = parseFloat(trade.pnl || 0);
+      if (!Number.isFinite(pnlValue) || pnlValue === 0) return;
+
+      const signalContext = await this.getSignalContextForTrade(botId, trade.id);
+      if (!signalContext?.signalComponents?.length) return;
+
+      const { data: bot } = await this.supabaseClient
+        .from('trading_bots')
+        .select('strategy_config, symbol, timeframe')
+        .eq('id', botId)
+        .single();
+
+      if (!bot) return;
+
+      let strategyConfig: any = {};
+      try {
+        strategyConfig = typeof bot.strategy_config === 'string'
+          ? JSON.parse(bot.strategy_config || '{}')
+          : (bot.strategy_config || {});
+      } catch (parseError) {
+        console.warn('⚠️ Failed to parse strategy_config while updating weights:', parseError);
+        strategyConfig = {};
+      }
+      const riskConfig = strategyConfig.risk_engine || {};
+
+      const learningRate = riskConfig.signal_learning_rate ?? 0.05;
+      const minWeight = riskConfig.min_signal_weight ?? 0.6;
+      const maxWeight = riskConfig.max_signal_weight ?? 1.4;
+
+      const weights = strategyConfig.signal_weights || {};
+      weights.global = weights.global || {};
+      weights.by_symbol_timeframe = weights.by_symbol_timeframe || {};
+
+      const key = bot.symbol && bot.timeframe ? `${bot.symbol}|${bot.timeframe}` : 'global';
+      weights.by_symbol_timeframe[key] = weights.by_symbol_timeframe[key] || {};
+
+      const direction = pnlValue > 0 ? 1 : -1;
+      for (const component of signalContext.signalComponents) {
+        const source = component.source;
+        if (!source) continue;
+        const confidence = clamp(component.confidence ?? 0.5, 0, 1);
+        const delta = direction * learningRate * confidence;
+
+        const currentGlobal = weights.global[source] ?? 1;
+        const currentScoped = weights.by_symbol_timeframe[key][source] ?? currentGlobal;
+
+        weights.global[source] = clamp(currentGlobal + delta, minWeight, maxWeight);
+        weights.by_symbol_timeframe[key][source] = clamp(currentScoped + delta, minWeight, maxWeight);
+      }
+
+      strategyConfig.signal_weights = weights;
+
+      await this.supabaseClient
+        .from('trading_bots')
+        .update({ strategy_config: strategyConfig, updated_at: TimeSync.getCurrentTimeISO() })
+        .eq('id', botId);
+    } catch (error) {
+      console.warn('⚠️ Failed to update signal weights:', error);
+    }
   }
   
   /**

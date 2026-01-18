@@ -574,6 +574,76 @@ serve(async (req) => {
           console.log('✅ Merged risk management settings into strategy_config');
         }
 
+
+        const defaultRiskEngine = {
+          volatility_low: 0.6,
+          volatility_high: 2.5,
+          high_volatility_multiplier: 0.75,
+          low_volatility_multiplier: 1.05,
+          max_spread_bps: 20,
+          spread_penalty_multiplier: 0.75,
+          low_liquidity_multiplier: 0.6,
+          medium_liquidity_multiplier: 0.8,
+          drawdown_moderate: 10,
+          drawdown_severe: 20,
+          moderate_drawdown_multiplier: 0.8,
+          severe_drawdown_multiplier: 0.6,
+          loss_streak_threshold: 3,
+          loss_streak_step: 0.15,
+          min_size_multiplier: 0.35,
+          max_size_multiplier: 1.5,
+          max_slippage_bps: 25,
+          min_execution_size_multiplier: 0.35,
+          limit_spread_bps: 8,
+          signal_learning_rate: 0.05,
+          min_signal_weight: 0.6,
+          max_signal_weight: 1.4
+        };
+
+        const toNumber = (value: any, fallback: number) => {
+          const next = Number(value);
+          return Number.isFinite(next) ? next : fallback;
+        };
+        const clampValue = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+        const resolved = { ...defaultRiskEngine, ...(finalStrategyConfig.risk_engine || {}) };
+        const volatilityLow = Math.max(0, toNumber(resolved.volatility_low, defaultRiskEngine.volatility_low));
+        const volatilityHigh = Math.max(volatilityLow + 0.1, toNumber(resolved.volatility_high, defaultRiskEngine.volatility_high));
+        const drawdownModerate = Math.max(0, toNumber(resolved.drawdown_moderate, defaultRiskEngine.drawdown_moderate));
+        const drawdownSevere = Math.max(drawdownModerate + 1, toNumber(resolved.drawdown_severe, defaultRiskEngine.drawdown_severe));
+        const minSizeMultiplier = clampValue(toNumber(resolved.min_size_multiplier, defaultRiskEngine.min_size_multiplier), 0.1, 3);
+        const maxSizeMultiplier = clampValue(toNumber(resolved.max_size_multiplier, defaultRiskEngine.max_size_multiplier), minSizeMultiplier, 3);
+        const minSignalWeight = clampValue(toNumber(resolved.min_signal_weight, defaultRiskEngine.min_signal_weight), 0.1, 2);
+        const maxSignalWeight = clampValue(toNumber(resolved.max_signal_weight, defaultRiskEngine.max_signal_weight), minSignalWeight, 2);
+
+        finalStrategyConfig = {
+          ...finalStrategyConfig,
+          risk_engine: {
+            ...resolved,
+            volatility_low: volatilityLow,
+            volatility_high: volatilityHigh,
+            high_volatility_multiplier: clampValue(toNumber(resolved.high_volatility_multiplier, defaultRiskEngine.high_volatility_multiplier), 0.1, 3),
+            low_volatility_multiplier: clampValue(toNumber(resolved.low_volatility_multiplier, defaultRiskEngine.low_volatility_multiplier), 0.1, 3),
+            max_spread_bps: Math.max(1, toNumber(resolved.max_spread_bps, defaultRiskEngine.max_spread_bps)),
+            spread_penalty_multiplier: clampValue(toNumber(resolved.spread_penalty_multiplier, defaultRiskEngine.spread_penalty_multiplier), 0.1, 3),
+            low_liquidity_multiplier: clampValue(toNumber(resolved.low_liquidity_multiplier, defaultRiskEngine.low_liquidity_multiplier), 0.1, 3),
+            medium_liquidity_multiplier: clampValue(toNumber(resolved.medium_liquidity_multiplier, defaultRiskEngine.medium_liquidity_multiplier), 0.1, 3),
+            drawdown_moderate: drawdownModerate,
+            drawdown_severe: drawdownSevere,
+            moderate_drawdown_multiplier: clampValue(toNumber(resolved.moderate_drawdown_multiplier, defaultRiskEngine.moderate_drawdown_multiplier), 0.1, 3),
+            severe_drawdown_multiplier: clampValue(toNumber(resolved.severe_drawdown_multiplier, defaultRiskEngine.severe_drawdown_multiplier), 0.1, 3),
+            loss_streak_threshold: Math.max(1, Math.round(toNumber(resolved.loss_streak_threshold, defaultRiskEngine.loss_streak_threshold))),
+            loss_streak_step: clampValue(toNumber(resolved.loss_streak_step, defaultRiskEngine.loss_streak_step), 0.01, 1),
+            min_size_multiplier: minSizeMultiplier,
+            max_size_multiplier: maxSizeMultiplier,
+            max_slippage_bps: Math.max(1, toNumber(resolved.max_slippage_bps, defaultRiskEngine.max_slippage_bps)),
+            min_execution_size_multiplier: clampValue(toNumber(resolved.min_execution_size_multiplier, defaultRiskEngine.min_execution_size_multiplier), 0.1, 1),
+            limit_spread_bps: Math.max(1, toNumber(resolved.limit_spread_bps, defaultRiskEngine.limit_spread_bps)),
+            signal_learning_rate: clampValue(toNumber(resolved.signal_learning_rate, defaultRiskEngine.signal_learning_rate), 0.01, 1),
+            min_signal_weight: minSignalWeight,
+            max_signal_weight: maxSignalWeight
+          }
+        };
+
         // Prepare insert data
         const insertData: any = {
           user_id: user.id,

@@ -83,25 +83,94 @@ export function useAdmin() {
       setLoading(true);
       setError(null);
 
-      const { data, error: invokeError } = await supabase.functions.invoke('admin-management-enhanced', {
-        body: { action, ...params }
+      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL;
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        throw new Error('No active session');
+      }
+
+      console.log('🔵 Calling admin function:', { action, params });
+      
+      const response = await fetch(`${supabaseUrl}/functions/v1/admin-management-enhanced`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ action, ...params })
       });
 
-      if (invokeError) {
-        console.error('Edge function invoke error:', invokeError);
-        const errorMessage = invokeError.message || 'Unknown error occurred';
+      console.log('🔵 Raw response status:', response.status, response.statusText);
+      console.log('🔵 Response headers:', Object.fromEntries(response.headers.entries()));
+
+      // Get response text first (we'll try to parse as JSON, but keep text as fallback)
+      const responseText = await response.text();
+      console.log('🔵 Raw response text:', responseText);
+      
+      let data: any = null;
+      
+      try {
+        data = JSON.parse(responseText);
+        console.log('🔵 Parsed JSON data:', data);
+      } catch (parseError) {
+        // If not JSON, treat entire response as error message
+        console.error('❌ Failed to parse response as JSON:', parseError);
+        console.error('❌ Raw response text:', responseText);
+        data = { error: responseText || `Request failed (${response.status})` };
+      }
+
+      // Log response for debugging
+      console.log('🔵 Admin function response:', {
+        status: response.status,
+        ok: response.ok,
+        data
+      });
+
+      if (!response.ok) {
+        // Build comprehensive error message
+        let errorMessage = `Request failed (${response.status})`;
+        
+        if (data?.error) {
+          errorMessage = data.error;
+        }
+        
+        if (data?.details) {
+          errorMessage += `: ${data.details}`;
+        } else if (data?.message) {
+          errorMessage += `: ${data.message}`;
+        }
+        
+        if (data?.code) {
+          errorMessage += ` [Code: ${data.code}]`;
+        }
+        
+        if (data?.hint) {
+          errorMessage += ` [Hint: ${data.hint}]`;
+        }
+        
+        console.error('Admin function error response:', {
+          status: response.status,
+          error: data?.error,
+          details: data?.details,
+          code: data?.code,
+          hint: data?.hint,
+          fullData: data
+        });
+        
         setError(errorMessage);
         throw new Error(errorMessage);
       }
-      
-      // Check if response contains an error
+
       if (data?.error) {
         console.error('Edge function returned error:', data);
-        const errorMessage = data.details ? `${data.error}: ${data.details}` : (data.error || 'Unknown error occurred');
+        const errorMessage = data.details 
+          ? `${data.error}: ${data.details}${data.code ? ` [Code: ${data.code}]` : ''}`
+          : (data.error || 'Unknown error occurred');
         setError(errorMessage);
         throw new Error(errorMessage);
       }
-      
+
       return data;
     } catch (err: any) {
       console.error('Admin function error:', err);

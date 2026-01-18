@@ -867,7 +867,10 @@ export default function AdminPage() {
       await fetchAvailablePlans(); // Refresh plans
     } catch (error: any) {
       console.error('Error upgrading subscription:', error);
-      alert(`❌ Failed to upgrade subscription: ${error?.message || error}`);
+      // Show detailed error message
+      const errorMsg = error?.message || error?.error || String(error);
+      console.error('Full error object:', error);
+      alert(`❌ Failed to upgrade subscription:\n\n${errorMsg}\n\nCheck console for details.`);
     } finally {
       setUserLoadingState(userId, false);
       setUpgradingSubscriptionUserId(null);

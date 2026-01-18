@@ -145,7 +145,14 @@ export default function CreateBotPage() {
 
           // Set advanced config if available
           if (bot.strategyConfig) {
-            setAdvancedConfig(bot.strategyConfig as AdvancedStrategyConfig);
+            const mergedRiskEngine = {
+              ...defaultRiskEngine,
+              ...(bot.strategyConfig as any)?.risk_engine
+            };
+            setAdvancedConfig({
+              ...(bot.strategyConfig as AdvancedStrategyConfig),
+              risk_engine: mergedRiskEngine
+            });
           }
 
           // Handle multiple pairs
@@ -285,7 +292,8 @@ export default function CreateBotPage() {
                 // Advanced Features
                 enable_auto_rebalancing: false,
                 enable_funding_rate_filter: false,
-                enable_volatility_pause: false
+                enable_volatility_pause: false,
+                risk_engine: defaultRiskEngine
               };
               setAdvancedConfig({ ...defaultConfig, ...parsedConfig } as AdvancedStrategyConfig);
             }
@@ -314,6 +322,78 @@ export default function CreateBotPage() {
           minSamplesForML: 100
         }
   );
+
+  const defaultRiskEngine = {
+    volatility_low: 0.6,
+    volatility_high: 2.5,
+    high_volatility_multiplier: 0.75,
+    low_volatility_multiplier: 1.05,
+    max_spread_bps: 20,
+    spread_penalty_multiplier: 0.75,
+    low_liquidity_multiplier: 0.6,
+    medium_liquidity_multiplier: 0.8,
+    drawdown_moderate: 10,
+    drawdown_severe: 20,
+    moderate_drawdown_multiplier: 0.8,
+    severe_drawdown_multiplier: 0.6,
+    loss_streak_threshold: 3,
+    loss_streak_step: 0.15,
+    min_size_multiplier: 0.35,
+    max_size_multiplier: 1.5,
+    max_slippage_bps: 25,
+    min_execution_size_multiplier: 0.35,
+    limit_spread_bps: 8,
+    signal_learning_rate: 0.05,
+    min_signal_weight: 0.6,
+    max_signal_weight: 1.4
+  };
+
+  const normalizeRiskEngine = (engine: any) => {
+    const resolved = {
+      ...defaultRiskEngine,
+      ...(engine || {})
+    };
+    const toNumber = (value: any, fallback: number) => {
+      const next = Number(value);
+      return Number.isFinite(next) ? next : fallback;
+    };
+    const clampValue = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+    const volatilityLow = Math.max(0, toNumber(resolved.volatility_low, defaultRiskEngine.volatility_low));
+    const volatilityHigh = Math.max(volatilityLow + 0.1, toNumber(resolved.volatility_high, defaultRiskEngine.volatility_high));
+    const drawdownModerate = Math.max(0, toNumber(resolved.drawdown_moderate, defaultRiskEngine.drawdown_moderate));
+    const drawdownSevere = Math.max(drawdownModerate + 1, toNumber(resolved.drawdown_severe, defaultRiskEngine.drawdown_severe));
+    const minSizeMultiplier = clampValue(toNumber(resolved.min_size_multiplier, defaultRiskEngine.min_size_multiplier), 0.1, 3);
+    const maxSizeMultiplier = clampValue(toNumber(resolved.max_size_multiplier, defaultRiskEngine.max_size_multiplier), minSizeMultiplier, 3);
+    const minSignalWeight = clampValue(toNumber(resolved.min_signal_weight, defaultRiskEngine.min_signal_weight), 0.1, 2);
+    const maxSignalWeight = clampValue(toNumber(resolved.max_signal_weight, defaultRiskEngine.max_signal_weight), minSignalWeight, 2);
+
+    return {
+      ...resolved,
+      volatility_low: volatilityLow,
+      volatility_high: volatilityHigh,
+      high_volatility_multiplier: clampValue(toNumber(resolved.high_volatility_multiplier, defaultRiskEngine.high_volatility_multiplier), 0.1, 3),
+      low_volatility_multiplier: clampValue(toNumber(resolved.low_volatility_multiplier, defaultRiskEngine.low_volatility_multiplier), 0.1, 3),
+      max_spread_bps: Math.max(1, toNumber(resolved.max_spread_bps, defaultRiskEngine.max_spread_bps)),
+      spread_penalty_multiplier: clampValue(toNumber(resolved.spread_penalty_multiplier, defaultRiskEngine.spread_penalty_multiplier), 0.1, 3),
+      low_liquidity_multiplier: clampValue(toNumber(resolved.low_liquidity_multiplier, defaultRiskEngine.low_liquidity_multiplier), 0.1, 3),
+      medium_liquidity_multiplier: clampValue(toNumber(resolved.medium_liquidity_multiplier, defaultRiskEngine.medium_liquidity_multiplier), 0.1, 3),
+      drawdown_moderate: drawdownModerate,
+      drawdown_severe: drawdownSevere,
+      moderate_drawdown_multiplier: clampValue(toNumber(resolved.moderate_drawdown_multiplier, defaultRiskEngine.moderate_drawdown_multiplier), 0.1, 3),
+      severe_drawdown_multiplier: clampValue(toNumber(resolved.severe_drawdown_multiplier, defaultRiskEngine.severe_drawdown_multiplier), 0.1, 3),
+      loss_streak_threshold: Math.max(1, Math.round(toNumber(resolved.loss_streak_threshold, defaultRiskEngine.loss_streak_threshold))),
+      loss_streak_step: clampValue(toNumber(resolved.loss_streak_step, defaultRiskEngine.loss_streak_step), 0.01, 1),
+      min_size_multiplier: minSizeMultiplier,
+      max_size_multiplier: maxSizeMultiplier,
+      max_slippage_bps: Math.max(1, toNumber(resolved.max_slippage_bps, defaultRiskEngine.max_slippage_bps)),
+      min_execution_size_multiplier: clampValue(toNumber(resolved.min_execution_size_multiplier, defaultRiskEngine.min_execution_size_multiplier), 0.1, 1),
+      limit_spread_bps: Math.max(1, toNumber(resolved.limit_spread_bps, defaultRiskEngine.limit_spread_bps)),
+      signal_learning_rate: clampValue(toNumber(resolved.signal_learning_rate, defaultRiskEngine.signal_learning_rate), 0.01, 1),
+      min_signal_weight: minSignalWeight,
+      max_signal_weight: maxSignalWeight
+    };
+  };
 
   const [advancedConfig, setAdvancedConfig] = useState<AdvancedStrategyConfig>(
     isFromBacktest && backtestData?.backtestAdvancedConfig
@@ -388,9 +468,12 @@ export default function CreateBotPage() {
           // Advanced Features
           enable_auto_rebalancing: false,
           enable_funding_rate_filter: false,
-          enable_volatility_pause: false
+          enable_volatility_pause: false,
+          risk_engine: defaultRiskEngine
         }
   );
+
+  const riskEngine = normalizeRiskEngine(advancedConfig.risk_engine);
   
   // Handle multiple pairs from backtest
   useEffect(() => {
@@ -520,7 +603,10 @@ export default function CreateBotPage() {
       const finalAdvancedConfig = {
         ...advancedConfig,
         enable_slippage_consideration: true,
-        strategy_integration: [] // Remove strategy integration feature
+        strategy_integration: [], // Remove strategy integration feature
+        risk_engine: {
+          ...normalizeRiskEngine(advancedConfig.risk_engine)
+        }
       };
       
       const botData = {
@@ -606,7 +692,14 @@ export default function CreateBotPage() {
 
       // Set advanced config if available
       if (bot.strategyConfig) {
-        setAdvancedConfig(bot.strategyConfig as AdvancedStrategyConfig);
+        const mergedRiskEngine = {
+          ...defaultRiskEngine,
+          ...(bot.strategyConfig as any)?.risk_engine
+        };
+        setAdvancedConfig({
+          ...(bot.strategyConfig as AdvancedStrategyConfig),
+          risk_engine: mergedRiskEngine
+        });
       }
 
       // Handle multiple pairs
@@ -1990,6 +2083,441 @@ All settings have been applied to your bot configuration.`;
                         <p className="text-xs text-gray-500 mt-1">
                           Auto-pause bot after this many consecutive losses
                         </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Adaptive Risk Engine */}
+                  <div className="border-l-4 border-blue-500 pl-4 mt-6">
+                    <h3 className="text-md font-semibold text-gray-800 mb-3">🧠 Adaptive Risk Engine</h3>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Dynamic sizing based on volatility, liquidity, drawdown, and loss streaks.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                          Volatility Low (ATR%): {riskEngine.volatility_low}
+                          <HelpTooltip text="ATR percentage below which volatility is considered low and sizing can slightly increase." />
+                        </label>
+                        <input
+                          type="number"
+                          value={riskEngine.volatility_low}
+                          onChange={(e) => setAdvancedConfig(prev => ({
+                            ...prev,
+                            risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), volatility_low: parseFloat(e.target.value) }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          min="0"
+                          step="0.1"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                          Volatility High (ATR%): {riskEngine.volatility_high}
+                          <HelpTooltip text="ATR percentage above which volatility is high and sizing is reduced." />
+                        </label>
+                        <input
+                          type="number"
+                          value={riskEngine.volatility_high}
+                          onChange={(e) => setAdvancedConfig(prev => ({
+                            ...prev,
+                            risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), volatility_high: parseFloat(e.target.value) }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          min="0"
+                          step="0.1"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                          High Volatility Multiplier: {riskEngine.high_volatility_multiplier}
+                          <HelpTooltip text="Sizing multiplier applied when volatility is high." />
+                        </label>
+                        <input
+                          type="number"
+                          value={riskEngine.high_volatility_multiplier}
+                          onChange={(e) => setAdvancedConfig(prev => ({
+                            ...prev,
+                            risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), high_volatility_multiplier: parseFloat(e.target.value) }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          min="0.2"
+                          max="2"
+                          step="0.05"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                          Low Volatility Multiplier: {riskEngine.low_volatility_multiplier}
+                          <HelpTooltip text="Sizing multiplier applied when volatility is low." />
+                        </label>
+                        <input
+                          type="number"
+                          value={riskEngine.low_volatility_multiplier}
+                          onChange={(e) => setAdvancedConfig(prev => ({
+                            ...prev,
+                            risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), low_volatility_multiplier: parseFloat(e.target.value) }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          min="0.2"
+                          max="2"
+                          step="0.05"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                          Max Spread (bps): {riskEngine.max_spread_bps}
+                          <HelpTooltip text="Spread threshold used to penalize sizing when liquidity is poor." />
+                        </label>
+                        <input
+                          type="number"
+                          value={riskEngine.max_spread_bps}
+                          onChange={(e) => setAdvancedConfig(prev => ({
+                            ...prev,
+                            risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), max_spread_bps: parseFloat(e.target.value) }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          min="1"
+                          step="1"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                          Spread Penalty Multiplier: {riskEngine.spread_penalty_multiplier}
+                          <HelpTooltip text="Sizing multiplier applied when spread exceeds the max spread threshold." />
+                        </label>
+                        <input
+                          type="number"
+                          value={riskEngine.spread_penalty_multiplier}
+                          onChange={(e) => setAdvancedConfig(prev => ({
+                            ...prev,
+                            risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), spread_penalty_multiplier: parseFloat(e.target.value) }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          min="0.2"
+                          max="2"
+                          step="0.05"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                          Low Liquidity Multiplier: {riskEngine.low_liquidity_multiplier}
+                          <HelpTooltip text="Sizing multiplier when orderbook depth is thin." />
+                        </label>
+                        <input
+                          type="number"
+                          value={riskEngine.low_liquidity_multiplier}
+                          onChange={(e) => setAdvancedConfig(prev => ({
+                            ...prev,
+                            risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), low_liquidity_multiplier: parseFloat(e.target.value) }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          min="0.2"
+                          max="2"
+                          step="0.05"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                          Medium Liquidity Multiplier: {riskEngine.medium_liquidity_multiplier}
+                          <HelpTooltip text="Sizing multiplier when liquidity is moderate." />
+                        </label>
+                        <input
+                          type="number"
+                          value={riskEngine.medium_liquidity_multiplier}
+                          onChange={(e) => setAdvancedConfig(prev => ({
+                            ...prev,
+                            risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), medium_liquidity_multiplier: parseFloat(e.target.value) }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          min="0.2"
+                          max="2"
+                          step="0.05"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                          Drawdown Moderate (%): {riskEngine.drawdown_moderate}
+                          <HelpTooltip text="Drawdown level where sizing starts to reduce." />
+                        </label>
+                        <input
+                          type="number"
+                          value={riskEngine.drawdown_moderate}
+                          onChange={(e) => setAdvancedConfig(prev => ({
+                            ...prev,
+                            risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), drawdown_moderate: parseFloat(e.target.value) }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          min="1"
+                          step="1"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                          Drawdown Severe (%): {riskEngine.drawdown_severe}
+                          <HelpTooltip text="Drawdown level where sizing is reduced aggressively." />
+                        </label>
+                        <input
+                          type="number"
+                          value={riskEngine.drawdown_severe}
+                          onChange={(e) => setAdvancedConfig(prev => ({
+                            ...prev,
+                            risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), drawdown_severe: parseFloat(e.target.value) }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          min="1"
+                          step="1"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                          Moderate Drawdown Multiplier: {riskEngine.moderate_drawdown_multiplier}
+                          <HelpTooltip text="Sizing multiplier applied at moderate drawdown." />
+                        </label>
+                        <input
+                          type="number"
+                          value={riskEngine.moderate_drawdown_multiplier}
+                          onChange={(e) => setAdvancedConfig(prev => ({
+                            ...prev,
+                            risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), moderate_drawdown_multiplier: parseFloat(e.target.value) }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          min="0.2"
+                          max="2"
+                          step="0.05"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                          Severe Drawdown Multiplier: {riskEngine.severe_drawdown_multiplier}
+                          <HelpTooltip text="Sizing multiplier applied at severe drawdown." />
+                        </label>
+                        <input
+                          type="number"
+                          value={riskEngine.severe_drawdown_multiplier}
+                          onChange={(e) => setAdvancedConfig(prev => ({
+                            ...prev,
+                            risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), severe_drawdown_multiplier: parseFloat(e.target.value) }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          min="0.2"
+                          max="2"
+                          step="0.05"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                          Loss Streak Threshold: {riskEngine.loss_streak_threshold}
+                          <HelpTooltip text="Number of consecutive losses before de-risking starts." />
+                        </label>
+                        <input
+                          type="number"
+                          value={riskEngine.loss_streak_threshold}
+                          onChange={(e) => setAdvancedConfig(prev => ({
+                            ...prev,
+                            risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), loss_streak_threshold: parseInt(e.target.value) }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          min="1"
+                          step="1"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                          Loss Streak Step: {riskEngine.loss_streak_step}
+                          <HelpTooltip text="Multiplier step reduction applied per loss beyond the threshold." />
+                        </label>
+                        <input
+                          type="number"
+                          value={riskEngine.loss_streak_step}
+                          onChange={(e) => setAdvancedConfig(prev => ({
+                            ...prev,
+                            risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), loss_streak_step: parseFloat(e.target.value) }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          min="0.01"
+                          step="0.01"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                          Min Size Multiplier: {riskEngine.min_size_multiplier}
+                          <HelpTooltip text="Lower bound for adaptive sizing." />
+                        </label>
+                        <input
+                          type="number"
+                          value={riskEngine.min_size_multiplier}
+                          onChange={(e) => setAdvancedConfig(prev => ({
+                            ...prev,
+                            risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), min_size_multiplier: parseFloat(e.target.value) }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          min="0.1"
+                          max="2"
+                          step="0.05"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                          Max Size Multiplier: {riskEngine.max_size_multiplier}
+                          <HelpTooltip text="Upper bound for adaptive sizing." />
+                        </label>
+                        <input
+                          type="number"
+                          value={riskEngine.max_size_multiplier}
+                          onChange={(e) => setAdvancedConfig(prev => ({
+                            ...prev,
+                            risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), max_size_multiplier: parseFloat(e.target.value) }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          min="0.5"
+                          max="3"
+                          step="0.05"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Execution Intelligence */}
+                  <div className="border-l-4 border-indigo-500 pl-4 mt-6">
+                    <h3 className="text-md font-semibold text-gray-800 mb-3">⚡ Execution Intelligence</h3>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Control slippage-driven sizing and limit/market selection.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                          Max Slippage (bps): {riskEngine.max_slippage_bps}
+                          <HelpTooltip text="Slippage threshold used to trim size when orderbook impact is high." />
+                        </label>
+                        <input
+                          type="number"
+                          value={riskEngine.max_slippage_bps}
+                          onChange={(e) => setAdvancedConfig(prev => ({
+                            ...prev,
+                            risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), max_slippage_bps: parseFloat(e.target.value) }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          min="1"
+                          step="1"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                          Min Execution Size Multiplier: {riskEngine.min_execution_size_multiplier}
+                          <HelpTooltip text="Minimum size multiplier when slippage is high." />
+                        </label>
+                        <input
+                          type="number"
+                          value={riskEngine.min_execution_size_multiplier}
+                          onChange={(e) => setAdvancedConfig(prev => ({
+                            ...prev,
+                            risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), min_execution_size_multiplier: parseFloat(e.target.value) }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          min="0.1"
+                          max="1"
+                          step="0.05"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                          Limit Spread (bps): {riskEngine.limit_spread_bps}
+                          <HelpTooltip text="When spread is below this value and liquidity is good, limit orders are used." />
+                        </label>
+                        <input
+                          type="number"
+                          value={riskEngine.limit_spread_bps}
+                          onChange={(e) => setAdvancedConfig(prev => ({
+                            ...prev,
+                            risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), limit_spread_bps: parseFloat(e.target.value) }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          min="1"
+                          step="1"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Signal Learning */}
+                  <div className="border-l-4 border-teal-500 pl-4 mt-6">
+                    <h3 className="text-md font-semibold text-gray-800 mb-3">🧬 Signal Learning</h3>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Auto-tune signal weights based on recent outcomes.
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                          Learning Rate: {riskEngine.signal_learning_rate}
+                          <HelpTooltip text="How quickly signal weights adapt after each closed trade." />
+                        </label>
+                        <input
+                          type="number"
+                          value={riskEngine.signal_learning_rate}
+                          onChange={(e) => setAdvancedConfig(prev => ({
+                            ...prev,
+                            risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), signal_learning_rate: parseFloat(e.target.value) }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          min="0.01"
+                          step="0.01"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                          Min Signal Weight: {riskEngine.min_signal_weight}
+                          <HelpTooltip text="Lower bound for signal weights when learning." />
+                        </label>
+                        <input
+                          type="number"
+                          value={riskEngine.min_signal_weight}
+                          onChange={(e) => setAdvancedConfig(prev => ({
+                            ...prev,
+                            risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), min_signal_weight: parseFloat(e.target.value) }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          min="0.1"
+                          max="1.5"
+                          step="0.05"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                          Max Signal Weight: {riskEngine.max_signal_weight}
+                          <HelpTooltip text="Upper bound for signal weights when learning." />
+                        </label>
+                        <input
+                          type="number"
+                          value={riskEngine.max_signal_weight}
+                          onChange={(e) => setAdvancedConfig(prev => ({
+                            ...prev,
+                            risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), max_signal_weight: parseFloat(e.target.value) }
+                          }))}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          min="0.5"
+                          max="2"
+                          step="0.05"
+                        />
                       </div>
                     </div>
                   </div>

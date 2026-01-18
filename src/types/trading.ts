@@ -160,6 +160,36 @@ export interface AdvancedStrategyConfig {
   
   // Always Trade Mode
   always_trade?: boolean; // Trade on every execution cycle regardless of conditions
+
+  // Adaptive Risk Engine / Execution / Learning
+  risk_engine?: {
+    volatility_low?: number;
+    volatility_high?: number;
+    high_volatility_multiplier?: number;
+    low_volatility_multiplier?: number;
+    max_spread_bps?: number;
+    spread_penalty_multiplier?: number;
+    low_liquidity_multiplier?: number;
+    medium_liquidity_multiplier?: number;
+    drawdown_moderate?: number;
+    drawdown_severe?: number;
+    moderate_drawdown_multiplier?: number;
+    severe_drawdown_multiplier?: number;
+    loss_streak_threshold?: number;
+    loss_streak_step?: number;
+    min_size_multiplier?: number;
+    max_size_multiplier?: number;
+    max_slippage_bps?: number;
+    min_execution_size_multiplier?: number;
+    limit_spread_bps?: number;
+    signal_learning_rate?: number;
+    min_signal_weight?: number;
+    max_signal_weight?: number;
+  };
+  signal_weights?: {
+    global?: Record<string, number>;
+    by_symbol_timeframe?: Record<string, Record<string, number>>;
+  };
 }
 
 export interface ManualTradeSignal {
