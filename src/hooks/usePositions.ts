@@ -140,7 +140,7 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
     }
   };
 
-  const fetchClosedPositions = useCallback(async (limit: number = 20) => {
+  const fetchClosedPositions = useCallback(async (limit: number = 10) => {
     if (authLoading || !user) {
       return;
     }
@@ -175,12 +175,12 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
 
   useEffect(() => {
     fetchPositions();
-    fetchClosedPositions(20);
+    fetchClosedPositions(10); // At least 10 recent closed positions
 
     // Auto-refresh every 60 seconds
     const interval = setInterval(() => {
       fetchPositions();
-      fetchClosedPositions(20);
+      fetchClosedPositions(10); // At least 10 recent closed positions
     }, 60000);
 
     return () => clearInterval(interval);

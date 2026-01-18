@@ -708,7 +708,7 @@ serve(async (req) => {
     // GET: Fetch closed positions
     if (req.method === 'GET' && action === 'closed-positions') {
       const exchangeFilter = url.searchParams.get('exchange') || 'all';
-      const limit = parseInt(url.searchParams.get('limit') || '20');
+      const limit = Math.max(10, parseInt(url.searchParams.get('limit') || '10')); // At least 10
 
       // Fetch closed trades from database
       let query = supabaseClient
