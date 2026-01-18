@@ -13,6 +13,8 @@ export interface ExchangePosition {
   unrealizedPnLPercentage: number;
   leverage: number;
   marginUsed: number;
+  stopLoss?: number;
+  takeProfit?: number;
   openedAt?: string;
 }
 

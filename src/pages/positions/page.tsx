@@ -249,6 +249,8 @@ export default function PositionsPage() {
                           <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Size</th>
                           <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Entry Price</th>
                           <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Current Price</th>
+                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Stop Loss</th>
+                          <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Take Profit</th>
                           <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Leverage</th>
                           <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Unrealized PnL</th>
                           <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">PnL %</th>
@@ -292,6 +294,24 @@ export default function PositionsPage() {
                               </td>
                               <td className="px-4 py-4 whitespace-nowrap text-right text-sm text-gray-900 dark:text-white">
                                 {formatPrice(position.currentPrice).replace('$', '$')}
+                              </td>
+                              <td className="px-4 py-4 whitespace-nowrap text-right text-sm text-gray-900 dark:text-white">
+                                {position.stopLoss && position.stopLoss > 0 ? (
+                                  <span className="text-red-600 dark:text-red-400 font-medium">
+                                    {formatPrice(position.stopLoss).replace('$', '$')}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400 dark:text-gray-500">—</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-4 whitespace-nowrap text-right text-sm text-gray-900 dark:text-white">
+                                {position.takeProfit && position.takeProfit > 0 ? (
+                                  <span className="text-green-600 dark:text-green-400 font-medium">
+                                    {formatPrice(position.takeProfit).replace('$', '$')}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400 dark:text-gray-500">—</span>
+                                )}
                               </td>
                               <td className="px-4 py-4 whitespace-nowrap text-right text-sm text-gray-900 dark:text-white">
                                 {position.leverage}x

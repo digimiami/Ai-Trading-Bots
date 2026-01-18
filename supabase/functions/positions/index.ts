@@ -28,6 +28,8 @@ interface ExchangePosition {
   unrealizedPnLPercentage: number;
   leverage: number;
   marginUsed: number;
+  stopLoss?: number;
+  takeProfit?: number;
   openedAt?: string;
 }
 
@@ -199,7 +201,9 @@ async function fetchBybitPositions(
           unrealizedPnL,
           unrealizedPnLPercentage,
           leverage: parseFloat(p.leverage || 1),
-          marginUsed: parseFloat(p.positionValue || 0) / parseFloat(p.leverage || 1)
+          marginUsed: parseFloat(p.positionValue || 0) / parseFloat(p.leverage || 1),
+          stopLoss: parseFloat(p.stopLoss || 0) || undefined,
+          takeProfit: parseFloat(p.takeProfit || 0) || undefined
         };
       });
   } catch (error: any) {
@@ -269,7 +273,9 @@ async function fetchOKXPositions(
           unrealizedPnL,
           unrealizedPnLPercentage,
           leverage: parseFloat(p.lever || 1),
-          marginUsed: parseFloat(p.margin || 0)
+          marginUsed: parseFloat(p.margin || 0),
+          stopLoss: parseFloat(p.slTriggerPx || p.stopLoss || 0) || undefined,
+          takeProfit: parseFloat(p.tpTriggerPx || p.takeProfit || 0) || undefined
         };
       });
   } catch (error: any) {
@@ -353,7 +359,9 @@ async function fetchBitunixPositions(
           unrealizedPnL,
           unrealizedPnLPercentage,
           leverage: parseFloat(p.leverage || 1),
-          marginUsed: parseFloat(p.marginUsed || size * entryPrice / parseFloat(p.leverage || 1))
+          marginUsed: parseFloat(p.marginUsed || size * entryPrice / parseFloat(p.leverage || 1)),
+          stopLoss: parseFloat(p.stopLoss || p.slPrice || 0) || undefined,
+          takeProfit: parseFloat(p.takeProfit || p.tpPrice || 0) || undefined
         };
       });
   } catch (error: any) {
