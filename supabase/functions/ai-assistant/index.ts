@@ -543,6 +543,20 @@ serve(async (req) => {
           },
           required: ['symbol']
         }
+      },
+      {
+        name: 'web_search',
+        description: 'Search the web for information about trading strategies, market news, cryptocurrency trends, technical analysis, or any external information that would help answer the user\'s question. Use this when the user asks about current events, recent market developments, new trading strategies, or any information that requires up-to-date external research. Always use this function when you need information beyond your training data or when asked about recent events.',
+        parameters: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description: 'Search query to find relevant information (e.g., "Bitcoin price prediction 2024", "best RSI trading strategies", "cryptocurrency market news today")'
+            }
+          },
+          required: ['query']
+        }
       }
     ];
 
@@ -617,7 +631,8 @@ IMPORTANT GUIDELINES:
 15. **Backtesting - MANDATORY FUNCTION CALL**: When users ask to "run a backtest", "backtest", "test strategies", "find best pairs", or request testing on specific trading pairs with a date range, you MUST call the run_backtest function immediately. Do NOT just explain how to run a backtest - actually execute it. For "last 30 days" or similar time periods, calculate: endDate = current date/time, startDate = 30 days ago. Always call this function when users request backtesting - it is available and working. Required parameters: name, symbols (array), startDate (ISO format), endDate (ISO format).
 16. **Navigation Guidance**: When users need to access features like backtesting, positions viewing, or other platform features, provide clear instructions on how to navigate to those pages (e.g., "Navigate to the Backtest page at /backtest" or "View your open positions at /positions") but do not try to navigate for them programmatically.
 17. **Code Generation Prohibition**: NEVER generate executable code, JavaScript, or any programming language code in your responses. Only provide plain text explanations and guidance. Do not include code blocks that could be executed. If you need to show examples, use pseudocode or plain English descriptions only.
-18. **Available Functions**: You can call these functions: create_bot, update_bot, get_bot_performance, update_user_settings, check_bot_positions, close_bot_position, get_bot_logs, check_exchange_balance, get_market_data, run_backtest. Use run_backtest to test strategies and find optimal settings before creating bots.`;
+18. **Web Search - External Research**: When users ask about current events, recent market news, new trading strategies, cryptocurrency trends, or any information that requires up-to-date external knowledge, use the web_search function to find the latest information. Don't guess or rely solely on your training data for recent events. Always search for current information when asked about recent developments, news, or trends.
+19. **Available Functions**: You can call these functions: create_bot, update_bot, get_bot_performance, update_user_settings, check_bot_positions, close_bot_position, get_bot_logs, check_exchange_balance, get_market_data, run_backtest, web_search. Use run_backtest to test strategies and find optimal settings before creating bots. Use web_search to find current information, news, or external research.`;
 
     // Estimate tokens for the full system message
     const MAX_CONTEXT_TOKENS = 120000; // Leave some buffer below 128K limit
@@ -800,10 +815,13 @@ IMPORTANT GUIDELINES:
             const userToken = authHeader.replace('Bearer ', '');
             result = await executeRunBacktest(supabaseServiceClient, user.id, functionArgs, userToken);
             actions.push({ type: 'run_backtest', result });
+          } else if (functionName === 'web_search') {
+            result = await executeWebSearch(functionArgs.query);
+            actions.push({ type: 'web_search', result });
           } else {
             // Handle unknown function calls gracefully
             console.warn(`⚠️ [AI Assistant] AI tried to call unknown function: ${functionName}`);
-            result = { success: false, error: `Unknown function: ${functionName}. Available functions are: create_bot, update_bot, get_bot_performance, update_user_settings, check_bot_positions, close_bot_position, get_bot_logs, check_exchange_balance, get_market_data, run_backtest` };
+            result = { success: false, error: `Unknown function: ${functionName}. Available functions are: create_bot, update_bot, get_bot_performance, update_user_settings, check_bot_positions, close_bot_position, get_bot_logs, check_exchange_balance, get_market_data, run_backtest, web_search` };
           }
           
           toolResults.push({
@@ -2329,6 +2347,104 @@ async function executeGetMarketData(symbol: string, exchange: string = 'bybit', 
   } catch (error: any) {
     console.error('Error in executeGetMarketData:', error);
     return { success: false, error: error.message || 'Failed to get market data' };
+  }
+}
+
+async function executeWebSearch(query: string) {
+  try {
+    console.log('🔍 [executeWebSearch] Searching for:', query);
+    
+    // Use DuckDuckGo HTML search (no API key required)
+    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    
+    const response = await fetch(searchUrl, {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5'
+      }
+    });
+
+    if (!response.ok) {
+      console.error('❌ [executeWebSearch] Search failed:', response.status);
+      return { 
+        success: false, 
+        error: `Search failed with status ${response.status}`,
+        query 
+      };
+    }
+
+    const html = await response.text();
+    
+    // Extract search results from HTML (simplified parsing)
+    const results: Array<{ title: string; snippet: string; url: string }> = [];
+    
+    // Look for result links (DuckDuckGo HTML structure)
+    const resultPattern = /<a class="result__a"[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/g;
+    const snippetPattern = /<a class="result__snippet"[^>]*>([^<]*)<\/a>/g;
+    
+    let match;
+    const titles: Array<{ url: string; title: string }> = [];
+    
+    while ((match = resultPattern.exec(html)) !== null && titles.length < 10) {
+      titles.push({
+        url: match[1],
+        title: match[2].replace(/<[^>]*>/g, '').trim()
+      });
+    }
+    
+    // Extract snippets
+    const snippets: string[] = [];
+    while ((match = snippetPattern.exec(html)) !== null && snippets.length < 10) {
+      snippets.push(match[1].replace(/<[^>]*>/g, '').trim());
+    }
+    
+    // Combine titles and snippets
+    for (let i = 0; i < Math.min(titles.length, snippets.length, 5); i++) {
+      results.push({
+        title: titles[i].title,
+        snippet: snippets[i] || 'No description available',
+        url: titles[i].url
+      });
+    }
+    
+    if (results.length === 0) {
+      // Fallback: try to extract any readable text from the page
+      const textContent = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+                              .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+                              .replace(/<[^>]+>/g, ' ')
+                              .replace(/\s+/g, ' ')
+                              .trim()
+                              .substring(0, 2000);
+      
+      return {
+        success: true,
+        query,
+        results: [{
+          title: 'Search Results',
+          snippet: textContent || 'No results found. Please try a different search query.',
+          url: searchUrl
+        }],
+        note: 'Limited results extracted. Please refine your search query for better results.'
+      };
+    }
+    
+    console.log(`✅ [executeWebSearch] Found ${results.length} results`);
+    
+    return {
+      success: true,
+      query,
+      results: results.slice(0, 5), // Limit to top 5 results
+      count: results.length
+    };
+  } catch (error: any) {
+    console.error('❌ [executeWebSearch] Error:', error);
+    return { 
+      success: false, 
+      error: error.message || 'Web search failed',
+      query 
+    };
   }
 }
 
