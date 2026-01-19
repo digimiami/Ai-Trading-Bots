@@ -43,12 +43,12 @@ export default function BacktestPage() {
     useCustomPairs: false,
     exchange: 'bybit',
     tradingType: 'futures',
-    timeframe: '1h',
+    timeframe: '15m',
     leverage: 5,
     riskLevel: 'medium',
-    tradeAmount: 100,
-    stopLoss: 2.0,
-    takeProfit: 4.0,
+    tradeAmount: 70,
+    stopLoss: 1.0,
+    takeProfit: 1.0,
     startDate: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 30 days ago
     endDate: new Date().toISOString().split('T')[0], // Today
   });
@@ -78,7 +78,7 @@ export default function BacktestPage() {
     adx_meanrev_max: 19,
     session_filter_enabled: false,
     allowed_hours_utc: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23],
-    cooldown_bars: 8,
+    cooldown_bars: 5,
     atr_percentile_min: 20,
     bb_width_min: 0.012,
     bb_width_max: 0.03,
@@ -784,7 +784,7 @@ All settings have been applied to your backtest configuration.`;
               <input
                 type="number"
                 value={advancedConfig.cooldown_bars}
-                onChange={(e) => setAdvancedConfig(prev => ({ ...prev, cooldown_bars: parseInt(e.target.value) || 8 }))}
+                onChange={(e) => setAdvancedConfig(prev => ({ ...prev, cooldown_bars: parseInt(e.target.value) || 5 }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 min="1"
                 max="100"

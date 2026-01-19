@@ -56,10 +56,10 @@ export default function CreateBotPage() {
   const urlTradingType = (searchParams.get('tradingType') || 'spot') as 'spot' | 'futures';
   const urlLeverage = searchParams.get('leverage') ? parseInt(searchParams.get('leverage')!) : 5;
   const urlRiskLevel = (searchParams.get('riskLevel') || 'medium') as 'low' | 'medium' | 'high';
-  const urlTradeAmount = searchParams.get('tradeAmount') ? parseFloat(searchParams.get('tradeAmount')!) : 100;
-  const urlStopLoss = searchParams.get('stopLoss') ? parseFloat(searchParams.get('stopLoss')!) : 2.0;
-  const urlTakeProfit = searchParams.get('takeProfit') ? parseFloat(searchParams.get('takeProfit')!) : 4.0;
-  const urlTimeframe = (searchParams.get('timeframe') || '1h') as '1m' | '3m' | '5m' | '15m' | '30m' | '45m' | '1h' | '2h' | '3h' | '4h' | '5h' | '6h' | '7h' | '8h' | '9h' | '10h' | '12h' | '1d' | '1w' | '1M';
+  const urlTradeAmount = searchParams.get('tradeAmount') ? parseFloat(searchParams.get('tradeAmount')!) : 70;
+  const urlStopLoss = searchParams.get('stopLoss') ? parseFloat(searchParams.get('stopLoss')!) : 1.0;
+  const urlTakeProfit = searchParams.get('takeProfit') ? parseFloat(searchParams.get('takeProfit')!) : 1.0;
+  const urlTimeframe = (searchParams.get('timeframe') || '15m') as '1m' | '3m' | '5m' | '15m' | '30m' | '45m' | '1h' | '2h' | '3h' | '4h' | '5h' | '6h' | '7h' | '8h' | '9h' | '10h' | '12h' | '1d' | '1w' | '1M';
   const urlStrategy = searchParams.get('strategy');
   const urlStrategyConfig = searchParams.get('strategyConfig');
   const urlRsiThreshold = searchParams.get('rsiThreshold');
@@ -128,12 +128,12 @@ export default function CreateBotPage() {
             exchange: bot.exchange,
             tradingType: bot.tradingType || 'spot',
             symbol: bot.symbol || '',
-            timeframe: bot.timeframe || '1h',
+            timeframe: bot.timeframe || '15m',
             leverage: bot.leverage || 5,
             riskLevel: bot.riskLevel || 'medium',
-            tradeAmount: bot.tradeAmount || 100,
-            stopLoss: bot.stopLoss || 2.0,
-            takeProfit: bot.takeProfit || 4.0,
+            tradeAmount: bot.tradeAmount || 70,
+            stopLoss: bot.stopLoss || 1.0,
+            takeProfit: bot.takeProfit || 1.0,
             paperTrading: bot.paperTrading || false,
             soundNotificationsEnabled: bot.soundNotificationsEnabled || false
           }));
@@ -249,7 +249,7 @@ export default function CreateBotPage() {
                 adx_meanrev_max: 19,
                 session_filter_enabled: false,
                 allowed_hours_utc: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23],
-                cooldown_bars: 8,
+                cooldown_bars: 5,
                 atr_percentile_min: 20,
                 bb_width_min: 0.012,
                 bb_width_max: 0.03,
@@ -675,12 +675,12 @@ export default function CreateBotPage() {
         exchange: bot.exchange,
         tradingType: bot.tradingType || 'spot',
         symbol: bot.symbol || '',
-        timeframe: bot.timeframe || '1h',
+        timeframe: bot.timeframe || '15m',
         leverage: bot.leverage || 5,
         riskLevel: bot.riskLevel || 'medium',
-        tradeAmount: bot.tradeAmount || 100,
-        stopLoss: bot.stopLoss || 2.0,
-        takeProfit: bot.takeProfit || 4.0,
+        tradeAmount: bot.tradeAmount || 70,
+        stopLoss: bot.stopLoss || 1.0,
+        takeProfit: bot.takeProfit || 1.0,
         paperTrading: bot.paperTrading || false,
         soundNotificationsEnabled: bot.soundNotificationsEnabled || false
       }));
@@ -1279,7 +1279,7 @@ All settings have been applied to your bot configuration.`;
                           onChange={(e) => {
                             setAdvancedConfig(prev => ({
                               ...prev,
-                              cooldown_bars: e.target.checked ? (prev.cooldown_bars || 8) : 0
+                              cooldown_bars: e.target.checked ? (prev.cooldown_bars || 5) : 0
                             }));
                           }}
                           className="sr-only peer"
@@ -1293,7 +1293,7 @@ All settings have been applied to your bot configuration.`;
                       <input
                         type="number"
                         value={advancedConfig.cooldown_bars}
-                        onChange={(e) => setAdvancedConfig(prev => ({ ...prev, cooldown_bars: parseInt(e.target.value) || 8 }))}
+                        onChange={(e) => setAdvancedConfig(prev => ({ ...prev, cooldown_bars: parseInt(e.target.value) || 5 }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         min="1"
                         max="100"

@@ -1523,9 +1523,9 @@ async function executeCreateBot(supabaseClient: any, userId: string, params: any
     // Set defaults based on risk level
     const riskLevel = params.riskLevel || 'medium';
     const defaults = {
-      low: { stopLoss: 1.5, takeProfit: 3.0, tradeAmount: 50, leverage: 1 },
-      medium: { stopLoss: 2.5, takeProfit: 5.0, tradeAmount: 100, leverage: 2 },
-      high: { stopLoss: 4.0, takeProfit: 8.0, tradeAmount: 200, leverage: 5 }
+      low: { stopLoss: 1.0, takeProfit: 1.0, tradeAmount: 70, leverage: 5 },
+      medium: { stopLoss: 1.0, takeProfit: 1.0, tradeAmount: 70, leverage: 5 },
+      high: { stopLoss: 1.0, takeProfit: 1.0, tradeAmount: 70, leverage: 5 }
     };
     
     const riskDefaults = defaults[riskLevel as keyof typeof defaults] || defaults.medium;
@@ -1566,7 +1566,7 @@ async function executeCreateBot(supabaseClient: any, userId: string, params: any
       exchange: params.exchange || 'bybit',
       trading_type: params.tradingType || 'spot',
       symbol: params.symbol.toUpperCase(), // Ensure uppercase
-      timeframe: params.timeframe || '1h',
+      timeframe: params.timeframe || '15m',
       leverage: params.leverage || (params.tradingType === 'futures' ? riskDefaults.leverage : 1),
       risk_level: riskLevel,
       trade_amount: params.tradeAmount || riskDefaults.tradeAmount,
@@ -2190,16 +2190,16 @@ async function executeRunBacktest(supabaseClient: any, userId: string, params: a
     // Set defaults
     const exchange = params.exchange || 'bybit';
     const tradingType = params.tradingType || 'spot';
-    const timeframe = params.timeframe || '1h';
-    const leverage = params.leverage || (tradingType === 'futures' ? 2 : 1);
+    const timeframe = params.timeframe || '15m';
+    const leverage = params.leverage || (tradingType === 'futures' ? 5 : 1);
     const riskLevel = params.riskLevel || 'medium';
-    const tradeAmount = params.tradeAmount || 100;
+    const tradeAmount = params.tradeAmount || 70;
     
     // Risk level defaults
     const riskDefaults: any = {
-      low: { stopLoss: 2.0, takeProfit: 4.0 },
-      medium: { stopLoss: 3.0, takeProfit: 6.0 },
-      high: { stopLoss: 4.0, takeProfit: 8.0 }
+      low: { stopLoss: 1.0, takeProfit: 1.0 },
+      medium: { stopLoss: 1.0, takeProfit: 1.0 },
+      high: { stopLoss: 1.0, takeProfit: 1.0 }
     };
     const defaults = riskDefaults[riskLevel] || riskDefaults.medium;
     

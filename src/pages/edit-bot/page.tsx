@@ -21,12 +21,12 @@ export default function EditBotPage() {
     exchange: 'bybit' as 'bybit' | 'okx' | 'bitunix' | 'mexc',
     tradingType: 'spot' as 'spot' | 'futures',
     symbol: 'BTCUSDT',
-    timeframe: '1h' as '1m' | '3m' | '5m' | '15m' | '30m' | '45m' | '1h' | '2h' | '3h' | '4h' | '5h' | '6h' | '7h' | '8h' | '9h' | '10h' | '12h' | '1d' | '1w' | '1M',
+    timeframe: '15m' as '1m' | '3m' | '5m' | '15m' | '30m' | '45m' | '1h' | '2h' | '3h' | '4h' | '5h' | '6h' | '7h' | '8h' | '9h' | '10h' | '12h' | '1d' | '1w' | '1M',
     leverage: 5,
     riskLevel: 'medium' as 'low' | 'medium' | 'high',
-    tradeAmount: 100,
-    stopLoss: 2.0,
-    takeProfit: 4.0
+    tradeAmount: 70,
+    stopLoss: 1.0,
+    takeProfit: 1.0
   });
 
   const [strategy, setStrategy] = useState<TradingStrategy>({
@@ -131,7 +131,7 @@ export default function EditBotPage() {
     // Session/Timing
     session_filter_enabled: false,
     allowed_hours_utc: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23],
-    cooldown_bars: 8,
+    cooldown_bars: 5,
     
     // Volatility/Liquidity Gates
     atr_percentile_min: 20,
@@ -1210,7 +1210,7 @@ export default function EditBotPage() {
                             onChange={(e) => {
                               setAdvancedConfig(prev => ({
                                 ...prev,
-                                cooldown_bars: e.target.checked ? (prev.cooldown_bars || 8) : 0
+                                cooldown_bars: e.target.checked ? (prev.cooldown_bars || 5) : 0
                               }));
                             }}
                             className="sr-only peer"
@@ -1224,7 +1224,7 @@ export default function EditBotPage() {
                         <input
                           type="number"
                           value={advancedConfig.cooldown_bars}
-                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, cooldown_bars: parseInt(e.target.value) || 8 }))}
+                          onChange={(e) => setAdvancedConfig(prev => ({ ...prev, cooldown_bars: parseInt(e.target.value) || 5 }))}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           min="1"
                           max="100"
