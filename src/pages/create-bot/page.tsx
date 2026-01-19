@@ -53,7 +53,7 @@ export default function CreateBotPage() {
   const urlExchangeParam = searchParams.get('exchange') || 'bybit';
   // Allow all exchanges including Bitunix and MEXC
   const urlExchange = urlExchangeParam as 'bybit' | 'okx' | 'bitunix' | 'mexc';
-  const urlTradingType = (searchParams.get('tradingType') || 'spot') as 'spot' | 'futures';
+  const urlTradingType = (searchParams.get('tradingType') || 'futures') as 'spot' | 'futures';
   const urlLeverage = searchParams.get('leverage') ? parseInt(searchParams.get('leverage')!) : 5;
   const urlRiskLevel = (searchParams.get('riskLevel') || 'medium') as 'low' | 'medium' | 'high';
   const urlTradeAmount = searchParams.get('tradeAmount') ? parseFloat(searchParams.get('tradeAmount')!) : 70;
@@ -126,7 +126,7 @@ export default function CreateBotPage() {
             ...prev,
             name: `${bot.name} (Clone)`,
             exchange: bot.exchange,
-            tradingType: bot.tradingType || 'spot',
+            tradingType: bot.tradingType || 'futures',
             symbol: bot.symbol || '',
             timeframe: bot.timeframe || '15m',
             leverage: bot.leverage || 5,
@@ -219,7 +219,7 @@ export default function CreateBotPage() {
                 ...prev,
                 name: searchParams.get('name') || data.name || prev.name,
                 exchange: finalExchange,
-                tradingType: (searchParams.get('tradingType') || data.trading_type || prev.tradingType) as 'spot' | 'futures',
+                tradingType: (searchParams.get('tradingType') || data.trading_type || prev.tradingType || 'futures') as 'spot' | 'futures',
                 symbol: searchParams.get('symbol') || data.symbol || prev.symbol,
                 timeframe: (searchParams.get('timeframe') || data.timeframe || prev.timeframe) as any,
                 leverage: searchParams.get('leverage') ? parseInt(searchParams.get('leverage')!) : (data.leverage || prev.leverage),

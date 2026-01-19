@@ -1564,7 +1564,7 @@ async function executeCreateBot(supabaseClient: any, userId: string, params: any
       user_id: userId,
       name: params.name,
       exchange: params.exchange || 'bybit',
-      trading_type: params.tradingType || 'spot',
+      trading_type: params.tradingType || 'futures',
       symbol: params.symbol.toUpperCase(), // Ensure uppercase
       timeframe: params.timeframe || '15m',
       leverage: params.leverage || (params.tradingType === 'futures' ? riskDefaults.leverage : 1),
@@ -2189,7 +2189,7 @@ async function executeRunBacktest(supabaseClient: any, userId: string, params: a
     
     // Set defaults
     const exchange = params.exchange || 'bybit';
-    const tradingType = params.tradingType || 'spot';
+    const tradingType = params.tradingType || 'futures';
     const timeframe = params.timeframe || '15m';
     const leverage = params.leverage || (tradingType === 'futures' ? 5 : 1);
     const riskLevel = params.riskLevel || 'medium';
