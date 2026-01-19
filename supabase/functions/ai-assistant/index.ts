@@ -36,6 +36,54 @@ serve(async (req) => {
       );
     }
 
+    // Handle GET request for loading chat history
+    if (req.method === 'GET') {
+      const url = new URL(req.url);
+      const action = url.searchParams.get('action');
+      
+      if (action === 'load-history') {
+        const { data: history, error: historyError } = await supabaseClient
+          .from('ai_assistant_chat_history')
+          .select('id, role, content, attachments, created_at')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: true })
+          .limit(100); // Load last 100 messages
+        
+        if (historyError) {
+          console.error('Error loading chat history:', historyError);
+          return new Response(
+            JSON.stringify({ error: 'Failed to load chat history' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        return new Response(
+          JSON.stringify({ history: history || [] }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      if (action === 'clear-history') {
+        const { error: deleteError } = await supabaseClient
+          .from('ai_assistant_chat_history')
+          .delete()
+          .eq('user_id', user.id);
+        
+        if (deleteError) {
+          console.error('Error clearing chat history:', deleteError);
+          return new Response(
+            JSON.stringify({ error: 'Failed to clear chat history' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        
+        return new Response(
+          JSON.stringify({ success: true }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
     const { message, conversationHistory = [], attachments = [], apiKey: userApiKey, provider: userProvider } = await req.json();
 
     if (!message || typeof message !== 'string') {
@@ -967,6 +1015,40 @@ IMPORTANT GUIDELINES:
       finalResponse = data.choices[0]?.message?.content || aiResponse;
     } else {
       finalResponse = aiResponse;
+    }
+
+    // Save messages to database for chat history
+    try {
+      // Save user message
+      const { error: userMsgError } = await supabaseClient
+        .from('ai_assistant_chat_history')
+        .insert({
+          user_id: user.id,
+          role: 'user',
+          content: message,
+          attachments: attachments && attachments.length > 0 ? attachments : null
+        });
+      
+      if (userMsgError) {
+        console.error('Error saving user message:', userMsgError);
+      }
+      
+      // Save assistant response
+      const { error: assistantMsgError } = await supabaseClient
+        .from('ai_assistant_chat_history')
+        .insert({
+          user_id: user.id,
+          role: 'assistant',
+          content: finalResponse,
+          attachments: null
+        });
+      
+      if (assistantMsgError) {
+        console.error('Error saving assistant message:', assistantMsgError);
+      }
+    } catch (saveError) {
+      // Don't fail the request if saving history fails
+      console.error('Error saving chat history:', saveError);
     }
 
     return new Response(

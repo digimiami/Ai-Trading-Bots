@@ -96,6 +96,100 @@ export default function AiAssistantPage() {
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const synthRef = useRef<SpeechSynthesis | null>(null);
 
+  // Load chat history from database
+  const loadChatHistory = async () => {
+    if (!user) return;
+    
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '';
+      const cleanUrl = supabaseUrl.replace('/rest/v1', '');
+      const response = await fetch(
+        `${cleanUrl}/functions/v1/ai-assistant?action=load-history`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (!response.ok) {
+        console.error('Failed to load chat history');
+        return;
+      }
+
+      const { history } = await response.json();
+      
+      if (history && history.length > 0) {
+        // Convert database format to Message format
+        const loadedMessages: Message[] = history.map((msg: any) => ({
+          id: msg.id,
+          role: msg.role,
+          content: msg.content,
+          timestamp: new Date(msg.created_at),
+          attachments: msg.attachments ? (typeof msg.attachments === 'string' ? JSON.parse(msg.attachments) : msg.attachments) : undefined
+        }));
+        
+        setMessages(loadedMessages);
+      } else {
+        // No history, show welcome message
+        setMessages([{
+          id: 'welcome',
+          role: 'assistant',
+          content: `👋 Hello! I'm your AI Trading Assistant. I can help you with:
+
+• **Bot Configuration**: Explain any setting, strategy, or parameter
+• **Trading Strategies**: Understand RSI, ADX, Bollinger Bands, and more
+• **Risk Management**: Help configure stop-loss, take-profit, and position sizing
+• **Platform Features**: Guide you through creating bots, managing trades, and more
+• **Trading Questions**: Answer questions about cryptocurrency trading, technical analysis, and market behavior
+• **Create & Edit Bots**: I can create new bots or modify existing ones based on your requests!
+• **Edit User Settings**: I can update your notification preferences, alert settings, and risk management settings!
+
+**Try saying:**
+- "Create a BTCUSDT bot with RSI strategy, low risk"
+- "Update my bot to use tighter stop loss"
+- "Show me my bot performance"
+- "Enable email notifications for trade executed"
+- "Set my daily loss limit to 500 USDT"
+
+What would you like to know?`,
+          timestamp: new Date()
+        }]);
+      }
+    } catch (error) {
+      console.error('Error loading chat history:', error);
+      // On error, show welcome message
+      setMessages([{
+        id: 'welcome',
+        role: 'assistant',
+        content: `👋 Hello! I'm your AI Trading Assistant. I can help you with:
+
+• **Bot Configuration**: Explain any setting, strategy, or parameter
+• **Trading Strategies**: Understand RSI, ADX, Bollinger Bands, and more
+• **Risk Management**: Help configure stop-loss, take-profit, and position sizing
+• **Platform Features**: Guide you through creating bots, managing trades, and more
+• **Trading Questions**: Answer questions about cryptocurrency trading, technical analysis, and market behavior
+• **Create & Edit Bots**: I can create new bots or modify existing ones based on your requests!
+• **Edit User Settings**: I can update your notification preferences, alert settings, and risk management settings!
+
+**Try saying:**
+- "Create a BTCUSDT bot with RSI strategy, low risk"
+- "Update my bot to use tighter stop loss"
+- "Show me my bot performance"
+- "Enable email notifications for trade executed"
+- "Set my daily loss limit to 500 USDT"
+
+What would you like to know?`,
+        timestamp: new Date()
+      }]);
+    }
+  };
+
   useEffect(() => {
     // Load AI Assistant settings from localStorage
     try {
@@ -118,31 +212,9 @@ export default function AiAssistantPage() {
 
     checkApiConfig();
     
-    // Add welcome message
-    setMessages([{
-      id: 'welcome',
-      role: 'assistant',
-      content: `👋 Hello! I'm your AI Trading Assistant. I can help you with:
-
-• **Bot Configuration**: Explain any setting, strategy, or parameter
-• **Trading Strategies**: Understand RSI, ADX, Bollinger Bands, and more
-• **Risk Management**: Help configure stop-loss, take-profit, and position sizing
-• **Platform Features**: Guide you through creating bots, managing trades, and more
-• **Trading Questions**: Answer questions about cryptocurrency trading, technical analysis, and market behavior
-• **Create & Edit Bots**: I can create new bots or modify existing ones based on your requests!
-• **Edit User Settings**: I can update your notification preferences, alert settings, and risk management settings!
-
-**Try saying:**
-- "Create a BTCUSDT bot with RSI strategy, low risk"
-- "Update my bot to use tighter stop loss"
-- "Show me my bot performance"
-- "Enable email notifications for trade executed"
-- "Set my daily loss limit to 500 USDT"
-
-What would you like to know?`,
-      timestamp: new Date()
-    }]);
-  }, []);
+    // Load chat history from database
+    loadChatHistory();
+  }, [user]);
 
   // Initialize Speech Recognition (Web Speech API)
   useEffect(() => {
@@ -535,8 +607,7 @@ What would you like to know?`,
     }
   };
 
-  const clearChat = () => {
-    // Don't actually clear chat history - just show a message
+  const clearChat = async () => {
     const confirmClear = window.confirm('Are you sure you want to clear the chat history? This action cannot be undone.');
     if (!confirmClear) {
       return;
@@ -548,10 +619,36 @@ What would you like to know?`,
       return;
     }
     
-    setMessages([{
-      id: 'welcome',
-      role: 'assistant',
-      content: `👋 Hello! I'm your AI Trading Assistant. I can help you with:
+    if (!user) return;
+    
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '';
+      const cleanUrl = supabaseUrl.replace('/rest/v1', '');
+      const response = await fetch(
+        `${cleanUrl}/functions/v1/ai-assistant?action=clear-history`,
+        {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (!response.ok) {
+        console.error('Failed to clear chat history');
+        setError('Failed to clear chat history. Please try again.');
+        return;
+      }
+
+      // Clear local messages and show welcome message
+      setMessages([{
+        id: 'welcome',
+        role: 'assistant',
+        content: `👋 Hello! I'm your AI Trading Assistant. I can help you with:
 
 • **Bot Configuration**: Explain any setting, strategy, or parameter
 • **Trading Strategies**: Understand RSI, ADX, Bollinger Bands, and more
@@ -569,8 +666,12 @@ What would you like to know?`,
 - "Set my daily loss limit to 500 USDT"
 
 What would you like to know?`,
-      timestamp: new Date()
-    }]);
+        timestamp: new Date()
+      }]);
+    } catch (error) {
+      console.error('Error clearing chat history:', error);
+      setError('Failed to clear chat history. Please try again.');
+    }
   };
 
   return (
