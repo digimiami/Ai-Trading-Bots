@@ -40,6 +40,7 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
   const [error, setError] = useState<string | null>(null);
   const { user, loading: authLoading } = useAuth();
   const fetchInProgressRef = useRef(false); // Prevent concurrent fetches
+  const hasLoadedPositionsRef = useRef(false); // Track if we've loaded positions at least once
 
   const dlog = (...args: any[]) => {
     try {
@@ -105,9 +106,9 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
 
     try {
       fetchInProgressRef.current = true;
-      // Only show loading spinner on initial load (when positions array is empty)
+      // Only show loading spinner on initial load (before we've loaded positions at least once)
       // For subsequent refreshes, keep the current loading state to avoid flickering
-      const isInitialLoad = positions.length === 0;
+      const isInitialLoad = !hasLoadedPositionsRef.current;
       if (isInitialLoad) {
         console.log('[positions] 🔄 Initial load: setting loading to true');
         setLoading(true);
@@ -227,6 +228,9 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
       
       // Use a functional update to ensure we're working with the latest state
       setPositions(positionsArray);
+      
+      // Mark that we've successfully loaded positions at least once
+      hasLoadedPositionsRef.current = true;
       
       // Always set loading to false after successfully loading positions
       // This ensures the UI updates even if there was a race condition
