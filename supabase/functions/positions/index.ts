@@ -869,7 +869,8 @@ serve(async (req) => {
 
     // GET: Fetch positions
     if (req.method === 'GET' && action === 'list') {
-      console.log(`📋 Positions list request: exchange=${url.searchParams.get('exchange') || 'all'}, user=${user.id}`);
+      const startTime = Date.now();
+      console.log(`📋 [${new Date().toISOString()}] Positions list request: exchange=${url.searchParams.get('exchange') || 'all'}, user=${user.id}`);
       const exchangeFilter = url.searchParams.get('exchange') || 'all';
 
       // Get user's API keys
