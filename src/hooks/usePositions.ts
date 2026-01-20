@@ -177,13 +177,39 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
     fetchPositions();
     fetchClosedPositions(10); // At least 10 recent closed positions
 
-    // Auto-refresh every 60 seconds
-    const interval = setInterval(() => {
-      fetchPositions();
-      fetchClosedPositions(10); // At least 10 recent closed positions
-    }, 60000);
+    // Open positions should feel "live" (PnL/price changes). Refresh frequently while tab is visible.
+    const OPEN_POSITIONS_REFRESH_MS = 10_000;
+    const CLOSED_POSITIONS_REFRESH_MS = 60_000;
 
-    return () => clearInterval(interval);
+    const tickOpen = () => {
+      if (document.visibilityState === 'visible') {
+        fetchPositions();
+      }
+    };
+
+    const tickClosed = () => {
+      if (document.visibilityState === 'visible') {
+        fetchClosedPositions(10); // Keep closed positions slower
+      }
+    };
+
+    const openInterval = setInterval(tickOpen, OPEN_POSITIONS_REFRESH_MS);
+    const closedInterval = setInterval(tickClosed, CLOSED_POSITIONS_REFRESH_MS);
+
+    // When the tab becomes visible again, refresh immediately (no waiting for the next interval).
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchPositions();
+        fetchClosedPositions(10);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      clearInterval(openInterval);
+      clearInterval(closedInterval);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, [fetchPositions, fetchClosedPositions]);
 
   return {

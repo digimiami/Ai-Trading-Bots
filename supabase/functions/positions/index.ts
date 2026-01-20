@@ -366,6 +366,45 @@ async function fetchBitunixPositions(
     return [];
   };
 
+  const extractFirstPositiveNumber = (...candidates: any[]): number | undefined => {
+    for (const c of candidates) {
+      const n = typeof c === 'number' ? c : typeof c === 'string' ? parseFloat(c) : NaN;
+      if (Number.isFinite(n) && n > 0) return n;
+    }
+    return undefined;
+  };
+
+  // Bitunix does not always include SL/TP on the position object. We merge from pending TP/SL orders API.
+  const fetchBitunixPendingTpSlOrders = async (symbol: string): Promise<any[]> => {
+    const baseUrl = 'https://fapi.bitunix.com';
+    const endpoint = '/api/v1/futures/tpsl/pending_orders';
+    const queryParams = normalizeQueryParams(`symbol=${symbol.toUpperCase()}`);
+    const url = `${baseUrl}${endpoint}?${queryParams}`;
+
+    const timestamp = Date.now().toString();
+    const nonce = generateNonce();
+    const body = '';
+    const signature = await createBitunixSignature(nonce, timestamp, apiKey, queryParams, body, apiSecret);
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'api-key': String(apiKey),
+        'nonce': String(nonce),
+        'timestamp': String(timestamp),
+        'sign': String(signature),
+        'Content-Type': 'application/json',
+        'language': 'en-US',
+      },
+    });
+
+    if (!response.ok) return [];
+    const data = await response.json().catch(() => null);
+    if (!data || data.code !== 0 || !data.data) return [];
+    const orders = Array.isArray(data.data) ? data.data : (data.data.list || data.data.orders || []);
+    return Array.isArray(orders) ? orders : [];
+  };
+
   // Prefer no-query (some accounts succeed more reliably) then typical variants.
   const queryVariants = [
     '',
@@ -425,7 +464,7 @@ async function fetchBitunixPositions(
             continue;
           }
 
-          return positions.map((p: any) => {
+          const mappedPositions: ExchangePosition[] = positions.map((p: any) => {
             const size = extractSize(p);
             const entryPrice = parseFloat(
               p.entryPrice ||
@@ -483,6 +522,93 @@ async function fetchBitunixPositions(
               })(),
             };
           });
+
+          // Merge SL/TP from TP/SL pending orders API when missing on the position objects.
+          try {
+            const symbols = Array.from(new Set(mappedPositions.map((p) => String(p.symbol || '').toUpperCase()).filter(Boolean)));
+            const ordersBySymbol = new Map<string, any[]>();
+            await Promise.all(
+              symbols.map(async (sym) => {
+                try {
+                  const orders = await fetchBitunixPendingTpSlOrders(sym);
+                  ordersBySymbol.set(sym, orders);
+                } catch {
+                  // ignore per-symbol failures
+                }
+              })
+            );
+
+            const normSide = (raw: any): 'long' | 'short' | null => {
+              const s = String(raw || '').toLowerCase();
+              if (s === 'long' || s === 'buy') return 'long';
+              if (s === 'short' || s === 'sell') return 'short';
+              return null;
+            };
+
+            for (const pos of mappedPositions) {
+              if (pos.stopLoss && pos.stopLoss > 0 && pos.takeProfit && pos.takeProfit > 0) continue;
+              const sym = String(pos.symbol || '').toUpperCase();
+              const orders = ordersBySymbol.get(sym) || [];
+              if (!orders.length) continue;
+
+              // Prefer matching by positionId if the API returns it; otherwise match by side if present.
+              const posId = pos.positionId ? String(pos.positionId) : '';
+              const relevant = orders.filter((o: any) => {
+                const oid = String(o.positionId ?? o.position_id ?? o.posId ?? o.pos_id ?? '');
+                if (posId && oid && posId === oid) return true;
+                const oside = normSide(o.holdSide ?? o.positionSide ?? o.side);
+                if (oside && oside === pos.side) return true;
+                return !posId; // if we don't have posId, fall back to symbol-only
+              });
+
+              const candidates = relevant.length ? relevant : orders;
+              let bestSL: number | undefined;
+              let bestTP: number | undefined;
+
+              for (const o of candidates) {
+                const tp = extractFirstPositiveNumber(
+                  o.tpPrice,
+                  o.tp_price,
+                  o.takeProfitPrice,
+                  o.take_profit_price,
+                  o.takeProfit,
+                  o.tpTriggerPx,
+                  o.tpTriggerPrice,
+                  o.triggerPrice
+                );
+                const sl = extractFirstPositiveNumber(
+                  o.slPrice,
+                  o.sl_price,
+                  o.stopLossPrice,
+                  o.stop_loss_price,
+                  o.stopLoss,
+                  o.slTriggerPx,
+                  o.slTriggerPrice,
+                  o.triggerPrice
+                );
+
+                // Heuristic: some responses have only a single triggerPrice; use "type" hints if available.
+                const kind = String(o.type ?? o.tpslType ?? o.tpSlType ?? o.planType ?? '').toLowerCase();
+                if (tp && (!bestTP || tp > bestTP)) {
+                  if (kind.includes('tp') || kind.includes('take')) bestTP = tp;
+                }
+                if (sl && (!bestSL || sl < bestSL)) {
+                  if (kind.includes('sl') || kind.includes('stop')) bestSL = sl;
+                }
+
+                // If explicit tpPrice/slPrice exist, accept regardless of kind.
+                if (extractFirstPositiveNumber(o.tpPrice, o.tp_price, o.takeProfitPrice, o.takeProfit)) bestTP = tp ?? bestTP;
+                if (extractFirstPositiveNumber(o.slPrice, o.sl_price, o.stopLossPrice, o.stopLoss)) bestSL = sl ?? bestSL;
+              }
+
+              if (!pos.stopLoss && bestSL) pos.stopLoss = bestSL;
+              if (!pos.takeProfit && bestTP) pos.takeProfit = bestTP;
+            }
+          } catch (mergeErr) {
+            console.warn('Bitunix TP/SL merge failed:', mergeErr);
+          }
+
+          return mappedPositions;
         } catch (err: any) {
           lastError = err;
           continue;
