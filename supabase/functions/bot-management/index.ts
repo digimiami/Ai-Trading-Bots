@@ -56,13 +56,20 @@ serve(async (req) => {
           .from('trading_bots')
           .select('*')
           .eq('id', botId)
-          .single()
+          .maybeSingle()
 
         if (error) {
           console.error('Error fetching bot by ID:', error)
+          // Check if it's a "no rows" error
+          if (error.code === 'PGRST116' || error.message?.includes('JSON object')) {
+            return new Response(
+              JSON.stringify({ error: 'Bot not found' }),
+              { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
           return new Response(
-            JSON.stringify({ error: error.message || 'Bot not found' }),
-            { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            JSON.stringify({ error: error.message || 'Failed to fetch bot' }),
+            { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           )
         }
 

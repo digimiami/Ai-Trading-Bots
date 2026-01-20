@@ -230,6 +230,9 @@ export default function PositionsPage() {
             <Card className="p-6 text-center">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
               <p className="text-gray-600 dark:text-gray-400">Loading positions...</p>
+              {process.env.NODE_ENV === 'development' && (
+                <p className="text-xs mt-2 text-gray-400">Debug: loading={String(loading)}, positions.length={positions.length}</p>
+              )}
             </Card>
           )}
 

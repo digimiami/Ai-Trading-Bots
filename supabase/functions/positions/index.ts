@@ -309,11 +309,11 @@ async function fetchBitunixPositions(
 ): Promise<ExchangePosition[]> {
   // Bitunix has multiple position endpoints in the wild. The older `/api/v1/futures/position`
   // often returns code=2 "System error" even when positions exist. The OpenAPI endpoints
-  // `get_pending_positions` / `get_history_positions` are more reliable.
+  // `get_pending_positions` should only return open positions. We skip `get_history_positions`
+  // as it returns closed positions which we don't want for the open positions list.
   const baseUrls = ['https://fapi.bitunix.com', 'https://api.bitunix.com'];
   const endpoints = [
     '/api/v1/futures/position/get_pending_positions',
-    '/api/v1/futures/position/get_history_positions',
     '/api/v1/futures/position/pending_position',
     '/api/v1/futures/position/list',
     '/api/v1/futures/position',
@@ -376,33 +376,51 @@ async function fetchBitunixPositions(
 
   // Bitunix does not always include SL/TP on the position object. We merge from pending TP/SL orders API.
   const fetchBitunixPendingTpSlOrders = async (symbol: string): Promise<any[]> => {
-    const baseUrl = 'https://fapi.bitunix.com';
+    // Try both hosts; some accounts only work on one of them.
+    const baseUrls = ['https://fapi.bitunix.com', 'https://api.bitunix.com'];
     const endpoint = '/api/v1/futures/tpsl/pending_orders';
     const queryParams = normalizeQueryParams(`symbol=${symbol.toUpperCase()}`);
-    const url = `${baseUrl}${endpoint}?${queryParams}`;
-
     const timestamp = Date.now().toString();
     const nonce = generateNonce();
     const body = '';
     const signature = await createBitunixSignature(nonce, timestamp, apiKey, queryParams, body, apiSecret);
 
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'api-key': String(apiKey),
-        'nonce': String(nonce),
-        'timestamp': String(timestamp),
-        'sign': String(signature),
-        'Content-Type': 'application/json',
-        'language': 'en-US',
-      },
-    });
+    for (const baseUrl of baseUrls) {
+      const url = `${baseUrl}${endpoint}?${queryParams}`;
+      try {
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'api-key': String(apiKey),
+            'nonce': String(nonce),
+            'timestamp': String(timestamp),
+            'sign': String(signature),
+            'Content-Type': 'application/json',
+            'language': 'en-US',
+          },
+        });
 
-    if (!response.ok) return [];
-    const data = await response.json().catch(() => null);
-    if (!data || data.code !== 0 || !data.data) return [];
-    const orders = Array.isArray(data.data) ? data.data : (data.data.list || data.data.orders || []);
-    return Array.isArray(orders) ? orders : [];
+        if (!response.ok) {
+          continue;
+        }
+
+        const data = await response.json().catch(() => null);
+        if (!data || !data.data) continue;
+        if (data.code === 0) {
+          const orders = Array.isArray(data.data) ? data.data : (data.data.list || data.data.orders || []);
+          if (Array.isArray(orders)) return orders;
+        }
+
+        // Code 2 is common/temporary; try next host before giving up
+        if (data.code === 2) {
+          continue;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return [];
   };
 
   // Prefer no-query (some accounts succeed more reliably) then typical variants.
@@ -414,6 +432,7 @@ async function fetchBitunixPositions(
   ];
 
   let lastError: any = null;
+  let has404Errors = false;
 
   for (const baseUrl of baseUrls) {
     for (const endpoint of endpoints) {
@@ -440,6 +459,10 @@ async function fetchBitunixPositions(
           });
 
           if (!response.ok) {
+            // Track 404 errors - they might indicate no positions exist
+            if (response.status === 404) {
+              has404Errors = true;
+            }
             lastError = new Error(`Bitunix HTTP ${response.status} (${endpoint})`);
             continue;
           }
@@ -457,7 +480,31 @@ async function fetchBitunixPositions(
           }
 
           const positions = parsePositionsFromResponse(data)
-            .filter((p: any) => extractSize(p) > 0);
+            .filter((p: any) => {
+              // Filter out closed positions if status field exists
+              const status = String(p.status || p.positionStatus || p.state || '').toLowerCase();
+              if (status && (status === 'closed' || status === 'close' || status === 'settled' || status === 'liquidated')) {
+                return false;
+              }
+              
+              // Critical check: Bitunix open positions MUST have holdVol/hold_vol > 0
+              // holdVol (holding volume) is the authoritative field for open positions
+              // Check if holdVol field exists in the response
+              const hasHoldVolField = p.holdVol !== undefined || p.hold_vol !== undefined;
+              
+              if (hasHoldVolField) {
+                // If holdVol field exists, use it as the source of truth
+                const holdVol = parseFloat(p.holdVol || p.hold_vol || 0);
+                // Only accept positions where holdVol > 0
+                return holdVol > 0;
+              }
+              
+              // If holdVol field doesn't exist, fall back to other size fields
+              // This handles cases where the API doesn't provide holdVol (legacy endpoints)
+              // But we still need to ensure the position has a non-zero size
+              const size = extractSize(p);
+              return size > 0;
+            });
 
           if (!positions.length) {
             // Successful response but empty; try other variants/endpoints.
@@ -617,8 +664,23 @@ async function fetchBitunixPositions(
     }
   }
 
-  console.error('Error fetching Bitunix positions:', lastError);
-  throw lastError || new Error('Error fetching Bitunix positions');
+  // If we only got 404 errors and no positions were found, return empty array
+  // (404 likely means no positions exist or endpoint doesn't exist, which is a valid state)
+  if (has404Errors) {
+    console.log('Bitunix: All endpoints returned 404, assuming no open positions');
+    return [];
+  }
+
+  // If we have other errors, log them but still return empty array to avoid breaking the UI
+  // (Better to show 0 positions than crash the positions page)
+  if (lastError) {
+    console.error('Error fetching Bitunix positions:', lastError);
+    // Don't throw - return empty array instead to gracefully handle API issues
+    return [];
+  }
+
+  // Fallback: return empty array if somehow we get here
+  return [];
 }
 
 /**

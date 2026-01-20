@@ -12257,25 +12257,39 @@ class BotExecutor {
     // - some accept no query params and return all positions
     // IMPORTANT: Your logs show that some Bitunix accounts intermittently return 10007 when
     // signing query params, but succeed with no query string. So try the empty-query variant first.
+    // Optimized: Try most common query variants first to reduce API calls
+    // Start with symbol-only (most common), then add marketType/marginCoin if needed
     const queryVariants: string[] = [
-      '',
-      `symbol=${normalizedSymbol}`,
-      `marginCoin=USDT&symbol=${normalizedSymbol}`,
-      `marginCoin=USDT`,
-      // Some Bitunix gateways require a marketType hint even on futures endpoints.
-      `marketType=futures`,
-      `marketType=futures&symbol=${normalizedSymbol}`,
-      `marketType=futures&marginCoin=USDT`,
-      `marketType=futures&marginCoin=USDT&symbol=${normalizedSymbol}`,
+      `symbol=${normalizedSymbol}`, // Most common - try first
+      `marketType=futures&symbol=${normalizedSymbol}`, // Second most common
+      `marketType=futures&marginCoin=USDT&symbol=${normalizedSymbol}`, // Full params
+      '', // No params (fallback)
+      `marginCoin=USDT&symbol=${normalizedSymbol}`, // Without marketType
+      `marketType=futures&marginCoin=USDT`, // Without symbol
+      `marginCoin=USDT`, // Margin coin only
+      `marketType=futures`, // Market type only
     ];
 
     let sawCode2 = false;
+    let code2Count = 0;
     let lastCode2Msg: string | null = null;
     let lastCode2Endpoint: string | null = null;
+    const MAX_CODE2_ATTEMPTS = 10; // Fail fast if we see too many Code 2 errors
 
     for (const baseUrl of baseUrls) {
       for (const endpoint of endpoints) {
+        // Early exit if we've seen too many Code 2 errors (likely systemic issue)
+        if (code2Count >= MAX_CODE2_ATTEMPTS) {
+          console.warn(`⚠️ Too many Code 2 errors (${code2Count}). Stopping position fetch attempts to reduce API load.`);
+          break;
+        }
+        
         for (const queryParams of queryVariants) {
+          // Early exit if we've seen too many Code 2 errors
+          if (code2Count >= MAX_CODE2_ATTEMPTS) {
+            break;
+          }
+          
           try {
             const timestamp = (Date.now() + BotExecutor.bitunixServerTimeOffset).toString();
             const nonce = this.generateNonce();
@@ -12376,12 +12390,19 @@ class BotExecutor {
                 const errorMsg = data.msg || data.message || 'Unknown error';
                 console.log(`   ${baseUrl}${endpoint} returned code ${data.code}: ${errorMsg}`);
             // IMPORTANT: Code 2 can be transient even when a symbol/position exists.
-            // Do NOT return early; keep trying other query variants and endpoints.
+            // Track Code 2 count and fail fast if we see too many (likely systemic issue).
             if (data.code === 2) {
               sawCode2 = true;
+              code2Count++;
               lastCode2Msg = errorMsg;
               lastCode2Endpoint = `${baseUrl}${endpoint}${queryParams ? '?' + queryParams : ''}`;
-              console.warn(`   ⚠️ Code 2 (System error) from ${baseUrl}${endpoint} - will continue trying other endpoints/params`);
+              
+              if (code2Count < MAX_CODE2_ATTEMPTS) {
+                console.warn(`   ⚠️ Code 2 (System error) from ${baseUrl}${endpoint} [${code2Count}/${MAX_CODE2_ATTEMPTS}] - will continue trying other endpoints/params`);
+              } else {
+                console.warn(`   ⚠️ Code 2 (System error) from ${baseUrl}${endpoint} [${code2Count}/${MAX_CODE2_ATTEMPTS}] - stopping attempts to reduce API load`);
+                break; // Exit inner loop
+              }
               continue;
             }
           }
@@ -13067,48 +13088,96 @@ class BotExecutor {
       // Only try TP/SL if we have a valid positionId (required by Bitunix API)
       if (isValidPositionId(resolvedPositionId)) {
         // Idempotency guard: avoid creating many TP/SL orders on repeated executions.
-        // Check for existing TP AND SL orders for this specific positionId before placing new ones.
-        try {
-          const existing = await this.getBitunixPendingTpSlOrders(apiKey, apiSecret, symbol);
-          const wantedPid = String(resolvedPositionId);
-          
-          // Strict matching: only match by positionId (no symbol fallback, as that's unreliable)
-          const matchingByPositionId = existing.filter((o: any) => {
-            const pid = this.extractBitunixTpSlOrderPositionId(o);
-            return pid && pid === wantedPid;
-          });
-          
-          // Check if we already have both TP and SL orders for this position
-          const hasTP = matchingByPositionId.some((o: any) => {
-            const orderType = String(o?.orderType || o?.type || o?.tpType || '').toUpperCase();
-            return orderType.includes('TP') || orderType.includes('TAKE_PROFIT') || 
-                   o?.tpPrice || o?.takeProfitPrice || o?.tp;
-          });
-          
-          const hasSL = matchingByPositionId.some((o: any) => {
-            const orderType = String(o?.orderType || o?.type || o?.slType || '').toUpperCase();
-            return orderType.includes('SL') || orderType.includes('STOP_LOSS') || 
-                   o?.slPrice || o?.stopLossPrice || o?.sl;
-          });
-          
-          // If we have ANY matching orders by positionId, skip placement (Bitunix combines TP/SL)
-          // This prevents creating duplicate orders for the same position
-          if (matchingByPositionId.length > 0) {
-            console.log(`🧯 TP/SL already exists for ${symbol} (positionId=${wantedPid}). Skipping new placement to prevent duplicates.`);
-            console.log(`   📊 Existing pending TP/SL orders found: ${matchingByPositionId.length} (TP: ${hasTP}, SL: ${hasSL})`);
-            if (matchingByPositionId.length > 0) {
-              console.log(`   📊 Example order: ${JSON.stringify(matchingByPositionId[0]).substring(0, 300)}`);
+        // Check for existing TP AND SL orders for this specific positionId AND symbol/side before placing new ones.
+        // Optimized: Single check with one retry only if first check fails (reduces API calls)
+        let foundExistingOrders = false;
+        const wantedPid = String(resolvedPositionId);
+        const normalizedSymbol = symbol.toUpperCase();
+        const normalizedSide = side.toUpperCase();
+        
+        for (let checkAttempt = 1; checkAttempt <= 2; checkAttempt++) {
+          try {
+            const existing = await this.getBitunixPendingTpSlOrders(apiKey, apiSecret, symbol);
+            
+            // Match by positionId first (most reliable)
+            const matchingByPositionId = existing.filter((o: any) => {
+              const pid = this.extractBitunixTpSlOrderPositionId(o);
+              return pid && pid === wantedPid;
+            });
+            
+            // Also match by symbol and side (fallback when positionId isn't available yet)
+            // This catches duplicates even if positionId wasn't resolved when orders were created
+            const matchingBySymbolAndSide = existing.filter((o: any) => {
+              const oSymbol = String(o?.symbol || o?.contract || '').toUpperCase();
+              const oSide = String(o?.holdSide || o?.positionSide || o?.side || '').toUpperCase();
+              const isLongOrder = normalizedSide === 'BUY' || normalizedSide === 'LONG';
+              const isShortOrder = normalizedSide === 'SELL' || normalizedSide === 'SHORT';
+              const oIsLong = oSide === 'BUY' || oSide === 'LONG';
+              const oIsShort = oSide === 'SELL' || oSide === 'SHORT';
+              
+              return oSymbol === normalizedSymbol && 
+                     ((isLongOrder && oIsLong) || (isShortOrder && oIsShort));
+            });
+            
+            // Use positionId match if available, otherwise use symbol/side match
+            const matchingOrders = matchingByPositionId.length > 0 ? matchingByPositionId : matchingBySymbolAndSide;
+            
+            // Check if we already have both TP and SL orders for this position
+            const hasTP = matchingOrders.some((o: any) => {
+              const orderType = String(o?.orderType || o?.type || o?.tpType || '').toUpperCase();
+              return orderType.includes('TP') || orderType.includes('TAKE_PROFIT') || 
+                     o?.tpPrice || o?.takeProfitPrice || o?.tp;
+            });
+            
+            const hasSL = matchingOrders.some((o: any) => {
+              const orderType = String(o?.orderType || o?.type || o?.slType || '').toUpperCase();
+              return orderType.includes('SL') || orderType.includes('STOP_LOSS') || 
+                     o?.slPrice || o?.stopLossPrice || o?.sl;
+            });
+            
+            // If we have ANY matching orders (by positionId OR symbol/side), skip placement
+            // This prevents creating duplicate orders for the same position
+            // CRITICAL: If we already have 2+ orders (TP + SL), definitely skip
+            if (matchingOrders.length >= 2 || (hasTP && hasSL)) {
+              console.log(`🧯 TP/SL already exists for ${symbol} ${side} (positionId=${wantedPid}). Skipping new placement to prevent duplicates.`);
+              console.log(`   📊 Existing pending TP/SL orders found: ${matchingOrders.length} (TP: ${hasTP}, SL: ${hasSL})`);
+              console.log(`   🔍 Matched by: ${matchingByPositionId.length > 0 ? 'positionId' : 'symbol+side'}`);
+              if (matchingOrders.length > 0) {
+                console.log(`   📊 Example order: ${JSON.stringify(matchingOrders[0]).substring(0, 300)}`);
+              }
+              foundExistingOrders = true;
+              break; // Exit check loop
             }
-            return;
+            
+            // If we have 1 order but not both TP and SL, log but still proceed (might be partial)
+            if (matchingOrders.length === 1 && (!hasTP || !hasSL)) {
+              console.log(`   ⚠️ Found 1 existing TP/SL order for ${symbol} ${side}, but missing ${hasTP ? 'SL' : 'TP'}. Will attempt to place missing order.`);
+            }
+            
+            // Log when no matching orders found (useful for debugging)
+            if (existing.length > 0 && matchingOrders.length === 0) {
+              console.log(`   ℹ️ Found ${existing.length} pending TP/SL orders for ${symbol}, but none match positionId ${wantedPid} or symbol+side. Proceeding with placement.`);
+            }
+            
+            // If first check succeeded (no errors), exit retry loop
+            break;
+          } catch (e) {
+            const errorMsg = e instanceof Error ? e.message : String(e);
+            console.warn(`⚠️ Could not pre-check existing TP/SL orders (attempt ${checkAttempt}/2):`, errorMsg);
+            
+            // Only retry on network/timeout errors, not on API errors (Code 2, etc.)
+            if (checkAttempt === 1 && (errorMsg.includes('timeout') || errorMsg.includes('network') || errorMsg.includes('fetch'))) {
+              console.log(`   ⏳ Retrying after brief delay...`);
+              await new Promise(resolve => setTimeout(resolve, 1000)); // 1s delay before retry
+            } else {
+              // Don't retry on API errors (Code 2, etc.) - proceed with placement
+              break;
+            }
           }
-          
-          // Log when no matching orders found (useful for debugging)
-          if (existing.length > 0) {
-            console.log(`   ℹ️ Found ${existing.length} pending TP/SL orders for ${symbol}, but none match positionId ${wantedPid}. Proceeding with placement.`);
-          }
-        } catch (e) {
-          console.warn(`⚠️ Could not pre-check existing TP/SL orders; continuing with placement:`, e instanceof Error ? e.message : String(e));
-          // On error, we continue to place orders (fail open) but log the warning
+        }
+        
+        if (foundExistingOrders) {
+          return; // Exit function early - orders already exist
         }
 
         // Bitunix docs require tpQty/slQty (at least one). We'll use full position size.
@@ -13194,6 +13263,39 @@ class BotExecutor {
       for (let endpointIndex = 0; endpointIndex < endpointsToTry.length; endpointIndex++) {
         console.log(`🔄 ENTERED LOOP - endpointIndex: ${endpointIndex}, endpoint: ${endpointsToTry[endpointIndex]?.endpoint}`);
         const endpointConfig = endpointsToTry[endpointIndex];
+        
+        // CRITICAL: Check for existing TP/SL orders BEFORE first endpoint attempt only
+        // This prevents duplicate orders when the function is called multiple times
+        // We only check once before starting the endpoint loop to reduce API calls
+        if (endpointIndex === 0) {
+          try {
+            const existingBeforeAttempt = await this.getBitunixPendingTpSlOrders(apiKey, apiSecret, symbol);
+            const normalizedSymbol = symbol.toUpperCase();
+            const normalizedSide = side.toUpperCase();
+            
+            const matchingBeforeAttempt = existingBeforeAttempt.filter((o: any) => {
+              const pid = this.extractBitunixTpSlOrderPositionId(o);
+              const oSymbol = String(o?.symbol || o?.contract || '').toUpperCase();
+              const oSide = String(o?.holdSide || o?.positionSide || o?.side || '').toUpperCase();
+              const isLongOrder = normalizedSide === 'BUY' || normalizedSide === 'LONG';
+              const oIsLong = oSide === 'BUY' || oSide === 'LONG';
+              const oIsShort = oSide === 'SELL' || oSide === 'SHORT';
+              
+              return (pid && resolvedPositionId && pid === String(resolvedPositionId)) || 
+                     (oSymbol === normalizedSymbol && ((isLongOrder && oIsLong) || (!isLongOrder && oIsShort)));
+            });
+            
+            if (matchingBeforeAttempt.length >= 2) {
+              console.log(`🧯 Found ${matchingBeforeAttempt.length} existing TP/SL orders before endpoint attempt. Exiting to prevent duplicates.`);
+              slTpSuccess = true;
+              break; // Exit immediately - orders already exist
+            }
+          } catch (checkErr) {
+            console.warn(`   ⚠️ Could not check existing orders before endpoint attempt:`, checkErr instanceof Error ? checkErr.message : String(checkErr));
+            // Continue with attempt if check fails
+          }
+        }
+        
         // These are referenced in the catch block; declare them at loop scope.
         let slTpParams: any = null;
         let bodyString = '';
@@ -13407,6 +13509,48 @@ class BotExecutor {
                 }));
                 // #endregion
                 console.log(`   📊 Full response data: ${JSON.stringify(data.data || {}, null, 2)}`);
+                
+                // CRITICAL: Bitunix API successfully created orders (code 0 or 200)
+                // Mark success immediately and exit to prevent trying other endpoints or duplicate calls
+                const orderIds = Array.isArray(data.data) ? data.data : (data.data?.orderId ? [data.data] : []);
+                if (orderIds.length > 0) {
+                  console.log(`   ✅ Bitunix API created ${orderIds.length} TP/SL order(s): ${orderIds.map((o: any) => o.orderId || o.id).join(', ')}`);
+                  console.log(`   🧯 Orders successfully placed. Exiting immediately to prevent duplicates.`);
+                  slTpSuccess = true;
+                  break; // Exit immediately - don't try other endpoints
+                } else {
+                  // API returned success but no order IDs - verify before proceeding
+                  console.log(`   ⚠️ API returned success but no order IDs. Verifying before proceeding...`);
+                  try {
+                    await new Promise(resolve => setTimeout(resolve, 2000)); // Brief wait for orders to appear
+                    const existingAfterPlacement = await this.getBitunixPendingTpSlOrders(apiKey, apiSecret, symbol);
+                    const normalizedSymbol = symbol.toUpperCase();
+                    const normalizedSide = side.toUpperCase();
+                    
+                    const matchingAfterPlacement = existingAfterPlacement.filter((o: any) => {
+                      const pid = this.extractBitunixTpSlOrderPositionId(o);
+                      const oSymbol = String(o?.symbol || o?.contract || '').toUpperCase();
+                      const oSide = String(o?.holdSide || o?.positionSide || o?.side || '').toUpperCase();
+                      const isLongOrder = normalizedSide === 'BUY' || normalizedSide === 'LONG';
+                      const oIsLong = oSide === 'BUY' || oSide === 'LONG';
+                      const oIsShort = oSide === 'SELL' || oSide === 'SHORT';
+                      
+                      return (pid && pid === String(resolvedPositionId)) || 
+                             (oSymbol === normalizedSymbol && ((isLongOrder && oIsLong) || (!isLongOrder && oIsShort)));
+                    });
+                    
+                    if (matchingAfterPlacement.length >= 2) {
+                      console.log(`   🧯 Found ${matchingAfterPlacement.length} TP/SL orders after placement. Exiting to prevent duplicates.`);
+                      slTpSuccess = true;
+                      break; // Exit immediately to prevent trying other endpoints
+                    }
+                  } catch (checkErr) {
+                    console.warn(`   ⚠️ Could not verify orders after placement:`, checkErr instanceof Error ? checkErr.message : String(checkErr));
+                    // If verification fails but API said success, assume success and exit
+                    slTpSuccess = true;
+                    break;
+                  }
+                }
                 
                 // CRITICAL: Verify SL/TP was actually set by checking position AND TP/SL orders API
                 console.log(`🔍 Verifying SL/TP was actually set on position...`);
@@ -13959,6 +14103,43 @@ class BotExecutor {
           
           if (positionInfo && positionInfo.size > 0) {
             console.log(`✅ [BACKGROUND] Position found for ${symbol}: ${positionInfo.size}`);
+            
+            // Check if SL/TP already exists before attempting to set
+            const hasSL = !!(positionInfo.stopLoss || positionInfo.stop_loss || positionInfo.slPrice);
+            const hasTP = !!(positionInfo.takeProfit || positionInfo.take_profit || positionInfo.tpPrice);
+            
+            // Also check TP/SL orders API to catch orders that might not show on position object
+            let hasTPSLOrders = false;
+            try {
+              const existingOrders = await this.getBitunixPendingTpSlOrders(apiKey, apiSecret, symbol);
+              const normalizedSymbol = symbol.toUpperCase();
+              const normalizedSide = side.toUpperCase();
+              
+              const matchingOrders = existingOrders.filter((o: any) => {
+                const pid = this.extractBitunixTpSlOrderPositionId(o);
+                const oSymbol = String(o?.symbol || o?.contract || '').toUpperCase();
+                const oSide = String(o?.holdSide || o?.positionSide || o?.side || '').toUpperCase();
+                const isLongOrder = normalizedSide === 'BUY' || normalizedSide === 'LONG';
+                const oIsLong = oSide === 'BUY' || oSide === 'LONG';
+                const oIsShort = oSide === 'SELL' || oSide === 'SHORT';
+                
+                return (pid && orderPositionId && pid === String(orderPositionId)) || 
+                       (oSymbol === normalizedSymbol && ((isLongOrder && oIsLong) || (!isLongOrder && oIsShort)));
+              });
+              
+              hasTPSLOrders = matchingOrders.length >= 2;
+              if (hasTPSLOrders) {
+                console.log(`   🧯 [BACKGROUND] Found ${matchingOrders.length} existing TP/SL orders. Skipping placement to prevent duplicates.`);
+              }
+            } catch (orderCheckErr) {
+              console.warn(`   ⚠️ [BACKGROUND] Could not check existing TP/SL orders:`, orderCheckErr instanceof Error ? orderCheckErr.message : String(orderCheckErr));
+            }
+            
+            // If SL/TP already exists, skip placement
+            if ((hasSL && hasTP) || hasTPSLOrders) {
+              console.log(`✅ [BACKGROUND] SL/TP already exists for ${symbol}. Skipping placement (SL: ${hasSL}, TP: ${hasTP}, Orders: ${hasTPSLOrders}).`);
+              return; // Success - orders already exist
+            }
             
             // Try to set SL/TP
             try {
