@@ -901,10 +901,10 @@ serve(async (req) => {
         }
       }
 
-      // Fetch positions from each exchange
-      for (const [exchange, apiKey] of keysByExchange.entries()) {
+      // Fetch positions from each exchange with timeout protection
+      const exchangePromises = Array.from(keysByExchange.entries()).map(async ([exchange, apiKey]) => {
         if (exchangeFilter !== 'all' && exchangeFilter !== exchange) {
-          continue;
+          return { exchange, positions: [], error: null };
         }
 
         try {
@@ -914,21 +914,47 @@ serve(async (req) => {
 
           let positions: ExchangePosition[] = [];
 
-          if (exchange === 'bybit') {
-            positions = await fetchBybitPositions(decryptedApiKey, decryptedApiSecret);
-          } else if (exchange === 'okx') {
-            const passphrase = apiKey.passphrase ? decrypt(apiKey.passphrase) : '';
-            positions = await fetchOKXPositions(decryptedApiKey, decryptedApiSecret, passphrase);
-          } else if (exchange === 'bitunix') {
-            positions = await fetchBitunixPositions(decryptedApiKey, decryptedApiSecret);
-          }
+          // Add timeout: max 15 seconds per exchange to prevent hanging
+          const fetchPromise = (async () => {
+            if (exchange === 'bybit') {
+              return await fetchBybitPositions(decryptedApiKey, decryptedApiSecret);
+            } else if (exchange === 'okx') {
+              const passphrase = apiKey.passphrase ? decrypt(apiKey.passphrase) : '';
+              return await fetchOKXPositions(decryptedApiKey, decryptedApiSecret, passphrase);
+            } else if (exchange === 'bitunix') {
+              return await fetchBitunixPositions(decryptedApiKey, decryptedApiSecret);
+            }
+            return [];
+          })();
 
-          allPositions.push(...positions);
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error(`Timeout: ${exchange} fetch took longer than 15s`)), 15000);
+          });
+
+          positions = await Promise.race([fetchPromise, timeoutPromise]);
+          
           console.log(`✅ Fetched ${positions.length} positions from ${exchange}`);
+          return { exchange, positions, error: null };
         } catch (error: any) {
           const errorMsg = `${exchange}: ${error.message || String(error)}`;
-          errors.push(errorMsg);
           console.error(`❌ Failed to fetch positions from ${exchange}:`, errorMsg);
+          return { exchange, positions: [], error: errorMsg };
+        }
+      });
+
+      // Wait for all exchanges with timeout (max 30 seconds total)
+      const allResults = await Promise.race([
+        Promise.all(exchangePromises),
+        new Promise<typeof exchangePromises>((_, reject) => {
+          setTimeout(() => reject(new Error('Timeout: Total fetch took longer than 30s')), 30000);
+        })
+      ]);
+
+      // Aggregate results
+      for (const result of allResults) {
+        allPositions.push(...result.positions);
+        if (result.error) {
+          errors.push(result.error);
         }
       }
 

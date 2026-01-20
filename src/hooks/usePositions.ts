@@ -104,11 +104,26 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
       const url = `${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/positions?action=list&exchange=${exchangeFilter}`;
       dlog('fetchPositions start', { exchangeFilter, url });
 
-      const doFetch = async (token: string) =>
-        fetch(url, {
-          method: 'GET',
-          headers: { 'Authorization': `Bearer ${token}` },
-        });
+      const doFetch = async (token: string) => {
+        // Add timeout: 35 seconds (slightly longer than Edge Function timeout)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 35000);
+        try {
+          const response = await fetch(url, {
+            method: 'GET',
+            headers: { 'Authorization': `Bearer ${token}` },
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+          return response;
+        } catch (err) {
+          clearTimeout(timeoutId);
+          if (err instanceof Error && err.name === 'AbortError') {
+            throw new Error('Request timeout: Positions fetch took longer than 35s');
+          }
+          throw err;
+        }
+      };
 
       let response = await doFetch(accessToken);
       dlog('fetchPositions response', { status: response.status });
