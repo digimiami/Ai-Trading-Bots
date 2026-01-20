@@ -924,10 +924,15 @@ serve(async (req) => {
           }
 
           allPositions.push(...positions);
+          console.log(`✅ Fetched ${positions.length} positions from ${exchange}`);
         } catch (error: any) {
-          errors.push(`${exchange}: ${error.message || String(error)}`);
+          const errorMsg = `${exchange}: ${error.message || String(error)}`;
+          errors.push(errorMsg);
+          console.error(`❌ Failed to fetch positions from ${exchange}:`, errorMsg);
         }
       }
+
+      console.log(`📊 Total positions fetched: ${allPositions.length} from ${keysByExchange.size} exchanges${errors.length > 0 ? ` (${errors.length} errors)` : ''}`);
 
       return new Response(JSON.stringify({ 
         positions: allPositions,

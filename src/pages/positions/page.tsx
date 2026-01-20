@@ -211,8 +211,17 @@ export default function PositionsPage() {
 
           {/* Error Message */}
           {error && (
-            <Card className="border border-red-200 bg-red-50 dark:bg-red-900/20 p-5 text-red-700 dark:text-red-300">
-              <p>Error loading positions: {error}</p>
+            <Card className={`border p-5 ${error.includes('Some exchanges failed') 
+              ? 'border-yellow-200 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300'
+              : 'border-red-200 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300'
+            }`}>
+              <div className="flex items-start gap-2">
+                <i className={`ri-${error.includes('Some exchanges failed') ? 'error-warning' : 'error-warning'}-line text-lg mt-0.5`}></i>
+                <div>
+                  <p className="font-medium">{error.includes('Some exchanges failed') ? '⚠️ Partial data loaded' : 'Error loading positions'}</p>
+                  <p className="text-sm mt-1">{error}</p>
+                </div>
+              </div>
             </Card>
           )}
 
