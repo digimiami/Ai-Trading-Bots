@@ -108,20 +108,33 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
       const doFetch = async (token: string) => {
         // Add timeout: 35 seconds (slightly longer than Edge Function timeout)
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 35000);
+        const timeoutId = setTimeout(() => {
+          console.warn('[positions] ⏱️ Request timeout after 35s, aborting...');
+          controller.abort();
+        }, 35000);
+        
         try {
+          console.log('[positions] 📡 Starting fetch request...');
+          const startTime = Date.now();
           const response = await fetch(url, {
             method: 'GET',
             headers: { 'Authorization': `Bearer ${token}` },
             signal: controller.signal,
           });
+          const duration = Date.now() - startTime;
           clearTimeout(timeoutId);
+          console.log(`[positions] ✅ Fetch completed in ${duration}ms, status: ${response.status}`);
           return response;
         } catch (err) {
           clearTimeout(timeoutId);
-          if (err instanceof Error && err.name === 'AbortError') {
-            throw new Error('Request timeout: Positions fetch took longer than 35s');
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          const isTimeout = err instanceof Error && (err.name === 'AbortError' || errorMsg.includes('aborted'));
+          
+          if (isTimeout) {
+            console.error('[positions] ❌ Request timeout after 35s');
+            throw new Error('Request timeout: Positions fetch took longer than 35s. Check Edge Function logs.');
           }
+          console.error('[positions] ❌ Fetch error:', errorMsg);
           throw err;
         }
       };
