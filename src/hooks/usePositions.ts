@@ -40,6 +40,17 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
   const [error, setError] = useState<string | null>(null);
   const { user, loading: authLoading } = useAuth();
 
+  const dlog = (...args: any[]) => {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage?.getItem('DEBUG_POSITIONS') === '1') {
+        // eslint-disable-next-line no-console
+        console.log('[positions]', ...args);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
   const isTransientNetworkError = (err: unknown): boolean => {
     const msg = err instanceof Error ? err.message : String(err);
     return (
@@ -81,6 +92,7 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
 
   const fetchPositions = useCallback(async () => {
     if (authLoading || !user) {
+      dlog('fetchPositions skipped', { authLoading, hasUser: !!user, exchangeFilter });
       return;
     }
 
@@ -90,6 +102,7 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
 
       const accessToken = await requireAccessToken();
       const url = `${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/positions?action=list&exchange=${exchangeFilter}`;
+      dlog('fetchPositions start', { exchangeFilter, url });
 
       const doFetch = async (token: string) =>
         fetch(url, {
@@ -98,21 +111,26 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
         });
 
       let response = await doFetch(accessToken);
+      dlog('fetchPositions response', { status: response.status });
 
       // If the token was restored from storage but not yet accepted, retry once with a fresh session token.
       if (response.status === 401) {
         const fresh = await getFreshSessionToken();
         if (fresh && fresh !== accessToken) {
+          dlog('fetchPositions retrying with fresh token');
           response = await doFetch(fresh);
+          dlog('fetchPositions retry response', { status: response.status });
         }
       }
 
       if (!response.ok) {
         const errorText = await response.text();
+        dlog('fetchPositions failed', { status: response.status, errorText: errorText?.slice(0, 200) });
         throw new Error(`Failed to fetch positions: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
+      dlog('fetchPositions success', { positions: data.positions?.length ?? 0, errors: data.errors?.length ?? 0 });
       setPositions(data.positions || []);
       
       if (data.errors && data.errors.length > 0) {
@@ -121,6 +139,7 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
     } catch (err) {
       // Keep last-known data on transient network flips (vpn/wifi/dns changes).
       if (isTransientNetworkError(err)) {
+        dlog('fetchPositions transient network error', err);
         setError('Network issue detected. Showing last known positions…');
         return;
       }
