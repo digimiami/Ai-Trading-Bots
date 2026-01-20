@@ -4405,7 +4405,7 @@ class BotExecutor {
       // Apply bias_mode filter to all strategies (safety check)
       if (shouldTrade?.shouldTrade && shouldTrade?.side) {
         const config = bot.strategy_config || {};
-        const biasMode = config.bias_mode;
+        const biasMode = config.bias_mode || 'auto'; // Default to 'auto' if not set
         const signalSide = shouldTrade.side.toLowerCase();
         
         if (biasMode === 'long-only' && (signalSide === 'sell' || signalSide === 'short')) {
@@ -5273,12 +5273,15 @@ class BotExecutor {
       const htfADXRising = htfADXStrong; // Simplified: if ADX is strong, assume it's rising
       
       // If HTF price is below EMA200, optionally allow SHORT entries when bias allows
+      // Default to allowing shorts if bias_mode is not explicitly 'long-only'
+      const biasMode = config.bias_mode || 'auto'; // Default to 'auto' if not set
       const allowShorts =
-        (config.bias_mode === 'both' || config.bias_mode === 'auto') &&
+        (biasMode === 'both' || biasMode === 'auto') &&
         config.require_price_vs_trend !== 'above';
 
-      // Check bias_mode restrictions
-      if (config.bias_mode === 'long-only' && !htfPriceAboveEMA200) {
+      // Check bias_mode restrictions (use default 'auto' if not set)
+      const biasMode = config.bias_mode || 'auto';
+      if (biasMode === 'long-only' && !htfPriceAboveEMA200) {
         return {
           shouldTrade: false,
           reason: `HTF price (${htfCurrentPrice.toFixed(2)}) not above EMA200 (${htfEMA200.toFixed(2)}) - long-only mode`,
@@ -5286,7 +5289,7 @@ class BotExecutor {
         };
       }
       
-      if (config.bias_mode === 'short-only' && htfPriceAboveEMA200) {
+      if (biasMode === 'short-only' && htfPriceAboveEMA200) {
         return {
           shouldTrade: false,
           reason: `HTF price (${htfCurrentPrice.toFixed(2)}) above EMA200 (${htfEMA200.toFixed(2)}) - short-only mode`,
