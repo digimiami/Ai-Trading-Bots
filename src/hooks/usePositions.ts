@@ -39,6 +39,7 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
   const [closedLoading, setClosedLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { user, loading: authLoading } = useAuth();
+  const fetchInProgressRef = useRef(false); // Prevent concurrent fetches
 
   const dlog = (...args: any[]) => {
     try {
@@ -96,8 +97,19 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
       return;
     }
 
+    // Prevent concurrent fetches - if one is already running, skip this one
+    if (fetchInProgressRef.current) {
+      console.log('[positions] ⏭️ Fetch already in progress, skipping duplicate call');
+      return;
+    }
+
     try {
-      setLoading(true);
+      fetchInProgressRef.current = true;
+      // Only show loading spinner on initial load or when positions array is empty
+      const isInitialLoad = positions.length === 0;
+      if (isInitialLoad) {
+        setLoading(true);
+      }
       setError(null);
 
       const accessToken = await requireAccessToken();
@@ -209,6 +221,7 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
       const positionsArray = Array.isArray(data.positions) ? data.positions : [];
       console.log('[positions] 📊 Setting positions array:', positionsArray.length, 'positions');
       setPositions(positionsArray);
+      setLoading(false); // Set loading to false immediately after setting positions
       
       if (data.errors && Array.isArray(data.errors) && data.errors.length > 0) {
         console.warn('[positions] ⚠️ Some positions failed to fetch:', data.errors);
@@ -239,10 +252,12 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
       setPositions([]);
       setLoading(false);
     } finally {
-      console.log('[positions] ✅ Finally block: setting loading to false');
-      setLoading(false);
+      console.log('[positions] ✅ Finally block: clearing fetch in progress flag');
+      fetchInProgressRef.current = false;
+      // Don't set loading to false here - it's already set above after positions are loaded
+      // This prevents race conditions with concurrent fetches
     }
-  }, [user, authLoading, exchangeFilter]);
+  }, [user, authLoading, exchangeFilter, positions.length]);
 
   const closePosition = async (
     exchange: string,
