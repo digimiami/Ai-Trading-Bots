@@ -139,7 +139,20 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
         }
       };
 
-      let response = await doFetch(accessToken);
+      let response: Response;
+      try {
+        response = await doFetch(accessToken);
+        console.log('[positions] ✅ doFetch completed, response:', { 
+          status: response.status, 
+          ok: response.ok,
+          type: response.type,
+          url: response.url
+        });
+      } catch (fetchErr: any) {
+        console.error('[positions] ❌ doFetch threw error:', fetchErr);
+        throw fetchErr;
+      }
+      
       dlog('fetchPositions response', { status: response.status });
 
       // If the token was restored from storage but not yet accepted, retry once with a fresh session token.
@@ -152,22 +165,57 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
         }
       }
 
+      console.log('[positions] 📥 Checking response.ok:', response.ok, 'status:', response.status);
+      
       if (!response.ok) {
+        console.error('[positions] ❌ Response not OK, getting error text...');
         const errorText = await response.text();
+        console.error('[positions] ❌ Error response:', { status: response.status, errorText: errorText?.slice(0, 500) });
         dlog('fetchPositions failed', { status: response.status, errorText: errorText?.slice(0, 200) });
         throw new Error(`Failed to fetch positions: ${response.status} - ${errorText}`);
       }
 
-      const data = await response.json();
-      dlog('fetchPositions success', { positions: data.positions?.length ?? 0, errors: data.errors?.length ?? 0 });
-      setPositions(data.positions || []);
+      console.log('[positions] ✅ Response OK, parsing JSON...');
+      let data: any;
+      try {
+        const responseText = await response.text();
+        console.log('[positions] 📄 Response text received, length:', responseText.length);
+        console.log('[positions] 📄 First 500 chars:', responseText.substring(0, 500));
+        
+        if (!responseText || responseText.trim().length === 0) {
+          console.error('[positions] ❌ Empty response body!');
+          throw new Error('Empty response body from Edge Function');
+        }
+        
+        data = JSON.parse(responseText);
+        console.log('[positions] ✅ JSON parsed successfully:', {
+          hasPositions: !!data.positions,
+          positionsLength: data.positions?.length ?? 0,
+          hasErrors: !!data.errors,
+          errorsLength: data.errors?.length ?? 0,
+          dataKeys: Object.keys(data)
+        });
+      } catch (parseErr: any) {
+        console.error('[positions] ❌ JSON parse error:', parseErr);
+        throw new Error(`Failed to parse response: ${parseErr.message}`);
+      }
       
-      if (data.errors && data.errors.length > 0) {
-        console.warn('⚠️ Some positions failed to fetch:', data.errors);
-        // Show exchange fetch errors as a warning in the UI
+      dlog('fetchPositions success', { positions: data.positions?.length ?? 0, errors: data.errors?.length ?? 0 });
+      
+      if (!data || typeof data !== 'object') {
+        console.error('[positions] ❌ Invalid data structure:', data);
+        throw new Error('Invalid response: data is not an object');
+      }
+      
+      const positionsArray = Array.isArray(data.positions) ? data.positions : [];
+      console.log('[positions] 📊 Setting positions array:', positionsArray.length, 'positions');
+      setPositions(positionsArray);
+      
+      if (data.errors && Array.isArray(data.errors) && data.errors.length > 0) {
+        console.warn('[positions] ⚠️ Some positions failed to fetch:', data.errors);
         setError(`Some exchanges failed to load: ${data.errors.join('; ')}`);
-      } else if (error) {
-        // Clear error if fetch succeeded with no errors
+      } else {
+        console.log('[positions] ✅ No errors, clearing error state');
         setError(null);
       }
     } catch (err) {
