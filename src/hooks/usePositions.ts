@@ -102,7 +102,8 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
 
       const accessToken = await requireAccessToken();
       const url = `${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/positions?action=list&exchange=${exchangeFilter}`;
-      dlog('fetchPositions start', { exchangeFilter, url });
+      dlog('fetchPositions start', { exchangeFilter, url, hasToken: !!accessToken });
+      console.log(`[positions] 🔍 Fetching positions from: ${url.substring(0, 80)}...`);
 
       const doFetch = async (token: string) => {
         // Add timeout: 35 seconds (slightly longer than Edge Function timeout)
