@@ -596,45 +596,93 @@ async function closeBitunixPosition(
   side: 'long' | 'short',
   size: number
 ): Promise<any> {
-  const baseUrl = 'https://fapi.bitunix.com';
-  const endpoint = '/api/v1/futures/order';
-  
-  const timestamp = Date.now().toString();
-  const nonce = generateNonce();
-  
-  // Opposite side to close
-  const orderSide = side === 'long' ? 'sell' : 'buy';
+  // NOTE: Bitunix futures close should be sent as a reduce/close order via the futures trade endpoint.
+  // Using older endpoints like `/api/v1/futures/order` can return `code: 2 (System error)`.
+  const baseUrls = ['https://fapi.bitunix.com', 'https://api.bitunix.com'];
+  const endpoint = '/api/v1/futures/trade/place_order';
 
-  const orderBody = {
+  // Opposite side to close (Bitunix expects BUY/SELL)
+  const orderSide = side === 'long' ? 'SELL' : 'BUY';
+
+  // Primary payload (matches bot-executor’s working futures order shape)
+  const baseOrderParams: Record<string, any> = {
     symbol: symbol.toUpperCase(),
     side: orderSide,
-    type: 'market',
-    quantity: size,
-    reduceOnly: true
+    orderType: 'MARKET',
+    qty: String(size),
+    tradeSide: 'CLOSE',
+    marginCoin: 'USDT'
   };
 
-  const body = JSON.stringify(orderBody);
-  const queryParams = '';
-  const signature = await createBitunixSignature(nonce, timestamp, apiKey, queryParams, body, apiSecret);
-
-  const response = await fetch(`${baseUrl}${endpoint}`, {
-    method: 'POST',
-    headers: {
-      'api-key': String(apiKey),
-      'nonce': String(nonce),
-      'timestamp': String(timestamp),
-      'sign': String(signature),
-      'Content-Type': 'application/json'
-    },
-    body
+  // Fallback: some Bitunix gateways reject marginCoin on certain endpoints
+  const orderParamVariants: Record<string, any>[] = [
+    baseOrderParams,
+    { ...baseOrderParams, marginCoin: undefined }
+  ].map(v => {
+    const cleaned: Record<string, any> = {};
+    for (const [k, val] of Object.entries(v)) {
+      if (val !== undefined && val !== null && val !== '') cleaned[k] = val;
+    }
+    return cleaned;
   });
 
-  const data = await response.json();
-  if (data.code !== 0) {
-    throw new Error(`Bitunix API error (${data.code}): ${data.msg || 'Unknown error'}`);
+  let lastErr: any = null;
+  for (const baseUrl of baseUrls) {
+    for (const orderParams of orderParamVariants) {
+      const timestamp = Date.now().toString();
+      const nonce = generateNonce();
+      const queryParams = '';
+      const body = JSON.stringify(orderParams).replace(/\s+/g, '');
+      const signature = await createBitunixSignature(nonce, timestamp, apiKey, queryParams, body, apiSecret);
+
+      const url = `${baseUrl}${endpoint}`;
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'api-key': String(apiKey),
+            'nonce': String(nonce),
+            'timestamp': String(timestamp),
+            'sign': String(signature),
+            'Content-Type': 'application/json',
+            'language': 'en-US'
+          },
+          body
+        });
+
+        const responseText = await response.text();
+        let data: any = null;
+        try {
+          data = JSON.parse(responseText);
+        } catch {
+          // keep null
+        }
+
+        console.log(`[bitunix][close] ${url} status=${response.status} body=${responseText?.slice(0, 300)}`);
+
+        if (!response.ok) {
+          lastErr = new Error(`Bitunix HTTP ${response.status}: ${responseText?.slice(0, 300)}`);
+          continue;
+        }
+
+        if (!data) {
+          lastErr = new Error(`Bitunix invalid JSON: ${responseText?.slice(0, 300)}`);
+          continue;
+        }
+
+        if (data.code !== 0) {
+          lastErr = new Error(`Bitunix API error (${data.code}): ${data.msg || 'Unknown error'}`);
+          continue;
+        }
+
+        return data.data;
+      } catch (e) {
+        lastErr = e;
+      }
+    }
   }
 
-  return data.data;
+  throw lastErr || new Error('Failed to close Bitunix position');
 }
 
 serve(async (req) => {
