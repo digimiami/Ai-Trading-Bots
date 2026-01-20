@@ -31,6 +31,8 @@ interface ExchangePosition {
   stopLoss?: number;
   takeProfit?: number;
   openedAt?: string;
+  // Bitunix requires a positionId for some actions (e.g. tradeSide=CLOSE on place_order)
+  positionId?: string;
 }
 
 interface ClosedPosition {
@@ -468,6 +470,17 @@ async function fetchBitunixPositions(
               marginUsed,
               stopLoss: parseFloat(p.stopLoss || p.stop_loss || p.slPrice || p.sl_price || '0') || undefined,
               takeProfit: parseFloat(p.takeProfit || p.take_profit || p.tpPrice || p.tp_price || '0') || undefined,
+              positionId: (() => {
+                const raw =
+                  p.positionId ??
+                  p.position_id ??
+                  p.posId ??
+                  p.pos_id ??
+                  p.id ??
+                  p._id;
+                const s = raw == null ? '' : String(raw);
+                return s ? s : undefined;
+              })(),
             };
           });
         } catch (err: any) {
@@ -594,7 +607,8 @@ async function closeBitunixPosition(
   apiSecret: string,
   symbol: string,
   side: 'long' | 'short',
-  size: number
+  size: number,
+  positionId?: string
 ): Promise<any> {
   // NOTE: Bitunix futures close should be sent as a reduce/close order via the futures trade endpoint.
   // Using older endpoints like `/api/v1/futures/order` can return `code: 2 (System error)`.
@@ -617,7 +631,9 @@ async function closeBitunixPosition(
     orderType: 'MARKET',
     qty: String(size),
     tradeSide: 'CLOSE',
-    marginCoin: 'USDT'
+    marginCoin: 'USDT',
+    reduceOnly: true,
+    positionId: positionId ? String(positionId) : undefined,
   };
 
   // Fallback: some Bitunix gateways reject marginCoin on certain endpoints
@@ -798,7 +814,7 @@ serve(async (req) => {
     // POST: Close position
     if (req.method === 'POST' && action === 'close') {
       const body = await req.json();
-      const { exchange, symbol, side, size } = body;
+      const { exchange, symbol, side, size, positionId } = body;
 
       if (!exchange || !symbol || !side || !size) {
         return new Response(JSON.stringify({ error: 'Missing required fields: exchange, symbol, side, size' }), {
@@ -841,7 +857,28 @@ serve(async (req) => {
           const passphrase = apiKeys.passphrase ? decrypt(apiKeys.passphrase) : '';
           result = await closeOKXPosition(decryptedApiKey, decryptedApiSecret, passphrase, symbol, side, size);
         } else if (exchange.toLowerCase() === 'bitunix') {
-          result = await closeBitunixPosition(decryptedApiKey, decryptedApiSecret, symbol, side, size);
+          // Bitunix often requires `positionId` when tradeSide is CLOSE (otherwise code=10002 Parameter error).
+          // UI currently sends only exchange/symbol/side/size, so we resolve the matching positionId server-side.
+          const norm = (s: string) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+          let resolvedPositionId: string | undefined = positionId ? String(positionId) : undefined;
+          if (!resolvedPositionId) {
+            const openPositions = await fetchBitunixPositions(decryptedApiKey, decryptedApiSecret);
+            const target = openPositions.find((p) => norm(p.symbol) === norm(symbol) && p.side === side);
+            resolvedPositionId = target?.positionId;
+          }
+
+          if (!resolvedPositionId) {
+            throw new Error(`Bitunix close requires positionId but none found for ${symbol} ${side}. Refresh positions and try again.`);
+          }
+
+          result = await closeBitunixPosition(
+            decryptedApiKey,
+            decryptedApiSecret,
+            symbol,
+            side,
+            size,
+            resolvedPositionId
+          );
         } else {
           return new Response(JSON.stringify({ 
             error: `Unsupported exchange: ${exchange}` 
