@@ -105,10 +105,14 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
 
     try {
       fetchInProgressRef.current = true;
-      // Only show loading spinner on initial load or when positions array is empty
+      // Only show loading spinner on initial load (when positions array is empty)
+      // For subsequent refreshes, keep the current loading state to avoid flickering
       const isInitialLoad = positions.length === 0;
       if (isInitialLoad) {
+        console.log('[positions] 🔄 Initial load: setting loading to true');
         setLoading(true);
+      } else {
+        console.log('[positions] 🔄 Refresh: keeping current loading state (positions already loaded)');
       }
       setError(null);
 
@@ -220,8 +224,14 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
       
       const positionsArray = Array.isArray(data.positions) ? data.positions : [];
       console.log('[positions] 📊 Setting positions array:', positionsArray.length, 'positions');
+      
+      // Use a functional update to ensure we're working with the latest state
       setPositions(positionsArray);
-      setLoading(false); // Set loading to false immediately after setting positions
+      
+      // Always set loading to false after successfully loading positions
+      // This ensures the UI updates even if there was a race condition
+      console.log('[positions] 🔄 Setting loading to false (positions loaded)');
+      setLoading(false);
       
       if (data.errors && Array.isArray(data.errors) && data.errors.length > 0) {
         console.warn('[positions] ⚠️ Some positions failed to fetch:', data.errors);
