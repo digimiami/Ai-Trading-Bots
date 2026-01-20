@@ -267,7 +267,10 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
       // Don't set loading to false here - it's already set above after positions are loaded
       // This prevents race conditions with concurrent fetches
     }
-  }, [user, authLoading, exchangeFilter, positions.length]);
+    // Note: We intentionally don't include positions.length in deps to avoid recreating
+    // the callback every time positions change, which would cause useEffect to rerun
+    // and set up duplicate intervals. We use fetchInProgressRef to prevent concurrent fetches instead.
+  }, [user, authLoading, exchangeFilter]);
 
   const closePosition = async (
     exchange: string,
