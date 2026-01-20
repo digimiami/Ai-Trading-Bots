@@ -13067,27 +13067,48 @@ class BotExecutor {
       // Only try TP/SL if we have a valid positionId (required by Bitunix API)
       if (isValidPositionId(resolvedPositionId)) {
         // Idempotency guard: avoid creating many TP/SL orders on repeated executions.
-        // If there are already pending TP/SL orders for this positionId+symbol, do not place again.
+        // Check for existing TP AND SL orders for this specific positionId before placing new ones.
         try {
           const existing = await this.getBitunixPendingTpSlOrders(apiKey, apiSecret, symbol);
           const wantedPid = String(resolvedPositionId);
-          const matching = existing.filter((o: any) => {
+          
+          // Strict matching: only match by positionId (no symbol fallback, as that's unreliable)
+          const matchingByPositionId = existing.filter((o: any) => {
             const pid = this.extractBitunixTpSlOrderPositionId(o);
-            if (pid && pid === wantedPid) return true;
-            // fallback: if API doesn't include positionId field, match loosely by symbol
-            const sym = o?.symbol || o?.contract || o?.tradingPair || o?.instId;
-            if (sym && this.bitunixSymbolsLooselyMatch(String(sym), symbol.toUpperCase())) return true;
-            return false;
+            return pid && pid === wantedPid;
           });
-          if (matching.length > 0) {
+          
+          // Check if we already have both TP and SL orders for this position
+          const hasTP = matchingByPositionId.some((o: any) => {
+            const orderType = String(o?.orderType || o?.type || o?.tpType || '').toUpperCase();
+            return orderType.includes('TP') || orderType.includes('TAKE_PROFIT') || 
+                   o?.tpPrice || o?.takeProfitPrice || o?.tp;
+          });
+          
+          const hasSL = matchingByPositionId.some((o: any) => {
+            const orderType = String(o?.orderType || o?.type || o?.slType || '').toUpperCase();
+            return orderType.includes('SL') || orderType.includes('STOP_LOSS') || 
+                   o?.slPrice || o?.stopLossPrice || o?.sl;
+          });
+          
+          // If we have ANY matching orders by positionId, skip placement (Bitunix combines TP/SL)
+          // This prevents creating duplicate orders for the same position
+          if (matchingByPositionId.length > 0) {
             console.log(`🧯 TP/SL already exists for ${symbol} (positionId=${wantedPid}). Skipping new placement to prevent duplicates.`);
-            console.log(`   📊 Existing pending TP/SL orders found: ${matching.length}`);
-            // Keep the preview short to avoid log spam
-            console.log(`   📊 Example order: ${JSON.stringify(matching[0]).substring(0, 500)}`);
+            console.log(`   📊 Existing pending TP/SL orders found: ${matchingByPositionId.length} (TP: ${hasTP}, SL: ${hasSL})`);
+            if (matchingByPositionId.length > 0) {
+              console.log(`   📊 Example order: ${JSON.stringify(matchingByPositionId[0]).substring(0, 300)}`);
+            }
             return;
+          }
+          
+          // Log when no matching orders found (useful for debugging)
+          if (existing.length > 0) {
+            console.log(`   ℹ️ Found ${existing.length} pending TP/SL orders for ${symbol}, but none match positionId ${wantedPid}. Proceeding with placement.`);
           }
         } catch (e) {
           console.warn(`⚠️ Could not pre-check existing TP/SL orders; continuing with placement:`, e instanceof Error ? e.message : String(e));
+          // On error, we continue to place orders (fail open) but log the warning
         }
 
         // Bitunix docs require tpQty/slQty (at least one). We'll use full position size.
