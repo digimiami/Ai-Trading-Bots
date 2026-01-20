@@ -1174,8 +1174,13 @@ serve(async (req) => {
     });
 
   } catch (error: any) {
+    console.error(`❌ [${new Date().toISOString()}] Edge Function error:`, error.message || String(error));
+    if (error.stack) {
+      console.error(`   Stack: ${error.stack.substring(0, 1000)}`);
+    }
     return new Response(JSON.stringify({ 
-      error: error.message || 'Internal server error' 
+      error: error.message || 'Internal server error',
+      details: process.env.DENO_ENV === 'development' ? error.stack?.substring(0, 500) : undefined
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
