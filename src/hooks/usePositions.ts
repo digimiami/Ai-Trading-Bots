@@ -148,12 +148,11 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
           type: response.type,
           url: response.url
         });
+        dlog('fetchPositions response', { status: response.status });
       } catch (fetchErr: any) {
         console.error('[positions] ❌ doFetch threw error:', fetchErr);
         throw fetchErr;
       }
-      
-      dlog('fetchPositions response', { status: response.status });
 
       // If the token was restored from storage but not yet accepted, retry once with a fresh session token.
       if (response.status === 401) {
