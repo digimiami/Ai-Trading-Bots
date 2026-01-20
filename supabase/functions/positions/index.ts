@@ -598,8 +598,14 @@ async function closeBitunixPosition(
 ): Promise<any> {
   // NOTE: Bitunix futures close should be sent as a reduce/close order via the futures trade endpoint.
   // Using older endpoints like `/api/v1/futures/order` can return `code: 2 (System error)`.
-  const baseUrls = ['https://fapi.bitunix.com', 'https://api.bitunix.com'];
-  const endpoint = '/api/v1/futures/trade/place_order';
+  // For futures, the correct domain is typically fapi. The regular api domain often 404s for futures paths.
+  const baseUrls = ['https://fapi.bitunix.com'];
+  // Bitunix has multiple endpoint variants in the wild; try a small ordered set.
+  const endpointsToTry = [
+    '/api/v1/futures/trade/place_order',
+    '/api/v1/futures/order/place_order',
+    '/api/v1/futures/trade/placeOrder',
+  ];
 
   // Opposite side to close (Bitunix expects BUY/SELL)
   const orderSide = side === 'long' ? 'SELL' : 'BUY';
@@ -626,63 +632,74 @@ async function closeBitunixPosition(
     return cleaned;
   });
 
+  const errorSummaries: string[] = [];
   let lastErr: any = null;
   for (const baseUrl of baseUrls) {
-    for (const orderParams of orderParamVariants) {
-      const timestamp = Date.now().toString();
-      const nonce = generateNonce();
-      const queryParams = '';
-      const body = JSON.stringify(orderParams).replace(/\s+/g, '');
-      const signature = await createBitunixSignature(nonce, timestamp, apiKey, queryParams, body, apiSecret);
+    for (const endpoint of endpointsToTry) {
+      for (const orderParams of orderParamVariants) {
+        const timestamp = Date.now().toString();
+        const nonce = generateNonce();
+        const queryParams = '';
+        const body = JSON.stringify(orderParams).replace(/\s+/g, '');
+        const signature = await createBitunixSignature(nonce, timestamp, apiKey, queryParams, body, apiSecret);
 
-      const url = `${baseUrl}${endpoint}`;
-      try {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'api-key': String(apiKey),
-            'nonce': String(nonce),
-            'timestamp': String(timestamp),
-            'sign': String(signature),
-            'Content-Type': 'application/json',
-            'language': 'en-US'
-          },
-          body
-        });
-
-        const responseText = await response.text();
-        let data: any = null;
+        const url = `${baseUrl}${endpoint}`;
         try {
-          data = JSON.parse(responseText);
-        } catch {
-          // keep null
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'api-key': String(apiKey),
+              'nonce': String(nonce),
+              'timestamp': String(timestamp),
+              'sign': String(signature),
+              'Content-Type': 'application/json',
+              'language': 'en-US'
+            },
+            body
+          });
+
+          const responseText = await response.text();
+          let data: any = null;
+          try {
+            data = JSON.parse(responseText);
+          } catch {
+            // keep null
+          }
+
+          console.log(`[bitunix][close] ${url} status=${response.status} body=${responseText?.slice(0, 300)}`);
+
+          if (!response.ok) {
+            const msg = `HTTP ${response.status} @ ${endpoint}: ${responseText?.slice(0, 120)}`;
+            errorSummaries.push(msg);
+            lastErr = new Error(`Bitunix HTTP ${response.status}: ${responseText?.slice(0, 300)}`);
+            continue;
+          }
+
+          if (!data) {
+            const msg = `Invalid JSON @ ${endpoint}: ${responseText?.slice(0, 120)}`;
+            errorSummaries.push(msg);
+            lastErr = new Error(`Bitunix invalid JSON: ${responseText?.slice(0, 300)}`);
+            continue;
+          }
+
+          if (data.code !== 0) {
+            const msg = `API code ${data.code} @ ${endpoint}: ${String(data.msg || '').slice(0, 120)}`;
+            errorSummaries.push(msg);
+            lastErr = new Error(`Bitunix API error (${data.code}): ${data.msg || 'Unknown error'}`);
+            continue;
+          }
+
+          return data.data;
+        } catch (e) {
+          errorSummaries.push(`Fetch error @ ${endpoint}: ${String((e as any)?.message || e).slice(0, 120)}`);
+          lastErr = e;
         }
-
-        console.log(`[bitunix][close] ${url} status=${response.status} body=${responseText?.slice(0, 300)}`);
-
-        if (!response.ok) {
-          lastErr = new Error(`Bitunix HTTP ${response.status}: ${responseText?.slice(0, 300)}`);
-          continue;
-        }
-
-        if (!data) {
-          lastErr = new Error(`Bitunix invalid JSON: ${responseText?.slice(0, 300)}`);
-          continue;
-        }
-
-        if (data.code !== 0) {
-          lastErr = new Error(`Bitunix API error (${data.code}): ${data.msg || 'Unknown error'}`);
-          continue;
-        }
-
-        return data.data;
-      } catch (e) {
-        lastErr = e;
       }
     }
   }
 
-  throw lastErr || new Error('Failed to close Bitunix position');
+  const summary = errorSummaries.length ? ` Attempts: ${errorSummaries.slice(-6).join(' | ')}` : '';
+  throw lastErr ? new Error(`${lastErr.message}${summary}`) : new Error(`Failed to close Bitunix position.${summary}`);
 }
 
 serve(async (req) => {
