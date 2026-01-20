@@ -40,6 +40,26 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
   const [error, setError] = useState<string | null>(null);
   const { user, loading: authLoading } = useAuth();
 
+  const isTransientNetworkError = (err: unknown): boolean => {
+    const msg = err instanceof Error ? err.message : String(err);
+    return (
+      msg.includes('Failed to fetch') ||
+      msg.includes('ERR_NETWORK_CHANGED') ||
+      msg.includes('ERR_NAME_NOT_RESOLVED') ||
+      msg.includes('NetworkError') ||
+      msg.includes('Load failed')
+    );
+  };
+
+  const getFreshSessionToken = async (): Promise<string | null> => {
+    try {
+      const { data } = await supabase.auth.getSession();
+      return data.session?.access_token ?? null;
+    } catch {
+      return null;
+    }
+  };
+
   const requireAccessToken = async (): Promise<string> => {
     let token = await getAuthTokenFast();
 
@@ -71,12 +91,21 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
       const accessToken = await requireAccessToken();
       const url = `${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/positions?action=list&exchange=${exchangeFilter}`;
 
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-        },
-      });
+      const doFetch = async (token: string) =>
+        fetch(url, {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+
+      let response = await doFetch(accessToken);
+
+      // If the token was restored from storage but not yet accepted, retry once with a fresh session token.
+      if (response.status === 401) {
+        const fresh = await getFreshSessionToken();
+        if (fresh && fresh !== accessToken) {
+          response = await doFetch(fresh);
+        }
+      }
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -90,6 +119,11 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
         console.warn('Some positions failed to fetch:', data.errors);
       }
     } catch (err) {
+      // Keep last-known data on transient network flips (vpn/wifi/dns changes).
+      if (isTransientNetworkError(err)) {
+        setError('Network issue detected. Showing last known positions…');
+        return;
+      }
       console.error('Error fetching positions:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch positions');
       setPositions([]);
@@ -151,12 +185,19 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
       const accessToken = await requireAccessToken();
       const url = `${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/positions?action=closed-positions&exchange=${exchangeFilter}&limit=${limit}`;
 
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-        },
-      });
+      const doFetch = async (token: string) =>
+        fetch(url, {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+
+      let response = await doFetch(accessToken);
+      if (response.status === 401) {
+        const fresh = await getFreshSessionToken();
+        if (fresh && fresh !== accessToken) {
+          response = await doFetch(fresh);
+        }
+      }
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -166,6 +207,9 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
       const data = await response.json();
       setClosedPositions(data.closedPositions || []);
     } catch (err) {
+      if (isTransientNetworkError(err)) {
+        return;
+      }
       console.error('Error fetching closed positions:', err);
       setClosedPositions([]);
     } finally {
