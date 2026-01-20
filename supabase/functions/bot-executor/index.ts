@@ -5280,7 +5280,6 @@ class BotExecutor {
         config.require_price_vs_trend !== 'above';
 
       // Check bias_mode restrictions (use default 'auto' if not set)
-      const biasMode = config.bias_mode || 'auto';
       if (biasMode === 'long-only' && !htfPriceAboveEMA200) {
         return {
           shouldTrade: false,
