@@ -943,18 +943,38 @@ serve(async (req) => {
       });
 
       // Wait for all exchanges with timeout (max 30 seconds total)
-      const allResults = await Promise.race([
-        Promise.all(exchangePromises),
-        new Promise<typeof exchangePromises>((_, reject) => {
-          setTimeout(() => reject(new Error('Timeout: Total fetch took longer than 30s')), 30000);
-        })
-      ]);
+      try {
+        const allResults = await Promise.race([
+          Promise.all(exchangePromises),
+          new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error('Timeout: Total fetch took longer than 30s')), 30000);
+          })
+        ]);
 
-      // Aggregate results
-      for (const result of allResults) {
-        allPositions.push(...result.positions);
-        if (result.error) {
-          errors.push(result.error);
+        // Aggregate results
+        for (const result of allResults) {
+          allPositions.push(...result.positions);
+          if (result.error) {
+            errors.push(result.error);
+          }
+        }
+      } catch (totalError: any) {
+        // If total timeout occurred, try to get any partial results
+        try {
+          const partialResults = await Promise.allSettled(exchangePromises);
+          for (const settled of partialResults) {
+            if (settled.status === 'fulfilled') {
+              allPositions.push(...settled.value.positions);
+              if (settled.value.error) {
+                errors.push(settled.value.error);
+              }
+            } else {
+              errors.push(`Promise rejected: ${settled.reason?.message || String(settled.reason)}`);
+            }
+          }
+        } catch {
+          // If even settled fails, add timeout error
+          errors.push(`Total timeout: ${totalError.message || String(totalError)}`);
         }
       }
 
