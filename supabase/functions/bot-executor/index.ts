@@ -11651,10 +11651,22 @@ class BotExecutor {
             // Success!
             console.log(`✅ Bitunix order placed successfully via ${baseUrl}${requestPath} with symbol ${symbolVariant}`);
             allSymbolVariantsFailed = false; // Mark success
+            const resolvedPositionId =
+              data.data?.positionId ||
+              data.data?.position_id ||
+              data.data?.positionID ||
+              data.data?.posId ||
+              data.data?.pos_id ||
+              null;
             return {
               orderId: data.data?.orderId || data.data?.id || data.data?.order_id || data.data?.clientId,
               status: data.data?.status || 'filled',
               exchange: 'bitunix',
+              symbol: String(symbolVariant || symbol).toUpperCase(),
+              side: sideString,
+              qty: amount, // propagate the requested order quantity for downstream SL/TP fallbacks
+              marketType,
+              positionId: resolvedPositionId ? String(resolvedPositionId) : null,
               response: data
             };
           } catch (endpointErr: any) {
@@ -11878,12 +11890,6 @@ class BotExecutor {
     try {
       // Sync Bitunix server time to prevent timestamp errors
       await this.syncBitunixServerTime();
-      const timestamp = (Date.now() + BotExecutor.bitunixServerTimeOffset).toString();
-      const nonce = this.generateNonce();
-      // Query params will be sorted alphabetically in signature function
-      const queryParams = `marginCoin=USDT&symbol=${symbol.toUpperCase()}`;
-      const body = '';
-      const signature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, body, apiSecret);
       
       // Try account info endpoint (sorted query params in URL too)
       const endpoints = [
@@ -11895,7 +11901,18 @@ class BotExecutor {
       
       for (const endpoint of endpoints) {
         try {
-          const response = await fetch(`${baseUrl}${endpoint}`, {
+          // IMPORTANT: Bitunix signatures are sensitive to the exact query string.
+          // We must compute nonce/timestamp/sign per-request, using the query string for THIS endpoint.
+          const urlObj = new URL(`${baseUrl}${endpoint}`);
+          const queryParams = this.normalizeBitunixQueryParams(urlObj.searchParams.toString());
+          const url = queryParams ? `${baseUrl}${urlObj.pathname}?${queryParams}` : `${baseUrl}${urlObj.pathname}`;
+
+          const timestamp = (Date.now() + BotExecutor.bitunixServerTimeOffset).toString();
+          const nonce = this.generateNonce();
+          const body = '';
+          const signature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, body, apiSecret);
+
+          const response = await fetch(url, {
             method: 'GET',
             headers: {
               'api-key': String(apiKey),
@@ -12217,13 +12234,19 @@ class BotExecutor {
     // Sync server time before making API calls to prevent timestamp errors
     await this.syncBitunixServerTime();
     
-    // Try multiple endpoints - positions might be in different states
+    // Try multiple endpoints - Bitunix has had multiple path variants in the wild.
+    // Prefer the OpenAPI-documented endpoints first, then fall back to legacy ones.
     const endpoints = [
-      '/api/v1/futures/position/pending_position', // Pending positions (support-confirmed; contains id as positionId)
+      // Newer OpenAPI docs:
+      '/api/v1/futures/position/get_pending_positions',
+      '/api/v1/futures/position/get_history_positions',
+
+      // Legacy / older paths observed in support threads:
+      '/api/v1/futures/position/pending_position', // Pending positions (support-confirmed in older tickets; contains id as positionId)
       '/api/v1/futures/position/list',      // Open positions
       '/api/v1/futures/position/pending',   // Pending positions
-      '/api/v1/futures/position',            // All positions
-      '/api/v1/position/list'                // Alternative endpoint
+      '/api/v1/futures/position',           // All positions
+      '/api/v1/position/list'               // Alternative endpoint
     ];
     
     const normalizedSymbol = symbol.toUpperCase();
@@ -12232,11 +12255,18 @@ class BotExecutor {
     // - some require symbol only
     // - some require marginCoin
     // - some accept no query params and return all positions
+    // IMPORTANT: Your logs show that some Bitunix accounts intermittently return 10007 when
+    // signing query params, but succeed with no query string. So try the empty-query variant first.
     const queryVariants: string[] = [
+      '',
       `symbol=${normalizedSymbol}`,
       `marginCoin=USDT&symbol=${normalizedSymbol}`,
       `marginCoin=USDT`,
-      ''
+      // Some Bitunix gateways require a marketType hint even on futures endpoints.
+      `marketType=futures`,
+      `marketType=futures&symbol=${normalizedSymbol}`,
+      `marketType=futures&marginCoin=USDT`,
+      `marketType=futures&marginCoin=USDT&symbol=${normalizedSymbol}`,
     ];
 
     let sawCode2 = false;
@@ -12294,13 +12324,13 @@ class BotExecutor {
               const matchesSymbol = (p: any) => {
                 const sym = p?.symbol || p?.contract || p?.tradingPair || p?.instId;
                 if (!sym) return false;
-                return this.normalizeBitunixSymbolForCompare(String(sym)) === wantedNorm;
+                return this.bitunixSymbolsLooselyMatch(String(sym), normalizedSymbol);
               };
 
               // Find position with non-zero size
               const position = positions.find(p => {
                 if (!matchesSymbol(p)) return false;
-                const size = parseFloat(p.size || p.holdVol || p.quantity || '0');
+                const size = this.extractBitunixPositionSize(p);
                 return size > 0;
               }) || positions.find(p => matchesSymbol(p)) || positions[0];
               
@@ -12320,8 +12350,18 @@ class BotExecutor {
               
               return {
                 positionId: positionId, // Position ID for TP/SL orders
-                size: parseFloat(position.size || position.holdVol || position.holdVol || position.quantity || position.holdVol || '0'),
-                entryPrice: parseFloat(position.entryPrice || position.avgPrice || position.openPrice || position.openAvgPrice || position.entry_price || '0'),
+                // Bitunix get_pending_positions often uses `qty` as the size field.
+                // Keep broad extraction to support multiple endpoint variants.
+                size: this.extractBitunixPositionSize(position),
+                entryPrice: parseFloat(
+                  position.entryPrice ||
+                  position.avgPrice ||
+                  position.openPrice ||
+                  position.openAvgPrice ||
+                  position.avgOpenPrice || // seen in get_pending_positions
+                  position.entry_price ||
+                  '0'
+                ),
                 leverage: parseFloat(position.leverage || position.leverageRatio || position.leverage_ratio || '20'),
                 marginMode: position.marginMode || position.tdMode || position.margin_mode || position.marginMode || 'CROSS',
                 stopLoss: position.stopLoss || position.stop_loss || position.stopPrice || position.slPrice || position.sl_price,
@@ -12388,7 +12428,100 @@ class BotExecutor {
   } | null = null;
 
   private normalizeBitunixSymbolForCompare(sym: string): string {
-    return (sym || '').toUpperCase().replace(/[-_]/g, '');
+    // Normalize aggressively so variants like BTC-USDT, BTCUSDT_PERP, BTCUSDT-PERP all compare reliably.
+    return (sym || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  }
+
+  private bitunixSymbolsLooselyMatch(a: string, b: string): boolean {
+    const na = this.normalizeBitunixSymbolForCompare(a);
+    const nb = this.normalizeBitunixSymbolForCompare(b);
+    if (!na || !nb) return false;
+    if (na === nb) return true;
+    // Accept common suffix/prefix patterns (e.g., BTCUSDT vs BTCUSDTPERP)
+    return na.startsWith(nb) || nb.startsWith(na);
+  }
+
+  private extractBitunixPositionSize(position: any): number {
+    const candidates = [
+      position?.size,
+      position?.holdVol,
+      position?.hold_vol,
+      position?.quantity,
+      position?.qty,
+      position?.vol,
+      position?.positionAmt,
+      position?.positionQty,
+      position?.position_quantity,
+      position?.openVol,
+      position?.open_vol,
+      position?.posVol,
+      position?.pos_vol,
+      position?.amount,
+    ];
+    for (const c of candidates) {
+      const n = typeof c === 'number' ? c : typeof c === 'string' ? parseFloat(c) : NaN;
+      if (Number.isFinite(n) && n !== 0) return Math.abs(n);
+    }
+    return 0;
+  }
+
+  /**
+   * Fetch Bitunix pending TP/SL orders for a symbol (private endpoint).
+   * Used to prevent duplicate SL/TP placement across repeated bot executions.
+   */
+  private async getBitunixPendingTpSlOrders(apiKey: string, apiSecret: string, symbol: string): Promise<any[]> {
+    // Prefer the futures host; keep api host as fallback.
+    const hosts = ['https://fapi.bitunix.com', 'https://api.bitunix.com'];
+    await this.syncBitunixServerTime();
+
+    const queryParamsRaw = `symbol=${String(symbol || '').toUpperCase()}`;
+    const queryParams = this.normalizeBitunixQueryParams(queryParamsRaw);
+    const body = '';
+
+    for (const host of hosts) {
+      try {
+        const timestamp = (Date.now() + BotExecutor.bitunixServerTimeOffset).toString();
+        const nonce = this.generateNonce();
+        const sig = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, body, apiSecret);
+
+        const url = `${host}/api/v1/futures/tpsl/pending_orders?${queryParams}`;
+        const r = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'api-key': String(apiKey),
+            'nonce': String(nonce),
+            'timestamp': String(timestamp),
+            'sign': String(sig),
+            'Content-Type': 'application/json',
+            'language': 'en-US',
+          },
+        });
+        if (!r.ok) continue;
+        const data = await r.json().catch(() => null);
+        if (!data || data.code !== 0 || !data.data) continue;
+
+        const orders = Array.isArray(data.data) ? data.data : Array.isArray(data.data?.list) ? data.data.list : [];
+        return Array.isArray(orders) ? orders : [];
+      } catch {
+        continue;
+      }
+    }
+    return [];
+  }
+
+  private extractBitunixTpSlOrderPositionId(o: any): string | null {
+    const pid =
+      o?.positionId ||
+      o?.position_id ||
+      o?.positionID ||
+      o?.posId ||
+      o?.pos_id ||
+      o?.pid ||
+      o?.position?.positionId ||
+      null;
+    if (!pid) return null;
+    const s = String(pid);
+    return s && s !== 'undefined' && s !== 'null' ? s : null;
   }
 
   private normalizeBitunixSymbolForCache(sym: string): string {
@@ -12555,9 +12688,6 @@ class BotExecutor {
       console.log(`⚙️ Setting Bitunix position leverage and margin mode for ${symbol}:`);
       console.log(`   Leverage: ${leverage}x, Margin Mode: ${marginMode}`);
       
-      const timestamp = Date.now().toString();
-      const nonce = this.generateNonce();
-      
       // Bitunix API endpoints for setting leverage and margin mode on position
       // Official API: POST /api/v1/futures/account/change_leverage and change_margin_mode
       // These should work on position level too (with symbol parameter)
@@ -12610,26 +12740,49 @@ class BotExecutor {
           
           const bodyString = JSON.stringify(params).replace(/\s+/g, '');
           const queryParams = '';
-          const signature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, bodyString, apiSecret);
-          
+
           console.log(`   Trying endpoint: ${endpoint}`);
           console.log(`   Request body: ${bodyString}`);
-          
-          const response = await fetch(`${baseUrl}${endpoint}`, {
-            method: 'POST',
-            headers: {
-              'api-key': String(apiKey),
-              'nonce': String(nonce),
-              'timestamp': String(timestamp),
-              'sign': String(signature),
-              'Content-Type': 'application/json',
-              'language': 'en-US'
-            },
-            body: bodyString
-          });
-          
-          const responseText = await response.text();
-          console.log(`   Response from ${endpoint}: ${response.status}, body: ${responseText.substring(0, 300)}`);
+
+          let response: Response | null = null;
+          let responseText = '';
+          let lastHostErr: any = null;
+
+          // Fresh nonce/timestamp/signature per HTTP request attempt (avoids 10007 during retries)
+          for (const host of baseUrls) {
+            try {
+              const timestamp = (Date.now() + BotExecutor.bitunixServerTimeOffset).toString();
+              const nonce = this.generateNonce();
+              const signature = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, queryParams, bodyString, apiSecret);
+
+              const r = await fetch(`${host}${endpoint}`, {
+                method: 'POST',
+                headers: {
+                  'api-key': String(apiKey),
+                  'nonce': String(nonce),
+                  'timestamp': String(timestamp),
+                  'sign': String(signature),
+                  'Content-Type': 'application/json',
+                  'language': 'en-US'
+                },
+                body: bodyString
+              });
+              const t = await r.text();
+              console.log(`   Response from ${host}${endpoint}: ${r.status}, body: ${t.substring(0, 300)}`);
+              response = r;
+              responseText = t;
+              lastHostErr = null;
+              if (r.ok) break;
+            } catch (e) {
+              lastHostErr = e;
+              console.warn(`   ⚠️ Error calling ${host}${endpoint}:`, e instanceof Error ? e.message : String(e));
+              continue;
+            }
+          }
+
+          if (!response) {
+            throw lastHostErr || new Error(`Failed to call Bitunix ${endpoint} on all hosts`);
+          }
           
           if (response.ok) {
             try {
@@ -12792,6 +12945,8 @@ class BotExecutor {
     // #endregion
     
     const baseUrl = 'https://fapi.bitunix.com'; // Futures API domain
+    // Some accounts see different behavior across Bitunix hosts; try both for private endpoints.
+    const baseUrls = ['https://fapi.bitunix.com', 'https://api.bitunix.com'];
     const marketType = 'futures';
     
     try {
@@ -12855,7 +13010,9 @@ class BotExecutor {
               break;
             }
             if (pos && pos.error) {
-              console.warn(`   ⚠️ Position API error while resolving positionId (attempt ${i}/6): Code ${pos.errorCode} ${pos.message || ''}`);
+              console.warn(
+                `   ⚠️ Position API error while resolving positionId (attempt ${i}/6): Code ${pos.errorCode} ${pos.errorMessage || pos.message || ''}`
+              );
               // IMPORTANT: Code 2 can be transient; do not break early.
             } else {
               console.log(`   ⏳ positionId not yet indexed for ${symbol} (attempt ${i}/6)`);
@@ -12879,8 +13036,9 @@ class BotExecutor {
       // #endregion
       
       // Bitunix API endpoints for setting stop loss and take profit
-      // PRIMARY: Use /api/v1/futures/tpsl/place_order (requires positionId)
-      // API Docs: https://openapidoc.bitunix.com/doc/tp_sl/place_tp_sl_order.html
+      // PRIMARY (newer OpenAPI): /api/v1/futures/tpsl/position/place_order (requires positionId)
+      // FALLBACK (legacy):       /api/v1/futures/tpsl/place_order
+      // Docs (position TP/SL): https://openapidoc.bitunix.com/doc/tp_sl/place_position_tp_sl_order.html
 
       console.log(`📋 BUILDING ENDPOINTS ARRAY - positionId: ${positionId}, positionVerified: ${positionVerified}`);
 
@@ -12892,10 +13050,10 @@ class BotExecutor {
       
       console.log(`🔍 Side conversion: ${side} → positionSide: ${positionSide}, orderSide: ${orderSide}`);
       
-      // CRITICAL FIX: Based on Bitunix support response - use correct endpoint
-      // The correct endpoint is /api/v1/futures/tpsl/place_order
+      // CRITICAL: Bitunix requires a valid positionId for "position TP/SL" placement.
+      // Newer OpenAPI uses: /api/v1/futures/tpsl/position/place_order
+      // Some older docs/tickets reference: /api/v1/futures/tpsl/place_order
       // Required parameters: symbol, positionId, tpPrice/slPrice
-      // Based on: https://openapidoc.bitunix.com/doc/tp_sl/place_tp_sl_order.html
       // Support confirmed: positionId is required, use MARK_PRICE for stop types
       const endpointsToTry: Array<{endpoint: string, params: any, description: string}> = [];
 
@@ -12908,6 +13066,30 @@ class BotExecutor {
 
       // Only try TP/SL if we have a valid positionId (required by Bitunix API)
       if (isValidPositionId(resolvedPositionId)) {
+        // Idempotency guard: avoid creating many TP/SL orders on repeated executions.
+        // If there are already pending TP/SL orders for this positionId+symbol, do not place again.
+        try {
+          const existing = await this.getBitunixPendingTpSlOrders(apiKey, apiSecret, symbol);
+          const wantedPid = String(resolvedPositionId);
+          const matching = existing.filter((o: any) => {
+            const pid = this.extractBitunixTpSlOrderPositionId(o);
+            if (pid && pid === wantedPid) return true;
+            // fallback: if API doesn't include positionId field, match loosely by symbol
+            const sym = o?.symbol || o?.contract || o?.tradingPair || o?.instId;
+            if (sym && this.bitunixSymbolsLooselyMatch(String(sym), symbol.toUpperCase())) return true;
+            return false;
+          });
+          if (matching.length > 0) {
+            console.log(`🧯 TP/SL already exists for ${symbol} (positionId=${wantedPid}). Skipping new placement to prevent duplicates.`);
+            console.log(`   📊 Existing pending TP/SL orders found: ${matching.length}`);
+            // Keep the preview short to avoid log spam
+            console.log(`   📊 Example order: ${JSON.stringify(matching[0]).substring(0, 500)}`);
+            return;
+          }
+        } catch (e) {
+          console.warn(`⚠️ Could not pre-check existing TP/SL orders; continuing with placement:`, e instanceof Error ? e.message : String(e));
+        }
+
         // Bitunix docs require tpQty/slQty (at least one). We'll use full position size.
         let resolvedSize: number | null = null;
         if (positionInfo && typeof positionInfo.size === 'number' && positionInfo.size > 0) {
@@ -12938,22 +13120,32 @@ class BotExecutor {
           const tpQtyStr = await this.formatBitunixQty(symbol, Number(resolvedSize));
           const slQtyStr = await this.formatBitunixQty(symbol, Number(resolvedSize));
 
+          const commonParams = {
+            symbol: symbol.toUpperCase(),
+            positionId: String(resolvedPositionId),
+            tpPrice: tpPriceStr,
+            slPrice: slPriceStr,
+            tpStopType: 'MARK_PRICE',
+            slStopType: 'MARK_PRICE',
+            tpOrderType: 'MARKET',
+            slOrderType: 'MARKET',
+            // REQUIRED by Bitunix docs: at least one of tpQty or slQty
+            tpQty: tpQtyStr,
+            slQty: slQtyStr,
+          };
+
+          // Prefer newer OpenAPI endpoint first
+          endpointsToTry.push({
+            endpoint: '/api/v1/futures/tpsl/position/place_order',
+            params: { ...commonParams },
+            description: 'Bitunix Position TP/SL (OpenAPI) - positionId required'
+          });
+
+          // Legacy fallback
           endpointsToTry.push({
             endpoint: '/api/v1/futures/tpsl/place_order',
-            params: {
-              symbol: symbol.toUpperCase(),
-              positionId: String(resolvedPositionId),
-              tpPrice: tpPriceStr,
-              slPrice: slPriceStr,
-              tpStopType: 'MARK_PRICE',
-              slStopType: 'MARK_PRICE',
-              tpOrderType: 'MARKET',
-              slOrderType: 'MARKET',
-              // REQUIRED by Bitunix docs: at least one of tpQty or slQty
-              tpQty: tpQtyStr,
-              slQty: slQtyStr,
-            },
-            description: 'Official Bitunix TP/SL endpoint - positionId required'
+            params: { ...commonParams },
+            description: 'Bitunix TP/SL (legacy path) - positionId required'
           });
         }
       } else {
@@ -12981,11 +13173,14 @@ class BotExecutor {
       for (let endpointIndex = 0; endpointIndex < endpointsToTry.length; endpointIndex++) {
         console.log(`🔄 ENTERED LOOP - endpointIndex: ${endpointIndex}, endpoint: ${endpointsToTry[endpointIndex]?.endpoint}`);
         const endpointConfig = endpointsToTry[endpointIndex];
+        // These are referenced in the catch block; declare them at loop scope.
+        let slTpParams: any = null;
+        let bodyString = '';
         try {
           
           // Simplified: All endpoints in our array are symbol-based, so no need to skip
           
-          const slTpParams = endpointConfig.params;
+          slTpParams = endpointConfig.params;
           
           // Remove empty positionId from params if it's empty (cleaner request)
           if (slTpParams.positionId === '' || slTpParams.positionId === 'undefined' || slTpParams.positionId === 'null') {
@@ -13003,7 +13198,7 @@ class BotExecutor {
           if (slTpParams.tpQty != null) slTpParams.tpQty = String(slTpParams.tpQty);
           if (slTpParams.slQty != null) slTpParams.slQty = String(slTpParams.slQty);
           
-          const bodyString = JSON.stringify(slTpParams).replace(/\s+/g, '');
+          bodyString = JSON.stringify(slTpParams).replace(/\s+/g, '');
           const queryParams = '';
 
           // Fresh nonce/timestamp/signature per TP/SL request attempt (avoids 10007 during retries)
@@ -13453,63 +13648,114 @@ class BotExecutor {
         // Fallback: Try using position size directly without positionId
         // Some Bitunix endpoints work with just symbol and size
         try {
-          if (positionInfo && positionInfo.size > 0) {
-            const positionSize = String(positionInfo.size);
-            console.log(`   📊 Using position size for fallback: ${positionSize}`);
-            
-            // Try simpler endpoint with holdSide (LONG/SHORT) and position size
-            const fallbackParams = {
-              symbol: symbol.toUpperCase(),
-              holdSide: positionSide, // Use LONG/SHORT for position side
-              tpPrice: String(takeProfitPrice.toFixed(8)),
-              slPrice: String(stopLossPrice.toFixed(8)),
-              tpStopType: 'LAST_PRICE',
-              slStopType: 'LAST_PRICE',
-              qty: positionSize,
-              marginCoin: 'USDT'
-            };
-            
-            const fallbackBody = JSON.stringify(fallbackParams).replace(/\s+/g, '');
-            const fallbackSig = await this.createBitunixSignatureDoubleSHA256(nonce, timestamp, apiKey, '', fallbackBody, apiSecret);
-            
-            const fallbackEndpoints = [
-              '/api/v1/futures/tpsl/place_order',  // Primary correct endpoint
-              '/api/v1/futures/tpsl/place',        // Alternative
-              '/api/v1/futures/trade/tp_sl',       // Legacy
-              '/api/v1/futures/trade/tpsl'         // Legacy
+          const fallbackSizeRaw =
+            (positionInfo && typeof positionInfo.size === 'number' && positionInfo.size > 0
+              ? positionInfo.size
+              : Number(orderResult?.qty || orderResult?.quantity || orderResult?.amount || 0)) || 0;
+
+          if (fallbackSizeRaw > 0) {
+            const tpPriceStr = await this.formatBitunixPrice(symbol, takeProfitPrice);
+            const slPriceStr = await this.formatBitunixPrice(symbol, stopLossPrice);
+            const qtyStr = await this.formatBitunixQty(symbol, fallbackSizeRaw);
+
+            console.log(`   📊 Using size for fallback (position API or order qty): ${qtyStr}`);
+
+            // Try several payload shapes observed across Bitunix docs/tickets.
+            // NOTE: These are fallbacks only, used when positionId-based endpoints fail.
+            const fallbackPayloads: Array<{ description: string; body: any }> = [
+              {
+                description: 'holdSide + qty (legacy style)',
+                body: {
+                  symbol: symbol.toUpperCase(),
+                  holdSide: positionSide, // LONG/SHORT
+                  tpPrice: tpPriceStr,
+                  slPrice: slPriceStr,
+                  tpStopType: 'MARK_PRICE',
+                  slStopType: 'MARK_PRICE',
+                  qty: qtyStr,
+                  marginCoin: 'USDT',
+                },
+              },
+              {
+                description: 'holdSide + tpQty/slQty (docs style)',
+                body: {
+                  symbol: symbol.toUpperCase(),
+                  holdSide: positionSide, // LONG/SHORT
+                  tpPrice: tpPriceStr,
+                  slPrice: slPriceStr,
+                  tpStopType: 'MARK_PRICE',
+                  slStopType: 'MARK_PRICE',
+                  tpOrderType: 'MARKET',
+                  slOrderType: 'MARKET',
+                  tpQty: qtyStr,
+                  slQty: qtyStr,
+                  marginCoin: 'USDT',
+                },
+              },
             ];
-            
-            for (const fallbackEndpoint of fallbackEndpoints) {
-              try {
-                console.log(`   Trying fallback endpoint: ${fallbackEndpoint}`);
-                const fallbackResponse = await fetch(`${baseUrl}${fallbackEndpoint}`, {
-                  method: 'POST',
-                  headers: {
-                    'api-key': String(apiKey),
-                    'nonce': String(nonce),
-                    'timestamp': String(timestamp),
-                    'sign': String(fallbackSig),
-                    'Content-Type': 'application/json',
-                    'language': 'en-US'
-                  },
-                  body: fallbackBody
-                });
-                
-                const fallbackResponseText = await fallbackResponse.text();
-                console.log(`   Fallback response: ${fallbackResponse.status}, body: ${fallbackResponseText.substring(0, 500)}`);
-                
-                if (fallbackResponse.ok) {
-                  const fallbackData = JSON.parse(fallbackResponseText);
-                  if (fallbackData.code === 0 || fallbackData.code === 200) {
-                    console.log(`✅ Bitunix SL/TP set via fallback endpoint: ${fallbackEndpoint}`);
-                    slTpSuccess = true;
-                    break;
+
+            const fallbackEndpoints = [
+              '/api/v1/futures/tpsl/place_order',
+              '/api/v1/futures/tpsl/position/place_order',
+              '/api/v1/futures/tpsl/place',
+              '/api/v1/futures/trade/tp_sl',
+              '/api/v1/futures/trade/tpsl',
+            ];
+
+            for (const payload of fallbackPayloads) {
+              for (const fallbackEndpoint of fallbackEndpoints) {
+                // Try both private hosts; some accounts route SL/TP differently.
+                for (const host of baseUrls) {
+                  try {
+                    const fallbackBody = JSON.stringify(payload.body).replace(/\s+/g, '');
+                    const fallbackTimestamp = (Date.now() + BotExecutor.bitunixServerTimeOffset).toString();
+                    const fallbackNonce = this.generateNonce();
+                    const fallbackSig = await this.createBitunixSignatureDoubleSHA256(
+                      fallbackNonce,
+                      fallbackTimestamp,
+                      apiKey,
+                      '',
+                      fallbackBody,
+                      apiSecret
+                    );
+
+                    console.log(`   Trying fallback: ${payload.description} via ${host}${fallbackEndpoint}`);
+                    const fallbackResponse = await fetch(`${host}${fallbackEndpoint}`, {
+                      method: 'POST',
+                      headers: {
+                        'api-key': String(apiKey),
+                        'nonce': String(fallbackNonce),
+                        'timestamp': String(fallbackTimestamp),
+                        'sign': String(fallbackSig),
+                        'Content-Type': 'application/json',
+                        'language': 'en-US',
+                      },
+                      body: fallbackBody,
+                    });
+
+                    const fallbackResponseText = await fallbackResponse.text();
+                    console.log(
+                      `   Fallback response (${host}${fallbackEndpoint}): ${fallbackResponse.status}, body: ${fallbackResponseText.substring(0, 500)}`
+                    );
+
+                    if (fallbackResponse.ok) {
+                      const fallbackData = JSON.parse(fallbackResponseText);
+                      if (fallbackData.code === 0 || fallbackData.code === 200) {
+                        console.log(`✅ Bitunix SL/TP set via fallback: ${payload.description} (${host}${fallbackEndpoint})`);
+                        slTpSuccess = true;
+                        break;
+                      }
+                    }
+                  } catch (fallbackErr) {
+                    console.warn(`   ⚠️ Fallback failed (${payload.description}) on ${host}${fallbackEndpoint}:`, fallbackErr);
                   }
                 }
-              } catch (fallbackErr) {
-                console.warn(`   ⚠️ Fallback endpoint ${fallbackEndpoint} failed:`, fallbackErr);
+                if (slTpSuccess) break;
               }
+              if (slTpSuccess) break;
             }
+          } else {
+            console.warn(`   ⚠️ Fallback skipped: no usable size (position not readable and order qty missing).`);
           }
         } catch (fallbackError) {
           console.warn(`   ⚠️ Fallback method failed:`, fallbackError);
@@ -17423,7 +17669,7 @@ class PaperTradingExecutor {
 }
 
 // Bump this when deploying so logs can confirm which code version is running in Supabase
-const BOT_EXECUTOR_BUILD = '2026-01-06-bitunix-dual-host-v15';
+const BOT_EXECUTOR_BUILD = '2026-01-19-bitunix-openapi-endpoints-v20';
 
 serve(async (req) => {
   // Handle CORS preflight requests FIRST, before any other processing

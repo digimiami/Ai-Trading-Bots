@@ -305,83 +305,181 @@ async function fetchBitunixPositions(
   apiKey: string,
   apiSecret: string
 ): Promise<ExchangePosition[]> {
-  const baseUrl = 'https://fapi.bitunix.com';
-  const endpoint = '/api/v1/futures/position';
-  
-  const timestamp = Date.now().toString();
-  const nonce = generateNonce();
-  const queryParams = '';
-  const body = '';
-  const signature = await createBitunixSignature(nonce, timestamp, apiKey, queryParams, body, apiSecret);
+  // Bitunix has multiple position endpoints in the wild. The older `/api/v1/futures/position`
+  // often returns code=2 "System error" even when positions exist. The OpenAPI endpoints
+  // `get_pending_positions` / `get_history_positions` are more reliable.
+  const baseUrls = ['https://fapi.bitunix.com', 'https://api.bitunix.com'];
+  const endpoints = [
+    '/api/v1/futures/position/get_pending_positions',
+    '/api/v1/futures/position/get_history_positions',
+    '/api/v1/futures/position/pending_position',
+    '/api/v1/futures/position/list',
+    '/api/v1/futures/position',
+  ];
 
-  try {
-    const response = await fetch(`${baseUrl}${endpoint}`, {
-      method: 'GET',
-      headers: {
-        'api-key': String(apiKey),
-        'nonce': String(nonce),
-        'timestamp': String(timestamp),
-        'sign': String(signature),
-        'Content-Type': 'application/json',
-        'language': 'en-US'
+  const normalizeQueryParams = (queryParams: string): string => {
+    if (!queryParams || !queryParams.includes('=')) return queryParams || '';
+    const params = queryParams.split('&').filter(Boolean);
+    const paramMap: Record<string, string> = {};
+    for (const param of params) {
+      const [key, value] = param.split('=');
+      if (key) paramMap[key] = value || '';
+    }
+    return Object.keys(paramMap)
+      .sort()
+      .map((key) => `${key}=${paramMap[key]}`)
+      .join('&');
+  };
+
+  const extractSize = (p: any): number => {
+    const candidates = [
+      p?.size,
+      p?.qty,
+      p?.holdVol,
+      p?.hold_vol,
+      p?.quantity,
+      p?.vol,
+      p?.positionAmt,
+      p?.positionQty,
+      p?.amount,
+      p?.openVol,
+      p?.open_vol,
+    ];
+    for (const c of candidates) {
+      const n = typeof c === 'number' ? c : typeof c === 'string' ? parseFloat(c) : NaN;
+      if (Number.isFinite(n) && n !== 0) return Math.abs(n);
+    }
+    return 0;
+  };
+
+  const parsePositionsFromResponse = (data: any): any[] => {
+    const root = data?.data ?? null;
+    if (!root) return [];
+    if (Array.isArray(root)) return root;
+    if (typeof root === 'object') {
+      const possibleArrays = Object.values(root).filter((v) => Array.isArray(v)) as any[];
+      if (possibleArrays.length > 0) return possibleArrays[0];
+      return [root];
+    }
+    return [];
+  };
+
+  // Prefer no-query (some accounts succeed more reliably) then typical variants.
+  const queryVariants = [
+    '',
+    'marginCoin=USDT',
+    'marketType=futures',
+    'marketType=futures&marginCoin=USDT',
+  ];
+
+  let lastError: any = null;
+
+  for (const baseUrl of baseUrls) {
+    for (const endpoint of endpoints) {
+      for (const qpRaw of queryVariants) {
+        const queryParams = normalizeQueryParams(qpRaw);
+        const url = queryParams ? `${baseUrl}${endpoint}?${queryParams}` : `${baseUrl}${endpoint}`;
+
+        const timestamp = Date.now().toString();
+        const nonce = generateNonce();
+        const body = '';
+        const signature = await createBitunixSignature(nonce, timestamp, apiKey, queryParams, body, apiSecret);
+
+        try {
+          const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+              'api-key': String(apiKey),
+              'nonce': String(nonce),
+              'timestamp': String(timestamp),
+              'sign': String(signature),
+              'Content-Type': 'application/json',
+              'language': 'en-US',
+            },
+          });
+
+          if (!response.ok) {
+            lastError = new Error(`Bitunix HTTP ${response.status} (${endpoint})`);
+            continue;
+          }
+
+          const data = await response.json().catch(() => null);
+          if (!data) {
+            lastError = new Error(`Bitunix invalid JSON (${endpoint})`);
+            continue;
+          }
+
+          if (data.code !== 0) {
+            // Keep trying other endpoints/params; code=2 is common on legacy endpoints.
+            lastError = new Error(`Bitunix API error (${data.code}) on ${endpoint}: ${data.msg || 'Unknown error'}`);
+            continue;
+          }
+
+          const positions = parsePositionsFromResponse(data)
+            .filter((p: any) => extractSize(p) > 0);
+
+          if (!positions.length) {
+            // Successful response but empty; try other variants/endpoints.
+            continue;
+          }
+
+          return positions.map((p: any) => {
+            const size = extractSize(p);
+            const entryPrice = parseFloat(
+              p.entryPrice ||
+              p.avgPrice ||
+              p.openPrice ||
+              p.openAvgPrice ||
+              p.avgOpenPrice ||
+              p.entry_price ||
+              '0'
+            );
+            const currentPrice = parseFloat(p.markPrice || p.lastPrice || p.price || p.curPrice || '0') || entryPrice;
+            const unrealizedPnL = parseFloat(p.unrealisedPnl || p.unrealizedPnl || p.pnl || '0');
+
+            const sideRaw = String(p.side || p.positionSide || p.holdSide || p.posSide || '').toLowerCase();
+            const isShort = sideRaw === 'short' || sideRaw === 'sell';
+            const side: 'long' | 'short' = isShort ? 'short' : 'long';
+
+            // If the API doesn't provide PnL, compute a simple estimate.
+            const computedPnl =
+              Number.isFinite(unrealizedPnL) && unrealizedPnL !== 0
+                ? unrealizedPnL
+                : (currentPrice - entryPrice) * size * (isShort ? -1 : 1);
+
+            const unrealizedPnLPercentage =
+              entryPrice > 0 ? ((currentPrice - entryPrice) / entryPrice) * 100 * (isShort ? -1 : 1) : 0;
+
+            const leverage = parseFloat(p.leverage || p.leverageRatio || '1') || 1;
+            const marginUsed =
+              parseFloat(p.marginUsed || p.margin || '0') ||
+              (leverage > 0 ? (size * entryPrice) / leverage : size * entryPrice);
+
+            return {
+              exchange: 'bitunix',
+              symbol: p.symbol || p.contract || p.tradingPair || p.instId || '',
+              side,
+              size,
+              entryPrice,
+              currentPrice,
+              unrealizedPnL: computedPnl,
+              unrealizedPnLPercentage,
+              leverage,
+              marginUsed,
+              stopLoss: parseFloat(p.stopLoss || p.stop_loss || p.slPrice || p.sl_price || '0') || undefined,
+              takeProfit: parseFloat(p.takeProfit || p.take_profit || p.tpPrice || p.tp_price || '0') || undefined,
+            };
+          });
+        } catch (err: any) {
+          lastError = err;
+          continue;
+        }
       }
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Bitunix HTTP ${response.status}: ${errorText.substring(0, 200)}`);
     }
-
-    const data = await response.json();
-    if (data.code !== 0) {
-      throw new Error(`Bitunix API error (${data.code}): ${data.msg || 'Unknown error'}`);
-    }
-
-    if (!data.data) return [];
-
-    let positions: any[] = [];
-    if (Array.isArray(data.data)) {
-      positions = data.data;
-    } else if (typeof data.data === 'object') {
-      const possibleArrays = Object.values(data.data).filter(v => Array.isArray(v));
-      if (possibleArrays.length > 0) {
-        positions = possibleArrays[0] as any[];
-      } else {
-        positions = [data.data];
-      }
-    }
-
-    return positions
-      .filter((p: any) => parseFloat(p.size || p.holdVol || p.quantity || 0) !== 0)
-      .map((p: any) => {
-        const size = Math.abs(parseFloat(p.size || p.holdVol || p.quantity || 0));
-        const entryPrice = parseFloat(p.entryPrice || p.avgPrice || p.openPrice || 0);
-        const currentPrice = parseFloat(p.markPrice || p.lastPrice || 0);
-        const unrealizedPnL = parseFloat(p.unrealisedPnl || p.pnl || 0);
-        const sideRaw = (p.side || p.positionSide || '').toLowerCase();
-        const unrealizedPnLPercentage = entryPrice > 0 
-          ? ((currentPrice - entryPrice) / entryPrice) * 100 * (sideRaw === 'short' || sideRaw === 'sell' ? -1 : 1)
-          : 0;
-
-        return {
-          exchange: 'bitunix',
-          symbol: p.symbol,
-          side: (sideRaw === 'buy' || sideRaw === 'long') ? 'long' : 'short',
-          size,
-          entryPrice,
-          currentPrice,
-          unrealizedPnL,
-          unrealizedPnLPercentage,
-          leverage: parseFloat(p.leverage || 1),
-          marginUsed: parseFloat(p.marginUsed || size * entryPrice / parseFloat(p.leverage || 1)),
-          stopLoss: parseFloat(p.stopLoss || p.slPrice || 0) || undefined,
-          takeProfit: parseFloat(p.takeProfit || p.tpPrice || 0) || undefined
-        };
-      });
-  } catch (error: any) {
-    console.error('Error fetching Bitunix positions:', error);
-    throw error;
   }
+
+  console.error('Error fetching Bitunix positions:', lastError);
+  throw lastError || new Error('Error fetching Bitunix positions');
 }
 
 /**
