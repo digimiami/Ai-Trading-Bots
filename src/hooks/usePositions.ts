@@ -171,16 +171,28 @@ export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix'
         setError(null);
       }
     } catch (err) {
+      console.error('[positions] ❌ Error in fetchPositions:', err);
+      console.error('[positions] ❌ Error details:', {
+        name: err instanceof Error ? err.name : typeof err,
+        message: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack?.substring(0, 500) : undefined
+      });
+      
       // Keep last-known data on transient network flips (vpn/wifi/dns changes).
       if (isTransientNetworkError(err)) {
         dlog('fetchPositions transient network error', err);
         setError('Network issue detected. Showing last known positions…');
+        setLoading(false);
         return;
       }
-      console.error('Error fetching positions:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch positions');
+      
+      const errorMessage = err instanceof Error ? err.message : 'Failed to fetch positions';
+      console.error('[positions] ❌ Setting error state:', errorMessage);
+      setError(errorMessage);
       setPositions([]);
+      setLoading(false);
     } finally {
+      console.log('[positions] ✅ Finally block: setting loading to false');
       setLoading(false);
     }
   }, [user, authLoading, exchangeFilter]);
