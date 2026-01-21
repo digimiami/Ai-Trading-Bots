@@ -13218,17 +13218,21 @@ class BotExecutor {
             : symbol.toUpperCase().endsWith('USD')
               ? 'USD'
               : 'USDT';
+          const contract = symbol.toUpperCase(); // Bitunix sometimes expects "contract"
+          const marketType = 'futures';
 
           const commonParams = {
             symbol: symbol.toUpperCase(),
+            contract,
             positionId: String(resolvedPositionId),
             positionSide,           // LONG / SHORT (Bitunix expects position side)
             holdSide: positionSide, // Some variants use holdSide instead of positionSide
             marginCoin,             // Helps avoid signature/validation errors
+            marketType,
             tpPrice: tpPriceStr,
             slPrice: slPriceStr,
-            tpStopType: 'MARK_PRICE',
-            slStopType: 'MARK_PRICE',
+            tpStopType: 'LAST_PRICE', // use LAST_PRICE to avoid mark-price rejection
+            slStopType: 'LAST_PRICE',
             tpOrderType: 'MARKET',
             slOrderType: 'MARKET',
             // REQUIRED by Bitunix docs: at least one of tpQty or slQty
