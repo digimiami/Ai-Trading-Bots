@@ -511,6 +511,7 @@ async function fetchBitunixPositions(
             continue;
           }
 
+          // First pass: map raw positions. We may enrich price below if missing.
           const mappedPositions: ExchangePosition[] = positions.map((p: any) => {
             const size = extractSize(p);
             const entryPrice = parseFloat(
@@ -569,6 +570,57 @@ async function fetchBitunixPositions(
               })(),
             };
           });
+
+          // If any position has missing/zero currentPrice, fetch a fresh ticker price.
+          const symbolsNeedingPrice = Array.from(
+            new Set(
+              mappedPositions
+                .filter((p) => !p.currentPrice || p.currentPrice <= 0)
+                .map((p) => String(p.symbol || '').toUpperCase())
+                .filter(Boolean)
+            )
+          );
+
+          if (symbolsNeedingPrice.length) {
+            try {
+              // Try both hosts; Bitunix occasionally serves tickers from different hosts.
+              const priceMap = new Map<string, number>();
+              const hosts = ['https://fapi.bitunix.com', 'https://api.bitunix.com'];
+              for (const host of hosts) {
+                for (const sym of symbolsNeedingPrice) {
+                  if (priceMap.has(sym)) continue;
+                  const url = `${host}/api/v1/market/tickers?symbol=${sym}`;
+                  try {
+                    const resp = await fetch(url, { method: 'GET', headers: { 'Content-Type': 'application/json' } });
+                    if (!resp.ok) continue;
+                    const data = await resp.json().catch(() => null);
+                    const list = Array.isArray(data?.data) ? data.data : data?.data?.list || [];
+                    const ticker = Array.isArray(list) ? list.find((t: any) => String(t.symbol || t.contract || '').toUpperCase() === sym) : null;
+                    const last = ticker ? parseFloat(ticker.lastPrice || ticker.last_price || ticker.price || ticker.close || '0') : 0;
+                    if (Number.isFinite(last) && last > 0) {
+                      priceMap.set(sym, last);
+                    }
+                  } catch {
+                    continue;
+                  }
+                }
+              }
+
+              // Enrich positions with fetched prices and recompute PnL.
+              for (const pos of mappedPositions) {
+                const sym = String(pos.symbol || '').toUpperCase();
+                const px = priceMap.get(sym);
+                if (px && px > 0) {
+                  pos.currentPrice = px;
+                  const delta = (px - pos.entryPrice) * (pos.side === 'short' ? -1 : 1);
+                  pos.unrealizedPnL = delta * pos.size;
+                  pos.unrealizedPnLPercentage = pos.entryPrice > 0 ? (delta / pos.entryPrice) * 100 : 0;
+                }
+              }
+            } catch (priceErr) {
+              console.warn('Bitunix: price enrichment failed', priceErr);
+            }
+          }
 
           // Merge SL/TP from TP/SL pending orders API when missing on the position objects.
           try {
