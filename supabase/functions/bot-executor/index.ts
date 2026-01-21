@@ -8045,7 +8045,7 @@ class BotExecutor {
                   console.warn(`   ⚠️ Cannot verify settings after 3 attempts, but set function succeeded. Proceeding with order (settings likely already correct).`);
                   if (bot?.id) {
                     await this.addBotLog(bot.id, {
-                      level: 'warn',
+                      level: 'warning',
                       category: 'trade',
                       message: `Could not verify Bitunix leverage/margin mode after setting, but set function reported success. Proceeding with order.`,
                       details: {
@@ -11285,6 +11285,22 @@ class BotExecutor {
               }
               
               // Handle Code 2 (System error) - try different parameter formats
+              // Handle Bitunix minimum quantity error: "The amount should be larger than X ..."
+              if (data.code === 30016) {
+                let minQtyHint = '';
+                const match = /larger than\s+([\d\.]+)\s+([A-Z]+)/i.exec(errorMsg || '');
+                if (match) {
+                  const [, qty, asset] = match;
+                  minQtyHint = `${qty} ${asset}`;
+                }
+                const guidance = minQtyHint
+                  ? `Minimum required size: ${minQtyHint}. Increase trade amount or leverage to meet the threshold.`
+                  : `Increase trade amount or leverage to meet the exchange minimum size.`;
+                lastError = new Error(`Bitunix minimum order size not met (Code: 30016). ${guidance}`);
+                // No point trying other variants for this symbol with same qty; continue to next variant
+                continue;
+              }
+
               if (data.code === 2) {
                 code2ErrorCount++;
                 totalAttempts++;
