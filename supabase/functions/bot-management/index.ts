@@ -456,6 +456,7 @@ serve(async (req) => {
           symbol: bot.symbol,
           timeframe: bot.timeframe || '1h',
           status: bot.status,
+          pauseReason: bot.pause_reason || null,
           leverage: bot.leverage ?? 1,
           tradeAmount: bot.trade_amount || 100,
           stopLoss: bot.stop_loss || 2.0,
@@ -1070,6 +1071,7 @@ serve(async (req) => {
           symbol: bot.symbol,
           timeframe: bot.timeframe || '1h',
           status: bot.status,
+          pauseReason: bot.pause_reason || null,
           leverage: bot.leverage,
           tradeAmount: bot.trade_amount || 100,
           stopLoss: bot.stop_loss || 2.0,
@@ -1120,6 +1122,7 @@ serve(async (req) => {
           exchange: bot.exchange,
           symbol: bot.symbol,
           status: bot.status,
+          pauseReason: bot.pause_reason || null,
           leverage: bot.leverage,
           pnl: bot.pnl,
           pnlPercentage: bot.pnl_percentage,
@@ -1143,11 +1146,14 @@ serve(async (req) => {
       }
 
       if (action === 'pause') {
-        const { id } = body
+        const { id, reason: rawReason } = body
+        const pauseReason = typeof rawReason === 'string' && rawReason.trim().length > 0
+          ? rawReason.trim()
+          : 'Paused by user'
 
         const { data: bot, error } = await supabaseClient
           .from('trading_bots')
-          .update({ status: 'paused' })
+          .update({ status: 'paused', pause_reason: pauseReason, updated_at: new Date().toISOString() })
           .eq('id', id)
           .eq('user_id', user.id)
           .select()
@@ -1161,6 +1167,7 @@ serve(async (req) => {
           exchange: bot.exchange,
           symbol: bot.symbol,
           status: bot.status,
+          pauseReason: bot.pause_reason || pauseReason || null,
           leverage: bot.leverage,
           pnl: bot.pnl,
           pnlPercentage: bot.pnl_percentage,
@@ -1184,11 +1191,14 @@ serve(async (req) => {
       }
 
       if (action === 'stop') {
-        const { id } = body
+        const { id, reason: rawReason } = body
+        const stopReason = typeof rawReason === 'string' && rawReason.trim().length > 0
+          ? rawReason.trim()
+          : 'Stopped by user'
 
         const { data: bot, error } = await supabaseClient
           .from('trading_bots')
-          .update({ status: 'stopped' })
+          .update({ status: 'stopped', pause_reason: stopReason, updated_at: new Date().toISOString() })
           .eq('id', id)
           .eq('user_id', user.id)
           .select()
@@ -1202,6 +1212,7 @@ serve(async (req) => {
           exchange: bot.exchange,
           symbol: bot.symbol,
           status: bot.status,
+          pauseReason: bot.pause_reason || stopReason || null,
           leverage: bot.leverage,
           pnl: bot.pnl,
           pnlPercentage: bot.pnl_percentage,
