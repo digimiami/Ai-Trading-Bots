@@ -13212,9 +13212,19 @@ class BotExecutor {
           const tpQtyStr = await this.formatBitunixQty(symbol, Number(resolvedSize));
           const slQtyStr = await this.formatBitunixQty(symbol, Number(resolvedSize));
 
+          // Derive marginCoin (Bitunix sometimes requires it on TP/SL)
+          const marginCoin = symbol.toUpperCase().endsWith('USDT')
+            ? 'USDT'
+            : symbol.toUpperCase().endsWith('USD')
+              ? 'USD'
+              : 'USDT';
+
           const commonParams = {
             symbol: symbol.toUpperCase(),
             positionId: String(resolvedPositionId),
+            positionSide,           // LONG / SHORT (Bitunix expects position side)
+            holdSide: positionSide, // Some variants use holdSide instead of positionSide
+            marginCoin,             // Helps avoid signature/validation errors
             tpPrice: tpPriceStr,
             slPrice: slPriceStr,
             tpStopType: 'MARK_PRICE',
