@@ -793,10 +793,10 @@ serve(async (req) => {
         if (updates.tradingType) dbUpdates.trading_type = updates.tradingType
         if (updates.symbol) dbUpdates.symbol = updates.symbol
         if (updates.timeframe) dbUpdates.timeframe = updates.timeframe
-        if (updates.leverage) dbUpdates.leverage = updates.leverage
-        if (updates.tradeAmount) dbUpdates.trade_amount = updates.tradeAmount
-        if (updates.stopLoss) dbUpdates.stop_loss = updates.stopLoss
-        if (updates.takeProfit) dbUpdates.take_profit = updates.takeProfit
+        if (updates.leverage !== undefined) dbUpdates.leverage = updates.leverage
+        if (updates.tradeAmount !== undefined) dbUpdates.trade_amount = updates.tradeAmount
+        if (updates.stopLoss !== undefined) dbUpdates.stop_loss = updates.stopLoss
+        if (updates.takeProfit !== undefined) dbUpdates.take_profit = updates.takeProfit
         if (updates.status) dbUpdates.status = updates.status
         if (updates.pnl !== undefined) dbUpdates.pnl = updates.pnl
         if (updates.pnlPercentage !== undefined) dbUpdates.pnl_percentage = updates.pnlPercentage
@@ -805,6 +805,10 @@ serve(async (req) => {
         if (updates.lastTradeAt !== undefined) dbUpdates.last_trade_at = updates.lastTradeAt
         if (updates.riskLevel) dbUpdates.risk_level = updates.riskLevel
         if (updates.strategy) dbUpdates.strategy = JSON.stringify(updates.strategy)
+        
+        // Always update the updated_at timestamp when any field changes
+        // This ensures bot-executor always gets the latest data
+        dbUpdates.updated_at = new Date().toISOString()
         
         // Handle strategyConfig (Advanced Strategy Configuration)
         if (updates.strategyConfig !== undefined) {
