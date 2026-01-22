@@ -9,10 +9,10 @@ interface ApiKeyStepProps {
 
 export default function ApiKeyStep({ onSkip, onComplete }: ApiKeyStepProps) {
   const { saveApiKey, testApiConnection } = useApiKeys();
-  const [exchange, setExchange] = useState<'bybit' | 'okx' | 'bitunix'>('bybit');
+  const [exchange, setExchange] = useState<'bybit' | 'mexc' | 'bitunix'>('bybit');
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
-  const [passphrase, setPassphrase] = useState('');
+  const [openaiApiKey, setOpenaiApiKey] = useState('');
   const [isTesting, setIsTesting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -24,11 +24,6 @@ export default function ApiKeyStep({ onSkip, onComplete }: ApiKeyStepProps) {
       return;
     }
 
-    if (exchange === 'okx' && !passphrase) {
-      setError('OKX requires a passphrase');
-      return;
-    }
-
     setIsTesting(true);
     setError(null);
     setTestResult(null);
@@ -37,8 +32,7 @@ export default function ApiKeyStep({ onSkip, onComplete }: ApiKeyStepProps) {
       const formData: ApiKeyFormData = {
         exchange,
         apiKey,
-        apiSecret,
-        ...(exchange === 'okx' && { passphrase })
+        apiSecret
       };
 
       const result = await testApiConnection(formData);
@@ -57,63 +51,59 @@ export default function ApiKeyStep({ onSkip, onComplete }: ApiKeyStepProps) {
   };
 
   const handleSave = async () => {
-    if (!apiKey || !apiSecret) {
-      setError('Please enter both API Key and Secret');
-      return;
-    }
-
-    if (exchange === 'okx' && !passphrase) {
-      setError('OKX requires a passphrase');
-      return;
-    }
-
     setIsSaving(true);
     setError(null);
 
     try {
-      const formData: ApiKeyFormData = {
-        exchange,
-        apiKey,
-        apiSecret,
-        ...(exchange === 'okx' && { passphrase })
-      };
+      // Save exchange API key if provided
+      if (apiKey.trim() && apiSecret.trim()) {
+        const formData: ApiKeyFormData = {
+          exchange,
+          apiKey,
+          apiSecret
+        };
+        await saveApiKey(formData);
+      }
 
-      await saveApiKey(formData);
+      // Save OpenAI API key if provided
+      if (openaiApiKey.trim()) {
+        const { openAIService } = await import('../../services/openai');
+        await openAIService.setOpenAIKey(openaiApiKey.trim());
+      }
+
       onComplete();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save API key');
+      setError(err instanceof Error ? err.message : 'Failed to save API keys');
     } finally {
       setIsSaving(false);
     }
   };
 
-  const canProceed = apiKey.trim() && apiSecret.trim() && (exchange !== 'okx' || passphrase.trim());
-
   return (
     <div className="space-y-6">
       <div>
         <h3 className="text-lg font-semibold text-gray-900 mb-2">
-          Connect Exchange API
+          Connect Exchange API (Optional)
         </h3>
         <p className="text-sm text-gray-600 mb-4">
-          Connect your exchange account to enable automated trading. You can skip this step and set it up later in Settings.
+          Connect your exchange account to enable automated trading. You can add exchange API keys and/or OpenAI API key now, or skip and set them up later in Settings.
         </p>
       </div>
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
-          Select Exchange
+          Select Exchange (Optional)
         </label>
         <div className="grid grid-cols-3 gap-3">
           {[
             { value: 'bybit', label: 'Bybit' },
-            { value: 'okx', label: 'OKX' },
+            { value: 'mexc', label: 'MEXC' },
             { value: 'bitunix', label: 'Bitunix' }
           ].map((ex) => (
             <button
               key={ex.value}
               onClick={() => {
-                setExchange(ex.value as 'bybit' | 'okx' | 'bitunix');
+                setExchange(ex.value as 'bybit' | 'mexc' | 'bitunix');
                 setError(null);
                 setTestResult(null);
               }}
@@ -129,55 +119,66 @@ export default function ApiKeyStep({ onSkip, onComplete }: ApiKeyStepProps) {
         </div>
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          API Key
-        </label>
-        <input
-          type="text"
-          value={apiKey}
-          onChange={(e) => {
-            setApiKey(e.target.value);
-            setError(null);
-          }}
-          placeholder="Enter your API key"
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        />
-      </div>
+      {exchange && (
+        <>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              {exchange.toUpperCase()} API Key
+            </label>
+            <input
+              type="text"
+              value={apiKey}
+              onChange={(e) => {
+                setApiKey(e.target.value);
+                setError(null);
+              }}
+              placeholder={`Enter your ${exchange.toUpperCase()} API key`}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
 
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          API Secret
-        </label>
-        <input
-          type="password"
-          value={apiSecret}
-          onChange={(e) => {
-            setApiSecret(e.target.value);
-            setError(null);
-          }}
-          placeholder="Enter your API secret"
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        />
-      </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              {exchange.toUpperCase()} API Secret
+            </label>
+            <input
+              type="password"
+              value={apiSecret}
+              onChange={(e) => {
+                setApiSecret(e.target.value);
+                setError(null);
+              }}
+              placeholder={`Enter your ${exchange.toUpperCase()} API secret`}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+        </>
+      )}
 
-      {exchange === 'okx' && (
+      <div className="border-t pt-4 mt-4">
+        <h4 className="text-sm font-medium text-gray-900 mb-3">OpenAI API Key (Optional)</h4>
+        <p className="text-xs text-gray-500 mb-3">
+          Add your OpenAI API key to enable AI-powered strategy recommendations and optimizations.
+        </p>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Passphrase (Required for OKX)
+            OpenAI API Key
           </label>
           <input
             type="password"
-            value={passphrase}
+            value={openaiApiKey}
             onChange={(e) => {
-              setPassphrase(e.target.value);
+              setOpenaiApiKey(e.target.value);
               setError(null);
             }}
-            placeholder="Enter your passphrase"
+            placeholder="sk-... (optional)"
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
+          <p className="text-xs text-gray-500 mt-1">
+            Get your key from <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">OpenAI Platform</a>
+          </p>
         </div>
-      )}
+      </div>
 
       {error && (
         <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
@@ -200,19 +201,21 @@ export default function ApiKeyStep({ onSkip, onComplete }: ApiKeyStepProps) {
       )}
 
       <div className="flex space-x-3">
-        <Button
-          variant="secondary"
-          onClick={handleTest}
-          disabled={!canProceed || isTesting || isSaving}
-          className="flex-1"
-        >
-          {isTesting ? 'Testing...' : 'Test Connection'}
-        </Button>
+        {apiKey && apiSecret && (
+          <Button
+            variant="secondary"
+            onClick={handleTest}
+            disabled={!apiKey.trim() || !apiSecret.trim() || isTesting || isSaving}
+            className="flex-1"
+          >
+            {isTesting ? 'Testing...' : 'Test Connection'}
+          </Button>
+        )}
         <Button
           variant="primary"
           onClick={handleSave}
-          disabled={!canProceed || isSaving || isTesting}
-          className="flex-1"
+          disabled={isSaving || isTesting}
+          className={apiKey && apiSecret ? "flex-1" : "flex-1"}
         >
           {isSaving ? 'Saving...' : 'Save & Continue'}
         </Button>

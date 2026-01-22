@@ -9,7 +9,7 @@ export interface ApiKey {
 }
 
 export interface ApiKeyFormData {
-  exchange: 'bybit' | 'okx' | 'bitunix'
+  exchange: 'bybit' | 'mexc' | 'bitunix'
   apiKey: string
   apiSecret: string
   passphrase?: string
