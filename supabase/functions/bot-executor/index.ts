@@ -9189,15 +9189,27 @@ class BotExecutor {
         requestBody.qty = formattedQty.toString(); // Ensure it's a string
         if (orderType === 'Limit') {
           // CRITICAL: Validate price before setting it - Bybit rejects LIMIT orders with price 0
-          if (!effectiveLimitPrice || effectiveLimitPrice <= 0 || !Number.isFinite(effectiveLimitPrice)) {
-            console.warn(`⚠️ LIMIT order requested but price is invalid (${effectiveLimitPrice}), converting to MARKET order`);
+          // Also check if the formatted price would be 0 (rounding issue)
+          const formattedPrice = effectiveLimitPrice > 0 ? effectiveLimitPrice.toFixed(priceDecimals) : '0';
+          const parsedFormattedPrice = parseFloat(formattedPrice);
+          
+          if (!effectiveLimitPrice || effectiveLimitPrice <= 0 || !Number.isFinite(effectiveLimitPrice) || parsedFormattedPrice <= 0) {
+            console.warn(`⚠️ LIMIT order requested but price is invalid (effectiveLimitPrice=${effectiveLimitPrice}, formatted=${formattedPrice}), converting to MARKET order`);
             orderType = 'Market';
             requestBody.orderType = 'Market';
             // Don't set price for Market orders
           } else {
-            requestBody.price = effectiveLimitPrice.toFixed(priceDecimals);
-            requestBody.timeInForce = 'GTC';
-            console.log(`💰 Futures LIMIT order: qty=${formattedQty}, price=$${requestBody.price}`);
+            // Use currentMarketPrice as fallback if effectiveLimitPrice is invalid
+            const finalPrice = effectiveLimitPrice > 0 ? effectiveLimitPrice : (currentMarketPrice > 0 ? currentMarketPrice : 0);
+            if (finalPrice <= 0) {
+              console.warn(`⚠️ Both effectiveLimitPrice and currentMarketPrice are invalid, converting to MARKET order`);
+              orderType = 'Market';
+              requestBody.orderType = 'Market';
+            } else {
+              requestBody.price = finalPrice.toFixed(priceDecimals);
+              requestBody.timeInForce = 'GTC';
+              console.log(`💰 Futures LIMIT order: qty=${formattedQty}, price=$${requestBody.price} (from effectiveLimitPrice=${effectiveLimitPrice}, currentMarketPrice=${currentMarketPrice})`);
+            }
           }
         }
         if (orderType === 'Market') {
