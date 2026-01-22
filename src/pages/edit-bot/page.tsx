@@ -437,6 +437,74 @@ export default function EditBotPage() {
                   />
                 </div>
 
+                {/* Risk Management Section - Prominent at the top */}
+                <div className="bg-blue-50 dark:bg-blue-900/20 border-2 border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
+                    <i className="ri-shield-line text-blue-600"></i>
+                    Risk Management
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Leverage
+                      </label>
+                      <select
+                        value={formData.leverage}
+                        onChange={(e) => handleInputChange('leverage', parseInt(e.target.value))}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                      >
+                        <option value={1}>1x</option>
+                        <option value={2}>2x</option>
+                        <option value={3}>3x</option>
+                        <option value={5}>5x</option>
+                        <option value={10}>10x</option>
+                        <option value={20}>20x</option>
+                      </select>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Trading leverage multiplier
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Stop Loss (%)
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.stopLoss}
+                        onChange={(e) => handleInputChange('stopLoss', parseFloat(e.target.value))}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                        min="0.5"
+                        max="10"
+                        step="0.5"
+                        required
+                      />
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Maximum loss before closing
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Take Profit (%)
+                      </label>
+                      <input
+                        type="number"
+                        value={formData.takeProfit}
+                        onChange={(e) => handleInputChange('takeProfit', parseFloat(e.target.value))}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                        min="1"
+                        max="20"
+                        step="0.5"
+                        required
+                      />
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        Target profit before closing
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -520,24 +588,6 @@ export default function EditBotPage() {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Leverage
-                    </label>
-                    <select
-                      value={formData.leverage}
-                      onChange={(e) => handleInputChange('leverage', parseInt(e.target.value))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                      <option value={1}>1x</option>
-                      <option value={2}>2x</option>
-                      <option value={3}>3x</option>
-                      <option value={5}>5x</option>
-                      <option value={10}>10x</option>
-                      <option value={20}>20x</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
                       Risk Level
                     </label>
                     <select
@@ -567,44 +617,6 @@ export default function EditBotPage() {
                     />
                     <p className="text-xs text-gray-500 mt-1">
                       Base trade amount in USD (will be multiplied by leverage and risk level)
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Stop Loss (%)
-                    </label>
-                    <input
-                      type="number"
-                      value={formData.stopLoss}
-                      onChange={(e) => handleInputChange('stopLoss', parseFloat(e.target.value))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      min="0.5"
-                      max="10"
-                      step="0.5"
-                      required
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Maximum loss percentage before closing position
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Take Profit (%)
-                    </label>
-                    <input
-                      type="number"
-                      value={formData.takeProfit}
-                      onChange={(e) => handleInputChange('takeProfit', parseFloat(e.target.value))}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      min="1"
-                      max="20"
-                      step="0.5"
-                      required
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Target profit percentage before closing position
                     </p>
                   </div>
                 </div>
