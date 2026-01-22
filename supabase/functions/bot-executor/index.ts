@@ -2352,43 +2352,78 @@ class MarketDataFetcher {
         };
         const bitunixInterval = intervalMap[timeframe] || '1h';
         
-        for (const symbolVariant of symbolVariants) {
-          try {
-            const url = `https://api.bitunix.com/api/v1/market/klines?symbol=${symbolVariant}&marketType=${marketType}&interval=${bitunixInterval}&limit=${limit}`;
-            const response = await fetch(url);
-            
-            // Check content-type before parsing JSON
-            const contentType = response.headers.get('content-type') || '';
-            if (!contentType.includes('application/json')) {
-              const errorText = await response.text().catch(() => '');
-              console.warn(`⚠️ Bitunix klines API returned non-JSON (${contentType}) for ${symbolVariant}: ${errorText.substring(0, 200)}`);
-              continue; // Try next variant
-            }
-            
-            const data = await response.json();
-            
-            // Bitunix returns: { code: 0, data: [[timestamp, open, high, low, close, volume], ...] }
-            if (data.code === 0 && data.data && Array.isArray(data.data) && data.data.length > 0) {
-              const klines = data.data.reverse().map((k: any[]) => [
-                parseFloat(k[0]), // timestamp
-                parseFloat(k[1]), // open
-                parseFloat(k[2]), // high
-                parseFloat(k[3]), // low
-                parseFloat(k[4]), // close
-                parseFloat(k[5])  // volume
-              ]);
+        // CRITICAL FIX: Use correct API domain based on market type
+        // Futures uses fapi.bitunix.com, spot uses api.bitunix.com
+        // Try both domains to handle edge cases
+        const baseUrls = marketType === 'futures' 
+          ? ['https://fapi.bitunix.com', 'https://api.bitunix.com'] 
+          : ['https://api.bitunix.com', 'https://fapi.bitunix.com'];
+        
+        for (const baseUrl of baseUrls) {
+          for (const symbolVariant of symbolVariants) {
+            try {
+              // Try multiple endpoint variants
+              const endpointVariants = [
+                `/api/v1/market/klines?symbol=${symbolVariant}&marketType=${marketType}&interval=${bitunixInterval}&limit=${limit}`,
+                `/api/v1/market/klines?symbol=${symbolVariant}&interval=${bitunixInterval}&limit=${limit}`,
+                `/api/v1/market/kline?symbol=${symbolVariant}&marketType=${marketType}&interval=${bitunixInterval}&limit=${limit}`,
+                `/api/v1/market/kline?symbol=${symbolVariant}&interval=${bitunixInterval}&limit=${limit}`
+              ];
               
-              if (klines.length > 0) {
-                console.log(`✅ Fetched ${klines.length} klines for ${symbolVariant} from Bitunix`);
-                return klines;
+              for (const endpoint of endpointVariants) {
+                try {
+                  const url = `${baseUrl}${endpoint}`;
+                  const response = await fetch(url, {
+                    signal: AbortSignal.timeout(10000) // 10 second timeout
+                  });
+                  
+                  // Check content-type before parsing JSON
+                  const contentType = response.headers.get('content-type') || '';
+                  if (!contentType.includes('application/json')) {
+                    const errorText = await response.text().catch(() => '');
+                    // 404 typically means symbol doesn't exist, log but continue
+                    if (response.status === 404) {
+                      console.warn(`⚠️ Bitunix klines API returned 404 for ${symbolVariant} at ${baseUrl}${endpoint} - symbol may not exist`);
+                    } else {
+                      console.warn(`⚠️ Bitunix klines API returned non-JSON (${contentType}) for ${symbolVariant} at ${baseUrl}${endpoint}: ${errorText.substring(0, 200)}`);
+                    }
+                    continue; // Try next endpoint variant
+                  }
+                  
+                  const data = await response.json();
+                  
+                  // Bitunix returns: { code: 0, data: [[timestamp, open, high, low, close, volume], ...] }
+                  if (data.code === 0 && data.data && Array.isArray(data.data) && data.data.length > 0) {
+                    const klines = data.data.reverse().map((k: any[]) => [
+                      parseFloat(k[0]), // timestamp
+                      parseFloat(k[1]), // open
+                      parseFloat(k[2]), // high
+                      parseFloat(k[3]), // low
+                      parseFloat(k[4]), // close
+                      parseFloat(k[5])  // volume
+                    ]);
+                    
+                    if (klines.length > 0) {
+                      console.log(`✅ Fetched ${klines.length} klines for ${symbolVariant} from Bitunix (${baseUrl})`);
+                      return klines;
+                    }
+                  } else if (data.code !== 0) {
+                    // Log non-zero codes but continue trying
+                    console.log(`   Bitunix klines API returned code ${data.code} for ${symbolVariant} at ${baseUrl}${endpoint}: ${data.msg || data.message || 'Unknown error'}`);
+                  }
+                } catch (endpointErr) {
+                  // Continue to next endpoint variant
+                  continue;
+                }
               }
+            } catch (err) {
+              // Continue to next symbol variant
+              continue;
             }
-          } catch (err) {
-            continue; // Try next variant
           }
         }
         
-        console.warn(`⚠️ Could not fetch klines for ${symbol} from Bitunix`);
+        console.warn(`⚠️ Could not fetch klines for ${symbol} from Bitunix (tried ${baseUrls.length} base URLs, ${symbolVariants.length} symbol variants)`);
         return [];
       }
       
@@ -8978,15 +9013,27 @@ class BotExecutor {
         
         // Limit orders use base currency qty with explicit price
         if (orderType === 'Limit') {
-          const finalQtyValue = parseFloat(formattedQty);
-          if (isNaN(finalQtyValue) || finalQtyValue < minQty || finalQtyValue > maxQty) {
-            throw new Error(`Invalid formatted quantity ${formattedQty} for ${symbol}. Min: ${minQty}, Max: ${maxQty}`);
+          // CRITICAL: Validate price before setting it - Bybit rejects LIMIT orders with price 0
+          if (!effectiveLimitPrice || effectiveLimitPrice <= 0 || !Number.isFinite(effectiveLimitPrice)) {
+            console.warn(`⚠️ LIMIT order requested but price is invalid (${effectiveLimitPrice}), converting to MARKET order`);
+            orderType = 'Market';
+            requestBody.orderType = 'Market';
+            // Fall through to Market order logic below
+          } else {
+            const finalQtyValue = parseFloat(formattedQty);
+            if (isNaN(finalQtyValue) || finalQtyValue < minQty || finalQtyValue > maxQty) {
+              throw new Error(`Invalid formatted quantity ${formattedQty} for ${symbol}. Min: ${minQty}, Max: ${maxQty}`);
+            }
+            requestBody.qty = formattedQty.toString();
+            requestBody.price = effectiveLimitPrice.toFixed(priceDecimals);
+            requestBody.timeInForce = 'GTC';
+            console.log(`💰 Spot LIMIT order: qty=${formattedQty}, price=$${requestBody.price}`);
           }
-          requestBody.qty = formattedQty.toString();
-          requestBody.price = effectiveLimitPrice.toFixed(priceDecimals);
-          requestBody.timeInForce = 'GTC';
-          console.log(`💰 Spot LIMIT order: qty=${formattedQty}, price=$${requestBody.price}`);
-        } else if (capitalizedSide === 'Buy') {
+        }
+        
+        // Market orders (including converted from Limit)
+        if (orderType === 'Market') {
+          if (capitalizedSide === 'Buy') {
           // For buy orders, use quoteCoin (USDT amount) - this is the default
           // Buy orders: marketUnit='quoteCoin' means qty is in USDT (quote currency)
           // For manual orders, 'amount' parameter may already be in USDT (not converted to quantity)
@@ -9013,7 +9060,7 @@ class BotExecutor {
           if (finalOrderValue > (isLikelyUSDTAmount ? amount : calculatedOrderValue)) {
             console.log(`   ⚠️ Adjusted order value to $${finalOrderValue.toFixed(2)} to meet minimum $${minOrderValue}`);
           }
-        } else {
+          } else {
           // Sell orders: marketUnit=baseCoin means qty is in base currency
           // Need to validate base currency quantity against step size
           const finalQtyValue = parseFloat(formattedQty);
@@ -9037,6 +9084,7 @@ class BotExecutor {
           requestBody.qty = formattedQty.toString(); // Base currency quantity
           
           console.log(`💰 Spot SELL order: marketUnit=baseCoin, qty=${formattedQty} ${symbol.replace('USDT', '')}`);
+          }
         }
         // For spot orders with marketUnit='quoteCoin', we don't validate base currency quantity against step size
         // because qty represents USDT amount, not base currency quantity
@@ -9066,10 +9114,19 @@ class BotExecutor {
         // Bybit requires qty as string, not number, and must match step size precisely
         requestBody.qty = formattedQty.toString(); // Ensure it's a string
         if (orderType === 'Limit') {
-          requestBody.price = effectiveLimitPrice.toFixed(priceDecimals);
-          requestBody.timeInForce = 'GTC';
-          console.log(`💰 Futures LIMIT order: qty=${formattedQty}, price=$${requestBody.price}`);
-        } else {
+          // CRITICAL: Validate price before setting it - Bybit rejects LIMIT orders with price 0
+          if (!effectiveLimitPrice || effectiveLimitPrice <= 0 || !Number.isFinite(effectiveLimitPrice)) {
+            console.warn(`⚠️ LIMIT order requested but price is invalid (${effectiveLimitPrice}), converting to MARKET order`);
+            orderType = 'Market';
+            requestBody.orderType = 'Market';
+            // Don't set price for Market orders
+          } else {
+            requestBody.price = effectiveLimitPrice.toFixed(priceDecimals);
+            requestBody.timeInForce = 'GTC';
+            console.log(`💰 Futures LIMIT order: qty=${formattedQty}, price=$${requestBody.price}`);
+          }
+        }
+        if (orderType === 'Market') {
           console.log(`💰 Futures MARKET order using qty: ${formattedQty}`);
         }
       }
@@ -12447,16 +12504,29 @@ class BotExecutor {
                 console.log(`   ${baseUrl}${endpoint} returned code ${data.code}: ${errorMsg}`);
             // IMPORTANT: Code 2 can be transient even when a symbol/position exists.
             // Track Code 2 count and fail fast if we see too many (likely systemic issue).
+            // Code 2 with "Parameter error" often means the symbol doesn't exist or parameters are invalid.
             if (data.code === 2) {
               sawCode2 = true;
               code2Count++;
               lastCode2Msg = errorMsg;
               lastCode2Endpoint = `${baseUrl}${endpoint}${queryParams ? '?' + queryParams : ''}`;
               
+              // Determine error type for better logging
+              const isParameterError = errorMsg.toLowerCase().includes('parameter') || 
+                                       errorMsg.toLowerCase().includes('param') ||
+                                       errorMsg.toLowerCase().includes('invalid');
+              const errorType = isParameterError ? 'Parameter error' : 'System error';
+              
               if (code2Count < MAX_CODE2_ATTEMPTS) {
-                console.warn(`   ⚠️ Code 2 (System error) from ${baseUrl}${endpoint} [${code2Count}/${MAX_CODE2_ATTEMPTS}] - will continue trying other endpoints/params`);
+                console.warn(`   ⚠️ Code 2 (${errorType}) from ${baseUrl}${endpoint} [${code2Count}/${MAX_CODE2_ATTEMPTS}] - will continue trying other endpoints/params`);
+                if (isParameterError) {
+                  console.warn(`   💡 Parameter error often indicates: symbol may not exist, invalid query params, or API endpoint mismatch`);
+                }
               } else {
-                console.warn(`   ⚠️ Code 2 (System error) from ${baseUrl}${endpoint} [${code2Count}/${MAX_CODE2_ATTEMPTS}] - stopping attempts to reduce API load`);
+                console.warn(`   ⚠️ Code 2 (${errorType}) from ${baseUrl}${endpoint} [${code2Count}/${MAX_CODE2_ATTEMPTS}] - stopping attempts to reduce API load`);
+                if (isParameterError) {
+                  console.warn(`   💡 Likely cause: Symbol ${symbol} may not exist on Bitunix, or all parameter combinations are invalid`);
+                }
                 break; // Exit inner loop
               }
               continue;
@@ -12483,12 +12553,22 @@ class BotExecutor {
     console.warn(`   3. API key doesn't have position read permissions`);
     console.warn(`   4. Symbol may not exist on this exchange`);
     if (sawCode2) {
+      const isParameterError = lastCode2Msg?.toLowerCase().includes('parameter') || 
+                               lastCode2Msg?.toLowerCase().includes('param') ||
+                               lastCode2Msg?.toLowerCase().includes('invalid');
+      if (isParameterError) {
+        console.warn(`   ⚠️ Position API error during mismatch recovery: Code 2 Parameter error`);
+        console.warn(`   💡 This usually means the symbol ${symbol} does not exist on Bitunix exchange`);
+        console.warn(`   💡 Verify the symbol is available on Bitunix before creating bots for it`);
+      }
       return {
         error: true,
         errorCode: 2,
         errorMessage: lastCode2Msg || 'System error',
+        errorType: isParameterError ? 'parameter_error' : 'system_error',
         symbol,
-        endpoint: lastCode2Endpoint || 'multiple'
+        endpoint: lastCode2Endpoint || 'multiple',
+        likelyCause: isParameterError ? 'symbol_may_not_exist' : 'api_error'
       };
     }
     return null;
@@ -13101,33 +13181,71 @@ class BotExecutor {
       }
 
       if (!isValidPositionId(positionId)) {
-        console.log(`⏳ Resolving Bitunix positionId via pending positions endpoint (retry up to 6x)...`);
-        for (let i = 1; i <= 6; i++) {
+        console.log(`⏳ Resolving Bitunix positionId and waiting for OPEN position (retry up to 10x with 2s delays)...`);
+        for (let i = 1; i <= 10; i++) {
           try {
-            if (i > 1) await new Promise((resolve) => setTimeout(resolve, 1000));
+            if (i > 1) await new Promise((resolve) => setTimeout(resolve, 2000)); // 2 second delay between retries
             attemptedPositionFetch = true;
             const pos = await this.getBitunixPosition(apiKey, apiSecret, symbol);
             if (pos && !pos.error && isValidPositionId(pos.positionId)) {
               positionInfo = pos;
               positionId = String(pos.positionId);
               positionVerified = !!(pos.size && pos.size > 0);
-              console.log(`✅ Resolved positionId from position API: ${positionId} (attempt ${i}/6)`);
-              break;
+              
+              // CRITICAL: For Bitunix, wait for OPEN position (not just pending)
+              // Pending positions may not be ready for SL/TP placement
+              const sourceType = pos.sourceType || 'unknown';
+              const isOpen = sourceType === 'open';
+              const isPending = sourceType === 'pending';
+              
+              if (isOpen && positionVerified) {
+                console.log(`✅ Resolved OPEN position with positionId: ${positionId} (attempt ${i}/10)`);
+                console.log(`   Position status: OPEN, size: ${pos.size}, sourceType: ${sourceType}`);
+                break; // Found open position, proceed
+              } else if (isPending && positionVerified) {
+                console.log(`   ⏳ Position is PENDING (not yet OPEN) for ${symbol} (attempt ${i}/10)`);
+                console.log(`   Waiting for position to become OPEN before setting SL/TP...`);
+                // Continue waiting - don't break yet
+              } else {
+                console.log(`   ⏳ Position found but not ready: sourceType=${sourceType}, verified=${positionVerified}, size=${pos.size} (attempt ${i}/10)`);
+              }
             }
             if (pos && pos.error) {
               console.warn(
-                `   ⚠️ Position API error while resolving positionId (attempt ${i}/6): Code ${pos.errorCode} ${pos.errorMessage || pos.message || ''}`
+                `   ⚠️ Position API error while resolving positionId (attempt ${i}/10): Code ${pos.errorCode} ${pos.errorMessage || pos.message || ''}`
               );
               // IMPORTANT: Code 2 can be transient; do not break early.
-            } else {
-              console.log(`   ⏳ positionId not yet indexed for ${symbol} (attempt ${i}/6)`);
+            } else if (!pos) {
+              console.log(`   ⏳ Position not yet indexed for ${symbol} (attempt ${i}/10)`);
             }
           } catch (e) {
-            console.warn(`   ⚠️ Error resolving positionId (attempt ${i}/6):`, e instanceof Error ? e.message : String(e));
+            console.warn(`   ⚠️ Error resolving positionId (attempt ${i}/10):`, e instanceof Error ? e.message : String(e));
           }
         }
       } else {
         console.log(`✅ Using positionId from order response: ${positionId}`);
+        // Still need to verify position is OPEN, not just pending
+        if (!positionInfo) {
+          console.log(`⏳ Verifying position is OPEN (not just pending) before setting SL/TP...`);
+          for (let i = 1; i <= 5; i++) {
+            try {
+              if (i > 1) await new Promise((resolve) => setTimeout(resolve, 2000));
+              const pos = await this.getBitunixPosition(apiKey, apiSecret, symbol);
+              if (pos && !pos.error && isValidPositionId(pos.positionId)) {
+                positionInfo = pos;
+                const sourceType = pos.sourceType || 'unknown';
+                if (sourceType === 'open' && pos.size && pos.size > 0) {
+                  console.log(`✅ Position confirmed OPEN: positionId=${pos.positionId}, size=${pos.size}`);
+                  break;
+                } else {
+                  console.log(`   ⏳ Position not yet OPEN: sourceType=${sourceType} (attempt ${i}/5)`);
+                }
+              }
+            } catch (e) {
+              console.warn(`   ⚠️ Error verifying position status (attempt ${i}/5):`, e instanceof Error ? e.message : String(e));
+            }
+          }
+        }
       }
       
       const positionSymbol =
@@ -13169,7 +13287,8 @@ class BotExecutor {
         }
       }
 
-      // Require that the position came from a pending/open endpoint; history-only positions often lead to 30004.
+      // CRITICAL: For Bitunix, require OPEN position (not just pending) before setting SL/TP
+      // Pending positions may not be ready for SL/TP placement and can cause Code 2 Parameter errors
       if (positionInfo && positionInfo.sourceType && !['pending', 'open'].includes(positionInfo.sourceType)) {
         console.warn(
           `⚠️ Skipping Bitunix SL/TP because position came from history (${positionInfo.sourceType}); no confirmed open position.`
@@ -13177,13 +13296,46 @@ class BotExecutor {
         return;
       }
 
-      // Stricter guard: only proceed when we have a confirmed open/pending position with size > 0.
-      if (!positionInfo || !positionVerified || !(positionInfo?.size > 0) || !['pending', 'open'].includes(positionInfo.sourceType || '')) {
+      // CRITICAL: Only proceed with OPEN positions (not pending) for Bitunix SL/TP
+      // If position is still pending, wait a bit more and retry
+      if (positionInfo && positionInfo.sourceType === 'pending') {
+        console.log(`⏳ Position is still PENDING, waiting for it to become OPEN before setting SL/TP...`);
+        for (let retry = 1; retry <= 5; retry++) {
+          await new Promise((resolve) => setTimeout(resolve, 2000)); // 2 second delay
+          try {
+            const pos = await this.getBitunixPosition(apiKey, apiSecret, symbol);
+            if (pos && !pos.error && pos.sourceType === 'open' && pos.size && pos.size > 0) {
+              positionInfo = pos;
+              positionId = String(pos.positionId);
+              positionVerified = true;
+              console.log(`✅ Position is now OPEN: positionId=${positionId}, size=${pos.size} (retry ${retry}/5)`);
+              break;
+            } else {
+              console.log(`   ⏳ Still waiting for OPEN position (retry ${retry}/5)...`);
+            }
+          } catch (e) {
+            console.warn(`   ⚠️ Error checking position status (retry ${retry}/5):`, e instanceof Error ? e.message : String(e));
+          }
+        }
+      }
+
+      // Final check: Require OPEN position with size > 0
+      if (!positionInfo || !positionVerified || !(positionInfo?.size > 0)) {
         console.warn(
-          `⚠️ Skipping Bitunix SL/TP: no confirmed pending/open position with size > 0 for ${normalizedSymbol}.`
+          `⚠️ Skipping Bitunix SL/TP: no confirmed OPEN position with size > 0 for ${normalizedSymbol}.`
         );
         console.warn(`   positionId=${positionId || 'NONE'}, sourceType=${positionInfo?.sourceType || 'unknown'}, size=${positionInfo?.size || 'NA'}`);
         return;
+      }
+
+      // CRITICAL: Prefer OPEN positions over PENDING for Bitunix
+      if (positionInfo.sourceType === 'pending') {
+        console.warn(
+          `⚠️ Position is still PENDING after retries. Bitunix may require OPEN positions for SL/TP.`
+        );
+        console.warn(`   Proceeding with caution - SL/TP may fail with Code 2 Parameter error if position not fully open.`);
+      } else if (positionInfo.sourceType === 'open') {
+        console.log(`✅ Position confirmed OPEN - safe to set SL/TP for ${normalizedSymbol}`);
       }
 
       // #region agent log
