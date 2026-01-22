@@ -39,10 +39,12 @@ export default defineConfig({
         manualChunks: (id) => {
           // Split vendor chunks
           if (id.includes('node_modules')) {
-            // CRITICAL: Keep React and React-DOM together to prevent multiple instances
-            // React MUST be in its own chunk and load first
+            // CRITICAL: DO NOT split React - keep it in entry bundle for immediate availability
+            // This prevents "Cannot read properties of undefined (reading 'forwardRef')" errors
+            // React must be available before any other code runs
             if (id.includes('react') || id.includes('react-dom') || id.includes('scheduler')) {
-              return 'vendor-react';
+              // Return undefined to keep React in the entry bundle
+              return undefined;
             }
             // React Router depends on React, so keep it separate but after React
             if (id.includes('react-router')) {
