@@ -40,6 +40,8 @@ export default function BotsPage() {
   const [editingStopLossValue, setEditingStopLossValue] = useState<number | null>(null);
   const [editingTakeProfitBotId, setEditingTakeProfitBotId] = useState<string | null>(null);
   const [editingTakeProfitValue, setEditingTakeProfitValue] = useState<number | null>(null);
+  const [editingTimeframeBotId, setEditingTimeframeBotId] = useState<string | null>(null);
+  const [editingTimeframeValue, setEditingTimeframeValue] = useState<string | null>(null);
   const [webhookExpandedBot, setWebhookExpandedBot] = useState<string | null>(null);
   const [webhookSignals, setWebhookSignals] = useState<Record<string, ManualTradeSignal[]>>({});
   const [webhookSignalsLoading, setWebhookSignalsLoading] = useState<Record<string, boolean>>({});
@@ -1499,6 +1501,118 @@ export default function BotsPage() {
                     </p>
                   </div>
                 </div>
+
+                {/* Timeframe - Outside Bot Box */}
+                {!isWebhookView && (
+                <div className="pt-3 border-t border-gray-100 dark:border-gray-700">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center">
+                        <i className="ri-bar-chart-line mr-1 text-blue-600"></i>
+                        Timeframe:
+                        <HelpTooltip text="Chart interval for technical analysis. This determines how often the bot analyzes market data and makes trading decisions." />
+                      </span>
+                      <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                        {bot.timeframe || '1h'}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (editingTimeframeBotId === bot.id) {
+                          setEditingTimeframeBotId(null);
+                          setEditingTimeframeValue(null);
+                        } else {
+                          setEditingTimeframeBotId(bot.id);
+                          setEditingTimeframeValue(bot.timeframe || '1h');
+                        }
+                      }}
+                      className="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1"
+                      title="Edit timeframe"
+                    >
+                      <i className="ri-edit-line"></i>
+                      Edit
+                    </button>
+                  </div>
+                  
+                  {/* Inline Editor for Timeframe */}
+                  {editingTimeframeBotId === bot.id && (
+                    <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                      <div className="flex items-center gap-2 mb-2">
+                        <label className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                          Timeframe:
+                        </label>
+                        <select
+                          value={editingTimeframeValue || bot.timeframe || '1h'}
+                          onChange={(e) => setEditingTimeframeValue(e.target.value)}
+                          className="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                        >
+                          <option value="1m">1 Minute</option>
+                          <option value="3m">3 Minutes</option>
+                          <option value="5m">5 Minutes</option>
+                          <option value="15m">15 Minutes</option>
+                          <option value="30m">30 Minutes</option>
+                          <option value="45m">45 Minutes</option>
+                          <option value="1h">1 Hour</option>
+                          <option value="2h">2 Hours</option>
+                          <option value="3h">3 Hours</option>
+                          <option value="4h">4 Hours</option>
+                          <option value="5h">5 Hours</option>
+                          <option value="6h">6 Hours</option>
+                          <option value="7h">7 Hours</option>
+                          <option value="8h">8 Hours</option>
+                          <option value="9h">9 Hours</option>
+                          <option value="10h">10 Hours</option>
+                          <option value="12h">12 Hours</option>
+                          <option value="1d">1 Day</option>
+                          <option value="1w">1 Week</option>
+                          <option value="1M">1 Month</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          onClick={async () => {
+                            if (editingTimeframeValue) {
+                              try {
+                                await updateBot(bot.id, {
+                                  timeframe: editingTimeframeValue
+                                } as any);
+                                
+                                setEditingTimeframeBotId(null);
+                                setEditingTimeframeValue(null);
+                                
+                                setTimeout(() => {
+                                  window.location.reload();
+                                }, 500);
+                                
+                                alert(`✅ Timeframe updated to ${editingTimeframeValue}`);
+                              } catch (error: any) {
+                                console.error('Error updating timeframe:', error);
+                                const errorMsg = error?.message || 'Failed to update timeframe. Please try again.';
+                                alert(`Failed to update timeframe: ${errorMsg}`);
+                              }
+                            }
+                          }}
+                          className="text-xs"
+                        >
+                          Save
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => {
+                            setEditingTimeframeBotId(null);
+                            setEditingTimeframeValue(null);
+                          }}
+                          className="text-xs"
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                )}
 
                 {/* Bot Timestamp - Start Time and Running Duration */}
                 {(() => {
