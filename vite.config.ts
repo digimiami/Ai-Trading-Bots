@@ -39,7 +39,8 @@ export default defineConfig({
         manualChunks: (id) => {
           // Split vendor chunks
           if (id.includes('node_modules')) {
-            if (id.includes('react') || id.includes('react-dom')) {
+            // CRITICAL: Keep React and React-DOM together to prevent multiple instances
+            if (id.includes('react') || id.includes('react-dom') || id.includes('scheduler')) {
               return 'vendor-react';
             }
             if (id.includes('@supabase')) {
@@ -60,6 +61,8 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+    // Ensure React is resolved correctly and not duplicated
+    dedupe: ['react', 'react-dom'],
   },
   server: {
     host: true,

@@ -1,5 +1,4 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
 
 interface Props {
   children: ReactNode;
@@ -36,6 +35,20 @@ class ErrorBoundaryClass extends Component<Props, State> {
       error,
       errorInfo,
     });
+
+    // Check for React-related errors
+    if (error.message?.includes('forwardRef') || error.message?.includes('Cannot read properties of undefined')) {
+      console.error('⚠️ React module resolution issue detected. This may be caused by:');
+      console.error('1. Multiple React instances loaded');
+      console.error('2. React/React-DOM version mismatch');
+      console.error('3. Chunk loading issues');
+      console.error('Attempting to reload page to fix...');
+      
+      // Auto-reload for React errors after a delay
+      setTimeout(() => {
+        window.location.reload();
+      }, 2000);
+    }
 
     // Log to error tracking service if available
     if (window.location.hostname !== 'localhost') {
