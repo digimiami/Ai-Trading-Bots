@@ -34,6 +34,12 @@ export default function BotsPage() {
   const [editingTradeAmountValue, setEditingTradeAmountValue] = useState<number | null>(null);
   const [editingCooldownBotId, setEditingCooldownBotId] = useState<string | null>(null);
   const [editingCooldownValue, setEditingCooldownValue] = useState<number | null>(null);
+  const [editingLeverageBotId, setEditingLeverageBotId] = useState<string | null>(null);
+  const [editingLeverageValue, setEditingLeverageValue] = useState<number | null>(null);
+  const [editingStopLossBotId, setEditingStopLossBotId] = useState<string | null>(null);
+  const [editingStopLossValue, setEditingStopLossValue] = useState<number | null>(null);
+  const [editingTakeProfitBotId, setEditingTakeProfitBotId] = useState<string | null>(null);
+  const [editingTakeProfitValue, setEditingTakeProfitValue] = useState<number | null>(null);
   const [webhookExpandedBot, setWebhookExpandedBot] = useState<string | null>(null);
   const [webhookSignals, setWebhookSignals] = useState<Record<string, ManualTradeSignal[]>>({});
   const [webhookSignalsLoading, setWebhookSignalsLoading] = useState<Record<string, boolean>>({});
@@ -1787,6 +1793,303 @@ export default function BotsPage() {
                       </div>
                     </div>
                   )}
+                </div>
+                )}
+
+                {/* Risk Management Section - Leverage, Stop Loss, Take Profit */}
+                {!isWebhookView && (
+                <div className="pt-3 border-t border-gray-100">
+                  <div className="mb-3">
+                    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2 mb-3">
+                      <i className="ri-shield-line text-blue-600"></i>
+                      Risk Management
+                    </h4>
+                  </div>
+                  
+                  {/* Leverage */}
+                  <div className="mb-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center">
+                          Leverage:
+                          <HelpTooltip text="Trading leverage multiplier. Higher leverage increases both potential profits and losses. Use with caution." />
+                        </span>
+                        <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                          {bot.leverage || 1}x
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          if (editingLeverageBotId === bot.id) {
+                            setEditingLeverageBotId(null);
+                            setEditingLeverageValue(null);
+                          } else {
+                            setEditingLeverageBotId(bot.id);
+                            setEditingLeverageValue(bot.leverage || 1);
+                          }
+                        }}
+                        className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                        title="Edit leverage"
+                      >
+                        <i className="ri-edit-line"></i>
+                        Edit
+                      </button>
+                    </div>
+                    
+                    {/* Inline Editor for Leverage */}
+                    {editingLeverageBotId === bot.id && (
+                      <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                        <div className="flex items-center gap-2 mb-2">
+                          <label className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                            Leverage:
+                          </label>
+                          <select
+                            value={editingLeverageValue || bot.leverage || 1}
+                            onChange={(e) => setEditingLeverageValue(parseInt(e.target.value) || 1)}
+                            className="w-24 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                          >
+                            <option value={1}>1x</option>
+                            <option value={2}>2x</option>
+                            <option value={3}>3x</option>
+                            <option value={5}>5x</option>
+                            <option value={10}>10x</option>
+                            <option value={20}>20x</option>
+                          </select>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            onClick={async () => {
+                              if (editingLeverageValue && editingLeverageValue >= 1 && editingLeverageValue <= 20) {
+                                try {
+                                  await updateBot(bot.id, {
+                                    leverage: editingLeverageValue
+                                  } as any);
+                                  
+                                  setEditingLeverageBotId(null);
+                                  setEditingLeverageValue(null);
+                                  
+                                  setTimeout(() => {
+                                    window.location.reload();
+                                  }, 500);
+                                  
+                                  alert(`✅ Leverage updated to ${editingLeverageValue}x`);
+                                } catch (error: any) {
+                                  console.error('Error updating leverage:', error);
+                                  const errorMsg = error?.message || 'Failed to update leverage. Please try again.';
+                                  alert(`Failed to update leverage: ${errorMsg}`);
+                                }
+                              } else {
+                                alert('Please select a valid leverage between 1x and 20x');
+                              }
+                            }}
+                            className="text-xs"
+                          >
+                            Save
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => {
+                              setEditingLeverageBotId(null);
+                              setEditingLeverageValue(null);
+                            }}
+                            className="text-xs"
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Stop Loss */}
+                  <div className="mb-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center">
+                          Stop Loss:
+                          <HelpTooltip text="Maximum loss percentage before the position is automatically closed. This protects your capital from excessive losses." />
+                        </span>
+                        <span className="text-sm font-semibold text-red-600 dark:text-red-400">
+                          {(bot.stopLoss || 2.0).toFixed(1)}%
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          if (editingStopLossBotId === bot.id) {
+                            setEditingStopLossBotId(null);
+                            setEditingStopLossValue(null);
+                          } else {
+                            setEditingStopLossBotId(bot.id);
+                            setEditingStopLossValue(bot.stopLoss || 2.0);
+                          }
+                        }}
+                        className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                        title="Edit stop loss"
+                      >
+                        <i className="ri-edit-line"></i>
+                        Edit
+                      </button>
+                    </div>
+                    
+                    {/* Inline Editor for Stop Loss */}
+                    {editingStopLossBotId === bot.id && (
+                      <div className="mt-2 p-3 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
+                        <div className="flex items-center gap-2 mb-2">
+                          <label className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                            Stop Loss (%):
+                          </label>
+                          <input
+                            type="number"
+                            min="0.5"
+                            max="10"
+                            step="0.5"
+                            value={editingStopLossValue || bot.stopLoss || 2.0}
+                            onChange={(e) => setEditingStopLossValue(parseFloat(e.target.value) || 0.5)}
+                            className="w-24 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-red-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            onClick={async () => {
+                              if (editingStopLossValue && editingStopLossValue >= 0.5 && editingStopLossValue <= 10) {
+                                try {
+                                  await updateBot(bot.id, {
+                                    stopLoss: editingStopLossValue
+                                  } as any);
+                                  
+                                  setEditingStopLossBotId(null);
+                                  setEditingStopLossValue(null);
+                                  
+                                  setTimeout(() => {
+                                    window.location.reload();
+                                  }, 500);
+                                  
+                                  alert(`✅ Stop Loss updated to ${editingStopLossValue.toFixed(1)}%`);
+                                } catch (error: any) {
+                                  console.error('Error updating stop loss:', error);
+                                  const errorMsg = error?.message || 'Failed to update stop loss. Please try again.';
+                                  alert(`Failed to update stop loss: ${errorMsg}`);
+                                }
+                              } else {
+                                alert('Please enter a valid stop loss between 0.5% and 10%');
+                              }
+                            }}
+                            className="text-xs"
+                          >
+                            Save
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => {
+                              setEditingStopLossBotId(null);
+                              setEditingStopLossValue(null);
+                            }}
+                            className="text-xs"
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Take Profit */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center">
+                          Take Profit:
+                          <HelpTooltip text="Target profit percentage before the position is automatically closed. This locks in your gains." />
+                        </span>
+                        <span className="text-sm font-semibold text-green-600 dark:text-green-400">
+                          {(bot.takeProfit || 4.0).toFixed(1)}%
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          if (editingTakeProfitBotId === bot.id) {
+                            setEditingTakeProfitBotId(null);
+                            setEditingTakeProfitValue(null);
+                          } else {
+                            setEditingTakeProfitBotId(bot.id);
+                            setEditingTakeProfitValue(bot.takeProfit || 4.0);
+                          }
+                        }}
+                        className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                        title="Edit take profit"
+                      >
+                        <i className="ri-edit-line"></i>
+                        Edit
+                      </button>
+                    </div>
+                    
+                    {/* Inline Editor for Take Profit */}
+                    {editingTakeProfitBotId === bot.id && (
+                      <div className="mt-2 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                        <div className="flex items-center gap-2 mb-2">
+                          <label className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                            Take Profit (%):
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="20"
+                            step="0.5"
+                            value={editingTakeProfitValue || bot.takeProfit || 4.0}
+                            onChange={(e) => setEditingTakeProfitValue(parseFloat(e.target.value) || 1)}
+                            className="w-24 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-green-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            onClick={async () => {
+                              if (editingTakeProfitValue && editingTakeProfitValue >= 1 && editingTakeProfitValue <= 20) {
+                                try {
+                                  await updateBot(bot.id, {
+                                    takeProfit: editingTakeProfitValue
+                                  } as any);
+                                  
+                                  setEditingTakeProfitBotId(null);
+                                  setEditingTakeProfitValue(null);
+                                  
+                                  setTimeout(() => {
+                                    window.location.reload();
+                                  }, 500);
+                                  
+                                  alert(`✅ Take Profit updated to ${editingTakeProfitValue.toFixed(1)}%`);
+                                } catch (error: any) {
+                                  console.error('Error updating take profit:', error);
+                                  const errorMsg = error?.message || 'Failed to update take profit. Please try again.';
+                                  alert(`Failed to update take profit: ${errorMsg}`);
+                                }
+                              } else {
+                                alert('Please enter a valid take profit between 1% and 20%');
+                              }
+                            }}
+                            className="text-xs"
+                          >
+                            Save
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => {
+                              setEditingTakeProfitBotId(null);
+                              setEditingTakeProfitValue(null);
+                            }}
+                            className="text-xs"
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 )}
 
