@@ -1431,15 +1431,15 @@ export default function BotsPage() {
               </div>
             ) : (
               filteredBots.map((bot) => (
-              <Card key={bot.id} className="space-y-4 border-2 border-blue-200 dark:border-blue-700 shadow-lg shadow-blue-500/20 dark:shadow-blue-500/10 hover:shadow-xl hover:shadow-blue-500/30 dark:hover:shadow-blue-500/20 transition-shadow">
+              <Card key={bot.id} className="space-y-2 border-2 border-blue-200 dark:border-blue-700 shadow-lg shadow-blue-500/20 dark:shadow-blue-500/10 hover:shadow-xl hover:shadow-blue-500/30 dark:hover:shadow-blue-500/20 transition-shadow">
                 <div className="flex items-start justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                      <i className={`${bot.exchange === 'bybit' ? 'ri-currency-line' : 'ri-exchange-line'} text-blue-600 text-xl`}></i>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                      <i className={`${bot.exchange === 'bybit' ? 'ri-currency-line' : 'ri-exchange-line'} text-blue-600 text-base`}></i>
                     </div>
                     <div>
-                      <h3 className="font-semibold text-gray-900">{bot.name}</h3>
-                      <p className="text-sm text-gray-500">
+                      <h3 className="font-semibold text-sm text-gray-900">{bot.name}</h3>
+                      <p className="text-xs text-gray-500">
                         {(() => {
                           // Handle symbols array (multi-pair bots)
                           let symbolsArray: string[] = [];
@@ -1469,11 +1469,11 @@ export default function BotsPage() {
                           }
                         })()}
                       </p>
-                      <div className="flex items-center space-x-2 mt-1 flex-wrap gap-1">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(bot.status)}`}>
+                      <div className="flex items-center space-x-1.5 mt-0.5 flex-wrap gap-0.5">
+                        <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${getStatusColor(bot.status)}`}>
                           {bot.status}
                         </span>
-                        <span className={`text-xs font-medium ${getRiskColor(bot.riskLevel)}`}>
+                        <span className={`text-[10px] font-medium ${getRiskColor(bot.riskLevel)}`}>
                           {bot.riskLevel} risk
                         </span>
                         {(() => {
@@ -1493,10 +1493,10 @@ export default function BotsPage() {
                   </div>
                   
                   <div className="text-right">
-                    <p className={`text-lg font-bold ${(bot.pnl ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    <p className={`text-base font-bold ${(bot.pnl ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                       {(bot.pnl ?? 0) >= 0 ? '+' : ''}${(bot.pnl ?? 0).toFixed(2)}
                     </p>
-                    <p className={`text-sm ${(bot.pnlPercentage ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    <p className={`text-xs ${(bot.pnlPercentage ?? 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                       {(bot.pnlPercentage ?? 0) >= 0 ? '+' : ''}{(bot.pnlPercentage ?? 0).toFixed(2)}%
                     </p>
                   </div>
@@ -1504,15 +1504,15 @@ export default function BotsPage() {
 
                 {/* Timeframe - Outside Bot Box */}
                 {!isWebhookView && (
-                <div className="pt-3 border-t border-gray-100 dark:border-gray-700">
+                <div className="pt-2 border-t border-gray-100 dark:border-gray-700">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center">
-                        <i className="ri-bar-chart-line mr-1 text-blue-600"></i>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-medium text-gray-700 dark:text-gray-300 flex items-center">
+                        <i className="ri-bar-chart-line mr-0.5 text-blue-600 text-xs"></i>
                         Timeframe:
                         <HelpTooltip text="Chart interval for technical analysis. This determines how often the bot analyzes market data and makes trading decisions." />
                       </span>
-                      <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                      <span className="text-xs font-semibold text-gray-900 dark:text-white">
                         {bot.timeframe || '1h'}
                       </span>
                     </div>
@@ -1646,14 +1646,14 @@ export default function BotsPage() {
                   const limit = getLimit(bot.id);
                   if (limit) {
                     return (
-                      <div className="pt-3 border-t border-gray-100">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-medium text-gray-700 flex items-center">
+                      <div className="pt-2 border-t border-gray-100">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-medium text-gray-700 flex items-center">
                               Daily Trades:
                               <HelpTooltip text="Maximum number of trades allowed per day for this bot. Once reached, the bot will pause until the next day. This prevents overtrading and helps manage risk." />
                             </span>
-                            <span className={`text-sm font-semibold ${
+                            <span className={`text-xs font-semibold ${
                               limit.isLimitReached ? 'text-red-600' : 
                               limit.tradesToday / limit.maxTradesPerDay > 0.8 ? 'text-yellow-600' : 
                               'text-green-600'
@@ -1661,7 +1661,7 @@ export default function BotsPage() {
                               {limit.tradesToday} / {limit.maxTradesPerDay}
                             </span>
                             {limit.isLimitReached && (
-                              <span className="text-xs text-red-600">(Limit Reached)</span>
+                              <span className="text-[10px] text-red-600">(Limit Reached)</span>
                             )}
                           </div>
                           <button
@@ -1797,14 +1797,14 @@ export default function BotsPage() {
 
                 {/* Trade Amount */}
                 {!isWebhookView && (
-                <div className="pt-3 border-t border-gray-100">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-gray-700 flex items-center">
+                <div className="pt-2 border-t border-gray-100">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-medium text-gray-700 flex items-center">
                         Trade Amount:
                         <HelpTooltip text="Base amount in USD for each trade executed by this bot. This will be multiplied by leverage (for futures) and adjusted by risk level. You can edit this value to change the bot's position sizing." />
                       </span>
-                      <span className="text-sm font-semibold text-gray-900">
+                      <span className="text-xs font-semibold text-gray-900">
                         ${(bot.tradeAmount || 100).toFixed(2)} USD
                       </span>
                     </div>
@@ -1818,16 +1818,16 @@ export default function BotsPage() {
                           setEditingTradeAmountValue(bot.tradeAmount || 100);
                         }
                       }}
-                      className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                      className="text-[10px] text-blue-600 hover:text-blue-800 flex items-center gap-0.5"
                       title="Edit trade amount"
                     >
-                      <i className="ri-edit-line"></i>
+                      <i className="ri-edit-line text-xs"></i>
                       Edit Amount
                     </button>
                   </div>
                   
                   {/* Estimated Order Value */}
-                  <p className="text-xs text-gray-500 mb-2">
+                  <p className="text-[10px] text-gray-500 mb-1.5">
                     Est. Order Value: ${((bot.tradeAmount || 100) * bot.leverage * 1.5).toFixed(2)} USD
                     <span className="ml-2 text-gray-400">
                       (Amount × Leverage {bot.leverage}x × 1.5 buffer)
@@ -1928,7 +1928,7 @@ export default function BotsPage() {
                           Leverage:
                           <HelpTooltip text="Trading leverage multiplier. Higher leverage increases both potential profits and losses. Use with caution." />
                         </span>
-                        <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                        <span className="text-xs font-semibold text-gray-900 dark:text-white">
                           {bot.leverage || 1}x
                         </span>
                       </div>
@@ -1942,10 +1942,10 @@ export default function BotsPage() {
                             setEditingLeverageValue(bot.leverage || 1);
                           }
                         }}
-                        className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                        className="text-[10px] text-blue-600 hover:text-blue-800 flex items-center gap-0.5"
                         title="Edit leverage"
                       >
-                        <i className="ri-edit-line"></i>
+                        <i className="ri-edit-line text-xs"></i>
                         Edit
                       </button>
                     </div>
@@ -2018,14 +2018,14 @@ export default function BotsPage() {
                   </div>
 
                   {/* Stop Loss */}
-                  <div className="mb-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center">
+                  <div className="mb-2">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-medium text-gray-700 dark:text-gray-300 flex items-center">
                           Stop Loss:
                           <HelpTooltip text="Maximum loss percentage before the position is automatically closed. This protects your capital from excessive losses." />
                         </span>
-                        <span className="text-sm font-semibold text-red-600 dark:text-red-400">
+                        <span className="text-xs font-semibold text-red-600 dark:text-red-400">
                           {(bot.stopLoss || 2.0).toFixed(1)}%
                         </span>
                       </div>
@@ -2039,10 +2039,10 @@ export default function BotsPage() {
                             setEditingStopLossValue(bot.stopLoss || 2.0);
                           }
                         }}
-                        className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                        className="text-[10px] text-blue-600 hover:text-blue-800 flex items-center gap-0.5"
                         title="Edit stop loss"
                       >
-                        <i className="ri-edit-line"></i>
+                        <i className="ri-edit-line text-xs"></i>
                         Edit
                       </button>
                     </div>
@@ -2113,13 +2113,13 @@ export default function BotsPage() {
 
                   {/* Take Profit */}
                   <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-medium text-gray-700 dark:text-gray-300 flex items-center">
                           Take Profit:
                           <HelpTooltip text="Target profit percentage before the position is automatically closed. This locks in your gains." />
                         </span>
-                        <span className="text-sm font-semibold text-green-600 dark:text-green-400">
+                        <span className="text-xs font-semibold text-green-600 dark:text-green-400">
                           {(bot.takeProfit || 4.0).toFixed(1)}%
                         </span>
                       </div>
@@ -2133,10 +2133,10 @@ export default function BotsPage() {
                             setEditingTakeProfitValue(bot.takeProfit || 4.0);
                           }
                         }}
-                        className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                        className="text-[10px] text-blue-600 hover:text-blue-800 flex items-center gap-0.5"
                         title="Edit take profit"
                       >
-                        <i className="ri-edit-line"></i>
+                        <i className="ri-edit-line text-xs"></i>
                         Edit
                       </button>
                     </div>
@@ -2209,47 +2209,47 @@ export default function BotsPage() {
 
                 {/* Bot Stats */}
                 {!isWebhookView && (
-                <div className="grid grid-cols-2 md:grid-cols-6 gap-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+                <div className="grid grid-cols-2 md:grid-cols-6 gap-2 pt-2 border-t border-gray-100 dark:border-gray-700">
                   <div className="text-center">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Trades</p>
-                    <p className="font-semibold text-gray-900 dark:text-white">{bot.totalTrades ?? 0}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Trades</p>
+                    <p className="font-semibold text-sm text-gray-900 dark:text-white">{bot.totalTrades ?? 0}</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Win Rate</p>
-                    <p className="font-semibold text-gray-900 dark:text-white">{(bot.winRate ?? 0).toFixed(1)}%</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Win Rate</p>
+                    <p className="font-semibold text-sm text-gray-900 dark:text-white">{(bot.winRate ?? 0).toFixed(1)}%</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Win/Loss</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Win/Loss</p>
                     {(() => {
                       const totalTrades = bot.totalTrades ?? 0;
                       const closedTrades = bot.closedTrades ?? totalTrades;
                       const wins = bot.winTrades ?? (closedTrades > 0 ? Math.round((closedTrades * (bot.winRate ?? 0)) / 100) : 0);
                       const losses = bot.lossTrades ?? Math.max(0, closedTrades - wins);
                       return (
-                        <p className="font-semibold text-gray-900 dark:text-white">
+                        <p className="font-semibold text-sm text-gray-900 dark:text-white">
                           <span className="text-green-600 dark:text-green-400">{wins}</span>
-                          <span className="text-gray-400 dark:text-gray-500 mx-1">/</span>
+                          <span className="text-gray-400 dark:text-gray-500 mx-0.5">/</span>
                           <span className="text-red-600 dark:text-red-400">{losses}</span>
                         </p>
                       );
                     })()}
                   </div>
                   <div className="text-center">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Fees</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Fees</p>
                     {(() => {
                       const rawFees = bot.totalFees ?? bot.total_fees ?? bot.fees ?? 0;
                       const feesValue = Number.isFinite(rawFees) ? rawFees : 0;
                       const signPrefix = feesValue > 0 ? '-' : '';
                       const displayValue = Math.abs(feesValue);
                       return (
-                        <p className={`font-semibold ${displayValue > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>
+                        <p className={`font-semibold text-sm ${displayValue > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>
                           {signPrefix}${displayValue.toFixed(2)}
                         </p>
                       );
                     })()}
                   </div>
                   <div className="text-center">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Drawdown</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Drawdown</p>
                     {(() => {
                       const rawDrawdown = bot.drawdown ?? bot.maxDrawdown ?? 0;
                       const drawdownValue = Number.isFinite(rawDrawdown) ? Math.abs(rawDrawdown) : 0;
@@ -2257,16 +2257,16 @@ export default function BotsPage() {
                       const drawdownPct = Number.isFinite(rawDrawdownPct) ? Math.abs(rawDrawdownPct) : 0;
                       return (
                         <div>
-                          <p className={`font-semibold ${drawdownValue > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>
+                          <p className={`font-semibold text-sm ${drawdownValue > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-white'}`}>
                             {drawdownValue > 0 ? '-' : ''}${drawdownValue.toFixed(2)}
                           </p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">{drawdownPct.toFixed(1)}%</p>
+                          <p className="text-[10px] text-gray-500 dark:text-gray-400">{drawdownPct.toFixed(1)}%</p>
                         </div>
                       );
                     })()}
                   </div>
                   <div className="text-center">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">PnL</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">PnL</p>
                     {(() => {
                       const pnlValue = bot.realizedPnl !== undefined ? bot.realizedPnl : (bot.pnl ?? 0);
                       return (
