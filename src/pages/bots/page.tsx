@@ -2270,7 +2270,7 @@ export default function BotsPage() {
                     {(() => {
                       const pnlValue = bot.realizedPnl !== undefined ? bot.realizedPnl : (bot.pnl ?? 0);
                       return (
-                        <p className={`font-semibold ${pnlValue >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                        <p className={`font-semibold text-sm ${pnlValue >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                           {pnlValue >= 0 ? '+' : ''}${pnlValue.toFixed(2)}
                         </p>
                       );
