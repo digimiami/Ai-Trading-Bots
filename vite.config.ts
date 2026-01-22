@@ -40,14 +40,16 @@ export default defineConfig({
           // Split vendor chunks
           if (id.includes('node_modules')) {
             // CRITICAL: Keep React and React-DOM together to prevent multiple instances
+            // React MUST be in its own chunk and load first
             if (id.includes('react') || id.includes('react-dom') || id.includes('scheduler')) {
               return 'vendor-react';
             }
-            if (id.includes('@supabase')) {
-              return 'vendor-supabase';
-            }
+            // React Router depends on React, so keep it separate but after React
             if (id.includes('react-router')) {
               return 'vendor-router';
+            }
+            if (id.includes('@supabase')) {
+              return 'vendor-supabase';
             }
             return 'vendor';
           }
@@ -56,6 +58,14 @@ export default defineConfig({
     },
     // Increase chunk size warning limit
     chunkSizeWarningLimit: 1000,
+  },
+  optimizeDeps: {
+    // Pre-bundle React to ensure it's available immediately
+    include: ['react', 'react-dom', 'react/jsx-runtime'],
+    // Force pre-bundling of React
+    force: false,
+    // Exclude problematic packages from optimization if needed
+    exclude: [],
   },
   resolve: {
     alias: {
