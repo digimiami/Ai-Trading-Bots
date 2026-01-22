@@ -1860,6 +1860,18 @@ class MarketDataFetcher {
                 }
               } else {
                 console.warn(`  ⚠️ Bitunix tickers API returned code ${data.code}: ${data.msg || data.message || 'Unknown error'}`);
+                // Track code 2 errors (Parameter error) - indicates symbol may not exist
+                if (data.code === 2) {
+                  if (!(globalThis as any).__bitunixApiErrors) {
+                    (globalThis as any).__bitunixApiErrors = [];
+                  }
+                  (globalThis as any).__bitunixApiErrors.push({
+                    code: 2,
+                    message: data.msg || data.message || 'Parameter error',
+                    endpoint: tickerEndpoint,
+                    symbol: symbol
+                  });
+                }
               }
             } catch (endpointErr: any) {
               console.warn(`  ⚠️ Error trying Bitunix tickers endpoint ${tickerEndpoint}:`, endpointErr.message);
@@ -1961,6 +1973,18 @@ class MarketDataFetcher {
                   }
                 } else {
                   console.warn(`  ⚠️ Single ticker API returned code ${data.code}: ${data.msg || data.message || 'Unknown error'}`);
+                  // Track code 2 errors (Parameter error) - indicates symbol may not exist
+                  if (data.code === 2) {
+                    if (!(globalThis as any).__bitunixApiErrors) {
+                      (globalThis as any).__bitunixApiErrors = [];
+                    }
+                    (globalThis as any).__bitunixApiErrors.push({
+                      code: 2,
+                      message: data.msg || data.message || 'Parameter error',
+                      endpoint: endpoint,
+                      symbol: symbolVariant
+                    });
+                  }
                 }
               } catch (err: any) {
                 console.warn(`  ⚠️ Error fetching single ticker ${endpoint}:`, err.message);
@@ -2410,6 +2434,18 @@ class MarketDataFetcher {
                   } else if (data.code !== 0) {
                     // Log non-zero codes but continue trying
                     console.log(`   Bitunix klines API returned code ${data.code} for ${symbolVariant} at ${baseUrl}${endpoint}: ${data.msg || data.message || 'Unknown error'}`);
+                    // Track code 2 errors (Parameter error) - indicates symbol may not exist
+                    if (data.code === 2) {
+                      if (!(globalThis as any).__bitunixApiErrors) {
+                        (globalThis as any).__bitunixApiErrors = [];
+                      }
+                      (globalThis as any).__bitunixApiErrors.push({
+                        code: 2,
+                        message: data.msg || data.message || 'Parameter error',
+                        endpoint: `${baseUrl}${endpoint}`,
+                        symbol: symbolVariant
+                      });
+                    }
                   }
                 } catch (endpointErr) {
                   // Continue to next endpoint variant
@@ -6803,6 +6839,44 @@ class BotExecutor {
         };
         currentPrice = 0;
         console.error(`❌ [executeTrade] Price fetch failed for ${bot.symbol}:`, priceFetchError);
+      }
+      
+      // CRITICAL: For Bitunix, check if all API calls failed with "code 2: Parameter error"
+      // This indicates the symbol doesn't exist on Bitunix, even if we got a price from fallback
+      if (bot.exchange?.toLowerCase() === 'bitunix') {
+        const bitunixApiErrors = (globalThis as any).__bitunixApiErrors || [];
+        const allCode2Errors = bitunixApiErrors.length > 0 && 
+          bitunixApiErrors.every((err: any) => err.code === 2 || err.message?.includes('Parameter error') || err.message?.includes('code 2'));
+        
+        if (allCode2Errors && bitunixApiErrors.length >= 3) {
+          // Multiple consistent "code 2" errors indicate symbol doesn't exist
+          const errorMsg = `Symbol ${bot.symbol} does not exist on Bitunix exchange. All API calls returned "code 2: Parameter error". Please verify the symbol name and ensure it's available for ${tradingType} trading on Bitunix.`;
+          console.error(`❌ ${errorMsg}`);
+          
+          await this.addBotLog(bot.id, {
+            level: 'error',
+            category: 'trade',
+            message: `Trade execution aborted: ${errorMsg}`,
+            details: {
+              side: tradeSignal?.side || 'unknown',
+              error: errorMsg,
+              symbol: bot.symbol,
+              exchange: bot.exchange,
+              tradingType: tradingType,
+              bitunixApiErrors: bitunixApiErrors.slice(0, 5), // Log first 5 errors
+              errorType: 'SymbolNotFound',
+              timestamp: new Date().toISOString()
+            }
+          });
+          
+          // Clear the stored errors
+          (globalThis as any).__bitunixApiErrors = null;
+          
+          throw new Error(errorMsg);
+        }
+        
+        // Clear the stored errors after checking
+        (globalThis as any).__bitunixApiErrors = null;
       }
       
       // Validate price before proceeding
