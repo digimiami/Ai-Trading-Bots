@@ -9609,21 +9609,47 @@ class BotExecutor {
       };
       
       // Set SL/TP on the position after order is filled (for futures only)
-      // Wait a short moment for position to update after order fills
-      if (bybitCategory === 'linear' && currentMarketPrice > 0) {
+      // CRITICAL: Always attempt SL/TP for linear/futures orders to protect positions
+      if (bybitCategory === 'linear') {
         try {
           // Small delay to allow position to update after order fills
           await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay
           
-          // Get actual position entry price from Bybit
-          const entryPrice = await this.getBybitPositionEntryPrice(apiKey, apiSecret, symbol);
+          // Get actual position entry price from Bybit (with retry)
+          let entryPrice = await this.getBybitPositionEntryPrice(apiKey, apiSecret, symbol);
+          
+          // CRITICAL: Use fallback prices if getBybitPositionEntryPrice fails
+          // This ensures SL/TP is always attempted, even if position hasn't updated yet
+          if (!entryPrice || entryPrice <= 0) {
+            console.warn('⚠️ Could not fetch position entry price on first attempt, trying fallback prices...');
+            
+            // Wait a bit longer and retry
+            await new Promise(resolve => setTimeout(resolve, 1000)); // Additional 1s delay
+            entryPrice = await this.getBybitPositionEntryPrice(apiKey, apiSecret, symbol);
+            
+            // If still no entry price, use fallback: currentMarketPrice or the price parameter
+            if (!entryPrice || entryPrice <= 0) {
+              if (currentMarketPrice > 0) {
+                entryPrice = currentMarketPrice;
+                console.warn(`⚠️ Using currentMarketPrice (${entryPrice}) as fallback for SL/TP calculation`);
+              } else if (price > 0) {
+                entryPrice = price;
+                console.warn(`⚠️ Using order price parameter (${entryPrice}) as fallback for SL/TP calculation`);
+              } else {
+                console.error('❌ No valid price available for SL/TP calculation (currentMarketPrice, price, and entryPrice all invalid)');
+                throw new Error('Cannot set SL/TP: No valid entry price available');
+              }
+            }
+          }
+          
+          // CRITICAL: Always attempt SL/TP if we have a valid entry price
           if (entryPrice && entryPrice > 0) {
-            // Get bot object from the outer scope - need to pass it through
-            // For now, we'll get it from the bot parameter passed to placeBybitOrder
-            // But we need to pass bot through the call chain
+            console.log(`🛡️ Setting SL/TP for ${symbol} with entry price: ${entryPrice}`);
             await this.setBybitSLTP(apiKey, apiSecret, symbol, capitalizedSide, entryPrice, bot, tradeSignal);
+            console.log(`✅ SL/TP set successfully for ${symbol}`);
           } else {
-            console.warn('⚠️ Could not fetch position entry price, skipping SL/TP (position may have been closed)');
+            console.error('❌ Cannot set SL/TP: Entry price is invalid');
+            throw new Error('Cannot set SL/TP: Entry price is invalid');
           }
         } catch (slTpError) {
           // CRITICAL: If SL/TP fails and position couldn't be closed, this is a critical error
@@ -9636,18 +9662,51 @@ class BotExecutor {
               console.warn('⚠️ SL/TP critical error detected, but DISABLE_SLTPSAFETY=true. Keeping position open and continuing.');
               // Do not abort; continue without SL/TP (position remains open).
               // Intentionally no return/break here so we can fall through to normal completion.
+            } else {
+              // Position was closed for safety OR position is unprotected - this is critical
+              console.error('🚨 CRITICAL: SL/TP failure - position protection failed');
+              console.error(`   Error: ${errorMessage}`);
+              
+              // Log to bot activity logs for visibility
+              if (bot?.id) {
+                await this.addBotLog(bot.id, {
+                  level: 'error',
+                  category: 'trade',
+                  message: `CRITICAL: Failed to set SL/TP for ${symbol}. Position may be unprotected.`,
+                  details: {
+                    symbol,
+                    side: capitalizedSide,
+                    error: errorMessage,
+                    action_required: 'Manually set stop loss and take profit on Bybit exchange'
+                  }
+                });
+              }
+              
+              // Re-throw to prevent trade from being recorded as successful
+              throw new Error(`Trade aborted: ${errorMessage}`);
             }
-            // Position was closed for safety OR position is unprotected - this is critical
-            console.error('🚨 CRITICAL: SL/TP failure - position protection failed');
-            console.error(`   Error: ${errorMessage}`);
+          } else {
+            // For other SL/TP errors (non-critical), log but don't fail
+            console.warn('⚠️ Failed to set SL/TP (non-critical):', slTpError);
             
-            // Re-throw to prevent trade from being recorded as successful
-            throw new Error(`Trade aborted: ${errorMessage}`);
+            // Log to bot activity logs for visibility
+            if (bot?.id) {
+              await this.addBotLog(bot.id, {
+                level: 'warning',
+                category: 'trade',
+                message: `Failed to set SL/TP for ${symbol} (non-critical). Position may be unprotected.`,
+                details: {
+                  symbol,
+                  side: capitalizedSide,
+                  error: errorMessage,
+                  action_required: 'Manually verify and set stop loss and take profit on Bybit exchange if needed'
+                }
+              });
+            }
           }
-          
-          // For other SL/TP errors (non-critical), log but don't fail
-          console.warn('⚠️ Failed to set SL/TP (non-critical):', slTpError);
         }
+      } else {
+        console.log(`ℹ️ Skipping SL/TP for ${symbol} (not linear/futures trading)`);
       }
       
       return orderResult;
