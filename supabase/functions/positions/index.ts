@@ -375,48 +375,249 @@ async function fetchBitunixPositions(
   };
 
   // Bitunix does not always include SL/TP on the position object. We merge from pending TP/SL orders API.
-  const fetchBitunixPendingTpSlOrders = async (symbol: string): Promise<any[]> => {
-    // Try both hosts; some accounts only work on one of them.
+  // Fetch ALL TP/SL orders once and cache them (more efficient than per-symbol calls)
+  let allTpSlOrdersCache: { orders: any[]; timestamp: number } | null = null;
+  const CACHE_TTL_MS = 5000; // 5 second cache
+  
+  const fetchAllBitunixTpSlOrders = async (): Promise<any[]> => {
+    const now = Date.now();
+    if (allTpSlOrdersCache && (now - allTpSlOrdersCache.timestamp) < CACHE_TTL_MS) {
+      return allTpSlOrdersCache.orders;
+    }
+    
     const baseUrls = ['https://fapi.bitunix.com', 'https://api.bitunix.com'];
-    const endpoint = '/api/v1/futures/tpsl/pending_orders';
-    const queryParams = normalizeQueryParams(`symbol=${symbol.toUpperCase()}`);
-    const timestamp = Date.now().toString();
-    const nonce = generateNonce();
+    const endpoints = [
+      '/api/v1/futures/tpsl/pending_orders',
+      '/api/v1/futures/tpsl/orders',
+      '/api/v1/futures/tpsl/list',
+    ];
+    
+    // Try fetching ALL orders (no filters) - Bitunix might require this
+    const queryVariants = [
+      '', // No params - fetch all
+      'marketType=futures',
+      'marginCoin=USDT',
+      'marketType=futures&marginCoin=USDT',
+    ];
+    
     const body = '';
-    const signature = await createBitunixSignature(nonce, timestamp, apiKey, queryParams, body, apiSecret);
+    let attempts = 0;
+    let lastError: string | null = null;
 
     for (const baseUrl of baseUrls) {
-      const url = `${baseUrl}${endpoint}?${queryParams}`;
-      try {
-        const response = await fetch(url, {
-          method: 'GET',
-          headers: {
-            'api-key': String(apiKey),
-            'nonce': String(nonce),
-            'timestamp': String(timestamp),
-            'sign': String(signature),
-            'Content-Type': 'application/json',
-            'language': 'en-US',
-          },
+      for (const endpoint of endpoints) {
+        for (const qpRaw of queryVariants) {
+          attempts++;
+          try {
+            const queryParams = normalizeQueryParams(qpRaw);
+            const timestamp = Date.now().toString();
+            const nonce = generateNonce();
+            const signature = await createBitunixSignature(nonce, timestamp, apiKey, queryParams, body, apiSecret);
+
+            const url = queryParams ? `${baseUrl}${endpoint}?${queryParams}` : `${baseUrl}${endpoint}`;
+            const response = await fetch(url, {
+              method: 'GET',
+              headers: {
+                'api-key': String(apiKey),
+                'nonce': String(nonce),
+                'timestamp': String(timestamp),
+                'sign': String(signature),
+                'Content-Type': 'application/json',
+                'language': 'en-US',
+              },
+            });
+
+            if (!response.ok) {
+              // Only log first attempt to reduce spam
+              if (attempts === 1) {
+                const errorText = await response.text().catch(() => '');
+                console.log(`🔍 [Bitunix] Fetching TP/SL orders (tried ${attempts} endpoint/param combinations so far)...`);
+              }
+              continue;
+            }
+
+            const data = await response.json().catch(() => null);
+            if (!data) {
+              continue;
+            }
+            
+            if (data.code !== 0) {
+              // Only log code 2 (Parameter error) on first occurrence to reduce spam
+              if (data.code === 2 && attempts === 1) {
+                lastError = `code ${data.code}: ${data.msg || data.message || 'Parameter error'}`;
+              }
+              continue;
+            }
+            
+            if (!data.data) {
+              continue;
+            }
+
+            const orders = Array.isArray(data.data) ? data.data : (data.data.list || data.data.orders || []);
+            if (Array.isArray(orders) && orders.length > 0) {
+              console.log(`✅ [Bitunix] Fetched ${orders.length} total TP/SL orders`);
+              allTpSlOrdersCache = { orders, timestamp: now };
+              return orders;
+            }
+          } catch (err) {
+            // Silently continue - reduce log spam
+            continue;
+          }
+        }
+      }
+    }
+    
+    // Only log summary if we tried multiple times and all failed
+    if (attempts > 1 && lastError) {
+      console.log(`⚠️ [Bitunix] TP/SL orders API not available (${lastError}) - positions will show without TP/SL if not set`);
+    }
+    allTpSlOrdersCache = { orders: [], timestamp: now };
+    return [];
+  };
+
+  const fetchBitunixPendingTpSlOrders = async (symbol: string): Promise<any[]> => {
+    // First try fetching all orders and filtering by symbol
+    try {
+      const allOrders = await fetchAllBitunixTpSlOrders();
+      if (allOrders.length > 0) {
+        const normalizedSymbol = symbol.toUpperCase();
+        const filtered = allOrders.filter((o: any) => {
+          const oSymbol = String(o.symbol || o.contract || o.tradingPair || '').toUpperCase();
+          return oSymbol === normalizedSymbol;
         });
+        if (filtered.length > 0) {
+          console.log(`✅ [Bitunix] Found ${filtered.length} TP/SL orders for ${symbol} from cached all-orders fetch`);
+          return filtered;
+        }
+      }
+    } catch (err) {
+      console.warn(`⚠️ [Bitunix] Failed to fetch all TP/SL orders:`, err instanceof Error ? err.message : String(err));
+    }
+    
+    // Fallback: Try symbol-specific fetch (original method)
+    const baseUrls = ['https://fapi.bitunix.com', 'https://api.bitunix.com'];
+    const endpoint = '/api/v1/futures/tpsl/pending_orders';
+    const normalizedSymbol = symbol.toUpperCase();
+    
+    // Try multiple query parameter variants (same as bot-executor)
+    const queryVariants = [
+      `symbol=${normalizedSymbol}`,
+      `marketType=futures&symbol=${normalizedSymbol}`,
+      `marketType=futures&marginCoin=USDT&symbol=${normalizedSymbol}`,
+      `marginCoin=USDT&symbol=${normalizedSymbol}`,
+    ];
+    
+    const body = '';
 
-        if (!response.ok) {
+    for (const baseUrl of baseUrls) {
+      for (const qpRaw of queryVariants) {
+        try {
+          const queryParams = normalizeQueryParams(qpRaw);
+          const timestamp = Date.now().toString();
+          const nonce = generateNonce();
+          const signature = await createBitunixSignature(nonce, timestamp, apiKey, queryParams, body, apiSecret);
+
+          const url = queryParams ? `${baseUrl}${endpoint}?${queryParams}` : `${baseUrl}${endpoint}`;
+          const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+              'api-key': String(apiKey),
+              'nonce': String(nonce),
+              'timestamp': String(timestamp),
+              'sign': String(signature),
+              'Content-Type': 'application/json',
+              'language': 'en-US',
+            },
+          });
+
+          if (!response.ok) {
+            // Silently continue - reduce log spam
+            continue;
+          }
+
+          const data = await response.json().catch(() => null);
+          if (!data) {
+            continue;
+          }
+          
+          if (data.code === 0 && data.data) {
+            const orders = Array.isArray(data.data) ? data.data : (data.data.list || data.data.orders || []);
+            if (Array.isArray(orders) && orders.length > 0) {
+              console.log(`✅ [Bitunix] Found ${orders.length} TP/SL orders for ${symbol}`);
+              return orders;
+            }
+          }
+
+          // Code 2 is common/temporary; try next variant/host before giving up
+          if (data.code === 2) {
+            continue;
+          }
+        } catch (err) {
+          console.warn(`⚠️ [Bitunix] Error fetching TP/SL orders for ${symbol} with params ${qpRaw}:`, err instanceof Error ? err.message : String(err));
           continue;
         }
+      }
+    }
 
-        const data = await response.json().catch(() => null);
-        if (!data || !data.data) continue;
-        if (data.code === 0) {
-          const orders = Array.isArray(data.data) ? data.data : (data.data.list || data.data.orders || []);
-          if (Array.isArray(orders)) return orders;
-        }
+    console.log(`⚠️ [Bitunix] No TP/SL orders found for ${symbol} after trying all variants`);
+    return [];
+  };
 
-        // Code 2 is common/temporary; try next host before giving up
-        if (data.code === 2) {
-          continue;
+  // Try fetching TP/SL orders by positionId (alternative method)
+  const fetchBitunixPendingTpSlOrdersByPositionId = async (positionId: string): Promise<any[]> => {
+    const baseUrls = ['https://fapi.bitunix.com', 'https://api.bitunix.com'];
+    const endpoints = [
+      '/api/v1/futures/tpsl/pending_orders',
+      '/api/v1/futures/tpsl/orders',
+      '/api/v1/futures/tpsl/list',
+    ];
+    
+    const queryVariants = [
+      `positionId=${positionId}`,
+      `position_id=${positionId}`,
+      `posId=${positionId}`,
+      `marketType=futures&positionId=${positionId}`,
+      `marketType=futures&position_id=${positionId}`,
+    ];
+    
+    const body = '';
+
+    for (const baseUrl of baseUrls) {
+      for (const endpoint of endpoints) {
+        for (const qpRaw of queryVariants) {
+          try {
+            const queryParams = normalizeQueryParams(qpRaw);
+            const timestamp = Date.now().toString();
+            const nonce = generateNonce();
+            const signature = await createBitunixSignature(nonce, timestamp, apiKey, queryParams, body, apiSecret);
+
+            const url = queryParams ? `${baseUrl}${endpoint}?${queryParams}` : `${baseUrl}${endpoint}`;
+            const response = await fetch(url, {
+              method: 'GET',
+              headers: {
+                'api-key': String(apiKey),
+                'nonce': String(nonce),
+                'timestamp': String(timestamp),
+                'sign': String(signature),
+                'Content-Type': 'application/json',
+                'language': 'en-US',
+              },
+            });
+
+            if (!response.ok) continue;
+
+            const data = await response.json().catch(() => null);
+            if (!data || data.code !== 0 || !data.data) continue;
+
+            const orders = Array.isArray(data.data) ? data.data : (data.data.list || data.data.orders || []);
+            if (Array.isArray(orders) && orders.length > 0) {
+              console.log(`✅ [Bitunix] Found ${orders.length} TP/SL orders for positionId ${positionId}`);
+              return orders;
+            }
+          } catch {
+            continue;
+          }
         }
-      } catch {
-        continue;
       }
     }
 
@@ -433,6 +634,7 @@ async function fetchBitunixPositions(
 
   let lastError: any = null;
   let has404Errors = false;
+  let hasSuccess = false; // Track if any endpoint succeeded
 
   for (const baseUrl of baseUrls) {
     for (const endpoint of endpoints) {
@@ -462,6 +664,9 @@ async function fetchBitunixPositions(
             // Track 404 errors - they might indicate no positions exist
             if (response.status === 404) {
               has404Errors = true;
+              console.log(`⚠️ [Bitunix] Position endpoint returned 404: ${endpoint} (${qpRaw || 'no params'})`);
+            } else {
+              console.log(`⚠️ [Bitunix] Position endpoint returned HTTP ${response.status}: ${endpoint} (${qpRaw || 'no params'})`);
             }
             lastError = new Error(`Bitunix HTTP ${response.status} (${endpoint})`);
             continue;
@@ -475,10 +680,13 @@ async function fetchBitunixPositions(
 
           if (data.code !== 0) {
             // Keep trying other endpoints/params; code=2 is common on legacy endpoints.
+            console.log(`⚠️ [Bitunix] Position endpoint returned code ${data.code}: ${endpoint} (${qpRaw || 'no params'}) - ${data.msg || 'Unknown error'}`);
             lastError = new Error(`Bitunix API error (${data.code}) on ${endpoint}: ${data.msg || 'Unknown error'}`);
             continue;
           }
 
+          console.log(`✅ [Bitunix] Position endpoint succeeded: ${endpoint} (${qpRaw || 'no params'})`);
+          hasSuccess = true;
           const positions = parsePositionsFromResponse(data)
             .filter((p: any) => {
               // Filter out closed positions if status field exists
@@ -508,11 +716,35 @@ async function fetchBitunixPositions(
 
           if (!positions.length) {
             // Successful response but empty; try other variants/endpoints.
+            console.log(`⚠️ [Bitunix] Position endpoint succeeded but returned 0 positions: ${endpoint} (${qpRaw || 'no params'})`);
             continue;
           }
 
+          console.log(`✅ [Bitunix] Found ${positions.length} positions from ${endpoint} (${qpRaw || 'no params'})`);
+
           // First pass: map raw positions. We may enrich price below if missing.
           const mappedPositions: ExchangePosition[] = positions.map((p: any) => {
+            // Log position fields for debugging TP/SL extraction (only for first position to avoid spam)
+            if (positions.length > 0 && positions.indexOf(p) === 0) {
+              console.log(`🔍 [Bitunix] Sample position object fields: ${JSON.stringify(Object.keys(p)).substring(0, 500)}`);
+              console.log(`🔍 [Bitunix] Sample position object (first 2000 chars): ${JSON.stringify(p).substring(0, 2000)}`);
+              
+              // Check for TP/SL fields in position object
+              const tpSlFields = Object.keys(p).filter(k => 
+                k.toLowerCase().includes('tp') || 
+                k.toLowerCase().includes('sl') || 
+                k.toLowerCase().includes('stop') || 
+                k.toLowerCase().includes('take') ||
+                k.toLowerCase().includes('trigger')
+              );
+              if (tpSlFields.length > 0) {
+                console.log(`🔍 [Bitunix] Found potential TP/SL fields in position object: ${tpSlFields.join(', ')}`);
+                for (const field of tpSlFields) {
+                  console.log(`   ${field}: ${p[field]}`);
+                }
+              }
+            }
+            
             const size = extractSize(p);
             const entryPrice = parseFloat(
               p.entryPrice ||
@@ -523,26 +755,81 @@ async function fetchBitunixPositions(
               p.entry_price ||
               '0'
             );
-            const currentPrice = parseFloat(p.markPrice || p.lastPrice || p.price || p.curPrice || '0') || entryPrice;
-            const unrealizedPnL = parseFloat(p.unrealisedPnl || p.unrealizedPnl || p.pnl || '0');
+            // Check if position object has a price field (Bitunix position objects often don't include current price)
+            const hasPriceField = !!(p.markPrice || p.lastPrice || p.price || p.curPrice || p.marketPrice || p.currentPrice);
+            const rawCurrentPrice = parseFloat(p.markPrice || p.lastPrice || p.price || p.curPrice || p.marketPrice || p.currentPrice || '0');
+            // Only use fallback to entryPrice if we actually got a price from the position object
+            // Otherwise set to 0 to trigger price enrichment
+            const currentPrice = hasPriceField && rawCurrentPrice > 0 ? rawCurrentPrice : 0;
+            // CRITICAL: Bitunix API returns "unrealizedPNL" (all caps), not "unrealizedPnl" or "unrealisedPnl"
+            const unrealizedPnL = parseFloat(p.unrealizedPNL || p.unrealisedPnl || p.unrealizedPnl || p.pnl || p.PNL || '0');
 
             const sideRaw = String(p.side || p.positionSide || p.holdSide || p.posSide || '').toLowerCase();
             const isShort = sideRaw === 'short' || sideRaw === 'sell';
             const side: 'long' | 'short' = isShort ? 'short' : 'long';
 
-            // If the API doesn't provide PnL, compute a simple estimate.
-            const computedPnl =
-              Number.isFinite(unrealizedPnL) && unrealizedPnL !== 0
-                ? unrealizedPnL
-                : (currentPrice - entryPrice) * size * (isShort ? -1 : 1);
-
-            const unrealizedPnLPercentage =
-              entryPrice > 0 ? ((currentPrice - entryPrice) / entryPrice) * 100 * (isShort ? -1 : 1) : 0;
+            // If the API provides PnL, use it. Otherwise compute from currentPrice (only if we have a valid price).
+            // CRITICAL: Don't compute PnL if currentPrice is 0 or equals entryPrice (indicates missing price data)
+            let computedPnl = 0;
+            let computedPnlPercentage = 0;
+            
+            // CRITICAL: Bitunix API's unrealizedPNL is often stale or returns 0 incorrectly
+            // Always compute PnL from current price if available, otherwise use API value as fallback
+            if (currentPrice > 0 && currentPrice !== entryPrice && entryPrice > 0 && size > 0) {
+              // Always compute from current price when available (most accurate for live data)
+              const delta = (currentPrice - entryPrice) * (isShort ? -1 : 1);
+              computedPnl = delta * size;
+              computedPnlPercentage = (delta / entryPrice) * 100;
+              console.log(`✅ [Bitunix] Computed PnL from price for ${p.symbol || 'unknown'}: ${computedPnl.toFixed(2)} (${computedPnlPercentage.toFixed(2)}%)`);
+            } else if (Number.isFinite(unrealizedPnL) && unrealizedPnL !== 0) {
+              // Use API-provided PnL only if it's non-zero (might be stale but better than nothing)
+              computedPnl = unrealizedPnL;
+              computedPnlPercentage = entryPrice > 0 && size > 0 
+                ? (unrealizedPnL / (entryPrice * size)) * 100 * (isShort ? -1 : 1)
+                : 0;
+              console.log(`⚠️ [Bitunix] Using API unrealizedPNL for ${p.symbol || 'unknown'}: ${unrealizedPnL} (${computedPnlPercentage.toFixed(2)}%) - will recompute when price is fetched`);
+            } else {
+              // No valid price or PnL - will be enriched later with ticker prices
+              computedPnl = 0;
+              computedPnlPercentage = 0;
+              console.log(`⚠️ [Bitunix] No PnL data for ${p.symbol || 'unknown'}, will try to fetch price`);
+            }
 
             const leverage = parseFloat(p.leverage || p.leverageRatio || '1') || 1;
             const marginUsed =
               parseFloat(p.marginUsed || p.margin || '0') ||
               (leverage > 0 ? (size * entryPrice) / leverage : size * entryPrice);
+
+            // Try more field name variations for TP/SL (Bitunix might use different names)
+            const stopLoss = extractFirstPositiveNumber(
+              p.stopLoss,
+              p.stop_loss,
+              p.slPrice,
+              p.sl_price,
+              p.stopPrice,
+              p.stop_price,
+              p.sl,
+              p.slTriggerPrice,
+              p.slTriggerPx,
+              p.stopLossPrice,
+              p.stop_loss_price,
+              p.positionStopLoss,
+              p.position_stop_loss
+            );
+            
+            const takeProfit = extractFirstPositiveNumber(
+              p.takeProfit,
+              p.take_profit,
+              p.tpPrice,
+              p.tp_price,
+              p.tp,
+              p.tpTriggerPrice,
+              p.tpTriggerPx,
+              p.takeProfitPrice,
+              p.take_profit_price,
+              p.positionTakeProfit,
+              p.position_take_profit
+            );
 
             return {
               exchange: 'bitunix',
@@ -552,11 +839,11 @@ async function fetchBitunixPositions(
               entryPrice,
               currentPrice,
               unrealizedPnL: computedPnl,
-              unrealizedPnLPercentage,
+              unrealizedPnLPercentage: computedPnlPercentage,
               leverage,
               marginUsed,
-              stopLoss: parseFloat(p.stopLoss || p.stop_loss || p.slPrice || p.sl_price || '0') || undefined,
-              takeProfit: parseFloat(p.takeProfit || p.take_profit || p.tpPrice || p.tp_price || '0') || undefined,
+              stopLoss,
+              takeProfit,
               positionId: (() => {
                 const raw =
                   p.positionId ??
@@ -571,51 +858,215 @@ async function fetchBitunixPositions(
             };
           });
 
-          // If any position has missing/zero currentPrice, fetch a fresh ticker price.
+          // CRITICAL: Bitunix position objects don't include current price, so always fetch ticker prices
+          // Always fetch prices for ALL Bitunix positions to ensure live data
           const symbolsNeedingPrice = Array.from(
             new Set(
               mappedPositions
-                .filter((p) => !p.currentPrice || p.currentPrice <= 0)
                 .map((p) => String(p.symbol || '').toUpperCase())
                 .filter(Boolean)
             )
           );
+          
+          console.log(`🔍 [Bitunix] Fetching live prices for all positions: ${symbolsNeedingPrice.join(', ')} (${symbolsNeedingPrice.length} symbols)`);
 
           if (symbolsNeedingPrice.length) {
             try {
-              // Try both hosts; Bitunix occasionally serves tickers from different hosts.
+              // CRITICAL: Use correct API domain - futures uses fapi.bitunix.com
+              const apiBaseUrl = 'https://fapi.bitunix.com';
               const priceMap = new Map<string, number>();
-              const hosts = ['https://fapi.bitunix.com', 'https://api.bitunix.com'];
-              for (const host of hosts) {
-                for (const sym of symbolsNeedingPrice) {
-                  if (priceMap.has(sym)) continue;
-                  const url = `${host}/api/v1/market/tickers?symbol=${sym}`;
-                  try {
-                    const resp = await fetch(url, { method: 'GET', headers: { 'Content-Type': 'application/json' } });
-                    if (!resp.ok) continue;
-                    const data = await resp.json().catch(() => null);
-                    const list = Array.isArray(data?.data) ? data.data : data?.data?.list || [];
-                    const ticker = Array.isArray(list) ? list.find((t: any) => String(t.symbol || t.contract || '').toUpperCase() === sym) : null;
-                    const last = ticker ? parseFloat(ticker.lastPrice || ticker.last_price || ticker.price || ticker.close || '0') : 0;
-                    if (Number.isFinite(last) && last > 0) {
-                      priceMap.set(sym, last);
+              
+              // Try multiple endpoints (matching bot-executor approach)
+              const tickerEndpoints = [
+                `${apiBaseUrl}/api/v1/market/tickers?marketType=futures`,
+                `${apiBaseUrl}/api/v1/market/ticker/all?marketType=futures`,
+                `https://api.bitunix.com/api/v1/market/tickers?marketType=futures`,
+                `https://api.bitunix.com/api/v1/market/ticker/all?marketType=futures`,
+              ];
+              
+              let tickersArray: any[] = [];
+              
+              // Fetch all tickers once (more efficient than per-symbol)
+              let tickerFetchAttempted = false;
+              for (const tickerEndpoint of tickerEndpoints) {
+                try {
+                  if (!tickerFetchAttempted) {
+                    console.log(`🔍 [Bitunix] Trying ticker endpoints for price data...`);
+                    tickerFetchAttempted = true;
+                  }
+                  const resp = await fetch(tickerEndpoint, { 
+                    method: 'GET', 
+                    headers: { 'Content-Type': 'application/json' },
+                    signal: AbortSignal.timeout(5000)
+                  });
+                  
+                  if (!resp.ok) {
+                    // Only log once per endpoint type to reduce spam
+                    if (tickerEndpoint.includes('/ticker/all')) {
+                      console.warn(`⚠️ [Bitunix] Ticker endpoint ${tickerEndpoint} returned HTTP ${resp.status}`);
                     }
-                  } catch {
+                    continue;
+                  }
+                  
+                  const data = await resp.json().catch(() => null);
+                  if (!data || data.code !== 0 || !data.data) {
+                    // Only log code 2 errors (common, expected) once
+                    if (data?.code === 2 && tickerEndpoint.includes('/ticker/all')) {
+                      console.warn(`⚠️ [Bitunix] Ticker endpoint ${tickerEndpoint} returned code ${data.code}`);
+                    }
+                    continue;
+                  }
+                  
+                  // Handle different response formats (same as bot-executor)
+                  if (Array.isArray(data.data)) {
+                    tickersArray = data.data;
+                  } else if (typeof data.data === 'object') {
+                    const possibleArrays = Object.values(data.data).filter((v: any) => Array.isArray(v));
+                    if (possibleArrays.length > 0) {
+                      tickersArray = possibleArrays[0] as any[];
+                    } else {
+                      tickersArray = Object.keys(data.data).map(key => ({
+                        symbol: key,
+                        ...(data.data as any)[key]
+                      }));
+                    }
+                  }
+                  
+                  if (tickersArray.length > 0) {
+                    console.log(`✅ [Bitunix] Fetched ${tickersArray.length} tickers from ${tickerEndpoint}`);
+                    break; // Success, stop trying endpoints
+                  }
+                } catch (err) {
+                  console.warn(`⚠️ [Bitunix] Error fetching from ${tickerEndpoint}:`, err instanceof Error ? err.message : String(err));
+                  continue;
+                }
+              }
+              
+              // Extract prices from tickers
+              for (const sym of symbolsNeedingPrice) {
+                if (priceMap.has(sym)) continue;
+                
+                const ticker = tickersArray.find((t: any) => {
+                  const tSymbol = String(t.symbol || t.contract || t.tradingPair || t.trading_pair || '').toUpperCase();
+                  return tSymbol === sym;
+                });
+                
+                if (ticker) {
+                  // Try multiple price field names (Bitunix uses different formats)
+                  const last = parseFloat(
+                    ticker.lastPrice || 
+                    ticker.last_price || 
+                    ticker.price || 
+                    ticker.close || 
+                    ticker.last ||
+                    ticker.markPrice ||
+                    ticker.mark_price ||
+                    ticker.currentPrice ||
+                    ticker.current_price ||
+                    '0'
+                  );
+                  if (Number.isFinite(last) && last > 0) {
+                    priceMap.set(sym, last);
+                    console.log(`✅ [Bitunix] Found price for ${sym}: ${last}`);
+                  } else {
+                    console.warn(`⚠️ [Bitunix] Ticker for ${sym} found but price is invalid. Fields: ${JSON.stringify(Object.keys(ticker)).substring(0, 200)}`);
+                  }
+                }
+                // Don't log missing tickers individually - will log summary at end
+              }
+              
+              // Fallback: Try individual ticker endpoint for symbols still missing prices (like bot-executor does)
+              let singleTickerAttempted = false;
+              for (const sym of symbolsNeedingPrice) {
+                if (priceMap.has(sym)) continue;
+                
+                const singleTickerEndpoints = [
+                  `https://api.bitunix.com/api/v1/market/ticker?symbol=${sym}&marketType=futures`,
+                  `https://fapi.bitunix.com/api/v1/market/ticker?symbol=${sym}&marketType=futures`,
+                ];
+                
+                for (const tickerUrl of singleTickerEndpoints) {
+                  try {
+                    if (!singleTickerAttempted) {
+                      console.log(`🔍 [Bitunix] Trying single ticker endpoints for missing prices...`);
+                      singleTickerAttempted = true;
+                    }
+                    const resp = await fetch(tickerUrl, { 
+                      method: 'GET', 
+                      headers: { 'Content-Type': 'application/json' },
+                      signal: AbortSignal.timeout(5000)
+                    });
+                    
+                    if (!resp.ok) continue;
+                    
+                    const tickerData = await resp.json().catch(() => null);
+                    if (tickerData && tickerData.code === 0 && tickerData.data) {
+                      // Try multiple price field names
+                      const last = parseFloat(
+                        tickerData.data.lastPrice || 
+                        tickerData.data.last_price || 
+                        tickerData.data.last || 
+                        tickerData.data.price || 
+                        tickerData.data.markPrice ||
+                        tickerData.data.mark_price ||
+                        tickerData.data.currentPrice ||
+                        '0'
+                      );
+                      if (Number.isFinite(last) && last > 0) {
+                        priceMap.set(sym, last);
+                        console.log(`✅ [Bitunix] Found price for ${sym} via single ticker: ${last}`);
+                        break; // Found price, stop trying other endpoints for this symbol
+                      } else {
+                        console.warn(`⚠️ [Bitunix] Single ticker for ${sym} returned invalid price. Data: ${JSON.stringify(tickerData.data).substring(0, 300)}`);
+                      }
+                    }
+                  } catch (err) {
                     continue;
                   }
                 }
               }
+              
+              // Log summary of missing prices once at the end
+              const missingPrices = symbolsNeedingPrice.filter(sym => !priceMap.has(sym));
+              if (missingPrices.length > 0 && !tickerFetchAttempted) {
+                console.warn(`⚠️ [Bitunix] Could not fetch prices for ${missingPrices.length} symbols: ${missingPrices.join(', ')}`);
+              }
 
               // Enrich positions with fetched prices and recompute PnL.
+              const missingPricesList: string[] = [];
               for (const pos of mappedPositions) {
                 const sym = String(pos.symbol || '').toUpperCase();
                 const px = priceMap.get(sym);
                 if (px && px > 0) {
+                  const oldPrice = pos.currentPrice;
                   pos.currentPrice = px;
-                  const delta = (px - pos.entryPrice) * (pos.side === 'short' ? -1 : 1);
-                  pos.unrealizedPnL = delta * pos.size;
-                  pos.unrealizedPnLPercentage = pos.entryPrice > 0 ? (delta / pos.entryPrice) * 100 : 0;
+                  
+                  // CRITICAL: Always recompute PnL when we have a valid current price
+                  // Bitunix API often returns unrealizedPNL as 0 even when there's actual PnL
+                  // So we ALWAYS recalculate from the current price to get accurate live data
+                  if (pos.entryPrice > 0 && pos.size > 0) {
+                    const delta = (px - pos.entryPrice) * (pos.side === 'short' ? -1 : 1);
+                    pos.unrealizedPnL = delta * pos.size;
+                    pos.unrealizedPnLPercentage = (delta / pos.entryPrice) * 100;
+                    console.log(`✅ [Bitunix] Recalculated PnL for ${sym}: ${pos.unrealizedPnL.toFixed(2)} (${pos.unrealizedPnLPercentage.toFixed(2)}%) from price ${px} (entry: ${pos.entryPrice})`);
+                  }
+                } else {
+                  // If we couldn't fetch price, use entryPrice as fallback (better than 0)
+                  if (pos.currentPrice === 0 && pos.entryPrice > 0) {
+                    pos.currentPrice = pos.entryPrice;
+                    // If we couldn't get live price, keep API PnL if it's valid, otherwise 0
+                    if (!Number.isFinite(pos.unrealizedPnL) || pos.unrealizedPnL === 0) {
+                      pos.unrealizedPnL = 0;
+                      pos.unrealizedPnLPercentage = 0;
+                    }
+                    missingPricesList.push(sym);
+                  }
                 }
+              }
+              
+              // Log summary of missing prices once
+              if (missingPricesList.length > 0) {
+                console.warn(`⚠️ [Bitunix] Could not fetch prices for ${missingPricesList.length} symbols (using entryPrice as fallback): ${missingPricesList.join(', ')}`);
               }
             } catch (priceErr) {
               console.warn('Bitunix: price enrichment failed', priceErr);
@@ -625,14 +1076,63 @@ async function fetchBitunixPositions(
           // Merge SL/TP from TP/SL pending orders API when missing on the position objects.
           try {
             const symbols = Array.from(new Set(mappedPositions.map((p) => String(p.symbol || '').toUpperCase()).filter(Boolean)));
+            const positionIds = mappedPositions.map((p) => p.positionId).filter(Boolean) as string[];
+            console.log(`🔍 [Bitunix] Fetching TP/SL orders for symbols: ${symbols.join(', ')} and positionIds: ${positionIds.join(', ')}`);
             const ordersBySymbol = new Map<string, any[]>();
+            const ordersByPositionId = new Map<string, any[]>();
+            
+            // First, try fetching ALL TP/SL orders once (more efficient)
+            try {
+              const allOrders = await fetchAllBitunixTpSlOrders();
+              if (allOrders.length > 0) {
+                console.log(`📊 [Bitunix] Fetched ${allOrders.length} total TP/SL orders`);
+              }
+              
+              // Group orders by symbol and positionId
+              for (const order of allOrders) {
+                const oSymbol = String(order.symbol || order.contract || order.tradingPair || '').toUpperCase();
+                const oPosId = String(order.positionId || order.position_id || order.posId || '');
+                
+                if (oSymbol) {
+                  if (!ordersBySymbol.has(oSymbol)) {
+                    ordersBySymbol.set(oSymbol, []);
+                  }
+                  ordersBySymbol.get(oSymbol)!.push(order);
+                }
+                
+                if (oPosId) {
+                  ordersByPositionId.set(oPosId, (ordersByPositionId.get(oPosId) || []).concat([order]));
+                }
+              }
+            } catch (err) {
+              console.warn(`⚠️ [Bitunix] Failed to fetch all TP/SL orders, falling back to per-symbol:`, err instanceof Error ? err.message : String(err));
+              
+              // Fallback: Try fetching by symbol
+              await Promise.all(
+                symbols.map(async (sym) => {
+                  try {
+                    const orders = await fetchBitunixPendingTpSlOrders(sym);
+                    if (orders.length > 0) {
+                      console.log(`📊 [Bitunix] Fetched ${orders.length} TP/SL orders for ${sym}`);
+                    }
+                    ordersBySymbol.set(sym, orders);
+                  } catch (err) {
+                    // Silently fail - reduce log spam
+                  }
+                })
+              );
+            }
+            
+            // Also try fetching by positionId (Bitunix might require positionId instead of symbol)
             await Promise.all(
-              symbols.map(async (sym) => {
+              positionIds.map(async (posId) => {
                 try {
-                  const orders = await fetchBitunixPendingTpSlOrders(sym);
-                  ordersBySymbol.set(sym, orders);
-                } catch {
-                  // ignore per-symbol failures
+                  const orders = await fetchBitunixPendingTpSlOrdersByPositionId(posId);
+                  if (orders.length > 0) {
+                    ordersByPositionId.set(posId, orders);
+                  }
+                } catch (err) {
+                  // Silently fail - positionId-based fetch is optional
                 }
               })
             );
@@ -644,14 +1144,40 @@ async function fetchBitunixPositions(
               return null;
             };
 
+            const classifyTriggerAsTpOrSl = (
+              trigger: number | undefined,
+              entry: number,
+              side: 'long' | 'short'
+            ): { tp?: number; sl?: number } => {
+              if (!trigger || !Number.isFinite(trigger) || trigger <= 0) return {};
+              if (!Number.isFinite(entry) || entry <= 0) return {};
+              // Heuristic: for LONG, TP above entry and SL below entry. For SHORT, inverse.
+              if (side === 'long') {
+                return trigger >= entry ? { tp: trigger } : { sl: trigger };
+              }
+              return trigger <= entry ? { tp: trigger } : { sl: trigger };
+            };
+
             for (const pos of mappedPositions) {
-              if (pos.stopLoss && pos.stopLoss > 0 && pos.takeProfit && pos.takeProfit > 0) continue;
+              if (pos.stopLoss && pos.stopLoss > 0 && pos.takeProfit && pos.takeProfit > 0) {
+                // Position already has TP/SL, skip
+                continue;
+              }
               const sym = String(pos.symbol || '').toUpperCase();
-              const orders = ordersBySymbol.get(sym) || [];
-              if (!orders.length) continue;
+              const posId = pos.positionId ? String(pos.positionId) : '';
+              
+              // Try both symbol-based and positionId-based orders
+              const ordersBySym = ordersBySymbol.get(sym) || [];
+              const ordersByPosId = posId ? (ordersByPositionId.get(posId) || []) : [];
+              const orders = ordersByPosId.length > 0 ? ordersByPosId : ordersBySym;
+              
+              if (!orders.length) {
+                // No TP/SL orders found - this is expected if API doesn't support these endpoints
+                // Only log if we actually tried to fetch (not if cache was empty)
+                continue;
+              }
 
               // Prefer matching by positionId if the API returns it; otherwise match by side if present.
-              const posId = pos.positionId ? String(pos.positionId) : '';
               const relevant = orders.filter((o: any) => {
                 const oid = String(o.positionId ?? o.position_id ?? o.posId ?? o.pos_id ?? '');
                 if (posId && oid && posId === oid) return true;
@@ -673,7 +1199,8 @@ async function fetchBitunixPositions(
                   o.takeProfit,
                   o.tpTriggerPx,
                   o.tpTriggerPrice,
-                  o.triggerPrice
+                  o.triggerPrice,
+                  o.trigger_price
                 );
                 const sl = extractFirstPositiveNumber(
                   o.slPrice,
@@ -683,7 +1210,8 @@ async function fetchBitunixPositions(
                   o.stopLoss,
                   o.slTriggerPx,
                   o.slTriggerPrice,
-                  o.triggerPrice
+                  o.triggerPrice,
+                  o.trigger_price
                 );
 
                 // Heuristic: some responses have only a single triggerPrice; use "type" hints if available.
@@ -698,10 +1226,34 @@ async function fetchBitunixPositions(
                 // If explicit tpPrice/slPrice exist, accept regardless of kind.
                 if (extractFirstPositiveNumber(o.tpPrice, o.tp_price, o.takeProfitPrice, o.takeProfit)) bestTP = tp ?? bestTP;
                 if (extractFirstPositiveNumber(o.slPrice, o.sl_price, o.stopLossPrice, o.stopLoss)) bestSL = sl ?? bestSL;
+
+                // NEW: If we only have a generic trigger price (common for Bitunix "Position TP/SL"),
+                // infer whether it's TP or SL by comparing against the position entry price + side.
+                if (!bestTP || !bestSL) {
+                  const trigger = extractFirstPositiveNumber(
+                    o.triggerPrice,
+                    o.trigger_price,
+                    o.triggerPx,
+                    o.trigger_px,
+                    o.price,
+                    o.orderPrice,
+                    o.order_price
+                  );
+                  const inferred = classifyTriggerAsTpOrSl(trigger, pos.entryPrice, pos.side);
+                  if (inferred.tp && (!bestTP || inferred.tp > bestTP)) bestTP = inferred.tp;
+                  if (inferred.sl && (!bestSL || inferred.sl < bestSL)) bestSL = inferred.sl;
+                }
               }
 
-              if (!pos.stopLoss && bestSL) pos.stopLoss = bestSL;
-              if (!pos.takeProfit && bestTP) pos.takeProfit = bestTP;
+              if (!pos.stopLoss && bestSL) {
+                console.log(`✅ [Bitunix] Merged SL for ${sym}: ${bestSL}`);
+                pos.stopLoss = bestSL;
+              }
+              if (!pos.takeProfit && bestTP) {
+                console.log(`✅ [Bitunix] Merged TP for ${sym}: ${bestTP}`);
+                pos.takeProfit = bestTP;
+              }
+              // Don't log when we can't extract TP/SL - this is expected if orders don't have the right format
             }
           } catch (mergeErr) {
             console.warn('Bitunix TP/SL merge failed:', mergeErr);
@@ -718,8 +1270,15 @@ async function fetchBitunixPositions(
 
   // If we only got 404 errors and no positions were found, return empty array
   // (404 likely means no positions exist or endpoint doesn't exist, which is a valid state)
-  if (has404Errors) {
-    console.log('Bitunix: All endpoints returned 404, assuming no open positions');
+  // BUT: Only return empty if we had NO successes at all
+  if (has404Errors && !hasSuccess) {
+    console.log('Bitunix: All endpoints returned 404 or errors, assuming no open positions');
+    return [];
+  }
+  
+  // If we had some successes but no positions found, that's also valid (no open positions)
+  if (hasSuccess && !has404Errors) {
+    console.log('Bitunix: Endpoints succeeded but no open positions found');
     return [];
   }
 
@@ -959,8 +1518,12 @@ async function closeBitunixPosition(
 }
 
 serve(async (req) => {
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response(null, {
+      status: 200,
+      headers: corsHeaders
+    });
   }
 
   try {
