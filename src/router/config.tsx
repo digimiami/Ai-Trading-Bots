@@ -3,6 +3,7 @@ import type { RouteObject } from 'react-router-dom';
 import { lazy } from 'react';
 import { Navigate } from 'react-router-dom';
 import { ONBOARDING_ENABLED } from '../constants/featureFlags';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
 
 // Lazy load components
 const Landing = lazy(() => import('../pages/landing/page'));
@@ -23,7 +24,7 @@ const Reports = lazy(() => import('../pages/reports/page'));
 const Performance = lazy(() => import('../pages/performance/page'));
 const TransactionLog = lazy(() => import('../pages/transaction-log/page'));
 const Settings = lazy(() => import('../pages/settings/page'));
-const PaperTrading = lazy(() => import('../pages/paper-trading/page'));
+const PaperTrading = lazyWithRetry(() => import('../pages/paper-trading/page'));
 const WebhookTest = lazy(() => import('../pages/webhook-test/page'));
 const FuturesPairsFinder = lazy(() => import('../pages/futures-pairs-finder/page'));
 const Admin = lazy(() => import('../pages/admin/page'));
@@ -48,7 +49,7 @@ const Cookies = lazy(() => import('../pages/legal/cookies'));
 const Disclaimer = lazy(() => import('../pages/legal/disclaimer'));
 
 // AI/ML Dashboard - only loads when feature flag is enabled
-const AiMlDashboard = lazy(() => import('../pages/ai-ml-dashboard/page'));
+const AiMlDashboard = lazyWithRetry(() => import('../pages/ai-ml-dashboard/page'));
 const FunnelPageViewer = lazy(() => import('../pages/funnel/page'));
 const TrackingRedirect = lazy(() => import('../pages/tracking-redirect/page'));
 

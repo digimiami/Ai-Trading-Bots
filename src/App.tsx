@@ -10,6 +10,7 @@ import { ONBOARDING_ENABLED } from './constants/featureFlags';
 import CookieConsent from './components/ui/CookieConsent';
 import PopupDisplay from './components/ui/PopupDisplay';
 import AiAssistantWidget from './components/ai/AiAssistantWidget';
+import ErrorBoundary from './components/ErrorBoundary';
 import { supabase } from './lib/supabase';
 import { sendDebugTelemetry } from './utils/debugTelemetry';
 
@@ -227,19 +228,21 @@ function AppRoutes() {
   });
   // #endregion
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center mx-auto mb-4">
-            <i className="ri-loader-4-line text-2xl text-blue-600 dark:text-blue-400 animate-spin"></i>
+    <ErrorBoundary>
+      <Suspense fallback={
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center mx-auto mb-4">
+              <i className="ri-loader-4-line text-2xl text-blue-600 dark:text-blue-400 animate-spin"></i>
+            </div>
+            <p className="text-gray-600 dark:text-gray-400">Loading...</p>
           </div>
-          <p className="text-gray-600 dark:text-gray-400">Loading...</p>
         </div>
-      </div>
-    }>
-      {element}
-      <AiAssistantWidget />
-    </Suspense>
+      }>
+        {element}
+        <AiAssistantWidget />
+      </Suspense>
+    </ErrorBoundary>
   );
 }
 
@@ -253,21 +256,78 @@ declare global {
 const BASE_PATH = (typeof window !== 'undefined' && window.__BASE_PATH__) || import.meta.env.BASE_URL || '/';
 
 function App() {
+  // Handle chunk loading errors globally
+  useEffect(() => {
+    const handleChunkError = (event: ErrorEvent) => {
+      const error = event.error;
+      if (error && error.message && error.message.includes('Failed to fetch dynamically imported module')) {
+        console.error('Chunk loading error detected:', error);
+        // Retry by reloading the page after a short delay
+        const retryCount = sessionStorage.getItem('chunkErrorRetryCount') || '0';
+        const count = parseInt(retryCount, 10);
+        
+        if (count < 3) {
+          sessionStorage.setItem('chunkErrorRetryCount', String(count + 1));
+          console.log(`Retrying chunk load (attempt ${count + 1}/3)...`);
+          setTimeout(() => {
+            window.location.reload();
+          }, 1000);
+        } else {
+          // After 3 retries, clear the retry count and show error
+          sessionStorage.removeItem('chunkErrorRetryCount');
+          console.error('Failed to load chunks after 3 retries');
+        }
+        event.preventDefault();
+      }
+    };
+
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const reason = event.reason;
+      if (reason && reason.message && reason.message.includes('Failed to fetch dynamically imported module')) {
+        console.error('Chunk loading error in promise rejection:', reason);
+        const retryCount = sessionStorage.getItem('chunkErrorRetryCount') || '0';
+        const count = parseInt(retryCount, 10);
+        
+        if (count < 3) {
+          sessionStorage.setItem('chunkErrorRetryCount', String(count + 1));
+          console.log(`Retrying chunk load (attempt ${count + 1}/3)...`);
+          setTimeout(() => {
+            window.location.reload();
+          }, 1000);
+        } else {
+          sessionStorage.removeItem('chunkErrorRetryCount');
+          console.error('Failed to load chunks after 3 retries');
+        }
+        event.preventDefault();
+      }
+    };
+
+    window.addEventListener('error', handleChunkError);
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+    
+    return () => {
+      window.removeEventListener('error', handleChunkError);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
+  }, []);
+
   return (
-    <BrowserRouter basename={BASE_PATH}>
-      <AppRoutes />
-      <CookieConsent 
-        onAccept={() => {
-          console.log('✅ User accepted cookies');
-          // Enable analytics tracking here if needed
-        }}
-        onDecline={() => {
-          console.log('❌ User declined cookies');
-          // Disable analytics tracking here if needed
-        }}
-      />
-      <PopupDisplay />
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter basename={BASE_PATH}>
+        <AppRoutes />
+        <CookieConsent 
+          onAccept={() => {
+            console.log('✅ User accepted cookies');
+            // Enable analytics tracking here if needed
+          }}
+          onDecline={() => {
+            console.log('❌ User declined cookies');
+            // Disable analytics tracking here if needed
+          }}
+        />
+        <PopupDisplay />
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }
 
