@@ -843,7 +843,7 @@ class MarketDataFetcher {
     
     // Handle incomplete symbols (e.g., "ETH" -> "ETHUSDT", "BTC" -> "BTCUSDT")
     // Common coin names that need USDT suffix
-    const commonCoins = ['BTC', 'ETH', 'BNB', 'SOL', 'ADA', 'XRP', 'DOGE', 'DOT', 'MATIC', 'AVAX', 'LINK', 'UNI', 'ATOM', 'ALGO', 'NEAR', 'FTM', 'SAND', 'MANA', 'AXS', 'GALA', 'ENJ', 'CHZ', 'HBAR', 'ICP', 'FLOW', 'THETA', 'FIL', 'EOS', 'TRX', 'LTC', 'BCH', 'XLM', 'VET', 'AAVE', 'MKR', 'COMP', 'SNX', 'CRV', 'SUSHI', '1INCH', 'PEPE', 'SHIB', 'FLOKI', 'BONK', 'WIF', 'HMAR', 'STRK', 'ARB', 'OP', 'SUI', 'APT', 'INJ', 'TIA', 'SEI', 'RENDER', 'FET'];
+    const commonCoins = ['BTC', 'ETH', 'BNB', 'SOL', 'ADA', 'XRP', 'DOGE', 'DOT', 'MATIC', 'AVAX', 'LINK', 'UNI', 'ATOM', 'ALGO', 'NEAR', 'FTM', 'SAND', 'MANA', 'AXS', 'GALA', 'ENJ', 'CHZ', 'HBAR', 'ICP', 'FLOW', 'THETA', 'FIL', 'EOS', 'TRX', 'LTC', 'BCH', 'XLM', 'VET', 'AAVE', 'MKR', 'COMP', 'SNX', 'CRV', 'SUSHI', '1INCH', 'PEPE', 'SHIB', 'FLOKI', 'BONK', 'WIF', 'HMAR', 'STRK', 'ARB', 'OP', 'SUI', 'APT', 'INJ', 'TIA', 'SEI', 'RENDER', 'FET', 'RIVER'];
     
     // Check if symbol is just a coin name without USDT suffix
     if (commonCoins.includes(upperSymbol) && !upperSymbol.endsWith('USDT') && !upperSymbol.endsWith('USD') && !upperSymbol.endsWith('BUSD')) {
@@ -6842,16 +6842,22 @@ class BotExecutor {
       }
       
       // CRITICAL: For Bitunix, check if all API calls failed with "code 2: Parameter error"
-      // This indicates the symbol doesn't exist on Bitunix, even if we got a price from fallback
+      // Only abort if we got consistent errors AND couldn't get a valid price
+      // If we got a price (even from fallback), the symbol likely exists but API format might be different
       if (bot.exchange?.toLowerCase() === 'bitunix') {
         const bitunixApiErrors = (globalThis as any).__bitunixApiErrors || [];
         const allCode2Errors = bitunixApiErrors.length > 0 && 
           bitunixApiErrors.every((err: any) => err.code === 2 || err.message?.includes('Parameter error') || err.message?.includes('code 2'));
         
-        if (allCode2Errors && bitunixApiErrors.length >= 3) {
-          // Multiple consistent "code 2" errors indicate symbol doesn't exist
-          const errorMsg = `Symbol ${bot.symbol} does not exist on Bitunix exchange. All API calls returned "code 2: Parameter error". Please verify the symbol name and ensure it's available for ${tradingType} trading on Bitunix.`;
+        // Only abort if:
+        // 1. We have 3+ consistent "code 2" errors
+        // 2. AND we couldn't get a valid price (currentPrice is 0 or invalid)
+        // If we got a price, the symbol exists - API format might just be different
+        if (allCode2Errors && bitunixApiErrors.length >= 3 && (!currentPrice || currentPrice === 0 || !isFinite(currentPrice))) {
+          // Multiple consistent "code 2" errors AND no valid price - symbol likely doesn't exist
+          const errorMsg = `Symbol ${bot.symbol} does not exist on Bitunix exchange. All API calls returned "code 2: Parameter error" and no valid price could be obtained. Please verify the symbol name and ensure it's available for ${tradingType} trading on Bitunix.`;
           console.error(`❌ ${errorMsg}`);
+          console.error(`   Tried symbol variants: ${bitunixApiErrors.map((e: any) => e.symbol).filter((v: any, i: number, arr: any[]) => arr.indexOf(v) === i).join(', ')}`);
           
           await this.addBotLog(bot.id, {
             level: 'error',
@@ -6864,6 +6870,7 @@ class BotExecutor {
               exchange: bot.exchange,
               tradingType: tradingType,
               bitunixApiErrors: bitunixApiErrors.slice(0, 5), // Log first 5 errors
+              symbolVariantsTried: bitunixApiErrors.map((e: any) => e.symbol).filter((v: any, i: number, arr: any[]) => arr.indexOf(v) === i),
               errorType: 'SymbolNotFound',
               timestamp: new Date().toISOString()
             }
@@ -6873,6 +6880,10 @@ class BotExecutor {
           (globalThis as any).__bitunixApiErrors = null;
           
           throw new Error(errorMsg);
+        } else if (allCode2Errors && bitunixApiErrors.length >= 3 && currentPrice > 0) {
+          // We got "code 2" errors but also got a valid price - symbol exists, just API format issue
+          console.warn(`⚠️ Bitunix API returned "code 2" errors for ${bot.symbol}, but valid price (${currentPrice}) was obtained from fallback. Symbol exists but API format may differ. Continuing with trade.`);
+          console.warn(`   Symbol variants tried: ${bitunixApiErrors.map((e: any) => e.symbol).filter((v: any, i: number, arr: any[]) => arr.indexOf(v) === i).join(', ')}`);
         }
         
         // Clear the stored errors after checking
