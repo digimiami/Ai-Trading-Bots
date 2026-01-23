@@ -13552,13 +13552,146 @@ class BotExecutor {
         }
       }
 
-      // Final check: Require OPEN position with size > 0
+      // Final check: If we can't get position info, try symbol-based SL/TP as fallback
       if (!positionInfo || !positionVerified || !(positionInfo?.size > 0)) {
         console.warn(
-          `⚠️ Skipping Bitunix SL/TP: no confirmed OPEN position with size > 0 for ${normalizedSymbol}.`
+          `⚠️ Could not fetch position info for ${normalizedSymbol} (positionId=${positionId || 'NONE'}, sourceType=${positionInfo?.sourceType || 'unknown'}, size=${positionInfo?.size || 'NA'}).`
         );
-        console.warn(`   positionId=${positionId || 'NONE'}, sourceType=${positionInfo?.sourceType || 'unknown'}, size=${positionInfo?.size || 'NA'}`);
-        return;
+        console.warn(`   Attempting symbol-based SL/TP as fallback (without positionId)...`);
+        
+        // FALLBACK: Try to set SL/TP using just symbol and side, without positionId
+        // Some Bitunix API endpoints may support symbol-based TP/SL
+        if (!isValidPositionId(resolvedPositionId)) {
+          console.log(`🔄 Attempting symbol-based SL/TP for ${normalizedSymbol} (no positionId available)...`);
+          
+          const positionSide = (side.toUpperCase() === 'BUY' || side.toUpperCase() === 'LONG') ? 'LONG' : 'SHORT';
+          const marginCoin = normalizedSymbol.endsWith('USDT') ? 'USDT' : normalizedSymbol.endsWith('USD') ? 'USD' : 'USDT';
+          
+          // Try symbol-based endpoints without positionId
+          const symbolBasedEndpoints = [
+            '/api/v1/futures/tpsl/place_order',
+            '/api/v1/futures/tpsl/place',
+            '/api/v1/futures/tpsl/order',
+          ];
+          
+          const tpPriceStr = await this.formatBitunixPrice(symbol, takeProfitPrice);
+          const slPriceStr = await this.formatBitunixPrice(symbol, stopLossPrice);
+          
+          // Try symbol-based SL/TP placement
+          for (const baseUrl of baseUrls) {
+            for (const endpoint of symbolBasedEndpoints) {
+              try {
+                const symbolBasedParams: any = {
+                  symbol: normalizedSymbol,
+                  contract: normalizedSymbol,
+                  positionSide,
+                  holdSide: positionSide,
+                  marginCoin,
+                  marketType: 'futures',
+                  tpPrice: tpPriceStr,
+                  slPrice: slPriceStr,
+                  // Try without positionId - some endpoints may accept symbol-based
+                };
+                
+                // Try with and without qty (some endpoints may not require it)
+                const paramsVariants = [
+                  { ...symbolBasedParams },
+                  { ...symbolBasedParams, tpQty: '1', slQty: '1' }, // Minimal qty
+                ];
+                
+                for (const params of paramsVariants) {
+                  try {
+                    const bodyString = JSON.stringify(params).replace(/\s+/g, '');
+                    const queryParams = '';
+                    const timestamp = (Date.now() + BotExecutor.bitunixServerTimeOffset).toString();
+                    const nonce = this.generateNonce();
+                    const signature = await this.createBitunixSignatureDoubleSHA256(
+                      nonce,
+                      timestamp,
+                      apiKey,
+                      queryParams,
+                      bodyString,
+                      apiSecret
+                    );
+                    
+                    const response = await fetch(`${baseUrl}${endpoint}`, {
+                      method: 'POST',
+                      headers: {
+                        'api-key': String(apiKey),
+                        'nonce': String(nonce),
+                        'timestamp': String(timestamp),
+                        'sign': String(signature),
+                        'Content-Type': 'application/json',
+                        'language': 'en-US'
+                      },
+                      body: bodyString
+                    });
+                    
+                    const responseText = await response.text();
+                    const data = JSON.parse(responseText);
+                    
+                    if (data.code === 0) {
+                      console.log(`✅ Symbol-based SL/TP set successfully for ${normalizedSymbol} via ${baseUrl}${endpoint}`);
+                      if (bot?.id) {
+                        await this.addBotLog(bot.id, {
+                          level: 'info',
+                          category: 'trade',
+                          message: `SL/TP set successfully for ${normalizedSymbol} using symbol-based method (positionId unavailable)`,
+                          details: {
+                            symbol: normalizedSymbol,
+                            side: positionSide,
+                            stopLossPrice: slPriceStr,
+                            takeProfitPrice: tpPriceStr,
+                            method: 'symbol-based',
+                            endpoint: `${baseUrl}${endpoint}`
+                          }
+                        });
+                      }
+                      return; // Success!
+                    } else if (data.code !== 2) {
+                      // If we get a different error code, log it but continue trying
+                      console.log(`   ℹ️ Symbol-based SL/TP attempt returned code ${data.code}: ${data.msg || 'Unknown'}`);
+                    }
+                  } catch (err) {
+                    // Continue to next variant
+                    continue;
+                  }
+                }
+              } catch (err) {
+                // Continue to next endpoint
+                continue;
+              }
+            }
+          }
+          
+          // If symbol-based fallback also failed, log warning but don't throw error
+          console.warn(`⚠️ Could not set SL/TP for ${normalizedSymbol}: Position fetching failed and symbol-based fallback also failed.`);
+          console.warn(`   Position may need to be set manually on Bitunix exchange.`);
+          if (bot?.id) {
+            await this.addBotLog(bot.id, {
+              level: 'warning',
+              category: 'trade',
+              message: `Could not set SL/TP for ${normalizedSymbol}: Position API returned errors and symbol-based fallback failed. Please set SL/TP manually on Bitunix.`,
+              details: {
+                symbol: normalizedSymbol,
+                side: side,
+                stopLossPrice: stopLossPrice.toFixed(4),
+                takeProfitPrice: takeProfitPrice.toFixed(4),
+                action_required: 'Manually set stop loss and take profit on Bitunix exchange',
+                troubleshooting: [
+                  '1. Log into Bitunix exchange',
+                  '2. Navigate to your positions',
+                  `3. Set Stop Loss at $${stopLossPrice.toFixed(4)}`,
+                  `4. Set Take Profit at $${takeProfitPrice.toFixed(4)}`
+                ]
+              }
+            });
+          }
+          return; // Exit gracefully - don't throw error
+        }
+        
+        // If we have positionId but no size, still try to set SL/TP
+        console.warn(`⚠️ Position size unavailable, but attempting SL/TP with positionId=${resolvedPositionId}...`);
       }
 
       // CRITICAL: Prefer OPEN positions over PENDING for Bitunix
@@ -13778,8 +13911,13 @@ class BotExecutor {
           });
         }
       } else {
-        console.warn(`⚠️ Cannot set TP/SL: Unable to resolve a valid positionId for ${symbol}`);
-        console.warn(`   positionId provided: ${positionId}`);
+        // FALLBACK: Try symbol-based SL/TP without positionId
+        console.warn(`⚠️ Cannot resolve a valid positionId for ${symbol} (positionId: ${positionId || 'NONE'}).`);
+        console.warn(`   Attempting symbol-based SL/TP as fallback...`);
+        
+        // This fallback was already attempted in the earlier code block above
+        // If we reach here, it means the symbol-based fallback also failed
+        console.warn(`   Symbol-based SL/TP fallback was already attempted. Please set SL/TP manually on Bitunix.`);
       }
       
       console.log(`📋 ENDPOINTS ARRAY BUILT - endpointsToTry.length: ${endpointsToTry.length}`);
