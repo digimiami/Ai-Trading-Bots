@@ -569,11 +569,38 @@ export default function BotsPage() {
     }
   };
 
-  const handleBotAction = async (botId: string, action: 'start' | 'pause' | 'stop') => {
+  const handleBotAction = async (botId: string, action: 'start' | 'pause' | 'stop' | 'restart') => {
     try {
       console.log(`🔄 Attempting to ${action} bot ${botId} from origin: ${window.location.origin}`);
       
-      if (action === 'start') {
+      if (action === 'restart') {
+        // Restart: stop the bot first, then start it
+        try {
+          await stopBot(botId);
+          // Small delay to ensure stop completes
+          await new Promise(resolve => setTimeout(resolve, 500));
+          await startBot(botId);
+          try {
+            await addLog(botId, {
+              level: 'success',
+              category: 'system',
+              message: 'Bot restarted successfully',
+              details: { action: 'restart', timestamp: new Date().toISOString() }
+            });
+          } catch (logError) {
+            console.warn('⚠️ Failed to record restart log:', logError);
+          }
+          alert(`✅ Bot restarted successfully!`);
+        } catch (restartError: any) {
+          // If stop fails, try to start anyway (in case bot was already stopped)
+          try {
+            await startBot(botId);
+            alert(`✅ Bot started successfully! (was already stopped)`);
+          } catch (startError: any) {
+            throw new Error(`Failed to restart bot: ${restartError?.message || restartError} (start also failed: ${startError?.message || startError})`);
+          }
+        }
+      } else if (action === 'start') {
         await startBot(botId);
         try {
           await addLog(botId, {
@@ -2926,6 +2953,16 @@ export default function BotsPage() {
                     >
                       <i className="ri-stop-line mr-1"></i>
                       Stop
+                    </Button>
+                    <Button
+                      variant="info"
+                      size="sm"
+                      onClick={() => handleBotAction(bot.id, 'restart')}
+                      className="w-full"
+                      title="Restart bot (stop then start)"
+                    >
+                      <i className="ri-restart-line mr-1"></i>
+                      Restart
                     </Button>
                     <Button
                       variant="secondary"

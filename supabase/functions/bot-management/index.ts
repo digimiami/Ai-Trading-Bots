@@ -1157,7 +1157,7 @@ serve(async (req) => {
 
         const { data: bot, error } = await supabaseClient
           .from('trading_bots')
-          .update({ status: 'paused', pause_reason: pauseReason, updated_at: new Date().toISOString() })
+          .update({ status: 'paused', updated_at: new Date().toISOString() })
           .eq('id', id)
           .eq('user_id', user.id)
           .select()
@@ -1171,7 +1171,7 @@ serve(async (req) => {
           exchange: bot.exchange,
           symbol: bot.symbol,
           status: bot.status,
-          pauseReason: bot.pause_reason || pauseReason || null,
+          pauseReason: null, // pause_reason column not available in database
           leverage: bot.leverage,
           pnl: bot.pnl,
           pnlPercentage: bot.pnl_percentage,
@@ -1202,7 +1202,7 @@ serve(async (req) => {
 
         const { data: bot, error } = await supabaseClient
           .from('trading_bots')
-          .update({ status: 'stopped', pause_reason: stopReason, updated_at: new Date().toISOString() })
+          .update({ status: 'stopped', updated_at: new Date().toISOString() })
           .eq('id', id)
           .eq('user_id', user.id)
           .select()

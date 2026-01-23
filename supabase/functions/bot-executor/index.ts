@@ -18958,9 +18958,15 @@ serve(async (req) => {
         });
         
         // CRITICAL: Refresh bot data right before execution to ensure we have the latest settings
-        // This ensures any recent UI updates (trade amount, leverage, SL/TP) are applied
+        // This ensures any recent UI updates (trade amount, leverage, SL/TP, timeframe) are applied
+        // Use service role client to bypass RLS and ensure we get the absolute latest data
         try {
-          const { data: refreshedBot, error: refreshError } = await supabaseClient
+          const serviceRoleClient = createClient(
+            Deno.env.get('SUPABASE_URL') ?? '',
+            Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+          );
+          
+          const { data: refreshedBot, error: refreshError } = await serviceRoleClient
             .from('trading_bots')
             .select('*')
             .eq('id', effectiveBotId)
@@ -18968,6 +18974,7 @@ serve(async (req) => {
           
           if (!refreshError && refreshedBot) {
             console.log(`🔄 Bot data refreshed - using latest settings from database`);
+            console.log(`   Timeframe: ${refreshedBot.timeframe ?? refreshedBot.timeFrame ?? '1h (default)'}`);
             console.log(`   Trade Amount: $${refreshedBot.trade_amount ?? refreshedBot.tradeAmount ?? 'N/A'}`);
             console.log(`   Leverage: ${refreshedBot.leverage ?? refreshedBot.leverage_ratio ?? 'N/A'}x`);
             console.log(`   Stop Loss: ${refreshedBot.stop_loss ?? refreshedBot.stopLoss ?? 'N/A'}%`);
@@ -19069,24 +19076,54 @@ serve(async (req) => {
             });
           }
           
+          // CRITICAL: Refresh bot data right before execution to ensure we have the latest settings
+          // This ensures any recent UI updates (trade amount, leverage, SL/TP, timeframe) are applied
+          let refreshedSingleBot = singleBot;
+          try {
+            const serviceRoleClient = createClient(
+              Deno.env.get('SUPABASE_URL') ?? '',
+              Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+            );
+            
+            const { data: refreshedBot, error: refreshError } = await serviceRoleClient
+              .from('trading_bots')
+              .select('*')
+              .eq('id', botId)
+              .single();
+            
+            if (!refreshError && refreshedBot) {
+              console.log(`🔄 Bot data refreshed - using latest settings from database`);
+              console.log(`   Timeframe: ${refreshedBot.timeframe ?? refreshedBot.timeFrame ?? '1h (default)'}`);
+              console.log(`   Trade Amount: $${refreshedBot.trade_amount ?? refreshedBot.tradeAmount ?? 'N/A'}`);
+              console.log(`   Leverage: ${refreshedBot.leverage ?? refreshedBot.leverage_ratio ?? 'N/A'}x`);
+              console.log(`   Stop Loss: ${refreshedBot.stop_loss ?? refreshedBot.stopLoss ?? 'N/A'}%`);
+              console.log(`   Take Profit: ${refreshedBot.take_profit ?? refreshedBot.takeProfit ?? 'N/A'}%`);
+              refreshedSingleBot = refreshedBot; // Use the refreshed bot data
+            } else {
+              console.warn(`⚠️ Failed to refresh bot data, using original fetch: ${refreshError?.message || 'Unknown error'}`);
+            }
+          } catch (refreshErr) {
+            console.warn(`⚠️ Error refreshing bot data, using original fetch: ${refreshErr instanceof Error ? refreshErr.message : String(refreshErr)}`);
+          }
+          
           // Execute single bot
-          const executorUserId = isCron ? singleBot.user_id : user.id;
+          const executorUserId = isCron ? refreshedSingleBot.user_id : user.id;
           const executor = new BotExecutor(supabaseClient, { id: executorUserId });
           
           try {
             const startTime = Date.now();
             await Promise.race([
-              executor.executeBot(singleBot),
+              executor.executeBot(refreshedSingleBot),
               new Promise((_, reject) =>
                 setTimeout(() => reject(new Error('Bot execution timeout after 60000ms')), 60000)
               )
             ]);
             const duration = Date.now() - startTime;
-            console.log(`✅ Bot ${singleBot.id} executed successfully in ${duration}ms`);
+            console.log(`✅ Bot ${refreshedSingleBot.id} executed successfully in ${duration}ms`);
             
             // Update last_execution_at and next_execution_at after successful execution
             try {
-              const timeframe = singleBot.timeframe || '15m';
+              const timeframe = refreshedSingleBot.timeframe || '15m';
               const timeframeMinutes = timeframe === '1m' ? 1 : timeframe === '3m' ? 3 : timeframe === '5m' ? 5 : timeframe === '15m' ? 15 : timeframe === '30m' ? 30 : timeframe === '1h' ? 60 : timeframe === '4h' ? 240 : timeframe === '1d' ? 1440 : 15;
               const nextExecutionMs = timeframeMinutes * 60 * 1000;
               const nextExecutionAt = new Date(Date.now() + nextExecutionMs);
@@ -19097,27 +19134,27 @@ serve(async (req) => {
                   last_execution_at: new Date().toISOString(),
                   next_execution_at: nextExecutionAt.toISOString()
                 })
-                .eq('id', singleBot.id);
+                .eq('id', refreshedSingleBot.id);
               
-              console.log(`✅ Updated last_execution_at and next_execution_at for bot ${singleBot.id} (next: ${nextExecutionAt.toISOString()})`);
+              console.log(`✅ Updated last_execution_at and next_execution_at for bot ${refreshedSingleBot.id} (next: ${nextExecutionAt.toISOString()})`);
             } catch (updateError: any) {
-              console.warn(`⚠️ Failed to update execution timestamps for bot ${singleBot.id}:`, updateError.message);
+              console.warn(`⚠️ Failed to update execution timestamps for bot ${refreshedSingleBot.id}:`, updateError.message);
             }
             
             return new Response(JSON.stringify({
               success: true,
-              message: `Bot ${singleBot.id} executed successfully`,
-              botId: singleBot.id,
+              message: `Bot ${refreshedSingleBot.id} executed successfully`,
+              botId: refreshedSingleBot.id,
               executionTimeMs: duration
             }), {
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             });
           } catch (error: any) {
-            console.error(`❌ Bot ${singleBot.id} execution failed:`, error);
+            console.error(`❌ Bot ${refreshedSingleBot.id} execution failed:`, error);
             return new Response(JSON.stringify({
               success: false,
               error: error.message || 'Bot execution failed',
-              botId: singleBot.id
+              botId: refreshedSingleBot.id
             }), {
               status: 500,
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -19317,10 +19354,35 @@ serve(async (req) => {
               console.log(`   - User: ${bot.user_id}`);
               
               try {
+                // CRITICAL: Refresh bot data right before execution to ensure we have the latest settings
+                // This ensures any recent UI updates (trade amount, leverage, SL/TP, timeframe) are applied
+                let refreshedBot = bot;
+                try {
+                  const serviceRoleClient = createClient(
+                    Deno.env.get('SUPABASE_URL') ?? '',
+                    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+                  );
+                  
+                  const { data: refreshedBotData, error: refreshError } = await serviceRoleClient
+                    .from('trading_bots')
+                    .select('*')
+                    .eq('id', bot.id)
+                    .single();
+                  
+                  if (!refreshError && refreshedBotData) {
+                    console.log(`🔄 [${bot.name}] Bot data refreshed - using latest settings from database`);
+                    refreshedBot = refreshedBotData;
+                  } else {
+                    console.warn(`⚠️ [${bot.name}] Failed to refresh bot data: ${refreshError?.message || 'Unknown error'}`);
+                  }
+                } catch (refreshErr) {
+                  console.warn(`⚠️ [${bot.name}] Error refreshing bot data: ${refreshErr instanceof Error ? refreshErr.message : String(refreshErr)}`);
+                }
+                
                 // Add per-bot timeout to prevent individual bots from taking too long
-                const exec = new BotExecutor(supabaseClient, { id: isCron ? bot.user_id : user.id });
+                const exec = new BotExecutor(supabaseClient, { id: isCron ? refreshedBot.user_id : user.id });
                 const result = await Promise.race([
-                  exec.executeBot(bot),
+                  exec.executeBot(refreshedBot),
                   new Promise((_, reject) => 
                     setTimeout(() => reject(new Error(`Bot execution timeout after ${PER_BOT_TIMEOUT_MS}ms`)), PER_BOT_TIMEOUT_MS)
                   )
@@ -19330,7 +19392,7 @@ serve(async (req) => {
                 
                 // Update last_execution_at and next_execution_at after successful execution
                 try {
-                  const timeframe = bot.timeframe || '15m';
+                  const timeframe = refreshedBot.timeframe || '15m';
                   // Calculate next execution time based on timeframe
                   const timeframeMinutes = timeframe === '1m' ? 1 : timeframe === '3m' ? 3 : timeframe === '5m' ? 5 : timeframe === '15m' ? 15 : timeframe === '30m' ? 30 : timeframe === '1h' ? 60 : timeframe === '4h' ? 240 : timeframe === '1d' ? 1440 : 15;
                   const nextExecutionMs = timeframeMinutes * 60 * 1000; // Convert to milliseconds
