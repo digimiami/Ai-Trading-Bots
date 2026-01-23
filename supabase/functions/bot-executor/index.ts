@@ -565,7 +565,8 @@ function resolveLeverage(exchange?: string, tradingType?: string, userLeverage?:
 }
 
 function calculateTradeSizing(bot: any, price: number, riskContext?: RiskContext): TradeSizingResult {
-  const userLeverage = bot.leverage || 1;
+  // Always use the latest values from bot, prioritizing database fields (snake_case)
+  const userLeverage = bot.leverage ?? bot.leverage_ratio ?? 1;
   const riskMultiplier = getRiskMultiplier(bot);
   const tradingType = bot.tradingType || bot.trading_type;
   const isFutures = (tradingType === 'futures' || tradingType === 'linear');
@@ -578,7 +579,8 @@ function calculateTradeSizing(bot: any, price: number, riskContext?: RiskContext
     console.log(`🔧 Leverage resolution: userLeverage=${userLeverage}, actualLeverage=${actualLeverage} (Bitunix futures)`);
   }
 
-  const baseAmount = bot.trade_amount || bot.tradeAmount || 100;
+  // Always use the latest trade amount value, prioritizing database field (snake_case)
+  const baseAmount = bot.trade_amount ?? bot.tradeAmount ?? 100;
   const minTradeAmount = isFutures ? 50 : 10;
   const effectiveBaseAmount = Math.max(minTradeAmount, baseAmount);
 
@@ -3302,10 +3304,10 @@ class BotExecutor {
             timestamp: TimeSync.getCurrentTimeISO(),
             settings: {
               timeframe: bot.timeframe || bot.timeFrame || '1h',
-              trade_amount: bot.trade_amount || bot.tradeAmount || 100,
-              leverage: bot.leverage || 1,
-              stop_loss: bot.stop_loss || bot.stopLoss || 2.0,
-              take_profit: bot.take_profit || bot.takeProfit || 4.0,
+              trade_amount: bot.trade_amount ?? bot.tradeAmount ?? 100,
+              leverage: bot.leverage ?? bot.leverage_ratio ?? 1,
+              stop_loss: bot.stop_loss ?? bot.stopLoss ?? 2.0,
+              take_profit: bot.take_profit ?? bot.takeProfit ?? 4.0,
               risk_level: bot.risk_level || bot.riskLevel || 'low'
             },
             paper_trading: true
@@ -4021,10 +4023,10 @@ class BotExecutor {
           timestamp: TimeSync.getCurrentTimeISO(),
           settings: {
             timeframe: bot.timeframe || bot.timeFrame || '1h',
-            trade_amount: bot.trade_amount || bot.tradeAmount || 100,
-            leverage: bot.leverage || 1,
-            stop_loss: bot.stop_loss || bot.stopLoss || 2.0,
-            take_profit: bot.take_profit || bot.takeProfit || 4.0,
+            trade_amount: bot.trade_amount ?? bot.tradeAmount ?? 100,
+            leverage: bot.leverage ?? bot.leverage_ratio ?? 1,
+            stop_loss: bot.stop_loss ?? bot.stopLoss ?? 2.0,
+            take_profit: bot.take_profit ?? bot.takeProfit ?? 4.0,
             risk_level: bot.risk_level || bot.riskLevel || 'low'
           }
         }
@@ -7359,22 +7361,23 @@ class BotExecutor {
     // Create bot snapshot preserving ALL bot settings (leverage, SL/TP, etc.)
     const botSnapshot = { ...bot };
     
-    // Ensure all bot settings are preserved (handle both snake_case and camelCase)
-    if (!botSnapshot.leverage && (bot.leverage || bot.leverage_ratio)) {
-      botSnapshot.leverage = bot.leverage || bot.leverage_ratio;
-    }
-    if (!botSnapshot.stop_loss && !botSnapshot.stopLoss) {
-      botSnapshot.stop_loss = bot.stop_loss || bot.stopLoss || 2.0;
-      botSnapshot.stopLoss = botSnapshot.stop_loss;
-    }
-    if (!botSnapshot.take_profit && !botSnapshot.takeProfit) {
-      botSnapshot.take_profit = bot.take_profit || bot.takeProfit || 4.0;
-      botSnapshot.takeProfit = botSnapshot.take_profit;
-    }
-    if (!botSnapshot.trade_amount && !botSnapshot.tradeAmount) {
-      botSnapshot.trade_amount = bot.trade_amount || bot.tradeAmount || 100;
-      botSnapshot.tradeAmount = botSnapshot.trade_amount;
-    }
+    // Ensure all bot settings are preserved and up-to-date (handle both snake_case and camelCase)
+    // Always use the latest value from bot object, prioritizing snake_case from DB
+    botSnapshot.leverage = bot.leverage || bot.leverage_ratio || botSnapshot.leverage || 1;
+    botSnapshot.leverage_ratio = botSnapshot.leverage;
+    
+    // Use the latest value, prioritizing database field (snake_case)
+    const stopLossValue = bot.stop_loss ?? bot.stopLoss ?? botSnapshot.stop_loss ?? botSnapshot.stopLoss ?? 2.0;
+    botSnapshot.stop_loss = stopLossValue;
+    botSnapshot.stopLoss = stopLossValue;
+    
+    const takeProfitValue = bot.take_profit ?? bot.takeProfit ?? botSnapshot.take_profit ?? botSnapshot.takeProfit ?? 4.0;
+    botSnapshot.take_profit = takeProfitValue;
+    botSnapshot.takeProfit = takeProfitValue;
+    
+    const tradeAmountValue = bot.trade_amount ?? bot.tradeAmount ?? botSnapshot.trade_amount ?? botSnapshot.tradeAmount ?? 100;
+    botSnapshot.trade_amount = tradeAmountValue;
+    botSnapshot.tradeAmount = tradeAmountValue;
     
     // Log bot settings to verify they're present
     console.log(`📊 Bot settings for manual trade:`);
@@ -8567,8 +8570,8 @@ class BotExecutor {
             runInBackground(sltpPromise, `Bitunix SL/TP ${bot.symbol}`);
 
             // Calculate and log SL/TP values for success tracking
-            const stopLossPercent = bot.stop_loss || bot.stopLoss || 2.0;
-            const takeProfitPercent = bot.take_profit || bot.takeProfit || 4.0;
+            const stopLossPercent = bot.stop_loss ?? bot.stopLoss ?? 2.0;
+            const takeProfitPercent = bot.take_profit ?? bot.takeProfit ?? 4.0;
             const isLong = tradeSignal.side.toUpperCase() === 'BUY' || tradeSignal.side === 'Buy';
             const stopLossPrice = isLong
               ? entryPrice * (1 - stopLossPercent / 100)
@@ -13357,9 +13360,9 @@ class BotExecutor {
     const normalizedSymbol = symbol.toUpperCase();
     
     try {
-      // Get bot stop loss and take profit percentages
-      const stopLossPercent = bot.stop_loss || bot.stopLoss || 2.0;
-      const takeProfitPercent = bot.take_profit || bot.takeProfit || 4.0;
+      // Get bot stop loss and take profit percentages - always use latest values, prioritizing database field (snake_case)
+      const stopLossPercent = bot.stop_loss ?? bot.stopLoss ?? 2.0;
+      const takeProfitPercent = bot.take_profit ?? bot.takeProfit ?? 4.0;
       
       // Calculate SL/TP prices based on percentage
       const isLong = side.toUpperCase() === 'BUY' || side === 'Buy';
@@ -18953,6 +18956,29 @@ serve(async (req) => {
           paper_trading: bot.paper_trading,
           user_id: bot.user_id
         });
+        
+        // CRITICAL: Refresh bot data right before execution to ensure we have the latest settings
+        // This ensures any recent UI updates (trade amount, leverage, SL/TP) are applied
+        try {
+          const { data: refreshedBot, error: refreshError } = await supabaseClient
+            .from('trading_bots')
+            .select('*')
+            .eq('id', effectiveBotId)
+            .single();
+          
+          if (!refreshError && refreshedBot) {
+            console.log(`🔄 Bot data refreshed - using latest settings from database`);
+            console.log(`   Trade Amount: $${refreshedBot.trade_amount ?? refreshedBot.tradeAmount ?? 'N/A'}`);
+            console.log(`   Leverage: ${refreshedBot.leverage ?? refreshedBot.leverage_ratio ?? 'N/A'}x`);
+            console.log(`   Stop Loss: ${refreshedBot.stop_loss ?? refreshedBot.stopLoss ?? 'N/A'}%`);
+            console.log(`   Take Profit: ${refreshedBot.take_profit ?? refreshedBot.takeProfit ?? 'N/A'}%`);
+            bot = refreshedBot; // Use the refreshed bot data
+          } else {
+            console.warn(`⚠️ Failed to refresh bot data, using original fetch: ${refreshError?.message || 'Unknown error'}`);
+          }
+        } catch (refreshErr) {
+          console.warn(`⚠️ Error refreshing bot data, using original fetch: ${refreshErr instanceof Error ? refreshErr.message : String(refreshErr)}`);
+        }
         
         // Use bot owner's user_id for executor (not admin's user_id)
         // This ensures API keys are fetched for the bot owner, not the admin
