@@ -2206,6 +2206,7 @@ export default function BotsPage() {
                         </div>
                       </div>
                     )}
+                  </div>
                     </div>
                   )}
                 </div>
@@ -2292,6 +2293,7 @@ export default function BotsPage() {
                         </p>
                       );
                     })()}
+                  </div>
                     </div>
                   )}
                 </div>
