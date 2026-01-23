@@ -8521,7 +8521,12 @@ class BotExecutor {
             }
             
             console.log(`🛡️ Scheduling Bitunix SL/TP in background for ${bot.symbol} (entryPrice=${entryPrice})...`);
-
+            
+            // CRITICAL: Wait longer for Bitunix to process the order and establish the position
+            // Bitunix may need 3-5 seconds after order placement before position is available for SL/TP
+            console.log(`⏳ Waiting 3 seconds for Bitunix to process order and establish position before setting SL/TP...`);
+            await new Promise(resolve => setTimeout(resolve, 3000)); // 3 second delay
+            
             const sltpPromise = this.setBitunixSLTP(
               apiKey,
               apiSecret,
@@ -13414,8 +13419,10 @@ class BotExecutor {
       }
 
       if (!isValidPositionId(positionId)) {
-        console.log(`⏳ Resolving Bitunix positionId and waiting for OPEN position (retry up to 10x with 2s delays)...`);
-        for (let i = 1; i <= 10; i++) {
+        console.log(`⏳ Resolving Bitunix positionId and waiting for OPEN position (retry up to 15x with 2s delays)...`);
+        // CRITICAL: Increase retries and add initial delay - Bitunix positions may take longer to appear
+        await new Promise((resolve) => setTimeout(resolve, 2000)); // Initial 2s delay before first attempt
+        for (let i = 1; i <= 15; i++) {
           try {
             if (i > 1) await new Promise((resolve) => setTimeout(resolve, 2000)); // 2 second delay between retries
             attemptedPositionFetch = true;
