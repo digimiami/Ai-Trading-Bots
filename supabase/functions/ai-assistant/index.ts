@@ -368,6 +368,24 @@ serve(async (req) => {
         }
       },
       {
+        name: 'delete_bot',
+        description: 'Delete a trading bot permanently. Use this when user explicitly asks to delete, remove, or get rid of a bot. WARNING: This action is permanent and cannot be undone. The bot and all its associated data will be deleted. IMPORTANT: When user explicitly requests deletion (e.g., "delete bot X", "remove bot Y", "get rid of bot Z"), set confirm=true. If user is just asking about deletion or seems uncertain, ask for confirmation first before calling this function.',
+        parameters: {
+          type: 'object',
+          properties: {
+            botId: {
+              type: 'string',
+              description: 'ID of the bot to delete. You can find this from the user\'s bot list context provided above.'
+            },
+            confirm: {
+              type: 'boolean',
+              description: 'MUST be set to true when user explicitly requests deletion. Set to true when user says "delete", "remove", "get rid of", etc. If user is uncertain or just asking about deletion, do not call this function - ask for confirmation instead.'
+            }
+          },
+          required: ['botId', 'confirm']
+        }
+      },
+      {
         name: 'get_bot_performance',
         description: 'Get detailed performance metrics for a specific bot. Use this when user asks about bot performance, stats, or results.',
         parameters: {
@@ -680,7 +698,7 @@ IMPORTANT GUIDELINES:
 16. **Navigation Guidance**: When users need to access features like backtesting, positions viewing, or other platform features, provide clear instructions on how to navigate to those pages (e.g., "Navigate to the Backtest page at /backtest" or "View your open positions at /positions") but do not try to navigate for them programmatically.
 17. **Code Generation Prohibition**: NEVER generate executable code, JavaScript, or any programming language code in your responses. Only provide plain text explanations and guidance. Do not include code blocks that could be executed. If you need to show examples, use pseudocode or plain English descriptions only.
 18. **Web Search - External Research**: When users ask about current events, recent market news, new trading strategies, cryptocurrency trends, or any information that requires up-to-date external knowledge, use the web_search function to find the latest information. Don't guess or rely solely on your training data for recent events. Always search for current information when asked about recent developments, news, or trends.
-19. **Available Functions**: You can call these functions: create_bot, update_bot, get_bot_performance, update_user_settings, check_bot_positions, close_bot_position, get_bot_logs, check_exchange_balance, get_market_data, run_backtest, web_search. Use run_backtest to test strategies and find optimal settings before creating bots. Use web_search to find current information, news, or external research.`;
+19. **Available Functions**: You can call these functions: create_bot, update_bot, delete_bot, get_bot_performance, update_user_settings, check_bot_positions, close_bot_position, get_bot_logs, check_exchange_balance, get_market_data, run_backtest, web_search. Use run_backtest to test strategies and find optimal settings before creating bots. Use web_search to find current information, news, or external research. Use delete_bot when user asks to delete, remove, or get rid of a bot (requires confirmation).`;
 
     // Estimate tokens for the full system message
     const MAX_CONTEXT_TOKENS = 120000; // Leave some buffer below 128K limit
@@ -836,6 +854,9 @@ IMPORTANT GUIDELINES:
           } else if (functionName === 'update_bot') {
             result = await executeUpdateBot(supabaseServiceClient, user.id, functionArgs);
             actions.push({ type: 'update_bot', result });
+          } else if (functionName === 'delete_bot') {
+            result = await executeDeleteBot(supabaseServiceClient, user.id, functionArgs);
+            actions.push({ type: 'delete_bot', result });
           } else if (functionName === 'get_bot_performance') {
             result = await executeGetBotPerformance(supabaseServiceClient, user.id, functionArgs.botId);
             actions.push({ type: 'get_bot_performance', result });
@@ -869,7 +890,7 @@ IMPORTANT GUIDELINES:
           } else {
             // Handle unknown function calls gracefully
             console.warn(`⚠️ [AI Assistant] AI tried to call unknown function: ${functionName}`);
-            result = { success: false, error: `Unknown function: ${functionName}. Available functions are: create_bot, update_bot, get_bot_performance, update_user_settings, check_bot_positions, close_bot_position, get_bot_logs, check_exchange_balance, get_market_data, run_backtest, web_search` };
+            result = { success: false, error: `Unknown function: ${functionName}. Available functions are: create_bot, update_bot, delete_bot, get_bot_performance, update_user_settings, check_bot_positions, close_bot_position, get_bot_logs, check_exchange_balance, get_market_data, run_backtest, web_search` };
           }
           
           toolResults.push({
@@ -1641,6 +1662,60 @@ async function executeCreateBot(supabaseClient: any, userId: string, params: any
       }
     }
 
+    // Build default strategy_config if not provided
+    // CRITICAL: Ensure new bots allow both long and short trading by default
+    let strategyConfig = params.strategyConfig;
+    if (!strategyConfig) {
+      strategyConfig = {
+        bias_mode: 'auto', // Allow both long and short trades
+        require_price_vs_trend: 'any', // Allow trades in both uptrends and downtrends
+        htf_timeframe: '4h',
+        htf_trend_indicator: 'EMA200',
+        ema_fast_period: 50,
+        adx_min_htf: 23,
+        require_adx_rising: true,
+        regime_mode: 'auto',
+        adx_trend_min: 25,
+        adx_meanrev_max: 19,
+        session_filter_enabled: false,
+        allowed_hours_utc: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23],
+        cooldown_bars: 5,
+        atr_percentile_min: 20,
+        bb_width_min: 0.012,
+        bb_width_max: 0.03,
+        min_24h_volume_usd: 500000000,
+        max_spread_bps: 3,
+        risk_per_trade_pct: 1.5,
+        daily_loss_limit_pct: 3.0,
+        weekly_loss_limit_pct: 6.0,
+        max_trades_per_day: 8,
+        max_concurrent: 2,
+        max_consecutive_losses: 5,
+        sl_atr_mult: 1.3,
+        tp1_r: 1.0,
+        tp2_r: 2.0,
+        tp1_size: 0.5,
+        breakeven_at_r: 0.8,
+        trail_after_tp1_atr: 1.0,
+        time_stop_hours: 48,
+        rsi_period: 14,
+        rsi_oversold: 30,
+        rsi_overbought: 70,
+        atr_period: 14,
+        atr_tp_multiplier: 3,
+        use_ml_prediction: true,
+        ml_confidence_threshold: 0.6,
+        ml_min_samples: 100
+      };
+    } else {
+      // Merge provided config with defaults to ensure critical fields are set
+      strategyConfig = {
+        bias_mode: strategyConfig.bias_mode || 'auto',
+        require_price_vs_trend: strategyConfig.require_price_vs_trend || 'any',
+        ...strategyConfig
+      };
+    }
+
     // Prepare bot data
     const botData: any = {
       user_id: userId,
@@ -1655,7 +1730,7 @@ async function executeCreateBot(supabaseClient: any, userId: string, params: any
       stop_loss: params.stopLoss || riskDefaults.stopLoss,
       take_profit: params.takeProfit || riskDefaults.takeProfit,
       strategy: JSON.stringify(strategy),
-      strategy_config: params.strategyConfig ? JSON.stringify(params.strategyConfig) : null,
+      strategy_config: JSON.stringify(strategyConfig), // Always set strategy_config with defaults
       paper_trading: params.paperTrading !== undefined ? params.paperTrading : true, // Default to paper trading for safety
       status: 'stopped', // Start stopped, user can start manually
       created_at: new Date().toISOString()
@@ -1777,6 +1852,74 @@ async function executeUpdateBot(supabaseClient: any, userId: string, params: any
   } catch (error: any) {
     console.error('Error in executeUpdateBot:', error);
     return { success: false, error: error.message || 'Failed to update bot' };
+  }
+}
+
+// Execute bot deletion
+async function executeDeleteBot(supabaseClient: any, userId: string, params: any) {
+  try {
+    const { botId, confirm } = params;
+
+    // Validate required parameters
+    if (!botId) {
+      return { success: false, error: 'Bot ID is required' };
+    }
+
+    if (confirm !== true) {
+      return { 
+        success: false, 
+        error: 'Deletion requires confirmation. Please confirm that you want to delete this bot permanently.',
+        requiresConfirmation: true
+      };
+    }
+
+    // Verify bot belongs to user and get bot details
+    const { data: existingBot, error: fetchError } = await supabaseClient
+      .from('trading_bots')
+      .select('id, name, user_id, status')
+      .eq('id', botId)
+      .eq('user_id', userId)
+      .single();
+
+    if (fetchError || !existingBot) {
+      return { success: false, error: 'Bot not found or access denied' };
+    }
+
+    // Check if bot is currently running (warn but allow deletion)
+    if (existingBot.status === 'running' || existingBot.status === 'active') {
+      console.warn(`⚠️ [executeDeleteBot] Deleting bot ${botId} that is currently ${existingBot.status}`);
+    }
+
+    // Delete the bot (cascade will handle related records if foreign keys are set up)
+    const { error: deleteError } = await supabaseClient
+      .from('trading_bots')
+      .delete()
+      .eq('id', botId)
+      .eq('user_id', userId);
+
+    if (deleteError) {
+      console.error('❌ [executeDeleteBot] Bot deletion error:', deleteError);
+      return { success: false, error: deleteError.message || 'Failed to delete bot' };
+    }
+
+    console.log(`✅ [executeDeleteBot] Bot deleted successfully: ${existingBot.name} (${botId})`);
+
+    return {
+      success: true,
+      message: `Bot "${existingBot.name}" has been deleted successfully`,
+      deletedBot: {
+        id: existingBot.id,
+        name: existingBot.name
+      }
+    };
+  } catch (error: any) {
+    console.error('❌ [executeDeleteBot] Exception in bot deletion:', error);
+    console.error('❌ [executeDeleteBot] Stack:', error.stack);
+    return { 
+      success: false, 
+      error: error.message || 'Failed to delete bot',
+      details: error.stack 
+    };
   }
 }
 

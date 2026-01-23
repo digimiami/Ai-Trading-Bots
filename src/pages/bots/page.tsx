@@ -55,6 +55,11 @@ export default function BotsPage() {
   const [sharingBotId, setSharingBotId] = useState<string | null>(null);
   const [expandedErrorBotId, setExpandedErrorBotId] = useState<string | null>(null);
   const [aiMlActivityBotId, setAiMlActivityBotId] = useState<string | null>(null);
+  const [expandedSettingsBotId, setExpandedSettingsBotId] = useState<string | null>(null);
+  const [expandedRiskBotId, setExpandedRiskBotId] = useState<string | null>(null);
+  const [expandedAdvancedBotId, setExpandedAdvancedBotId] = useState<string | null>(null);
+  const [expandedMetricsBotId, setExpandedMetricsBotId] = useState<string | null>(null);
+  const [expandedStatusBotId, setExpandedStatusBotId] = useState<string | null>(null);
   const isWebhookView = viewMode === 'webhook';
   
   // Get trade limits for all bots
@@ -1502,272 +1507,109 @@ export default function BotsPage() {
                   </div>
                 </div>
 
-                {/* Timeframe - Outside Bot Box */}
+                {/* Trading Settings - Collapsible Section */}
                 {!isWebhookView && (
                 <div className="pt-2 border-t border-gray-100 dark:border-gray-700">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-medium text-gray-700 dark:text-gray-300 flex items-center">
-                        <i className="ri-bar-chart-line mr-0.5 text-blue-600 text-xs"></i>
-                        Timeframe:
-                        <HelpTooltip text="Chart interval for technical analysis. This determines how often the bot analyzes market data and makes trading decisions." />
-                      </span>
-                      <span className="text-xs font-semibold text-gray-900 dark:text-white">
-                        {bot.timeframe || '1h'}
-                      </span>
+                  <button
+                    onClick={() => setExpandedSettingsBotId(expandedSettingsBotId === bot.id ? null : bot.id)}
+                    className="w-full flex items-center justify-between p-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <i className="ri-settings-3-line text-blue-600"></i>
+                      <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Trading Settings</span>
                     </div>
-                    <button
-                      onClick={() => {
-                        if (editingTimeframeBotId === bot.id) {
-                          setEditingTimeframeBotId(null);
-                          setEditingTimeframeValue(null);
-                        } else {
-                          setEditingTimeframeBotId(bot.id);
-                          setEditingTimeframeValue(bot.timeframe || '1h');
-                        }
-                      }}
-                      className="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1"
-                      title="Edit timeframe"
-                    >
-                      <i className="ri-edit-line"></i>
-                      Edit
-                    </button>
-                  </div>
+                    <i className={`ri-arrow-${expandedSettingsBotId === bot.id ? 'up' : 'down'}-s-line text-gray-400`}></i>
+                  </button>
                   
-                  {/* Inline Editor for Timeframe */}
-                  {editingTimeframeBotId === bot.id && (
-                    <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                      <div className="flex items-center gap-2 mb-2">
-                        <label className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                          Timeframe:
-                        </label>
-                        <select
-                          value={editingTimeframeValue || bot.timeframe || '1h'}
-                          onChange={(e) => setEditingTimeframeValue(e.target.value)}
-                          className="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                        >
-                          <option value="1m">1 Minute</option>
-                          <option value="3m">3 Minutes</option>
-                          <option value="5m">5 Minutes</option>
-                          <option value="15m">15 Minutes</option>
-                          <option value="30m">30 Minutes</option>
-                          <option value="45m">45 Minutes</option>
-                          <option value="1h">1 Hour</option>
-                          <option value="2h">2 Hours</option>
-                          <option value="3h">3 Hours</option>
-                          <option value="4h">4 Hours</option>
-                          <option value="5h">5 Hours</option>
-                          <option value="6h">6 Hours</option>
-                          <option value="7h">7 Hours</option>
-                          <option value="8h">8 Hours</option>
-                          <option value="9h">9 Hours</option>
-                          <option value="10h">10 Hours</option>
-                          <option value="12h">12 Hours</option>
-                          <option value="1d">1 Day</option>
-                          <option value="1w">1 Week</option>
-                          <option value="1M">1 Month</option>
-                        </select>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          onClick={async () => {
-                            if (editingTimeframeValue) {
-                              try {
-                                await updateBot(bot.id, {
-                                  timeframe: editingTimeframeValue
-                                } as any);
-                                
-                                setEditingTimeframeBotId(null);
-                                setEditingTimeframeValue(null);
-                                
-                                setTimeout(() => {
-                                  window.location.reload();
-                                }, 500);
-                                
-                                alert(`✅ Timeframe updated to ${editingTimeframeValue}`);
-                              } catch (error: any) {
-                                console.error('Error updating timeframe:', error);
-                                const errorMsg = error?.message || 'Failed to update timeframe. Please try again.';
-                                alert(`Failed to update timeframe: ${errorMsg}`);
-                              }
-                            }
-                          }}
-                          className="text-xs"
-                        >
-                          Save
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => {
-                            setEditingTimeframeBotId(null);
-                            setEditingTimeframeValue(null);
-                          }}
-                          className="text-xs"
-                        >
-                          Cancel
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                )}
-
-                {/* Bot Timestamp - Start Time and Running Duration */}
-                {(() => {
-                  const botTime = getBotRunningTime(bot);
-                  if (!botTime) return null;
-                  
-                  return (
-                    <div className="pt-3 border-t border-gray-100">
-                      <div className="flex items-center justify-between text-xs text-gray-600">
-                        <div className="flex items-center gap-4">
-                          <span className="flex items-center gap-1">
-                            <i className="ri-time-line"></i>
-                            <span className="font-medium">Started:</span>
-                            <span>{botTime.startTime}</span>
-                          </span>
-                          {bot.status === 'running' && (
-                            <span className="flex items-center gap-1">
-                              <i className="ri-play-circle-line text-green-600"></i>
-                              <span className="font-medium">Running for:</span>
-                              <span className="text-green-700 font-semibold">{botTime.runningFor}</span>
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* Trade Limit Status */}
-                {!isWebhookView && (() => {
-                  const limit = getLimit(bot.id);
-                  if (limit) {
-                    return (
-                      <div className="pt-2 border-t border-gray-100">
+                  {expandedSettingsBotId === bot.id && (
+                    <div className="mt-2 space-y-3 pl-4 border-l-2 border-blue-200 dark:border-blue-700">
+                      {/* Timeframe */}
+                      <div>
                         <div className="flex items-center justify-between mb-1.5">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-medium text-gray-700 flex items-center">
-                              Daily Trades:
-                              <HelpTooltip text="Maximum number of trades allowed per day for this bot. Once reached, the bot will pause until the next day. This prevents overtrading and helps manage risk." />
+                            <span className="text-xs font-medium text-gray-700 dark:text-gray-300 flex items-center">
+                              <i className="ri-bar-chart-line mr-0.5 text-blue-600 text-xs"></i>
+                              Timeframe:
+                              <HelpTooltip text="Chart interval for technical analysis. This determines how often the bot analyzes market data and makes trading decisions." />
                             </span>
-                            <span className={`text-xs font-semibold ${
-                              limit.isLimitReached ? 'text-red-600' : 
-                              limit.tradesToday / limit.maxTradesPerDay > 0.8 ? 'text-yellow-600' : 
-                              'text-green-600'
-                            }`}>
-                              {limit.tradesToday} / {limit.maxTradesPerDay}
+                            <span className="text-xs font-semibold text-gray-900 dark:text-white">
+                              {bot.timeframe || '1h'}
                             </span>
-                            {limit.isLimitReached && (
-                              <span className="text-[10px] text-red-600">(Limit Reached)</span>
-                            )}
                           </div>
                           <button
                             onClick={() => {
-                              if (editingLimitBotId === bot.id) {
-                                setEditingLimitBotId(null);
-                                setEditingLimitValue(null);
+                              if (editingTimeframeBotId === bot.id) {
+                                setEditingTimeframeBotId(null);
+                                setEditingTimeframeValue(null);
                               } else {
-                                setEditingLimitBotId(bot.id);
-                                setEditingLimitValue(limit.maxTradesPerDay);
+                                setEditingTimeframeBotId(bot.id);
+                                setEditingTimeframeValue(bot.timeframe || '1h');
                               }
                             }}
-                            className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
-                            title="Edit max trades per day"
+                            className="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1"
+                            title="Edit timeframe"
                           >
                             <i className="ri-edit-line"></i>
-                            Edit Limit
+                            Edit
                           </button>
                         </div>
                         
-                        {/* Progress Bar */}
-                        <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
-                          <div 
-                            className={`h-2 rounded-full transition-all ${
-                              limit.isLimitReached ? 'bg-red-500' : 
-                              limit.tradesToday / limit.maxTradesPerDay > 0.8 ? 'bg-yellow-500' : 
-                              'bg-green-500'
-                            }`}
-                            style={{ 
-                              width: `${Math.min(100, (limit.tradesToday / limit.maxTradesPerDay) * 100)}%` 
-                            }}
-                          ></div>
-                        </div>
-
-                        {/* Inline Editor */}
-                        {editingLimitBotId === bot.id && (
-                          <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                        {/* Inline Editor for Timeframe */}
+                        {editingTimeframeBotId === bot.id && (
+                          <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
                             <div className="flex items-center gap-2 mb-2">
-                              <label className="text-xs font-medium text-gray-700 flex items-center">
-                                Max Trades Per Day:
-                                <HelpTooltip text="Set the maximum number of trades this bot can execute per day. Once this limit is reached, the bot will automatically pause until the next day. Helps prevent overtrading and manage risk." />
+                              <label className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                                Timeframe:
                               </label>
-                              <input
-                                type="number"
-                                min="1"
-                                max="200"
-                                value={editingLimitValue || limit.maxTradesPerDay}
-                                onChange={(e) => setEditingLimitValue(parseInt(e.target.value) || 1)}
-                                className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                              />
+                              <select
+                                value={editingTimeframeValue || bot.timeframe || '1h'}
+                                onChange={(e) => setEditingTimeframeValue(e.target.value)}
+                                className="px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                              >
+                                <option value="1m">1 Minute</option>
+                                <option value="3m">3 Minutes</option>
+                                <option value="5m">5 Minutes</option>
+                                <option value="15m">15 Minutes</option>
+                                <option value="30m">30 Minutes</option>
+                                <option value="45m">45 Minutes</option>
+                                <option value="1h">1 Hour</option>
+                                <option value="2h">2 Hours</option>
+                                <option value="3h">3 Hours</option>
+                                <option value="4h">4 Hours</option>
+                                <option value="5h">5 Hours</option>
+                                <option value="6h">6 Hours</option>
+                                <option value="7h">7 Hours</option>
+                                <option value="8h">8 Hours</option>
+                                <option value="9h">9 Hours</option>
+                                <option value="10h">10 Hours</option>
+                                <option value="12h">12 Hours</option>
+                                <option value="1d">1 Day</option>
+                                <option value="1w">1 Week</option>
+                                <option value="1M">1 Month</option>
+                              </select>
                             </div>
                             <div className="flex items-center gap-2">
                               <Button
                                 size="sm"
                                 onClick={async () => {
-                                  if (editingLimitValue && editingLimitValue > 0) {
+                                  if (editingTimeframeValue) {
                                     try {
-                                      // Get current strategyConfig from bot or use default
-                                      let currentConfig: any = {};
-                                      
-                                      // Try to parse strategyConfig if it exists
-                                      if (bot.strategyConfig) {
-                                        if (typeof bot.strategyConfig === 'string') {
-                                          try {
-                                            currentConfig = JSON.parse(bot.strategyConfig);
-                                          } catch (e) {
-                                            console.warn('Failed to parse strategyConfig:', e);
-                                            currentConfig = {};
-                                          }
-                                        } else {
-                                          currentConfig = { ...bot.strategyConfig };
-                                        }
-                                      }
-                                      
-                                      // Update max_trades_per_day
-                                      // Ensure required fields have defaults if missing
-                                      const updatedConfig = {
-                                        bias_mode: currentConfig.bias_mode || 'auto',
-                                        regime_mode: currentConfig.regime_mode || 'auto',
-                                        htf_timeframe: currentConfig.htf_timeframe || '4h',
-                                        ...currentConfig,
-                                        max_trades_per_day: editingLimitValue
-                                      };
-                                      
-                                      console.log('Updating strategyConfig:', updatedConfig);
-                                      
-                                      // Update bot with merged strategyConfig
                                       await updateBot(bot.id, {
-                                        strategyConfig: updatedConfig
+                                        timeframe: editingTimeframeValue
                                       } as any);
                                       
-                                      setEditingLimitBotId(null);
-                                      setEditingLimitValue(null);
+                                      setEditingTimeframeBotId(null);
+                                      setEditingTimeframeValue(null);
                                       
-                                      // Refresh limits after a short delay to allow DB to update
-                                      setTimeout(async () => {
-                                        await refreshLimits();
-                                        // Also refresh bot list
-                                        window.location.reload(); // Simple way to refresh bot data
+                                      setTimeout(() => {
+                                        window.location.reload();
                                       }, 500);
                                       
-                                      alert(`✅ Max trades per day updated to ${editingLimitValue}`);
+                                      alert(`✅ Timeframe updated to ${editingTimeframeValue}`);
                                     } catch (error: any) {
-                                      console.error('Error updating limit:', error);
-                                      const errorMsg = error?.message || 'Failed to update limit. Please try again.';
-                                      alert(`Failed to update limit: ${errorMsg}`);
+                                      console.error('Error updating timeframe:', error);
+                                      const errorMsg = error?.message || 'Failed to update timeframe. Please try again.';
+                                      alert(`Failed to update timeframe: ${errorMsg}`);
                                     }
                                   }
                                 }}
@@ -1779,8 +1621,8 @@ export default function BotsPage() {
                                 size="sm"
                                 variant="secondary"
                                 onClick={() => {
-                                  setEditingLimitBotId(null);
-                                  setEditingLimitValue(null);
+                                  setEditingTimeframeBotId(null);
+                                  setEditingTimeframeValue(null);
                                 }}
                                 className="text-xs"
                               >
@@ -1790,135 +1632,296 @@ export default function BotsPage() {
                           </div>
                         )}
                       </div>
-                    );
-                  }
-                  return null;
-                })()}
 
-                {/* Trade Amount */}
-                {!isWebhookView && (
-                <div className="pt-2 border-t border-gray-100">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-medium text-gray-700 flex items-center">
-                        Trade Amount:
-                        <HelpTooltip text="Base amount in USD for each trade executed by this bot. This will be multiplied by leverage (for futures) and adjusted by risk level. You can edit this value to change the bot's position sizing." />
-                      </span>
-                      <span className="text-xs font-semibold text-gray-900">
-                        ${(bot.tradeAmount || 100).toFixed(2)} USD
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => {
-                        if (editingTradeAmountBotId === bot.id) {
-                          setEditingTradeAmountBotId(null);
-                          setEditingTradeAmountValue(null);
-                        } else {
-                          setEditingTradeAmountBotId(bot.id);
-                          setEditingTradeAmountValue(bot.tradeAmount || 100);
-                        }
-                      }}
-                      className="text-[10px] text-blue-600 hover:text-blue-800 flex items-center gap-0.5"
-                      title="Edit trade amount"
-                    >
-                      <i className="ri-edit-line text-xs"></i>
-                      Edit Amount
-                    </button>
-                  </div>
-                  
-                  {/* Estimated Order Value */}
-                  <p className="text-[10px] text-gray-500 mb-1.5">
-                    Est. Order Value: ${((bot.tradeAmount || 100) * bot.leverage * 1.5).toFixed(2)} USD
-                    <span className="ml-2 text-gray-400">
-                      (Amount × Leverage {bot.leverage}x × 1.5 buffer)
-                    </span>
-                  </p>
-
-                  {/* Inline Editor */}
-                  {editingTradeAmountBotId === bot.id && (
-                    <div className="mt-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                      <div className="flex items-center gap-2 mb-2">
-                        <label className="text-xs font-medium text-gray-700">
-                          Trade Amount (USD):
-                        </label>
-                        <input
-                          type="number"
-                          min="10"
-                          max="10000"
-                          step="10"
-                          value={editingTradeAmountValue || bot.tradeAmount || 100}
-                          onChange={(e) => setEditingTradeAmountValue(parseFloat(e.target.value) || 10)}
-                          className="w-24 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        />
-                      </div>
-                      <div className="mb-2">
-                        <p className="text-xs text-gray-600">
-                          New Est. Order Value: ${((editingTradeAmountValue || bot.tradeAmount || 100) * bot.leverage * 1.5).toFixed(2)} USD
-                        </p>
-                        {(editingTradeAmountValue || bot.tradeAmount || 100) > 100 && (
-                          <p className="text-xs text-yellow-600 mt-1">
-                            ⚠️ Higher amounts may require more balance
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          onClick={async () => {
-                            if (editingTradeAmountValue && editingTradeAmountValue >= 10 && editingTradeAmountValue <= 10000) {
-                              try {
-                                await updateBot(bot.id, {
-                                  tradeAmount: editingTradeAmountValue
-                                } as any);
-                                
+                      {/* Trade Amount */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs font-medium text-gray-700 dark:text-gray-300 flex items-center">
+                              <i className="ri-money-dollar-circle-line mr-0.5 text-blue-600 text-xs"></i>
+                              Trade Amount:
+                              <HelpTooltip text="Base amount in USD for each trade executed by this bot. This will be multiplied by leverage (for futures) and adjusted by risk level. You can edit this value to change the bot's position sizing." />
+                            </span>
+                            <span className="text-xs font-semibold text-gray-900 dark:text-white">
+                              ${(bot.tradeAmount || 100).toFixed(2)} USD
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              if (editingTradeAmountBotId === bot.id) {
                                 setEditingTradeAmountBotId(null);
                                 setEditingTradeAmountValue(null);
-                                
-                                // Refresh bot list after a short delay
-                                setTimeout(() => {
-                                  window.location.reload();
-                                }, 500);
-                                
-                                alert(`✅ Trade amount updated to $${editingTradeAmountValue.toFixed(2)}`);
-                              } catch (error: any) {
-                                console.error('Error updating trade amount:', error);
-                                const errorMsg = error?.message || 'Failed to update trade amount. Please try again.';
-                                alert(`Failed to update trade amount: ${errorMsg}`);
+                              } else {
+                                setEditingTradeAmountBotId(bot.id);
+                                setEditingTradeAmountValue(bot.tradeAmount || 100);
                               }
-                            } else {
-                              alert('Please enter a valid trade amount between $10 and $10,000');
-                            }
-                          }}
-                          className="text-xs"
-                        >
-                          Save
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={() => {
-                            setEditingTradeAmountBotId(null);
-                            setEditingTradeAmountValue(null);
-                          }}
-                          className="text-xs"
-                        >
-                          Cancel
-                        </Button>
+                            }}
+                            className="text-[10px] text-blue-600 hover:text-blue-800 flex items-center gap-0.5"
+                            title="Edit trade amount"
+                          >
+                            <i className="ri-edit-line text-xs"></i>
+                            Edit
+                          </button>
+                        </div>
+                        
+                        {/* Estimated Order Value */}
+                        <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-1.5">
+                          Est. Order Value: ${((bot.tradeAmount || 100) * bot.leverage * 1.5).toFixed(2)} USD
+                          <span className="ml-2 text-gray-400">
+                            (Amount × Leverage {bot.leverage}x × 1.5 buffer)
+                          </span>
+                        </p>
+
+                        {/* Inline Editor */}
+                        {editingTradeAmountBotId === bot.id && (
+                          <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                            <div className="flex items-center gap-2 mb-2">
+                              <label className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                                Trade Amount (USD):
+                              </label>
+                              <input
+                                type="number"
+                                min="10"
+                                max="10000"
+                                step="10"
+                                value={editingTradeAmountValue || bot.tradeAmount || 100}
+                                onChange={(e) => setEditingTradeAmountValue(parseFloat(e.target.value) || 10)}
+                                className="w-24 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                              />
+                            </div>
+                            <div className="mb-2">
+                              <p className="text-xs text-gray-600 dark:text-gray-400">
+                                New Est. Order Value: ${((editingTradeAmountValue || bot.tradeAmount || 100) * bot.leverage * 1.5).toFixed(2)} USD
+                              </p>
+                              {(editingTradeAmountValue || bot.tradeAmount || 100) > 100 && (
+                                <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
+                                  ⚠️ Higher amounts may require more balance
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                onClick={async () => {
+                                  if (editingTradeAmountValue && editingTradeAmountValue >= 10 && editingTradeAmountValue <= 10000) {
+                                    try {
+                                      await updateBot(bot.id, {
+                                        tradeAmount: editingTradeAmountValue
+                                      } as any);
+                                      
+                                      setEditingTradeAmountBotId(null);
+                                      setEditingTradeAmountValue(null);
+                                      
+                                      // Refresh bot list after a short delay
+                                      setTimeout(() => {
+                                        window.location.reload();
+                                      }, 500);
+                                      
+                                      alert(`✅ Trade amount updated to $${editingTradeAmountValue.toFixed(2)}`);
+                                    } catch (error: any) {
+                                      console.error('Error updating trade amount:', error);
+                                      const errorMsg = error?.message || 'Failed to update trade amount. Please try again.';
+                                      alert(`Failed to update trade amount: ${errorMsg}`);
+                                    }
+                                  } else {
+                                    alert('Please enter a valid trade amount between $10 and $10,000');
+                                  }
+                                }}
+                                className="text-xs"
+                              >
+                                Save
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                onClick={() => {
+                                  setEditingTradeAmountBotId(null);
+                                  setEditingTradeAmountValue(null);
+                                }}
+                                className="text-xs"
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        )}
                       </div>
+
+                      {/* Daily Trades Limit */}
+                      {(() => {
+                        const limit = getLimit(bot.id);
+                        if (limit) {
+                          return (
+                            <div>
+                              <div className="flex items-center justify-between mb-1.5">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-xs font-medium text-gray-700 dark:text-gray-300 flex items-center">
+                                    <i className="ri-bar-chart-box-line mr-0.5 text-blue-600 text-xs"></i>
+                                    Daily Trades:
+                                    <HelpTooltip text="Maximum number of trades allowed per day for this bot. Once reached, the bot will pause until the next day. This prevents overtrading and helps manage risk." />
+                                  </span>
+                                  <span className={`text-xs font-semibold ${
+                                    limit.isLimitReached ? 'text-red-600' : 
+                                    limit.tradesToday / limit.maxTradesPerDay > 0.8 ? 'text-yellow-600' : 
+                                    'text-green-600'
+                                  }`}>
+                                    {limit.tradesToday} / {limit.maxTradesPerDay}
+                                  </span>
+                                  {limit.isLimitReached && (
+                                    <span className="text-[10px] text-red-600">(Limit Reached)</span>
+                                  )}
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    if (editingLimitBotId === bot.id) {
+                                      setEditingLimitBotId(null);
+                                      setEditingLimitValue(null);
+                                    } else {
+                                      setEditingLimitBotId(bot.id);
+                                      setEditingLimitValue(limit.maxTradesPerDay);
+                                    }
+                                  }}
+                                  className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                                  title="Edit max trades per day"
+                                >
+                                  <i className="ri-edit-line"></i>
+                                  Edit
+                                </button>
+                              </div>
+                              
+                              {/* Progress Bar */}
+                              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mb-2">
+                                <div 
+                                  className={`h-2 rounded-full transition-all ${
+                                    limit.isLimitReached ? 'bg-red-500' : 
+                                    limit.tradesToday / limit.maxTradesPerDay > 0.8 ? 'bg-yellow-500' : 
+                                    'bg-green-500'
+                                  }`}
+                                  style={{ 
+                                    width: `${Math.min(100, (limit.tradesToday / limit.maxTradesPerDay) * 100)}%` 
+                                  }}
+                                ></div>
+                              </div>
+
+                              {/* Inline Editor */}
+                              {editingLimitBotId === bot.id && (
+                                <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <label className="text-xs font-medium text-gray-700 dark:text-gray-300 flex items-center">
+                                      Max Trades Per Day:
+                                      <HelpTooltip text="Set the maximum number of trades this bot can execute per day. Once this limit is reached, the bot will automatically pause until the next day. Helps prevent overtrading and manage risk." />
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      max="200"
+                                      value={editingLimitValue || limit.maxTradesPerDay}
+                                      onChange={(e) => setEditingLimitValue(parseInt(e.target.value) || 1)}
+                                      className="w-20 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                                    />
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Button
+                                      size="sm"
+                                      onClick={async () => {
+                                        if (editingLimitValue && editingLimitValue > 0) {
+                                          try {
+                                            // Get current strategyConfig from bot or use default
+                                            let currentConfig: any = {};
+                                            
+                                            // Try to parse strategyConfig if it exists
+                                            if (bot.strategyConfig) {
+                                              if (typeof bot.strategyConfig === 'string') {
+                                                try {
+                                                  currentConfig = JSON.parse(bot.strategyConfig);
+                                                } catch (e) {
+                                                  console.warn('Failed to parse strategyConfig:', e);
+                                                  currentConfig = {};
+                                                }
+                                              } else {
+                                                currentConfig = { ...bot.strategyConfig };
+                                              }
+                                            }
+                                            
+                                            // Update max_trades_per_day
+                                            // Ensure required fields have defaults if missing
+                                            const updatedConfig = {
+                                              bias_mode: currentConfig.bias_mode || 'auto',
+                                              regime_mode: currentConfig.regime_mode || 'auto',
+                                              htf_timeframe: currentConfig.htf_timeframe || '4h',
+                                              ...currentConfig,
+                                              max_trades_per_day: editingLimitValue
+                                            };
+                                            
+                                            console.log('Updating strategyConfig:', updatedConfig);
+                                            
+                                            // Update bot with merged strategyConfig
+                                            await updateBot(bot.id, {
+                                              strategyConfig: updatedConfig
+                                            } as any);
+                                            
+                                            setEditingLimitBotId(null);
+                                            setEditingLimitValue(null);
+                                            
+                                            // Refresh limits after a short delay to allow DB to update
+                                            setTimeout(async () => {
+                                              await refreshLimits();
+                                              // Also refresh bot list
+                                              window.location.reload(); // Simple way to refresh bot data
+                                            }, 500);
+                                            
+                                            alert(`✅ Max trades per day updated to ${editingLimitValue}`);
+                                          } catch (error: any) {
+                                            console.error('Error updating limit:', error);
+                                            const errorMsg = error?.message || 'Failed to update limit. Please try again.';
+                                            alert(`Failed to update limit: ${errorMsg}`);
+                                          }
+                                        }
+                                      }}
+                                      className="text-xs"
+                                    >
+                                      Save
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="secondary"
+                                      onClick={() => {
+                                        setEditingLimitBotId(null);
+                                        setEditingLimitValue(null);
+                                      }}
+                                      className="text-xs"
+                                    >
+                                      Cancel
+                                    </Button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
                   )}
                 </div>
                 )}
 
-                {/* Risk Management Section - Leverage, Stop Loss, Take Profit */}
+                {/* Risk Management Section - Collapsible */}
                 {!isWebhookView && (
-                <div className="pt-3 border-t border-gray-100">
-                  <div className="mb-3">
-                    <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 flex items-center gap-2 mb-3">
+                <div className="pt-2 border-t border-gray-100 dark:border-gray-700">
+                  <button
+                    onClick={() => setExpandedRiskBotId(expandedRiskBotId === bot.id ? null : bot.id)}
+                    className="w-full flex items-center justify-between p-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
                       <i className="ri-shield-line text-blue-600"></i>
-                      Risk Management
-                    </h4>
-                  </div>
+                      <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Risk Management</span>
+                    </div>
+                    <i className={`ri-arrow-${expandedRiskBotId === bot.id ? 'up' : 'down'}-s-line text-gray-400`}></i>
+                  </button>
+                  
+                  {expandedRiskBotId === bot.id && (
+                    <div className="mt-2 space-y-3 pl-4 border-l-2 border-blue-200 dark:border-blue-700">
                   
                   {/* Leverage */}
                   <div className="mb-3">
@@ -2203,13 +2206,27 @@ export default function BotsPage() {
                         </div>
                       </div>
                     )}
-                  </div>
+                    </div>
+                  )}
                 </div>
                 )}
 
-                {/* Bot Stats */}
+                {/* Performance Metrics - Collapsible */}
                 {!isWebhookView && (
-                <div className="grid grid-cols-2 md:grid-cols-6 gap-2 pt-2 border-t border-gray-100 dark:border-gray-700">
+                <div className="pt-2 border-t border-gray-100 dark:border-gray-700">
+                  <button
+                    onClick={() => setExpandedMetricsBotId(expandedMetricsBotId === bot.id ? null : bot.id)}
+                    className="w-full flex items-center justify-between p-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <i className="ri-line-chart-line text-blue-600"></i>
+                      <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Performance Metrics</span>
+                    </div>
+                    <i className={`ri-arrow-${expandedMetricsBotId === bot.id ? 'up' : 'down'}-s-line text-gray-400`}></i>
+                  </button>
+                  
+                  {expandedMetricsBotId === bot.id && (
+                    <div className="mt-2 grid grid-cols-2 md:grid-cols-6 gap-2 pl-4 border-l-2 border-blue-200 dark:border-blue-700">
                   <div className="text-center">
                     <p className="text-xs text-gray-500 dark:text-gray-400">Trades</p>
                     <p className="font-semibold text-sm text-gray-900 dark:text-white">{bot.totalTrades ?? 0}</p>
@@ -2275,11 +2292,12 @@ export default function BotsPage() {
                         </p>
                       );
                     })()}
-                  </div>
+                    </div>
+                  )}
                 </div>
                 )}
 
-                {/* Bot Activity Status */}
+                {/* Bot Status & Errors - Collapsible */}
                 {!isWebhookView && (() => {
                   const activity = getBotActivity(bot.id);
                   const activityState = activity ? {
@@ -2293,10 +2311,25 @@ export default function BotsPage() {
                   const cooldownInfo = getCooldownInfo(bot);
                   
                   return activityState ? (
-                    <div className="pt-4 border-t border-gray-100">
-                      <div className="flex items-center justify-between mb-2">
-                        <h4 className="text-sm font-medium text-gray-700">Bot Status</h4>
-                      </div>
+                    <div className="pt-2 border-t border-gray-100 dark:border-gray-700">
+                      <button
+                        onClick={() => setExpandedStatusBotId(expandedStatusBotId === bot.id ? null : bot.id)}
+                        className="w-full flex items-center justify-between p-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <i className="ri-information-line text-blue-600"></i>
+                          <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Bot Status & Errors</span>
+                          {activityState.hasError && activity.errorCount > 0 && (
+                            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-100 text-red-800">
+                              {activity.errorCount} error{activity.errorCount !== 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </div>
+                        <i className={`ri-arrow-${expandedStatusBotId === bot.id ? 'up' : 'down'}-s-line text-gray-400`}></i>
+                      </button>
+                      
+                      {expandedStatusBotId === bot.id && (
+                        <div className="mt-2 space-y-3 pl-4 border-l-2 border-blue-200 dark:border-blue-700">
                       <div className={`p-3 rounded-lg ${
                         activityState.executionState === 'error' || activityState.hasError ? 'bg-red-50 border border-red-200' :
                         activityState.executionState === 'waiting' ? 'bg-yellow-50 border border-yellow-200' :
@@ -2603,37 +2636,49 @@ export default function BotsPage() {
                           </div>
                         )}
                       </div>
+                        </div>
+                      )}
                     </div>
                   ) : null;
                 })()}
 
-                {/* TradingView Webhook Management */}
+                {/* Advanced - Webhooks - Collapsible */}
                 {(() => {
                   const showWebhookPanel = isWebhookView || webhookExpandedBot === bot.id;
                   return (
-                <div className={`pt-4 border-t border-gray-100 ${isWebhookView ? 'bg-blue-50 rounded-lg border-blue-100' : ''}`}>
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <i className="ri-link-m text-blue-500"></i>
-                      <h4 className="text-sm font-medium text-gray-700">TradingView Webhook</h4>
-                    </div>
-                    {isWebhookView ? (
+                <div className={`pt-2 border-t border-gray-100 dark:border-gray-700 ${isWebhookView ? 'bg-blue-50 rounded-lg border-blue-100' : ''}`}>
+                  {!isWebhookView && (
+                    <button
+                      onClick={() => {
+                        const newState = expandedAdvancedBotId === bot.id ? null : bot.id;
+                        setExpandedAdvancedBotId(newState);
+                        if (newState) {
+                          handleToggleWebhookPanel(bot.id);
+                        }
+                      }}
+                      className="w-full flex items-center justify-between p-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <i className="ri-link-m text-blue-600"></i>
+                        <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Advanced</span>
+                      </div>
+                      <i className={`ri-arrow-${expandedAdvancedBotId === bot.id ? 'up' : 'down'}-s-line text-gray-400`}></i>
+                    </button>
+                  )}
+                  {isWebhookView && (
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <i className="ri-link-m text-blue-500"></i>
+                        <h4 className="text-sm font-medium text-gray-700">TradingView Webhook</h4>
+                      </div>
                       <span className="text-xs uppercase font-semibold text-blue-500 tracking-wide">
                         Webhook Dashboard
                       </span>
-                    ) : (
-                      <button
-                        onClick={() => handleToggleWebhookPanel(bot.id)}
-                        className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
-                      >
-                        <i className={`ri-${webhookExpandedBot === bot.id ? 'arrow-up-s-line' : 'arrow-down-s-line'}`}></i>
-                        {webhookExpandedBot === bot.id ? 'Hide' : 'Manage'}
-                      </button>
-                    )}
-                  </div>
+                    </div>
+                  )}
 
                   {showWebhookPanel && (
-                    <div className={`mt-3 space-y-4 ${isWebhookView ? 'bg-white border border-blue-100' : 'bg-blue-50 border border-blue-100'} rounded-lg p-4`}>
+                    <div className={`mt-2 space-y-4 ${isWebhookView ? 'bg-white border border-blue-100' : expandedAdvancedBotId === bot.id ? 'bg-blue-50 border border-blue-100 pl-4 border-l-2 border-blue-200 dark:border-blue-700' : ''} rounded-lg p-4`}>
                       <div className="grid gap-4 md:grid-cols-2">
                         <div>
                           <p className="text-xs uppercase font-semibold text-gray-500">Webhook Secret</p>
@@ -2833,19 +2878,19 @@ export default function BotsPage() {
                   );
                 })()}
 
-                {/* Bot Actions */}
+                {/* Bot Actions - Consolidated */}
                 {!isWebhookView && (
-                <div className="pt-4 border-t border-gray-100">
-                  {/* Primary Actions Row */}
-                  <div className="flex space-x-2 mb-2">
+                <div className="pt-2 border-t border-gray-100 dark:border-gray-700">
+                  {/* Control Actions */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
                     {bot.status === 'running' ? (
                       <>
                         <Button 
                           variant="warning" 
                           size="sm" 
-                          className="flex-1"
                           onClick={() => handleExecute(bot.id)}
                           disabled={isExecuting}
+                          className="w-full"
                         >
                           <i className="ri-play-circle-line mr-1"></i>
                           Execute
@@ -2854,6 +2899,7 @@ export default function BotsPage() {
                           variant="secondary" 
                           size="sm" 
                           onClick={() => handleBotAction(bot.id, 'pause')}
+                          className="w-full"
                         >
                           <i className="ri-pause-line mr-1"></i>
                           Pause
@@ -2863,141 +2909,120 @@ export default function BotsPage() {
                       <Button 
                         variant="success" 
                         size="sm" 
-                        className="flex-1"
                         onClick={() => handleBotAction(bot.id, 'start')}
+                        className="w-full md:col-span-2"
                       >
                         <i className="ri-play-line mr-1"></i>
-                        Start
+                        Start Bot
                       </Button>
                     )}
                     <Button
                       variant="danger"
                       size="sm"
                       onClick={() => handleBotAction(bot.id, 'stop')}
+                      className="w-full"
                     >
-                      <i className="ri-stop-line"></i>
+                      <i className="ri-stop-line mr-1"></i>
+                      Stop
                     </Button>
                     <Button
                       variant="secondary"
                       size="sm"
                       onClick={() => setSharingBotId(bot.id)}
                       title="Share Bot Card"
+                      className="w-full"
                     >
-                      <i className="ri-share-line"></i>
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => navigate('/bot-activity')}
-                    >
-                      <i className="ri-file-list-line"></i>
+                      <i className="ri-share-line mr-1"></i>
+                      Share
                     </Button>
                   </div>
                   
-                  {/* AI/ML Toggle */}
-                  <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div className="flex items-center space-x-2">
-                      <i className="ri-brain-line text-purple-600"></i>
-                      <span className="text-sm font-medium text-gray-700">AI/ML System</span>
+                  {/* Quick Settings Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
+                    {/* Paper Trading Toggle */}
+                    <div
+                      className={`flex items-center justify-between p-2 rounded-lg border ${
+                        bot.paperTrading
+                          ? 'bg-yellow-50 border-yellow-200 dark:bg-yellow-900/20 dark:border-yellow-700'
+                          : 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-700'
+                      }`}
+                    >
+                      <div className="flex items-center space-x-2">
+                        <i className={`ri-${bot.paperTrading ? 'edit-box-line' : 'money-dollar-circle-line'} ${bot.paperTrading ? 'text-yellow-600' : 'text-red-600'}`}></i>
+                        <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                          {bot.paperTrading ? 'Paper' : 'Real'}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => handleTogglePaperTrading(bot)}
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                          bot.paperTrading ? 'bg-yellow-600' : 'bg-gray-300'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                            bot.paperTrading ? 'translate-x-4.5' : 'translate-x-0.5'
+                          }`}
+                        />
+                      </button>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {bot.aiMlEnabled && (
-                        <button
-                          onClick={() => setAiMlActivityBotId(bot.id)}
-                          className="px-2 py-1 text-xs font-medium text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded transition-colors"
-                          title="View AI/ML Activity"
-                        >
-                          <i className="ri-eye-line mr-1"></i>
-                          Activity
-                        </button>
-                      )}
+                    
+                    {/* AI/ML Toggle */}
+                    <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center space-x-2">
+                        <i className="ri-brain-line text-purple-600"></i>
+                        <span className="text-xs font-medium text-gray-700 dark:text-gray-300">AI/ML</span>
+                        {bot.aiMlEnabled && (
+                          <button
+                            onClick={() => setAiMlActivityBotId(bot.id)}
+                            className="px-1.5 py-0.5 text-[10px] font-medium text-purple-600 hover:text-purple-800 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded transition-colors"
+                            title="View AI/ML Activity"
+                          >
+                            <i className="ri-eye-line"></i>
+                          </button>
+                        )}
+                      </div>
                       <button
                         onClick={() => handleToggleAiMl(bot.id, bot.aiMlEnabled || false)}
                         disabled={togglingAiMl === bot.id}
-                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
                           togglingAiMl === bot.id ? 'opacity-50 cursor-not-allowed' : ''
                         } ${
                           bot.aiMlEnabled ? 'bg-purple-600' : 'bg-gray-300'
                         }`}
                       >
                         <span
-                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                            bot.aiMlEnabled ? 'translate-x-6' : 'translate-x-1'
+                          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                            bot.aiMlEnabled ? 'translate-x-4.5' : 'translate-x-0.5'
                           }`}
                         />
                       </button>
                     </div>
-                  </div>
-                  
-                  {/* Paper Trading Toggle */}
-                  <div
-                    className={`flex items-center justify-between p-3 rounded-lg border ${
-                      bot.paperTrading
-                        ? 'bg-yellow-50 border-yellow-200'
-                        : 'bg-red-50 border-red-200 shadow-inner'
-                    }`}
-                  >
-                    <div className="flex flex-col">
-                      <div className="flex items-center space-x-2">
-                      <i className={`ri-${bot.paperTrading ? 'edit-box-line' : 'money-dollar-circle-line'} text-yellow-600`}></i>
-                      <span className="text-sm font-medium text-gray-700">
-                        {bot.paperTrading ? '📝 Paper Trading' : '💰 Real Trading'}
-                      </span>
-                      </div>
-                      {!bot.paperTrading && (
-                        <div className="flex items-center mt-1 text-xs font-semibold text-red-600 uppercase tracking-wide">
-                          <span className="relative flex h-2.5 w-2.5 mr-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
-                          </span>
-                          Live Trading Active
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => handleTogglePaperTrading(bot)}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        bot.paperTrading ? 'bg-yellow-600' : 'bg-gray-300'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          bot.paperTrading ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                  </div>
-                  
-                  {/* Sound Notifications Toggle */}
-                  {!bot.paperTrading && (
-                    <div className="flex items-center justify-between p-3 rounded-lg border bg-blue-50 border-blue-200">
-                      <div className="flex items-center space-x-2 flex-1">
-                        <i className="ri-notification-3-line text-blue-600"></i>
-                        <div className="flex-1">
-                          <span className="text-sm font-medium text-gray-700">🔔 Sound Notifications</span>
+                    
+                    {/* Sound Notifications Toggle */}
+                    {!bot.paperTrading && (
+                      <div className="flex items-center justify-between p-2 rounded-lg border bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700">
+                        <div className="flex items-center space-x-2">
+                          <i className="ri-notification-3-line text-blue-600"></i>
+                          <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Sounds</span>
                           {bot.soundNotificationsEnabled && (
-                            <p className="text-xs text-blue-600 mt-0.5">Enabled for real trades</p>
+                            <button
+                              onClick={() => {
+                                try {
+                                  playTestSound();
+                                  console.log('🔔 Test sound played');
+                                } catch (error) {
+                                  console.error('Failed to play test sound:', error);
+                                  alert('⚠️ Could not play test sound. Make sure your browser allows audio and try clicking anywhere on the page first (browser autoplay policy).');
+                                }
+                              }}
+                              className="px-1.5 py-0.5 text-[10px] bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                              title="Test sound"
+                            >
+                              🔊
+                            </button>
                           )}
                         </div>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        {bot.soundNotificationsEnabled && (
-                          <button
-                            onClick={() => {
-                              try {
-                                playTestSound();
-                                console.log('🔔 Test sound played');
-                              } catch (error) {
-                                console.error('Failed to play test sound:', error);
-                                alert('⚠️ Could not play test sound. Make sure your browser allows audio and try clicking anywhere on the page first (browser autoplay policy).');
-                              }
-                            }}
-                            className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-                            title="Test sound notification"
-                          >
-                            🔊 Test
-                          </button>
-                        )}
                         <button
                           onClick={async () => {
                             try {
@@ -3006,7 +3031,6 @@ export default function BotsPage() {
                                 soundNotificationsEnabled: newValue
                               } as any);
                               if (newValue) {
-                                // Play test sound when enabling
                                 try {
                                   playTestSound();
                                 } catch (e) {
@@ -3018,29 +3042,29 @@ export default function BotsPage() {
                               alert(`❌ Failed to update sound notifications: ${error?.message || 'Unknown error'}`);
                             }
                           }}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
                             bot.soundNotificationsEnabled 
                               ? 'bg-blue-600' 
                               : 'bg-gray-300'
                           }`}
                         >
                           <span
-                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                              bot.soundNotificationsEnabled ? 'translate-x-6' : 'translate-x-1'
+                            className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                              bot.soundNotificationsEnabled ? 'translate-x-4.5' : 'translate-x-0.5'
                             }`}
                           />
                         </button>
                       </div>
-                    </div>
-                  )}
+                    )}
+                  </div>
                   
-                  {/* Management Actions Row */}
-                  <div className="flex space-x-2">
+                  {/* Management Actions */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                     <Button 
                       variant="primary" 
                       size="sm" 
-                      className="flex-1"
                       onClick={() => handleEditBot(bot.id)}
+                      className="w-full"
                     >
                       <i className="ri-edit-line mr-1"></i>
                       Edit
@@ -3048,9 +3072,9 @@ export default function BotsPage() {
                     <Button 
                       variant="secondary" 
                       size="sm" 
-                      className="flex-1"
                       onClick={() => handleCloneBot(bot)}
                       title="Clone this bot with all settings"
+                      className="w-full"
                     >
                       <i className="ri-file-copy-line mr-1"></i>
                       Clone
@@ -3058,8 +3082,8 @@ export default function BotsPage() {
                     <Button 
                       variant="warning" 
                       size="sm" 
-                      className="flex-1"
                       onClick={() => handleResetBot(bot.id, bot.name)}
+                      className="w-full"
                     >
                       <i className="ri-refresh-line mr-1"></i>
                       Reset
@@ -3067,8 +3091,8 @@ export default function BotsPage() {
                     <Button 
                       variant="danger" 
                       size="sm" 
-                      className="flex-1"
                       onClick={() => handleDeleteBot(bot.id, bot.name)}
+                      className="w-full"
                     >
                       <i className="ri-delete-bin-line mr-1"></i>
                       Delete
