@@ -11724,6 +11724,83 @@ class BotExecutor {
                   console.warn(`   ⚠️ Alternative format 2 also failed:`, altErr2);
                 }
                 
+                // Try different quantity formats - Bitunix might require specific precision
+                // Try rounding to different decimal places (0, 1, 2, 3, 4)
+                const quantityFormats = [
+                  Math.round(amount).toString(), // Integer
+                  amount.toFixed(1), // 1 decimal
+                  amount.toFixed(2), // 2 decimals
+                  amount.toFixed(3), // 3 decimals
+                  amount.toFixed(4), // 4 decimals
+                  amount.toString() // Original
+                ];
+                
+                // Remove duplicates
+                const uniqueQuantityFormats = [...new Set(quantityFormats)];
+                
+                for (const qtyFormat of uniqueQuantityFormats) {
+                  try {
+                    const qtyOrderParams: any = {
+                      symbol: symbolVariant.toUpperCase(),
+                      side: sideString,
+                      orderType: orderTypeString,
+                      qty: qtyFormat, // Try different quantity formats
+                    };
+                    
+                    if (marketType === 'futures') {
+                      qtyOrderParams.tradeSide = 'OPEN';
+                      qtyOrderParams.marginCoin = 'USDT';
+                    }
+                    
+                    const qtyBodyString = JSON.stringify(qtyOrderParams).replace(/\s+/g, '');
+                    const qtyTimestamp = (Date.now() + BotExecutor.bitunixServerTimeOffset).toString();
+                    const qtyNonce = this.generateNonce();
+                    const qtySignature = await this.createBitunixSignatureDoubleSHA256(
+                      qtyNonce,
+                      qtyTimestamp,
+                      apiKey,
+                      queryParams,
+                      qtyBodyString,
+                      apiSecret
+                    );
+                    
+                    const qtyResponse = await fetch(`${baseUrl}${requestPath}`, {
+                      method: 'POST',
+                      headers: {
+                        'api-key': String(apiKey),
+                        'nonce': String(qtyNonce),
+                        'timestamp': String(qtyTimestamp),
+                        'sign': String(qtySignature),
+                        'Content-Type': 'application/json',
+                        'language': 'en-US'
+                      },
+                      body: qtyBodyString
+                    });
+                    
+                    const qtyResponseText = await qtyResponse.text();
+                    
+                    if (qtyResponse.ok) {
+                      const qtyData = JSON.parse(qtyResponseText);
+                      
+                      if (qtyData.code === 0) {
+                        console.log(`✅ Bitunix order placed successfully with quantity format ${qtyFormat} via ${baseUrl}${requestPath}`);
+                        return {
+                          orderId: qtyData.data?.orderId || qtyData.data?.id || qtyData.data?.order_id || qtyData.data?.clientId,
+                          status: qtyData.data?.status || 'filled',
+                          exchange: 'bitunix',
+                          response: qtyData
+                        };
+                      } else if (qtyData.code !== 2) {
+                        // If we get a different error code, this format might be closer to correct
+                        console.log(`   ℹ️ Quantity format ${qtyFormat} returned code ${qtyData.code} (not Code 2), might be closer to correct format`);
+                      }
+                    }
+                  } catch (qtyErr) {
+                    // Continue to next quantity format
+                    continue;
+                  }
+                }
+                
                 // If limit order failed, try market order as last resort (market orders have fewer requirements)
                 if (orderTypeString === 'LIMIT' && price && price > 0) {
                   console.log(`   🔄 Trying market order format (no price required)...`);
