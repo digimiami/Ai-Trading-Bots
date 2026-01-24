@@ -338,6 +338,10 @@ verify_jwt = false
 [functions.tradingview-webhook]
 verify_jwt = false
 
+# winners-backtest: verify_jwt off so GET health check works; POST validates token via /auth/v1/user
+[functions.winners-backtest]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

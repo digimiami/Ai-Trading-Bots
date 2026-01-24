@@ -70,6 +70,13 @@ serve(async (req) => {
     }
   }
 
+  if (req.method === 'GET') {
+    return new Response(JSON.stringify({ ok: true, service: 'winners-backtest' }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
+
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
