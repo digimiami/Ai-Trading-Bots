@@ -49,8 +49,8 @@ type WinnersResponse = {
 
 export default function WinnersPage() {
   const navigate = useNavigate();
-  const [lookbackDays, setLookbackDays] = useState(30);
-  const [maxPairs, setMaxPairs] = useState(12);
+  const [lookbackDays, setLookbackDays] = useState(14);
+  const [maxPairs, setMaxPairs] = useState(4);
   const [minTrades, setMinTrades] = useState(2);
   const [timeframe, setTimeframe] = useState('15m');
   const [tradeAmount, setTradeAmount] = useState(70);
@@ -148,9 +148,9 @@ export default function WinnersPage() {
                   id="winners-lookback"
                   type="number"
                   value={lookbackDays}
-                  onChange={(e) => setLookbackDays(Math.max(7, Math.min(90, parseInt(e.target.value) || 30)))}
+                  onChange={(e) => setLookbackDays(Math.max(7, Math.min(21, parseInt(e.target.value) || 14)))}
                   min={7}
-                  max={90}
+                  max={21}
                   aria-label="Lookback days"
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                 />
@@ -161,9 +161,9 @@ export default function WinnersPage() {
                   id="winners-maxpairs"
                   type="number"
                   value={maxPairs}
-                  onChange={(e) => setMaxPairs(Math.max(1, Math.min(20, parseInt(e.target.value) || 12)))}
+                  onChange={(e) => setMaxPairs(Math.max(1, Math.min(8, parseInt(e.target.value) || 4)))}
                   min={1}
-                  max={20}
+                  max={8}
                   aria-label="Max pairs"
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                 />

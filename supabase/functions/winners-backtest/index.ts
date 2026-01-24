@@ -72,7 +72,7 @@ serve(async (req) => {
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
 
     const authHeader = req.headers.get('Authorization')
     const accessToken = authHeader?.replace(/^Bearer\s+/i, '').trim() || ''
@@ -84,10 +84,7 @@ serve(async (req) => {
     }
 
     const authRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'apikey': supabaseKey,
-      },
+      headers: { 'Authorization': `Bearer ${accessToken}`, 'apikey': anonKey },
     })
     if (!authRes.ok) {
       return new Response(
@@ -95,8 +92,8 @@ serve(async (req) => {
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
-    const authData = await authRes.json()
-    if (!authData?.id) {
+    const userJson = await authRes.json() as { id?: string }
+    if (!userJson?.id) {
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -114,8 +111,8 @@ serve(async (req) => {
       exchange = 'bybit',
       tradingType = 'futures',
       timeframe = '15m',
-      lookbackDays = 30,
-      maxPairs = 12,
+      lookbackDays = 14,
+      maxPairs = 4,
       minTrades = 2,
       tradeAmount = 70,
       stopLoss = 1.5,
@@ -133,8 +130,8 @@ serve(async (req) => {
       )
     }
 
-    const cappedMaxPairs = Math.min(Math.max(1, Math.floor(maxPairs)), 20)
-    const cappedLookback = Math.min(Math.max(7, Math.floor(lookbackDays)), 90)
+    const cappedMaxPairs = Math.min(Math.max(1, Math.floor(maxPairs)), 8)
+    const cappedLookback = Math.min(Math.max(7, Math.floor(lookbackDays)), 21)
     const endDate = new Date()
     const startDate = new Date()
     startDate.setDate(startDate.getDate() - cappedLookback)
@@ -163,17 +160,31 @@ serve(async (req) => {
     }
 
     const backtestUrl = `${supabaseUrl}/functions/v1/backtest-engine`
-    const backtestRes = await fetch(backtestUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(backtestPayload),
-    })
+    let backtestRes: Response
+    try {
+      backtestRes = await fetch(backtestUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(backtestPayload),
+      })
+    } catch (fetchErr: any) {
+      console.error('Backtest engine fetch error:', fetchErr)
+      return new Response(
+        JSON.stringify({ error: 'Failed to call backtest engine' }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
 
     if (!backtestRes.ok) {
-      const errText = await backtestRes.text()
+      let errText = ''
+      try {
+        errText = await backtestRes.text()
+      } catch (e) {
+        errText = `Backtest engine returned ${backtestRes.status}`
+      }
       let errJson: any = {}
       try { errJson = JSON.parse(errText) } catch { /* ignore */ }
       const msg = errJson?.error || errText || `Backtest engine returned ${backtestRes.status}`
@@ -183,7 +194,16 @@ serve(async (req) => {
       )
     }
 
-    const backtestData = await backtestRes.json()
+    let backtestData: any = {}
+    try {
+      backtestData = await backtestRes.json()
+    } catch (parseErr: any) {
+      console.error('Failed to parse backtest response:', parseErr)
+      return new Response(
+        JSON.stringify({ error: 'Invalid response from backtest engine' }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
     const resultsPerPair = backtestData.results_per_pair || {}
 
     type WinnerRow = {
