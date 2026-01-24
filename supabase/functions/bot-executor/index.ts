@@ -18995,6 +18995,22 @@ serve(async (req) => {
             console.log(`   Leverage: ${refreshedBot.leverage ?? refreshedBot.leverage_ratio ?? 'N/A'}x`);
             console.log(`   Stop Loss: ${refreshedBot.stop_loss ?? refreshedBot.stopLoss ?? 'N/A'}%`);
             console.log(`   Take Profit: ${refreshedBot.take_profit ?? refreshedBot.takeProfit ?? 'N/A'}%`);
+            
+            // Log risk management settings from strategy_config
+            try {
+              const strategyConfig = typeof refreshedBot.strategy_config === 'string'
+                ? JSON.parse(refreshedBot.strategy_config)
+                : (refreshedBot.strategy_config || {});
+              
+              console.log(`   Risk Management Settings:`);
+              console.log(`     Risk Per Trade: ${strategyConfig.risk_per_trade_pct ?? 'N/A'}%`);
+              console.log(`     Daily Loss Limit: ${strategyConfig.daily_loss_limit_pct ?? 'N/A'}%`);
+              console.log(`     Max Trades/Day: ${strategyConfig.max_trades_per_day ?? 'N/A'}`);
+              console.log(`     Max Concurrent Positions: ${strategyConfig.max_concurrent ?? 'N/A'}`);
+            } catch (configErr) {
+              console.warn(`   ⚠️ Could not parse strategy_config for risk settings: ${configErr instanceof Error ? configErr.message : String(configErr)}`);
+            }
+            
             bot = refreshedBot; // Use the refreshed bot data
           } else {
             console.warn(`⚠️ Failed to refresh bot data, using original fetch: ${refreshError?.message || 'Unknown error'}`);
@@ -19093,7 +19109,7 @@ serve(async (req) => {
           }
           
           // CRITICAL: Refresh bot data right before execution to ensure we have the latest settings
-          // This ensures any recent UI updates (trade amount, leverage, SL/TP, timeframe) are applied
+          // This ensures any recent UI updates (trade amount, leverage, SL/TP, timeframe, risk management) are applied
           let refreshedSingleBot = singleBot;
           try {
             const serviceRoleClient = createClient(
@@ -19114,6 +19130,22 @@ serve(async (req) => {
               console.log(`   Leverage: ${refreshedBot.leverage ?? refreshedBot.leverage_ratio ?? 'N/A'}x`);
               console.log(`   Stop Loss: ${refreshedBot.stop_loss ?? refreshedBot.stopLoss ?? 'N/A'}%`);
               console.log(`   Take Profit: ${refreshedBot.take_profit ?? refreshedBot.takeProfit ?? 'N/A'}%`);
+              
+              // Log risk management settings from strategy_config
+              try {
+                const strategyConfig = typeof refreshedBot.strategy_config === 'string'
+                  ? JSON.parse(refreshedBot.strategy_config)
+                  : (refreshedBot.strategy_config || {});
+                
+                console.log(`   Risk Management Settings:`);
+                console.log(`     Risk Per Trade: ${strategyConfig.risk_per_trade_pct ?? 'N/A'}%`);
+                console.log(`     Daily Loss Limit: ${strategyConfig.daily_loss_limit_pct ?? 'N/A'}%`);
+                console.log(`     Max Trades/Day: ${strategyConfig.max_trades_per_day ?? 'N/A'}`);
+                console.log(`     Max Concurrent Positions: ${strategyConfig.max_concurrent ?? 'N/A'}`);
+              } catch (configErr) {
+                console.warn(`   ⚠️ Could not parse strategy_config for risk settings: ${configErr instanceof Error ? configErr.message : String(configErr)}`);
+              }
+              
               refreshedSingleBot = refreshedBot; // Use the refreshed bot data
             } else {
               console.warn(`⚠️ Failed to refresh bot data, using original fetch: ${refreshError?.message || 'Unknown error'}`);
@@ -19371,7 +19403,7 @@ serve(async (req) => {
               
               try {
                 // CRITICAL: Refresh bot data right before execution to ensure we have the latest settings
-                // This ensures any recent UI updates (trade amount, leverage, SL/TP, timeframe) are applied
+                // This ensures any recent UI updates (trade amount, leverage, SL/TP, timeframe, risk management) are applied
                 let refreshedBot = bot;
                 try {
                   const serviceRoleClient = createClient(
@@ -19387,6 +19419,27 @@ serve(async (req) => {
                   
                   if (!refreshError && refreshedBotData) {
                     console.log(`🔄 [${bot.name}] Bot data refreshed - using latest settings from database`);
+                    console.log(`   Timeframe: ${refreshedBotData.timeframe ?? refreshedBotData.timeFrame ?? '1h (default)'}`);
+                    console.log(`   Trade Amount: $${refreshedBotData.trade_amount ?? refreshedBotData.tradeAmount ?? 'N/A'}`);
+                    console.log(`   Leverage: ${refreshedBotData.leverage ?? refreshedBotData.leverage_ratio ?? 'N/A'}x`);
+                    console.log(`   Stop Loss: ${refreshedBotData.stop_loss ?? refreshedBotData.stopLoss ?? 'N/A'}%`);
+                    console.log(`   Take Profit: ${refreshedBotData.take_profit ?? refreshedBotData.takeProfit ?? 'N/A'}%`);
+                    
+                    // Log risk management settings from strategy_config
+                    try {
+                      const strategyConfig = typeof refreshedBotData.strategy_config === 'string'
+                        ? JSON.parse(refreshedBotData.strategy_config)
+                        : (refreshedBotData.strategy_config || {});
+                      
+                      console.log(`   Risk Management Settings:`);
+                      console.log(`     Risk Per Trade: ${strategyConfig.risk_per_trade_pct ?? 'N/A'}%`);
+                      console.log(`     Daily Loss Limit: ${strategyConfig.daily_loss_limit_pct ?? 'N/A'}%`);
+                      console.log(`     Max Trades/Day: ${strategyConfig.max_trades_per_day ?? 'N/A'}`);
+                      console.log(`     Max Concurrent Positions: ${strategyConfig.max_concurrent ?? 'N/A'}`);
+                    } catch (configErr) {
+                      console.warn(`   ⚠️ Could not parse strategy_config for risk settings: ${configErr instanceof Error ? configErr.message : String(configErr)}`);
+                    }
+                    
                     refreshedBot = refreshedBotData;
                   } else {
                     console.warn(`⚠️ [${bot.name}] Failed to refresh bot data: ${refreshError?.message || 'Unknown error'}`);

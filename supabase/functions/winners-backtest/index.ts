@@ -1,9 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'npm:@supabase/supabase-js@2.38.4'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, sb-access-token',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 }
 
@@ -58,7 +58,17 @@ const DEFAULT_STRATEGY_CONFIG = {
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { status: 200, headers: corsHeaders })
+    try {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          ...corsHeaders,
+          'Access-Control-Max-Age': '86400',
+        },
+      })
+    } catch (e) {
+      return new Response(null, { status: 204, headers: corsHeaders })
+    }
   }
 
   try {
