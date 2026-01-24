@@ -105,7 +105,7 @@ export default function Navigation() {
 
   // Don't render navigation until user data is loaded (for authenticated routes)
   // But be more lenient to prevent blank screens - only return null if loading is true
-  const authRequiredRoutes = ['/dashboard', '/bots', '/settings', '/admin', '/trades', '/positions', '/performance', '/pablo-ready', '/ai-assistant', '/backtest', '/bot-activity', '/transaction-log', '/paper-trading', '/futures-pairs-finder', '/messages', '/pricing', '/subscription'];
+  const authRequiredRoutes = ['/dashboard', '/bots', '/settings', '/admin', '/trades', '/positions', '/performance', '/pablo-ready', '/ai-assistant', '/backtest', '/winners', '/bot-activity', '/transaction-log', '/paper-trading', '/futures-pairs-finder', '/messages', '/pricing', '/subscription'];
   const isAuthRequired = authRequiredRoutes.some(route => location.pathname.startsWith(route));
   
   // Only return null if we're actively loading - don't block on missing user/role
@@ -132,6 +132,7 @@ export default function Navigation() {
     { path: '/crypto-bubbles', icon: 'ri-bubble-chart-line', label: 'Crypto Bubbles' },
     { path: '/crypto-news', icon: 'ri-newspaper-line', label: 'Crypto News' },
     { path: '/backtest', icon: 'ri-test-tube-line', label: 'Backtest' },
+    { path: '/winners', icon: 'ri-trophy-line', label: 'Winners' },
     { path: '/bot-activity', icon: 'ri-file-list-line', label: 'Activity' },
     { path: '/trades', icon: 'ri-exchange-line', label: t('nav.trades') },
     { path: '/performance', icon: 'ri-line-chart-line', label: t('nav.performance') },

@@ -1116,7 +1116,8 @@ serve(async (req) => {
 
   try {
     const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
+    const accessToken = authHeader?.replace('Bearer', '').trim() || ''
+    if (!authHeader || !accessToken) {
       return new Response(JSON.stringify({ error: 'Unauthorized: Missing Authorization header' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -1129,7 +1130,8 @@ serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } }
     )
 
-    const { data: { user }, error: authError } = await supabaseClient.auth.getUser()
+    // Important: pass token explicitly; server-side clients don't persist session
+    const { data: { user }, error: authError } = await supabaseClient.auth.getUser(accessToken)
     if (authError || !user) {
       console.error('❌ Auth error:', authError?.message || 'No user found');
       return new Response(JSON.stringify({ error: 'Unauthorized', details: authError?.message || 'Invalid or expired token' }), {

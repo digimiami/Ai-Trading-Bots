@@ -268,32 +268,41 @@ export default function EditBotPage() {
     console.log('Edit bot: Form data set:', formData);
   };
 
-  // Load bot data when component mounts
+  // Track if bot has been loaded to prevent overwriting user edits
+  const [botLoaded, setBotLoaded] = useState(false);
+
+  // Load bot data when component mounts (only once)
   useEffect(() => {
-    if (!botId) {
+    if (!botId || botLoaded) {
       return;
     }
 
     let isActive = true;
 
     const loadBot = async () => {
-      const botFromList = bots.find(b => b.id === botId);
-      console.log('Edit bot: Found bot:', botFromList);
+      // Try to get bot from the bots list first (only if bots are available)
+      if (bots.length > 0) {
+        const botFromList = bots.find(b => b.id === botId);
+        console.log('Edit bot: Found bot:', botFromList);
 
-      if (botFromList) {
-        applyBotToForm(botFromList);
-        const hasStrategyConfig = !!(botFromList.strategyConfig || (botFromList as any).strategy_config);
-        if (hasStrategyConfig) {
-          return;
+        if (botFromList) {
+          applyBotToForm(botFromList);
+          setBotLoaded(true);
+          const hasStrategyConfig = !!(botFromList.strategyConfig || (botFromList as any).strategy_config);
+          if (hasStrategyConfig) {
+            return;
+          }
         }
       }
 
+      // If not in list or missing strategy config, fetch from API
       try {
         const fetched = await getBotById(botId);
         if (!isActive) return;
         if (fetched) {
           console.log('Edit bot: Fetched bot from API:', fetched);
           applyBotToForm(fetched);
+          setBotLoaded(true);
         } else {
           console.log('Edit bot: Bot not found with ID:', botId);
         }
@@ -302,14 +311,13 @@ export default function EditBotPage() {
       }
     };
 
-    if (bots.length > 0 || botId) {
-      void loadBot();
-    }
+    void loadBot();
 
     return () => {
       isActive = false;
     };
-  }, [botId, bots, userSettings, getBotById]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [botId]); // Only reload when botId changes, not when bots list updates
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
