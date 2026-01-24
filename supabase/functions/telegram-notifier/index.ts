@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -169,17 +169,33 @@ function formatNotificationMessage(type: string, data: any): string {
 }
 
 serve(async (req) => {
+  // Handle CORS preflight requests FIRST
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    try {
+      return new Response(null, { 
+        status: 204,
+        headers: {
+          ...corsHeaders,
+          'Access-Control-Max-Age': '86400',
+        }
+      })
+    } catch (error) {
+      console.error(`❌ Error in OPTIONS handler:`, error);
+      return new Response(null, { 
+        status: 204,
+        headers: corsHeaders
+      })
+    }
   }
 
   try {
+    const authHeader = req.headers.get('Authorization')
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
       {
         global: {
-          headers: { Authorization: req.headers.get('Authorization')! },
+          headers: authHeader ? { Authorization: authHeader } : {},
         },
       }
     )
@@ -188,12 +204,19 @@ serve(async (req) => {
     let user: any = null;
     let userResult: any = null;
     
-    try {
-      userResult = await supabaseClient.auth.getUser();
-      user = userResult.data?.user || null;
-    } catch (authError) {
-      // Auth might fail for cron jobs using service role key - that's OK, we'll handle it below
-      console.log('⚠️ Auth check failed (may be cron job), will check body for user_id...');
+    if (authHeader) {
+      try {
+        userResult = await supabaseClient.auth.getUser();
+        user = userResult.data?.user || null;
+        if (userResult.error) {
+          console.error('❌ Auth error:', userResult.error.message);
+        }
+      } catch (authError: any) {
+        // Auth might fail for cron jobs using service role key - that's OK, we'll handle it below
+        console.log('⚠️ Auth check failed (may be cron job), will check body for user_id...', authError?.message);
+      }
+    } else {
+      console.log('⚠️ No Authorization header provided, will check body for user_id...');
     }
 
     const url = new URL(req.url)

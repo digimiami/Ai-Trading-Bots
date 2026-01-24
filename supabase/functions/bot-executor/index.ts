@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -18666,17 +18666,33 @@ serve(async (req) => {
     // Handle GET requests
     if (req.method === 'GET') {
       if (action === 'time') {
-        const syncStatus = TimeSync.getSyncStatus();
-        return new Response(JSON.stringify({ 
-          time: TimeSync.getCurrentTimeISO(),
-          offset: syncStatus.offset,
-          lastSync: syncStatus.lastSync,
-          attempts: syncStatus.attempts,
-          needsSync: syncStatus.needsSync,
-          status: 'success'
-        }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        })
+        try {
+          const syncStatus = TimeSync.getSyncStatus();
+          return new Response(JSON.stringify({ 
+            time: TimeSync.getCurrentTimeISO(),
+            offset: syncStatus.offset,
+            lastSync: syncStatus.lastSync,
+            attempts: syncStatus.attempts,
+            needsSync: syncStatus.needsSync,
+            status: 'success'
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        } catch (error: any) {
+          console.error('❌ Error in time endpoint:', error);
+          // Return a fallback response even if TimeSync fails
+          return new Response(JSON.stringify({ 
+            time: new Date().toISOString(),
+            offset: 0,
+            lastSync: 0,
+            attempts: 0,
+            needsSync: true,
+            status: 'fallback',
+            error: error?.message || 'Time sync unavailable'
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          })
+        }
       }
       
       if (action === 'test-order') {
