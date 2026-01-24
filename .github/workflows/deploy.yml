@@ -86,6 +86,7 @@ jobs:
           deploy_function check-ai-keys || echo "⚠️ check-ai-keys deployment failed"
           deploy_function paper-trading || echo "⚠️ paper-trading deployment failed"
           deploy_function backtest-engine || echo "⚠️ backtest-engine deployment failed"
+          deploy_function winners-backtest || echo "⚠️ winners-backtest deployment failed"
           deploy_function positions || echo "⚠️ positions deployment failed"
           
           echo "✅ Edge functions deployment completed!"

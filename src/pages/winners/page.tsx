@@ -143,42 +143,50 @@ export default function WinnersPage() {
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Lookback (days)</label>
+                <label htmlFor="winners-lookback" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Lookback (days)</label>
                 <input
+                  id="winners-lookback"
                   type="number"
                   value={lookbackDays}
                   onChange={(e) => setLookbackDays(Math.max(7, Math.min(90, parseInt(e.target.value) || 30)))}
                   min={7}
                   max={90}
+                  aria-label="Lookback days"
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Max pairs</label>
+                <label htmlFor="winners-maxpairs" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Max pairs</label>
                 <input
+                  id="winners-maxpairs"
                   type="number"
                   value={maxPairs}
                   onChange={(e) => setMaxPairs(Math.max(1, Math.min(20, parseInt(e.target.value) || 12)))}
                   min={1}
                   max={20}
+                  aria-label="Max pairs"
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Min trades</label>
+                <label htmlFor="winners-mintrades" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Min trades</label>
                 <input
+                  id="winners-mintrades"
                   type="number"
                   value={minTrades}
                   onChange={(e) => setMinTrades(Math.max(0, parseInt(e.target.value) || 0))}
                   min={0}
+                  aria-label="Min trades"
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Timeframe</label>
+                <label htmlFor="winners-timeframe" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Timeframe</label>
                 <select
+                  id="winners-timeframe"
                   value={timeframe}
                   onChange={(e) => setTimeframe(e.target.value)}
+                  aria-label="Timeframe"
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                 >
                   <option value="5m">5m</option>
@@ -190,45 +198,53 @@ export default function WinnersPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Trade amount ($)</label>
+                <label htmlFor="winners-tradeamount" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Trade amount ($)</label>
                 <input
+                  id="winners-tradeamount"
                   type="number"
                   value={tradeAmount}
                   onChange={(e) => setTradeAmount(parseFloat(e.target.value) || 70)}
                   min={10}
+                  aria-label="Trade amount USDT"
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Stop loss (%)</label>
+                <label htmlFor="winners-stoploss" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Stop loss (%)</label>
                 <input
+                  id="winners-stoploss"
                   type="number"
                   value={stopLoss}
                   onChange={(e) => setStopLoss(parseFloat(e.target.value) || 1.5)}
                   min={0.5}
                   step={0.5}
+                  aria-label="Stop loss percent"
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Take profit (%)</label>
+                <label htmlFor="winners-takeprofit" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Take profit (%)</label>
                 <input
+                  id="winners-takeprofit"
                   type="number"
                   value={takeProfit}
                   onChange={(e) => setTakeProfit(parseFloat(e.target.value) || 3)}
                   min={1}
                   step={0.5}
+                  aria-label="Take profit percent"
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Leverage</label>
+                <label htmlFor="winners-leverage" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Leverage</label>
                 <input
+                  id="winners-leverage"
                   type="number"
                   value={leverage}
                   onChange={(e) => setLeverage(Math.max(1, Math.min(100, parseInt(e.target.value) || 5)))}
                   min={1}
                   max={100}
+                  aria-label="Leverage"
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                 />
               </div>
@@ -246,12 +262,7 @@ export default function WinnersPage() {
               disabled={isRunning}
               className="w-full sm:w-auto"
             >
-              {isRunning ? (
-                <>
-                  <i className="ri-loader-4-line animate-spin mr-2" />
-                  Finding winners…
-                </>
-              ) : (
+              {isRunning ? 'Finding winners…' : (
                 <>
                   <i className="ri-search-line mr-2" />
                   Find Winners
@@ -315,12 +326,14 @@ export default function WinnersPage() {
                   Create a live bot for <strong>{createBotSymbol.symbol}</strong> using the same strategy.
                 </p>
                 <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Bot name</label>
+                  <label htmlFor="winners-botname" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Bot name</label>
                   <input
+                    id="winners-botname"
                     type="text"
                     value={botName}
                     onChange={(e) => setBotName(e.target.value)}
                     placeholder="e.g. Winner BTCUSDT"
+                    aria-label="Bot name"
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                   />
                 </div>
