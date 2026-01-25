@@ -35,7 +35,7 @@ export default function AiAssistantWidget() {
       <button
         type="button"
         onClick={() => setIsOpen(true)}
-        className="group fixed bottom-24 right-6 z-[9998] flex items-center gap-3 rounded-full bg-blue-600 text-white shadow-lg hover:bg-blue-700 transition px-4 py-3"
+        className="group fixed bottom-32 right-4 sm:bottom-24 sm:right-6 z-[9998] flex items-center gap-3 rounded-full bg-blue-600 text-white shadow-lg hover:bg-blue-700 transition px-4 py-3"
         aria-label="Open AI Assistant"
       >
         <i className="ri-robot-2-line text-xl"></i>

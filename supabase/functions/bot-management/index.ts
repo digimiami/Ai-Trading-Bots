@@ -447,9 +447,11 @@ serve(async (req) => {
           const maxDrawdown = stats.maxDrawdown || (bot.max_drawdown ?? 0);
           
           // Calculate win rate from closed trades, or use bot's stored value if no closed trades
-          const winRate = closedTrades > 0
+          const calculatedWinRate = closedTrades > 0
             ? (winTrades / closedTrades) * 100
             : (bot.win_rate ?? 0);
+          // Clamp win_rate to 0-100 to prevent DECIMAL(5,2) overflow
+          const winRate = Math.max(0, Math.min(100, Math.round(calculatedWinRate * 100) / 100));
 
           // Calculate drawdown percentage based on peak equity
           const drawdownPercentage = stats.peakEquity > 0
@@ -1823,17 +1825,21 @@ serve(async (req) => {
           };
 
           const totalTrades = Math.max(bot.total_trades ?? 0, stats.totalTrades);
-          const winRate = stats.closedTrades > 0
+          const calculatedWinRate = stats.closedTrades > 0
             ? (stats.winTrades / stats.closedTrades) * 100
             : (bot.win_rate ?? 0);
+          // Clamp win_rate to 0-100 to prevent DECIMAL(5,2) overflow
+          const winRate = Math.max(0, Math.min(100, Math.round(calculatedWinRate * 100) / 100));
           const realizedPnl = stats.hasClosed ? stats.pnl : (bot.pnl ?? 0);
           const drawdownPercentage = stats.peakEquity > 0
             ? (stats.maxDrawdown / stats.peakEquity) * 100
             : (bot.drawdown_percentage ?? 0);
           const tradeAmount = bot.trade_amount || bot.tradeAmount;
-          const pnlPercentage = stats.closedTrades > 0 && tradeAmount
+          const calculatedPnLPercentage = stats.closedTrades > 0 && tradeAmount
             ? (realizedPnl / (tradeAmount * stats.closedTrades)) * 100
             : (bot.pnl_percentage ?? 0);
+          // Clamp pnl_percentage to prevent DECIMAL(5,2) overflow (max 999.99)
+          const pnlPercentage = Math.max(-999.99, Math.min(999.99, Math.round(calculatedPnLPercentage * 100) / 100));
 
           // Get last trade date
           let lastTradeAt = bot.last_trade_at;

@@ -15621,13 +15621,23 @@ class BotExecutor {
     console.log(`📊 Win rate calculation (real): ${winTrades}/${totalClosedTrades} = ${newWinRate.toFixed(2)}%`);
     console.log(`📊 Performance: Wins ${winTrades}, Losses ${lossTrades}, Trades ${totalTrades}, PnL $${totalPnL.toFixed(2)}`);
 
+    // Clamp win_rate to 0-100 to prevent DECIMAL(5,2) overflow
+    const clampedWinRate = Math.max(0, Math.min(100, Math.round(newWinRate * 100) / 100));
+    
+    // Clamp pnl_percentage to prevent DECIMAL(5,2) overflow (max 999.99)
+    let pnlPercentage = 0;
+    if (tradeAmount && tradeAmount > 0) {
+      const calculated = (totalPnL / tradeAmount) * 100;
+      pnlPercentage = Math.max(-999.99, Math.min(999.99, Math.round(calculated * 100) / 100));
+    }
+
     await this.supabaseClient
       .from('trading_bots')
       .update({
         total_trades: totalTrades,
         pnl: totalPnL,
-        pnl_percentage: tradeAmount ? (totalPnL / tradeAmount) * 100 : 0,
-        win_rate: newWinRate,
+        pnl_percentage: pnlPercentage,
+        win_rate: clampedWinRate,
         last_trade_at: TimeSync.getCurrentTimeISO(),
         updated_at: TimeSync.getCurrentTimeISO()
       })
@@ -15791,7 +15801,9 @@ class BotExecutor {
         const newTotalTrades = existingStats.total_trades + 1;
         const newWinningTrades = existingStats.winning_trades + (isWin ? 1 : 0);
         const newLosingTrades = existingStats.losing_trades + (isWin ? 0 : 1);
-        const newWinRate = newTotalTrades > 0 ? (newWinningTrades / newTotalTrades) * 100 : 0;
+        const calculatedWinRate = newTotalTrades > 0 ? (newWinningTrades / newTotalTrades) * 100 : 0;
+        // Clamp win_rate to 0-100 to prevent DECIMAL(5,2) overflow
+        const newWinRate = Math.max(0, Math.min(100, Math.round(calculatedWinRate * 100) / 100));
         const newTotalPnL = parseFloat(existingStats.total_pnl || 0) + pnl;
         const newAvgPnL = newTotalPnL / newTotalTrades;
         const newBestPnL = isWin ? Math.max(parseFloat(existingStats.best_trade_pnl || 0), pnl) : parseFloat(existingStats.best_trade_pnl || 0);
@@ -15803,7 +15815,7 @@ class BotExecutor {
             total_trades: newTotalTrades,
             winning_trades: newWinningTrades,
             losing_trades: newLosingTrades,
-            win_rate: Math.round(newWinRate * 100) / 100, // Round to 2 decimals
+            win_rate: newWinRate,
             total_pnl: newTotalPnL,
             avg_pnl_per_trade: newAvgPnL,
             best_trade_pnl: newBestPnL,
@@ -15992,15 +16004,22 @@ class BotExecutor {
    */
   private async checkEmergencyStop(userId: string): Promise<boolean> {
     try {
-      // Check if user has emergency_stop flag in their profile/settings
-      const { data: userSettings } = await this.supabaseClient
-        .from('users')
-        .select('raw_user_meta_data')
-        .eq('id', userId)
-        .single();
+      // Check if user has emergency_stop flag in their settings
+      // Note: raw_user_meta_data is in auth.users, not in a custom users table
+      // Check user_settings table instead, or use auth.users via RPC
+      try {
+        const { data: userSettings } = await this.supabaseClient
+          .from('user_settings')
+          .select('emergency_stop')
+          .eq('user_id', userId)
+          .single();
 
-      if (userSettings?.raw_user_meta_data?.emergency_stop === true) {
-        return true;
+        if (userSettings?.emergency_stop === true) {
+          return true;
+        }
+      } catch (e) {
+        // If user_settings doesn't exist or query fails, continue
+        console.warn('Could not check user_settings for emergency_stop:', e);
       }
 
       // Also check for a global emergency_stop setting
@@ -16030,7 +16049,7 @@ class BotExecutor {
       const tableName = isPaperTrading ? 'paper_trading_trades' : 'trades';
       const { data: recentTrades } = await this.supabaseClient
         .from(tableName)
-        .select('pnl, outcome')
+        .select('pnl')
         .eq('bot_id', botId)
         .order('executed_at', { ascending: false })
         .limit(100); // Check last 100 trades
@@ -16042,7 +16061,7 @@ class BotExecutor {
       let consecutiveLosses = 0;
       for (const trade of recentTrades) {
         const pnl = parseFloat(trade.pnl || 0);
-        const isLoss = pnl < 0 || trade.outcome === 'loss';
+        const isLoss = pnl < 0;
         if (isLoss) {
           consecutiveLosses++;
         } else {
@@ -18442,7 +18461,9 @@ class PaperTradingExecutor {
         const newTotalTrades = existingStats.total_trades + 1;
         const newWinningTrades = existingStats.winning_trades + (isWin ? 1 : 0);
         const newLosingTrades = existingStats.losing_trades + (isWin ? 0 : 1);
-        const newWinRate = newTotalTrades > 0 ? (newWinningTrades / newTotalTrades) * 100 : 0;
+        const calculatedWinRate = newTotalTrades > 0 ? (newWinningTrades / newTotalTrades) * 100 : 0;
+        // Clamp win_rate to 0-100 to prevent DECIMAL(5,2) overflow
+        const newWinRate = Math.max(0, Math.min(100, Math.round(calculatedWinRate * 100) / 100));
         const newTotalPnL = parseFloat(existingStats.total_pnl || 0) + pnl;
         const newAvgPnL = newTotalPnL / newTotalTrades;
         const newBestPnL = isWin ? Math.max(parseFloat(existingStats.best_trade_pnl || 0), pnl) : parseFloat(existingStats.best_trade_pnl || 0);
@@ -18454,7 +18475,7 @@ class PaperTradingExecutor {
             total_trades: newTotalTrades,
             winning_trades: newWinningTrades,
             losing_trades: newLosingTrades,
-            win_rate: Math.round(newWinRate * 100) / 100,
+            win_rate: newWinRate,
             total_pnl: newTotalPnL,
             avg_pnl_per_trade: newAvgPnL,
             best_trade_pnl: newBestPnL,
@@ -18517,16 +18538,26 @@ class PaperTradingExecutor {
       ? (winningTrades.length / closedTrades.length) * 100 
       : (bot?.win_rate || 0);
 
+    // Clamp win_rate to 0-100 to prevent DECIMAL(5,2) overflow
+    const clampedWinRate = Math.max(0, Math.min(100, Math.round(newWinRate * 100) / 100));
+
     const totalTrades = Math.max(bot?.total_trades || 0, closedTrades?.length || 0);
     const tradeAmount = bot?.trade_amount ? Number(bot.trade_amount) : null;
-    
+
+    // Clamp pnl_percentage to prevent DECIMAL(5,2) overflow (max 999.99)
+    let pnlPercentage = 0;
+    if (tradeAmount && tradeAmount > 0) {
+      const calculated = (totalPnL / tradeAmount) * 100;
+      pnlPercentage = Math.max(-999.99, Math.min(999.99, Math.round(calculated * 100) / 100));
+    }
+
     await this.supabaseClient
       .from('trading_bots')
       .update({
         total_trades: totalTrades,
         pnl: totalPnL,
-        pnl_percentage: tradeAmount ? (totalPnL / tradeAmount) * 100 : 0,
-        win_rate: newWinRate,
+        pnl_percentage: pnlPercentage,
+        win_rate: clampedWinRate,
         last_trade_at: TimeSync.getCurrentTimeISO(),
         updated_at: TimeSync.getCurrentTimeISO()
       })
@@ -18802,31 +18833,6 @@ serve(async (req) => {
       console.log(`📊 Method: ${req.method}`);
       
       // Log immediately to database for visibility (non-blocking)
-      try {
-        const serviceRoleClient = createClient(
-          Deno.env.get('SUPABASE_URL') ?? '',
-          Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-        );
-        await serviceRoleClient
-          .from('bot_activity_logs')
-          .insert({
-            bot_id: null, // Will be set after parsing body
-            level: 'info',
-            category: 'system',
-            message: '📥 POST request received by bot-executor',
-            details: {
-              content_type: req.headers.get('content-type'),
-              has_cron_secret: !!req.headers.get('x-cron-secret'),
-              has_authorization: !!req.headers.get('authorization'),
-              has_apikey: !!req.headers.get('apikey'),
-              url: req.url,
-              timestamp: new Date().toISOString()
-            }
-          });
-      } catch (logError) {
-        console.warn('⚠️ Failed to log POST request to database:', logError);
-      }
-      
       let body: any;
       try {
         const bodyText = await req.text();
@@ -18847,6 +18853,36 @@ serve(async (req) => {
       const { action: bodyAction, botId, bot_id } = body || {};
       // Support both camelCase (botId) and snake_case (bot_id)
       const effectiveBotId = botId || bot_id;
+
+      // Log to bot_activity_logs only if we have a bot_id (required field)
+      if (effectiveBotId) {
+        try {
+          const serviceRoleClient = createClient(
+            Deno.env.get('SUPABASE_URL') ?? '',
+            Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+          );
+          await serviceRoleClient
+            .from('bot_activity_logs')
+            .insert({
+              bot_id: effectiveBotId,
+              level: 'info',
+              category: 'system',
+              message: '📥 POST request received by bot-executor',
+              details: {
+                content_type: req.headers.get('content-type'),
+                has_cron_secret: !!req.headers.get('x-cron-secret'),
+                has_authorization: !!req.headers.get('authorization'),
+                has_apikey: !!req.headers.get('apikey'),
+                url: req.url,
+                timestamp: new Date().toISOString()
+              }
+            });
+        } catch (logError) {
+          console.warn('⚠️ Failed to log POST request to database:', logError);
+        }
+      } else {
+        console.log('⚠️ Skipping bot_activity_logs insert - no bot_id in request body');
+      }
 
       console.log(`🔍 POST request parsed: action=${bodyAction}, botId=${effectiveBotId} (from ${botId ? 'botId' : bot_id ? 'bot_id' : 'neither'})`);
 

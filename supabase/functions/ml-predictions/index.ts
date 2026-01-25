@@ -106,7 +106,17 @@ function generateMLFeatures(symbol: string): MLFeatures {
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    try {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          ...corsHeaders,
+          'Access-Control-Max-Age': '86400',
+        },
+      })
+    } catch (e) {
+      return new Response(null, { status: 204, headers: corsHeaders })
+    }
   }
 
   try {
@@ -170,7 +180,7 @@ serve(async (req) => {
             success: true, 
             predictions: predictions || []
           }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
 
@@ -188,7 +198,7 @@ serve(async (req) => {
             success: true, 
             performance: performance || []
           }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
     }
@@ -280,7 +290,7 @@ serve(async (req) => {
             prediction: predictionData,
             message: `ML prediction: ${prediction.prediction.toUpperCase()} with ${(prediction.confidence * 100).toFixed(1)}% confidence`
           }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
 
@@ -340,7 +350,7 @@ serve(async (req) => {
             accuracy: predictionCorrect,
             message: `Prediction outcome updated. ${predictionCorrect ? 'Correct' : 'Incorrect'} prediction.`
           }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
 
@@ -370,7 +380,7 @@ serve(async (req) => {
               correct_predictions: 0,
               message: 'No predictions with outcomes found'
             }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           )
         }
         
@@ -396,7 +406,7 @@ serve(async (req) => {
             total_pnl: totalPnl,
             message: `Accuracy: ${(accuracy * 100).toFixed(1)}% over ${days} days`
           }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
 
@@ -450,7 +460,7 @@ serve(async (req) => {
               reason: 'Insufficient data for retraining (need at least 50 predictions with outcomes)',
               recent_predictions: recentPredictions?.length || 0
             }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           )
         }
         
@@ -483,7 +493,7 @@ serve(async (req) => {
               ? `Recent accuracy (${(recentAccuracy * 100).toFixed(1)}%) is below threshold (55%)`
               : `Recent accuracy (${(recentAccuracy * 100).toFixed(1)}%) is acceptable`
           }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
 
@@ -515,7 +525,7 @@ serve(async (req) => {
                 message: 'No predictions with outcomes found'
               }
             }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           )
         }
         
@@ -539,7 +549,7 @@ serve(async (req) => {
               period_days: days
             }
           }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
 
@@ -574,7 +584,7 @@ serve(async (req) => {
             success: true, 
             message: 'AI performance data initialized successfully'
           }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
     }
@@ -791,4 +801,3 @@ async function updatePerformanceMetrics(
     // Don't throw - performance tracking is non-critical
   }
 }
-
