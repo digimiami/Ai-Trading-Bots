@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Card from '../../components/base/Card';
 import Button from '../../components/base/Button';
 import Header from '../../components/feature/Header';
-import { supabase } from '../../lib/supabase';
+import { supabase, getAuthTokenFast } from '../../lib/supabase';
 
 type WinnerRow = {
   symbol: string;
@@ -70,26 +70,110 @@ export default function WinnersPage() {
     setError(null);
     setData(null);
     try {
-      const { data: res, error: err } = await supabase.functions.invoke('winners-backtest', {
-        body: {
-          exchange: 'bybit',
-          tradingType: 'futures',
-          timeframe,
-          lookbackDays,
-          maxPairs,
-          minTrades,
-          tradeAmount,
-          stopLoss,
-          takeProfit,
-          leverage,
-          riskLevel: 'medium',
-        },
+      console.log('🔍 Calling winners-backtest with:', {
+        timeframe,
+        lookbackDays,
+        maxPairs,
+        minTrades,
+        tradeAmount,
+        stopLoss,
+        takeProfit,
+        leverage,
       });
-      if (err) throw new Error(err.message || 'Winners backtest failed');
-      if (res?.error) throw new Error(res.error);
-      setData(res as WinnersResponse);
+      
+      // Use custom fetch with longer timeout (90 seconds) for backtest
+      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || ''
+      const supabaseAnonKey = import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || ''
+      const authToken = await getAuthTokenFast()
+      
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 90 * 1000) // 90 second timeout
+      
+      try {
+        const response = await fetch(`${supabaseUrl}/functions/v1/winners-backtest`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'apikey': supabaseAnonKey,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            exchange: 'bybit',
+            tradingType: 'futures',
+            timeframe,
+            lookbackDays,
+            maxPairs,
+            minTrades,
+            tradeAmount,
+            stopLoss,
+            takeProfit,
+            leverage,
+            riskLevel: 'medium',
+          }),
+          signal: controller.signal,
+        })
+        
+        clearTimeout(timeoutId)
+        
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => '')
+          let errorJson: any = {}
+          try { errorJson = JSON.parse(errorText) } catch {}
+          const errorMsg = errorJson?.error || errorText || `Request failed with status ${response.status}`
+          console.error('❌ HTTP error:', response.status, errorMsg)
+          throw new Error(errorMsg)
+        }
+        
+        const responseText = await response.text()
+        console.log('📥 Response received, length:', responseText.length)
+        
+        let res: any
+        try {
+          res = JSON.parse(responseText)
+        } catch (parseErr) {
+          console.error('❌ JSON parse error:', parseErr, 'Response:', responseText.substring(0, 200))
+          throw new Error('Invalid JSON response from server')
+        }
+        
+        console.log('📥 Response parsed:', { 
+          hasData: !!res, 
+          dataKeys: res ? Object.keys(res) : [],
+          hasWinners: !!res?.winners,
+          winnersCount: res?.winners?.length || 0
+        })
+        
+        if (res?.error) {
+          console.error('❌ Response contains error:', res.error)
+          throw new Error(res.error)
+        }
+        
+        if (!res) {
+          console.error('❌ No response data received')
+          throw new Error('No data received from backtest')
+        }
+        
+        if (!res.winners || !Array.isArray(res.winners)) {
+          console.error('❌ Invalid response format:', res)
+          throw new Error('Invalid response format: missing winners array')
+        }
+        
+        console.log('✅ Setting winners data:', { 
+          winnersCount: res.winners.length,
+          config: res.config 
+        })
+        
+        setData(res as WinnersResponse)
+      } catch (fetchErr: any) {
+        clearTimeout(timeoutId)
+        if (fetchErr?.name === 'AbortError') {
+          console.error('❌ Request timed out after 90 seconds')
+          throw new Error('Request timed out. The backtest is taking longer than expected. Please try again with fewer pairs or a shorter lookback period.')
+        }
+        throw fetchErr
+      }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Find Winners failed');
+      console.error('❌ Error in handleFindWinners:', e)
+      setError(e instanceof Error ? e.message : 'Find Winners failed')
     } finally {
       setIsRunning(false);
     }

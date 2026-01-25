@@ -166,21 +166,45 @@ serve(async (req) => {
       endDate: endDate.toISOString(),
     }
 
+    console.log('Calling backtest-engine with:', {
+      symbols: symbols.length,
+      timeframe,
+      lookbackDays: cappedLookback,
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+    })
+
     const backtestUrl = `${supabaseUrl}/functions/v1/backtest-engine`
     let backtestRes: Response
+    // Add a timeout controller (50 seconds max to stay under Supabase's 60s free tier limit)
+    // This gives us buffer for response processing
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 50 * 1000)
+    
     try {
       backtestRes = await fetch(backtestUrl, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
+          'apikey': anonKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(backtestPayload),
+        signal: controller.signal,
       })
+      
+      clearTimeout(timeoutId)
     } catch (fetchErr: any) {
+      clearTimeout(timeoutId)
       console.error('Backtest engine fetch error:', fetchErr)
+      const isTimeout = fetchErr?.name === 'AbortError' || fetchErr?.message?.includes('timeout')
       return new Response(
-        JSON.stringify({ error: 'Failed to call backtest engine' }),
+        JSON.stringify({ 
+          error: isTimeout 
+            ? 'Backtest engine request timed out. Try reducing lookback days or number of pairs.' 
+            : 'Failed to call backtest engine', 
+          details: fetchErr?.message || String(fetchErr) 
+        }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
@@ -194,23 +218,50 @@ serve(async (req) => {
       }
       let errJson: any = {}
       try { errJson = JSON.parse(errText) } catch { /* ignore */ }
+      
+      // Check for Supabase-specific timeout errors
+      const isSupabaseTimeout = backtestRes.status === 504 || 
+                                errText.includes('timeout') || 
+                                errText.includes('TIMEOUT') ||
+                                errJson?.code === 'TIMEOUT' ||
+                                errJson?.message?.includes('timeout')
+      
       const msg = errJson?.error || errText || `Backtest engine returned ${backtestRes.status}`
+      const userMessage = isSupabaseTimeout
+        ? 'Backtest took too long to complete. Try reducing lookback days (7-14 days) or number of pairs (4-6 pairs).'
+        : msg
+      
+      console.error('Backtest engine error:', {
+        status: backtestRes.status,
+        statusText: backtestRes.statusText,
+        error: msg,
+        isTimeout: isSupabaseTimeout,
+        payload: JSON.stringify(backtestPayload).substring(0, 500),
+      })
       return new Response(
-        JSON.stringify({ error: msg }),
+        JSON.stringify({ error: userMessage, status: backtestRes.status, isTimeout: isSupabaseTimeout }),
         { status: backtestRes.status >= 500 ? 502 : 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
     let backtestData: any = {}
     try {
-      backtestData = await backtestRes.json()
+      const responseText = await backtestRes.text()
+      console.log(`Backtest response received, length: ${responseText.length} chars`)
+      backtestData = JSON.parse(responseText)
+      console.log(`Backtest data parsed successfully, results_per_pair keys: ${Object.keys(backtestData.results_per_pair || {}).length}`)
     } catch (parseErr: any) {
       console.error('Failed to parse backtest response:', parseErr)
       return new Response(
-        JSON.stringify({ error: 'Invalid response from backtest engine' }),
+        JSON.stringify({ error: 'Invalid response from backtest engine', details: parseErr?.message || String(parseErr) }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
+    
+    if (!backtestData.results_per_pair) {
+      console.warn('No results_per_pair in response, data keys:', Object.keys(backtestData))
+    }
+    
     const resultsPerPair = backtestData.results_per_pair || {}
 
     type WinnerRow = {
@@ -277,14 +328,28 @@ serve(async (req) => {
       symbols,
     }
 
+    console.log(`✅ Winners backtest completed: ${rows.length} winners found from ${symbols.length} symbols`)
+    console.log(`📊 Winners summary:`, rows.map(r => ({ symbol: r.symbol, trades: r.trades, pnl: r.pnl.toFixed(2) })))
+
+    const responseData = {
+      winners: rows,
+      config,
+      strategy,
+      strategyConfig,
+    }
+
+    // Log response size
+    const responseJson = JSON.stringify(responseData)
+    const responseSizeKB = new Blob([responseJson]).size / 1024
+    console.log(`📤 Sending response: ${responseSizeKB.toFixed(2)} KB, ${rows.length} winners`)
+
+    // Return response with status 200 explicitly
     return new Response(
-      JSON.stringify({
-        winners: rows,
-        config,
-        strategy,
-        strategyConfig,
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      responseJson,
+      { 
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      }
     )
   } catch (e: any) {
     console.error('winners-backtest error:', e)

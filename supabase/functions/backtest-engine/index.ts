@@ -823,14 +823,17 @@ serve(async (req) => {
       takeProfit
     }
 
-    // Run backtest for each symbol
+    // Run backtest for each symbol with timeout protection
     const resultsPerPair: { [key: string]: any } = {}
     const allTrades: any[] = []
+    const SYMBOL_TIMEOUT_MS = 4 * 60 * 1000 // 4 minutes per symbol
 
     for (const symbol of symbols) {
       try {
         console.log(`Running backtest for ${symbol}...`)
-        const result = await runBacktestForSymbol(
+        
+        // Add timeout protection for each symbol
+        const symbolPromise = runBacktestForSymbol(
           symbol,
           config,
           strategy,
@@ -838,6 +841,12 @@ serve(async (req) => {
           startDate,
           endDate
         )
+        
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error(`Timeout: Backtest for ${symbol} took longer than ${SYMBOL_TIMEOUT_MS / 1000 / 60} minutes`)), SYMBOL_TIMEOUT_MS)
+        })
+        
+        const result = await Promise.race([symbolPromise, timeoutPromise]) as any
         
         resultsPerPair[symbol] = {
           trades: result.trades,
@@ -861,8 +870,10 @@ serve(async (req) => {
         if (result.all_trades) {
           allTrades.push(...result.all_trades.map((t: any) => ({ ...t, symbol })))
         }
+        
+        console.log(`✅ Completed backtest for ${symbol}: ${result.trades} trades, PnL: ${result.pnl.toFixed(2)}`)
       } catch (error: any) {
-        console.error(`Error backtesting ${symbol}:`, error)
+        console.error(`❌ Error backtesting ${symbol}:`, error?.message || error)
         resultsPerPair[symbol] = {
           trades: 0,
           win_rate: 0,
@@ -879,116 +890,235 @@ serve(async (req) => {
           short_pnl: 0,
           gross_profit: 0,
           gross_loss: 0,
-          error: error.message
+          error: error?.message || String(error) || 'Unknown error'
         }
       }
     }
 
-    // Calculate overall metrics
-    const totalTrades = Object.values(resultsPerPair).reduce((sum: number, data: any) => sum + (data.trades || 0), 0)
-    const winningTrades = Object.values(resultsPerPair).reduce((sum: number, data: any) => {
-      return sum + Math.floor((data.trades || 0) * (data.win_rate || 0) / 100)
-    }, 0)
-    const losingTrades = totalTrades - winningTrades
-    const totalPnL = Object.values(resultsPerPair).reduce((sum: number, data: any) => sum + (data.pnl || 0), 0)
-    const avgWinRate = Object.values(resultsPerPair).reduce((sum: number, data: any) => sum + (data.win_rate || 0), 0) / symbols.length
-
-    // Position size metrics (aggregate)
-    const allPositionSizes = allTrades.map(t => t.size || 0).filter(s => s > 0)
-    const avgPositionSize = allPositionSizes.length > 0
-      ? allPositionSizes.reduce((sum, s) => sum + s, 0) / allPositionSizes.length
-      : 0
-    const minPositionSize = allPositionSizes.length > 0 ? Math.min(...allPositionSizes) : 0
-    const maxPositionSize = allPositionSizes.length > 0 ? Math.max(...allPositionSizes) : 0
-
-    // Long/Short breakdown (aggregate)
-    const longTrades = allTrades.filter(t => t.side === 'long')
-    const shortTrades = allTrades.filter(t => t.side === 'short')
-    const longWins = longTrades.filter(t => t.pnl > 0)
-    const longLosses = longTrades.filter(t => t.pnl <= 0)
-    const shortWins = shortTrades.filter(t => t.pnl > 0)
-    const shortLosses = shortTrades.filter(t => t.pnl <= 0)
+    // Calculate overall metrics with error handling
+    let totalTrades = 0
+    let winningTrades = 0
+    let losingTrades = 0
+    let totalPnL = 0
+    let avgWinRate = 0
     
-    const longWinRate = longTrades.length > 0 ? (longWins.length / longTrades.length) * 100 : 0
-    const shortWinRate = shortTrades.length > 0 ? (shortWins.length / shortTrades.length) * 100 : 0
+    try {
+      totalTrades = Object.values(resultsPerPair).reduce((sum: number, data: any) => sum + (data.trades || 0), 0)
+      winningTrades = Object.values(resultsPerPair).reduce((sum: number, data: any) => {
+        return sum + Math.floor((data.trades || 0) * (data.win_rate || 0) / 100)
+      }, 0)
+      losingTrades = totalTrades - winningTrades
+      totalPnL = Object.values(resultsPerPair).reduce((sum: number, data: any) => sum + (data.pnl || 0), 0)
+      const validPairs = Object.values(resultsPerPair).filter((data: any) => !data.error).length
+      avgWinRate = validPairs > 0 
+        ? Object.values(resultsPerPair).reduce((sum: number, data: any) => sum + (data.win_rate || 0), 0) / validPairs
+        : 0
+    } catch (calcError: any) {
+      console.error('Error calculating overall metrics:', calcError)
+      // Continue with default values
+    }
+
+    // Position size metrics (aggregate) with error handling
+    let avgPositionSize = 0
+    let minPositionSize = 0
+    let maxPositionSize = 0
+    try {
+      const allPositionSizes = allTrades.map(t => t.size || 0).filter(s => s > 0)
+      avgPositionSize = allPositionSizes.length > 0
+        ? allPositionSizes.reduce((sum, s) => sum + s, 0) / allPositionSizes.length
+        : 0
+      minPositionSize = allPositionSizes.length > 0 ? Math.min(...allPositionSizes) : 0
+      maxPositionSize = allPositionSizes.length > 0 ? Math.max(...allPositionSizes) : 0
+    } catch (e) {
+      console.error('Error calculating position size metrics:', e)
+    }
+
+    // Long/Short breakdown (aggregate) with error handling
+    let longTrades: any[] = []
+    let shortTrades: any[] = []
+    let longWins: any[] = []
+    let longLosses: any[] = []
+    let shortWins: any[] = []
+    let shortLosses: any[] = []
+    let longWinRate = 0
+    let shortWinRate = 0
+    let longPnL = 0
+    let shortPnL = 0
     
-    const longPnL = longTrades.reduce((sum, t) => sum + t.pnl, 0)
-    const shortPnL = shortTrades.reduce((sum, t) => sum + t.pnl, 0)
+    try {
+      longTrades = allTrades.filter(t => t.side === 'long')
+      shortTrades = allTrades.filter(t => t.side === 'short')
+      longWins = longTrades.filter(t => t.pnl > 0)
+      longLosses = longTrades.filter(t => t.pnl <= 0)
+      shortWins = shortTrades.filter(t => t.pnl > 0)
+      shortLosses = shortTrades.filter(t => t.pnl <= 0)
+      
+      longWinRate = longTrades.length > 0 ? (longWins.length / longTrades.length) * 100 : 0
+      shortWinRate = shortTrades.length > 0 ? (shortWins.length / shortTrades.length) * 100 : 0
+      
+      longPnL = longTrades.reduce((sum, t) => sum + (t.pnl || 0), 0)
+      shortPnL = shortTrades.reduce((sum, t) => sum + (t.pnl || 0), 0)
+    } catch (e) {
+      console.error('Error calculating long/short breakdown:', e)
+    }
 
-    // Calculate Sharpe ratio (simplified)
-    const returns = allTrades.map(t => t.pnlPercent || 0)
-    const avgReturn = returns.length > 0 ? returns.reduce((a, b) => a + b, 0) / returns.length : 0
-    const variance = returns.length > 0 
-      ? returns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / returns.length 
-      : 0
-    const stdDev = Math.sqrt(variance)
-    const sharpeRatio = stdDev > 0 ? (avgReturn / stdDev) * Math.sqrt(252) : 0 // Annualized
+    // Calculate Sharpe ratio (simplified) with error handling
+    let sharpeRatio = 0
+    try {
+      const returns = allTrades.map(t => t.pnlPercent || 0).filter(r => !isNaN(r) && isFinite(r))
+      if (returns.length > 0) {
+        const avgReturn = returns.reduce((a, b) => a + b, 0) / returns.length
+        const variance = returns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / returns.length
+        const stdDev = Math.sqrt(variance)
+        sharpeRatio = stdDev > 0 ? (avgReturn / stdDev) * Math.sqrt(252) : 0 // Annualized
+      }
+    } catch (e) {
+      console.error('Error calculating Sharpe ratio:', e)
+    }
 
-    // Calculate profit metrics
-    const grossProfit = allTrades.filter(t => t.pnl > 0).reduce((sum, t) => sum + t.pnl, 0)
-    const grossLoss = Math.abs(allTrades.filter(t => t.pnl <= 0).reduce((sum, t) => sum + t.pnl, 0))
-    const netProfit = totalPnL // Same as totalPnL
-    const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? 999 : 0
+    // Calculate profit metrics with error handling
+    let grossProfit = 0
+    let grossLoss = 0
+    let netProfit = 0
+    let profitFactor = 0
+    try {
+      grossProfit = allTrades.filter(t => (t.pnl || 0) > 0).reduce((sum, t) => sum + (t.pnl || 0), 0)
+      grossLoss = Math.abs(allTrades.filter(t => (t.pnl || 0) <= 0).reduce((sum, t) => sum + (t.pnl || 0), 0))
+      netProfit = totalPnL // Same as totalPnL
+      profitFactor = grossLoss > 0 ? grossProfit / grossLoss : grossProfit > 0 ? 999 : 0
+    } catch (e) {
+      console.error('Error calculating profit metrics:', e)
+    }
 
-    // Calculate max drawdown (more detailed)
-    let peak = 0
+    // Calculate max drawdown (more detailed) with error handling
     let maxDrawdown = 0
     let maxDrawdownValue = 0
-    let runningPnL = 0
-    const drawdowns: number[] = []
+    let maxDrawdownPercent = 0
+    let avgDrawdown = 0
     
-    for (const trade of allTrades.sort((a, b) => new Date(a.entryTime).getTime() - new Date(b.entryTime).getTime())) {
-      runningPnL += trade.pnl
-      if (runningPnL > peak) peak = runningPnL
-      const drawdown = peak - runningPnL
-      drawdowns.push(drawdown)
-      if (drawdown > maxDrawdown) {
-        maxDrawdown = drawdown
-        maxDrawdownValue = runningPnL
+    try {
+      let peak = 0
+      let runningPnL = 0
+      const drawdowns: number[] = []
+      
+      const sortedTrades = allTrades
+        .filter(t => t.entryTime)
+        .sort((a, b) => {
+          try {
+            return new Date(a.entryTime).getTime() - new Date(b.entryTime).getTime()
+          } catch {
+            return 0
+          }
+        })
+      
+      for (const trade of sortedTrades) {
+        runningPnL += (trade.pnl || 0)
+        if (runningPnL > peak) peak = runningPnL
+        const drawdown = peak - runningPnL
+        drawdowns.push(drawdown)
+        if (drawdown > maxDrawdown) {
+          maxDrawdown = drawdown
+          maxDrawdownValue = runningPnL
+        }
       }
+      
+      maxDrawdownPercent = tradeAmount > 0 ? (maxDrawdown / (tradeAmount * symbols.length)) * 100 : 0
+      avgDrawdown = drawdowns.length > 0 ? drawdowns.reduce((sum, d) => sum + d, 0) / drawdowns.length : 0
+    } catch (e) {
+      console.error('Error calculating drawdown metrics:', e)
     }
-    
-    const maxDrawdownPercent = tradeAmount > 0 ? (maxDrawdown / (tradeAmount * symbols.length)) * 100 : 0
-    const avgDrawdown = drawdowns.length > 0 ? drawdowns.reduce((sum, d) => sum + d, 0) / drawdowns.length : 0
 
-    const results = {
-      total_trades: totalTrades,
-      winning_trades: winningTrades,
-      losing_trades: losingTrades,
-      win_rate: avgWinRate,
-      total_pnl: totalPnL,
-      total_pnl_percentage: tradeAmount > 0 ? (totalPnL / (tradeAmount * symbols.length)) * 100 : 0,
-      // Position size metrics
-      avg_position_size: avgPositionSize,
-      min_position_size: minPositionSize,
-      max_position_size: maxPositionSize,
-      // Long/Short breakdown
-      long_trades: longTrades.length,
-      short_trades: shortTrades.length,
-      long_wins: longWins.length,
-      long_losses: longLosses.length,
-      short_wins: shortWins.length,
-      short_losses: shortLosses.length,
-      long_win_rate: longWinRate,
-      short_win_rate: shortWinRate,
-      long_pnl: longPnL,
-      short_pnl: shortPnL,
-      // Profit metrics
-      gross_profit: grossProfit,
-      gross_loss: grossLoss,
-      net_profit: netProfit,
-      // Drawdown metrics
-      max_drawdown: -maxDrawdownPercent,
-      max_drawdown_value: -maxDrawdown,
-      avg_drawdown: -avgDrawdown,
-      sharpe_ratio: sharpeRatio,
-      profit_factor: profitFactor,
-      results_per_pair: resultsPerPair,
-      all_trades: allTrades
+    // Build results object with error handling
+    let results: any
+    try {
+      results = {
+        total_trades: totalTrades,
+        winning_trades: winningTrades,
+        losing_trades: losingTrades,
+        win_rate: isNaN(avgWinRate) ? 0 : avgWinRate,
+        total_pnl: isNaN(totalPnL) ? 0 : totalPnL,
+        total_pnl_percentage: tradeAmount > 0 && !isNaN(totalPnL) ? (totalPnL / (tradeAmount * symbols.length)) * 100 : 0,
+        // Position size metrics
+        avg_position_size: isNaN(avgPositionSize) ? 0 : avgPositionSize,
+        min_position_size: isNaN(minPositionSize) ? 0 : minPositionSize,
+        max_position_size: isNaN(maxPositionSize) ? 0 : maxPositionSize,
+        // Long/Short breakdown
+        long_trades: longTrades.length,
+        short_trades: shortTrades.length,
+        long_wins: longWins.length,
+        long_losses: longLosses.length,
+        short_wins: shortWins.length,
+        short_losses: shortLosses.length,
+        long_win_rate: isNaN(longWinRate) ? 0 : longWinRate,
+        short_win_rate: isNaN(shortWinRate) ? 0 : shortWinRate,
+        long_pnl: isNaN(longPnL) ? 0 : longPnL,
+        short_pnl: isNaN(shortPnL) ? 0 : shortPnL,
+        // Profit metrics
+        gross_profit: isNaN(grossProfit) ? 0 : grossProfit,
+        gross_loss: isNaN(grossLoss) ? 0 : grossLoss,
+        net_profit: isNaN(netProfit) ? 0 : netProfit,
+        // Drawdown metrics
+        max_drawdown: isNaN(maxDrawdownPercent) ? 0 : -maxDrawdownPercent,
+        max_drawdown_value: isNaN(maxDrawdown) ? 0 : -maxDrawdown,
+        avg_drawdown: isNaN(avgDrawdown) ? 0 : -avgDrawdown,
+        sharpe_ratio: isNaN(sharpeRatio) ? 0 : sharpeRatio,
+        profit_factor: isNaN(profitFactor) ? 0 : profitFactor,
+        results_per_pair: resultsPerPair,
+        all_trades: allTrades || []
+      }
+    } catch (buildError: any) {
+      console.error('Error building results object:', buildError)
+      throw new Error(`Failed to build results: ${buildError?.message || String(buildError)}`)
+    }
+
+    console.log(`✅ Backtest completed: ${totalTrades} total trades across ${symbols.length} symbols`)
+
+    // Limit all_trades to prevent response size issues (keep only first 100 trades for summary)
+    // Winners backtest doesn't need all trades, just the aggregated results
+    if (results.all_trades && results.all_trades.length > 100) {
+      console.log(`Limiting all_trades from ${results.all_trades.length} to 100 to prevent response size issues`)
+      results.all_trades = results.all_trades.slice(0, 100)
+    }
+
+    // Serialize response with error handling
+    let responseBody: string
+    try {
+      responseBody = JSON.stringify(results)
+      const responseSizeMB = new Blob([responseBody]).size / (1024 * 1024)
+      console.log(`Response size: ${responseSizeMB.toFixed(2)} MB`)
+      
+      // Supabase Edge Functions have a ~6MB response limit
+      if (responseSizeMB > 5) {
+        console.warn(`Response size (${responseSizeMB.toFixed(2)} MB) is large, removing all_trades to reduce size`)
+        results.all_trades = []
+        responseBody = JSON.stringify(results)
+      }
+    } catch (serializeError: any) {
+      console.error('Error serializing response:', serializeError)
+      // Try without all_trades if serialization fails
+      try {
+        const resultsWithoutTrades = { ...results, all_trades: [] }
+        responseBody = JSON.stringify(resultsWithoutTrades)
+        console.log('Successfully serialized response without all_trades')
+      } catch (retryError: any) {
+        console.error('Failed to serialize even without all_trades:', retryError)
+        return new Response(
+          JSON.stringify({ 
+            error: 'Response too large to serialize',
+            results_per_pair: resultsPerPair,
+            summary: {
+              total_trades: totalTrades,
+              total_pnl: totalPnL,
+              win_rate: avgWinRate
+            }
+          }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
     }
 
     return new Response(
-      JSON.stringify(results),
+      responseBody,
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   } catch (error: any) {
