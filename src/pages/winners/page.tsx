@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Card from '../../components/base/Card';
 import Button from '../../components/base/Button';
 import Header from '../../components/feature/Header';
+import Navigation from '../../components/feature/Navigation';
 import { supabase, getAuthTokenFast } from '../../lib/supabase';
 
 type WinnerRow = {
@@ -446,6 +447,7 @@ export default function WinnersPage() {
           )}
         </div>
       </div>
+      <Navigation />
     </div>
   );
 }

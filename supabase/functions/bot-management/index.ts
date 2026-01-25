@@ -612,22 +612,42 @@ serve(async (req) => {
           console.warn('⚠️ Could not load user risk settings, using defaults:', error);
         }
 
-        // Merge user risk settings into strategy_config
+        // Start with frontend's strategyConfig to preserve all user settings
         let finalStrategyConfig: any = strategyConfig || {};
+        console.log('📋 [bot-management] Received strategyConfig from frontend:', JSON.stringify(strategyConfig, null, 2));
+        
+        // Only merge user risk settings for fields that aren't already set in strategyConfig
         if (userRiskSettings) {
           // Map user_settings.risk_settings to strategy_config risk management fields
+          // Only apply if the field is not already set in the frontend's config
+          const mergedRiskSettings: any = {};
+          if (finalStrategyConfig.daily_loss_limit_pct === undefined || finalStrategyConfig.daily_loss_limit_pct === null) {
+            mergedRiskSettings.daily_loss_limit_pct = userRiskSettings.maxDailyLoss ? userRiskSettings.maxDailyLoss / 100 : 3.0;
+          }
+          if (finalStrategyConfig.max_position_size === undefined || finalStrategyConfig.max_position_size === null) {
+            mergedRiskSettings.max_position_size = userRiskSettings.maxPositionSize ?? 1000;
+          }
+          if (finalStrategyConfig.stop_loss_percentage === undefined || finalStrategyConfig.stop_loss_percentage === null) {
+            mergedRiskSettings.stop_loss_percentage = userRiskSettings.stopLossPercentage ?? 5.0;
+          }
+          if (finalStrategyConfig.take_profit_percentage === undefined || finalStrategyConfig.take_profit_percentage === null) {
+            mergedRiskSettings.take_profit_percentage = userRiskSettings.takeProfitPercentage ?? 10.0;
+          }
+          if (finalStrategyConfig.max_concurrent === undefined || finalStrategyConfig.max_concurrent === null) {
+            mergedRiskSettings.max_concurrent = userRiskSettings.maxOpenPositions ?? 5;
+          }
+          if (finalStrategyConfig.risk_per_trade_pct === undefined || finalStrategyConfig.risk_per_trade_pct === null) {
+            mergedRiskSettings.risk_per_trade_pct = userRiskSettings.riskPerTrade ? userRiskSettings.riskPerTrade / 100 : 0.02;
+          }
+          if (finalStrategyConfig.emergency_stop_loss === undefined || finalStrategyConfig.emergency_stop_loss === null) {
+            mergedRiskSettings.emergency_stop_loss = userRiskSettings.emergencyStopLoss ?? 20.0;
+          }
+          
           finalStrategyConfig = {
             ...finalStrategyConfig,
-            // Apply risk management from user_settings
-            daily_loss_limit_pct: finalStrategyConfig.daily_loss_limit_pct ?? (userRiskSettings.maxDailyLoss ? userRiskSettings.maxDailyLoss / 100 : 3.0),
-            max_position_size: finalStrategyConfig.max_position_size ?? userRiskSettings.maxPositionSize ?? 1000,
-            stop_loss_percentage: finalStrategyConfig.stop_loss_percentage ?? userRiskSettings.stopLossPercentage ?? 5.0,
-            take_profit_percentage: finalStrategyConfig.take_profit_percentage ?? userRiskSettings.takeProfitPercentage ?? 10.0,
-            max_concurrent: finalStrategyConfig.max_concurrent ?? userRiskSettings.maxOpenPositions ?? 5,
-            risk_per_trade_pct: finalStrategyConfig.risk_per_trade_pct ?? (userRiskSettings.riskPerTrade ? userRiskSettings.riskPerTrade / 100 : 0.02),
-            emergency_stop_loss: finalStrategyConfig.emergency_stop_loss ?? userRiskSettings.emergencyStopLoss ?? 20.0
+            ...mergedRiskSettings
           };
-          console.log('✅ Merged risk management settings into strategy_config');
+          console.log('✅ Merged risk management settings into strategy_config (preserving frontend values)');
         }
 
 
@@ -656,50 +676,72 @@ serve(async (req) => {
           max_signal_weight: 1.4
         };
 
+        // Preserve user's risk_engine settings from frontend, only fill in missing defaults
+        const userRiskEngine = finalStrategyConfig.risk_engine || {};
         const toNumber = (value: any, fallback: number) => {
           const next = Number(value);
           return Number.isFinite(next) ? next : fallback;
         };
         const clampValue = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
-        const resolved = { ...defaultRiskEngine, ...(finalStrategyConfig.risk_engine || {}) };
-        const volatilityLow = Math.max(0, toNumber(resolved.volatility_low, defaultRiskEngine.volatility_low));
-        const volatilityHigh = Math.max(volatilityLow + 0.1, toNumber(resolved.volatility_high, defaultRiskEngine.volatility_high));
-        const drawdownModerate = Math.max(0, toNumber(resolved.drawdown_moderate, defaultRiskEngine.drawdown_moderate));
-        const drawdownSevere = Math.max(drawdownModerate + 1, toNumber(resolved.drawdown_severe, defaultRiskEngine.drawdown_severe));
-        const minSizeMultiplier = clampValue(toNumber(resolved.min_size_multiplier, defaultRiskEngine.min_size_multiplier), 0.1, 3);
-        const maxSizeMultiplier = clampValue(toNumber(resolved.max_size_multiplier, defaultRiskEngine.max_size_multiplier), minSizeMultiplier, 3);
-        const minSignalWeight = clampValue(toNumber(resolved.min_signal_weight, defaultRiskEngine.min_signal_weight), 0.1, 2);
-        const maxSignalWeight = clampValue(toNumber(resolved.max_signal_weight, defaultRiskEngine.max_signal_weight), minSignalWeight, 2);
+        
+        // Merge defaults with user's risk_engine, preserving user values
+        // Only fill in defaults for fields that are missing
+        const mergedRiskEngine = { ...defaultRiskEngine, ...userRiskEngine };
+        
+        // Validate and clamp values for safety, but preserve user's values if they're valid
+        const validateRiskEngineValue = (key: string, userValue: any, defaultValue: number, validator: (val: number) => number) => {
+          if (userValue !== undefined && userValue !== null && userRiskEngine.hasOwnProperty(key)) {
+            // User provided this value, validate it
+            return validator(toNumber(userValue, defaultValue));
+          }
+          // Use default and validate
+          return validator(defaultValue);
+        };
+        
+        const volatilityLow = validateRiskEngineValue('volatility_low', userRiskEngine.volatility_low, defaultRiskEngine.volatility_low, (v) => Math.max(0, v));
+        const volatilityHigh = validateRiskEngineValue('volatility_high', userRiskEngine.volatility_high, defaultRiskEngine.volatility_high, (v) => Math.max(volatilityLow + 0.1, v));
+        const drawdownModerate = validateRiskEngineValue('drawdown_moderate', userRiskEngine.drawdown_moderate, defaultRiskEngine.drawdown_moderate, (v) => Math.max(0, v));
+        const drawdownSevere = validateRiskEngineValue('drawdown_severe', userRiskEngine.drawdown_severe, defaultRiskEngine.drawdown_severe, (v) => Math.max(drawdownModerate + 1, v));
+        const minSizeMultiplier = validateRiskEngineValue('min_size_multiplier', userRiskEngine.min_size_multiplier, defaultRiskEngine.min_size_multiplier, (v) => clampValue(v, 0.1, 3));
+        const maxSizeMultiplier = validateRiskEngineValue('max_size_multiplier', userRiskEngine.max_size_multiplier, defaultRiskEngine.max_size_multiplier, (v) => clampValue(v, minSizeMultiplier, 3));
+        const minSignalWeight = validateRiskEngineValue('min_signal_weight', userRiskEngine.min_signal_weight, defaultRiskEngine.min_signal_weight, (v) => clampValue(v, 0.1, 2));
+        const maxSignalWeight = validateRiskEngineValue('max_signal_weight', userRiskEngine.max_signal_weight, defaultRiskEngine.max_signal_weight, (v) => clampValue(v, minSignalWeight, 2));
 
+        // Build risk_engine: preserve all user values, only validate/clamp for safety
         finalStrategyConfig = {
           ...finalStrategyConfig,
           risk_engine: {
-            ...resolved,
+            // Start with merged values (user values override defaults)
+            ...mergedRiskEngine,
+            // Validate critical interdependent values
             volatility_low: volatilityLow,
             volatility_high: volatilityHigh,
-            high_volatility_multiplier: clampValue(toNumber(resolved.high_volatility_multiplier, defaultRiskEngine.high_volatility_multiplier), 0.1, 3),
-            low_volatility_multiplier: clampValue(toNumber(resolved.low_volatility_multiplier, defaultRiskEngine.low_volatility_multiplier), 0.1, 3),
-            max_spread_bps: Math.max(1, toNumber(resolved.max_spread_bps, defaultRiskEngine.max_spread_bps)),
-            spread_penalty_multiplier: clampValue(toNumber(resolved.spread_penalty_multiplier, defaultRiskEngine.spread_penalty_multiplier), 0.1, 3),
-            low_liquidity_multiplier: clampValue(toNumber(resolved.low_liquidity_multiplier, defaultRiskEngine.low_liquidity_multiplier), 0.1, 3),
-            medium_liquidity_multiplier: clampValue(toNumber(resolved.medium_liquidity_multiplier, defaultRiskEngine.medium_liquidity_multiplier), 0.1, 3),
+            high_volatility_multiplier: validateRiskEngineValue('high_volatility_multiplier', userRiskEngine.high_volatility_multiplier, defaultRiskEngine.high_volatility_multiplier, (v) => clampValue(v, 0.1, 3)),
+            low_volatility_multiplier: validateRiskEngineValue('low_volatility_multiplier', userRiskEngine.low_volatility_multiplier, defaultRiskEngine.low_volatility_multiplier, (v) => clampValue(v, 0.1, 3)),
+            max_spread_bps: validateRiskEngineValue('max_spread_bps', userRiskEngine.max_spread_bps, defaultRiskEngine.max_spread_bps, (v) => Math.max(1, v)),
+            spread_penalty_multiplier: validateRiskEngineValue('spread_penalty_multiplier', userRiskEngine.spread_penalty_multiplier, defaultRiskEngine.spread_penalty_multiplier, (v) => clampValue(v, 0.1, 3)),
+            low_liquidity_multiplier: validateRiskEngineValue('low_liquidity_multiplier', userRiskEngine.low_liquidity_multiplier, defaultRiskEngine.low_liquidity_multiplier, (v) => clampValue(v, 0.1, 3)),
+            medium_liquidity_multiplier: validateRiskEngineValue('medium_liquidity_multiplier', userRiskEngine.medium_liquidity_multiplier, defaultRiskEngine.medium_liquidity_multiplier, (v) => clampValue(v, 0.1, 3)),
             drawdown_moderate: drawdownModerate,
             drawdown_severe: drawdownSevere,
-            moderate_drawdown_multiplier: clampValue(toNumber(resolved.moderate_drawdown_multiplier, defaultRiskEngine.moderate_drawdown_multiplier), 0.1, 3),
-            severe_drawdown_multiplier: clampValue(toNumber(resolved.severe_drawdown_multiplier, defaultRiskEngine.severe_drawdown_multiplier), 0.1, 3),
-            loss_streak_threshold: Math.max(1, Math.round(toNumber(resolved.loss_streak_threshold, defaultRiskEngine.loss_streak_threshold))),
-            loss_streak_step: clampValue(toNumber(resolved.loss_streak_step, defaultRiskEngine.loss_streak_step), 0.01, 1),
+            moderate_drawdown_multiplier: validateRiskEngineValue('moderate_drawdown_multiplier', userRiskEngine.moderate_drawdown_multiplier, defaultRiskEngine.moderate_drawdown_multiplier, (v) => clampValue(v, 0.1, 3)),
+            severe_drawdown_multiplier: validateRiskEngineValue('severe_drawdown_multiplier', userRiskEngine.severe_drawdown_multiplier, defaultRiskEngine.severe_drawdown_multiplier, (v) => clampValue(v, 0.1, 3)),
+            loss_streak_threshold: validateRiskEngineValue('loss_streak_threshold', userRiskEngine.loss_streak_threshold, defaultRiskEngine.loss_streak_threshold, (v) => Math.max(1, Math.round(v))),
+            loss_streak_step: validateRiskEngineValue('loss_streak_step', userRiskEngine.loss_streak_step, defaultRiskEngine.loss_streak_step, (v) => clampValue(v, 0.01, 1)),
             min_size_multiplier: minSizeMultiplier,
             max_size_multiplier: maxSizeMultiplier,
-            max_slippage_bps: Math.max(1, toNumber(resolved.max_slippage_bps, defaultRiskEngine.max_slippage_bps)),
-            min_execution_size_multiplier: clampValue(toNumber(resolved.min_execution_size_multiplier, defaultRiskEngine.min_execution_size_multiplier), 0.1, 1),
-            limit_spread_bps: Math.max(1, toNumber(resolved.limit_spread_bps, defaultRiskEngine.limit_spread_bps)),
-            signal_learning_rate: clampValue(toNumber(resolved.signal_learning_rate, defaultRiskEngine.signal_learning_rate), 0.01, 1),
+            max_slippage_bps: validateRiskEngineValue('max_slippage_bps', userRiskEngine.max_slippage_bps, defaultRiskEngine.max_slippage_bps, (v) => Math.max(1, v)),
+            min_execution_size_multiplier: validateRiskEngineValue('min_execution_size_multiplier', userRiskEngine.min_execution_size_multiplier, defaultRiskEngine.min_execution_size_multiplier, (v) => clampValue(v, 0.1, 1)),
+            limit_spread_bps: validateRiskEngineValue('limit_spread_bps', userRiskEngine.limit_spread_bps, defaultRiskEngine.limit_spread_bps, (v) => Math.max(1, v)),
+            signal_learning_rate: validateRiskEngineValue('signal_learning_rate', userRiskEngine.signal_learning_rate, defaultRiskEngine.signal_learning_rate, (v) => clampValue(v, 0.01, 1)),
             min_signal_weight: minSignalWeight,
             max_signal_weight: maxSignalWeight
           }
         };
 
+        // Log final strategy config before saving
+        console.log('💾 [bot-management] Final strategyConfig to save:', JSON.stringify(finalStrategyConfig, null, 2));
+        
         // Prepare insert data
         const insertData: any = {
           user_id: user.id,
