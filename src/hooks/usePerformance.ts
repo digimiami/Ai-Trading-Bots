@@ -180,6 +180,10 @@ export function usePerformance(
       const symbolGroups = new Map<string, any[]>();
       closedTrades.forEach((t: any) => {
         const symbol = t.symbol || t.trading_bots?.symbol;
+        if (!symbol) {
+          console.warn('Trade missing symbol, skipping:', t.id);
+          return; // Skip trades without symbol
+        }
         if (!symbolGroups.has(symbol)) {
           symbolGroups.set(symbol, []);
         }
@@ -421,8 +425,18 @@ export function usePerformance(
       // Calculate symbol ranking - only use trades with actual PnL
       const symbolMap = new Map<string, SymbolPnL>();
 
+      // Helper function to extract symbol consistently
+      const getSymbol = (trade: any): string | null => {
+        return trade.symbol || trade.trading_bots?.symbol || null;
+      };
+
       tradesWithPnL.forEach((trade: any) => {
-        const symbol = trade.symbol;
+        const symbol = getSymbol(trade);
+        if (!symbol) {
+          console.warn('Trade missing symbol:', trade.id);
+          return; // Skip trades without symbol
+        }
+        
         const pnl = parseFloat(trade.pnl) || 0;
         const amount = parseFloat(trade.amount || trade.size || 0);
         const price = parseFloat(trade.price || trade.entry_price || 0);
@@ -446,7 +460,11 @@ export function usePerformance(
 
       // Also count total trades per symbol (including those with PnL = 0) for volume
       filteredTrades.forEach((trade: any) => {
-        const symbol = trade.symbol;
+        const symbol = getSymbol(trade);
+        if (!symbol) {
+          return; // Skip trades without symbol
+        }
+        
         if (!symbolMap.has(symbol)) {
           symbolMap.set(symbol, {
             symbol,
@@ -469,7 +487,10 @@ export function usePerformance(
       // Calculate win rate for each symbol (only from trades with actual PnL)
       symbolMap.forEach((symbolData, symbol) => {
         const symbolTradesWithPnL = tradesWithPnL.filter(
-          (t: any) => t.symbol === symbol
+          (t: any) => {
+            const tradeSymbol = t.symbol || t.trading_bots?.symbol;
+            return tradeSymbol === symbol;
+          }
         );
         if (symbolTradesWithPnL.length > 0) {
           const wins = symbolTradesWithPnL.filter(

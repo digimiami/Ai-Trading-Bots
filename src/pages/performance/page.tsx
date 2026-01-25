@@ -53,7 +53,7 @@ export default function Performance() {
 
   useEffect(() => {
     fetchPairs();
-  }, [fetchPairs]);
+  }, []); // Only run once on mount
 
   // Calculate date range based on selected period - memoized to prevent infinite loops
   const dateRange = useMemo(() => {
@@ -106,8 +106,9 @@ export default function Performance() {
 
   // Prepare chart data
   const chartData = metrics?.dailyPnL || [];
-  const maxPnL = Math.max(...(chartData.map(d => Math.abs(d.pnl)) || [0]), 1);
-  const minPnL = Math.min(...(chartData.map(d => d.pnl) || [0]), 0);
+  const pnlValues = chartData.length > 0 ? chartData.map(d => Math.abs(d.pnl)) : [0];
+  const maxPnL = Math.max(...pnlValues, 1);
+  const minPnL = chartData.length > 0 ? Math.min(...chartData.map(d => d.pnl), 0) : 0;
 
   // Get worst performing symbol (most negative P&L)
   const worstSymbol = metrics?.symbolRanking?.[0] || null;
@@ -270,7 +271,7 @@ export default function Performance() {
           <Card className="p-6">
             <div className="text-center">
               <div className="text-3xl font-bold text-blue-600 dark:text-blue-400 mb-2">
-                {metrics?.overview.winRate?.toFixed(1) || '0.0'}%
+                {(metrics?.overview.winRate ?? 0).toFixed(1)}%
               </div>
               <div className="text-sm text-gray-500 dark:text-gray-400">Win Rate</div>
             </div>
@@ -345,12 +346,14 @@ export default function Performance() {
                     .map((d, i) => {
                       const x = i * 40 + 20;
                       // Scale P&L to fit chart (100 is center/zero line)
-                      const y = 100 - (d.pnl / maxPnL) * 80;
-                      return `${x},${y}`;
+                      // Use maxPnL or 1 to avoid division by zero
+                      const scale = maxPnL > 0 ? maxPnL : 1;
+                      const y = 100 - (d.pnl / scale) * 80;
+                      return `${x},${Math.max(0, Math.min(200, y))}`;
                     })
                     .join(' ')}
                   fill="none"
-                  stroke={metrics?.overview.totalPnL >= 0 ? '#10b981' : '#ef4444'}
+                  stroke={(metrics?.overview.totalPnL || 0) >= 0 ? '#10b981' : '#ef4444'}
                   strokeWidth="2"
                   className="dark:opacity-80"
                 />
@@ -358,13 +361,14 @@ export default function Performance() {
                 {/* Area under curve */}
                 {chartData.map((d, i) => {
                   const x = i * 40 + 20;
-                  const y = 100 - (d.pnl / maxPnL) * 80;
-                  const height = 100 - y;
+                  const scale = maxPnL > 0 ? maxPnL : 1;
+                  const y = Math.max(0, Math.min(200, 100 - (d.pnl / scale) * 80));
+                  const height = Math.abs(100 - y);
                   return (
                     <rect
                       key={i}
                       x={x - 15}
-                      y={y}
+                      y={Math.min(y, 100)}
                       width="30"
                       height={height}
                       fill={d.pnl >= 0 ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}
@@ -397,8 +401,12 @@ export default function Performance() {
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">P&L Ranking</h3>
             <div className="space-y-3">
               {metrics.symbolRanking.map((symbol, index) => {
-                const maxLoss = Math.min(...metrics.symbolRanking.map(s => s.pnl));
-                const barWidth = Math.abs(symbol.pnl / maxLoss) * 100;
+                // Calculate max absolute PnL for scaling
+                const maxAbsPnL = Math.max(
+                  ...metrics.symbolRanking.map(s => Math.abs(s.pnl)),
+                  1 // Prevent division by zero
+                );
+                const barWidth = (Math.abs(symbol.pnl) / maxAbsPnL) * 100;
                 const isPositive = symbol.pnl >= 0;
                 
                 return (
@@ -425,7 +433,7 @@ export default function Performance() {
                     </div>
                     <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
                       <span>Volume: {formatCurrency(symbol.volume)}</span>
-                      <span>Trades: {symbol.trades} | WR: {symbol.winRate.toFixed(1)}%</span>
+                      <span>Trades: {symbol.trades} | WR: {(symbol.winRate ?? 0).toFixed(1)}%</span>
                     </div>
                   </div>
                 );
@@ -448,7 +456,7 @@ export default function Performance() {
           <Card className="p-4">
             <div className="text-center">
               <div className="text-2xl font-bold text-gray-900 dark:text-white mb-1">
-                {metrics?.overview.winRate.toFixed(1) || '0.0'}%
+                {(metrics?.overview.winRate ?? 0).toFixed(1)}%
               </div>
               <div className="text-xs text-gray-500 dark:text-gray-400">Win Rate</div>
             </div>

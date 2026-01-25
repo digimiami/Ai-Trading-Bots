@@ -1,34 +1,34 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
 serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response(null, { status: 204, headers: { ...corsHeaders, 'Access-Control-Max-Age': '86400' } });
   }
 
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      {
-        global: {
-          headers: { Authorization: req.headers.get('Authorization')! },
-        },
-      }
-    );
+    const authHeader = req.headers.get('Authorization');
+    const accessToken = authHeader?.replace(/^Bearer\s+/i, '').trim() || '';
+    if (!authHeader || !accessToken) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
-    // Verify user authentication
-    const {
-      data: { user },
-      error: userError,
-    } = await supabaseClient.auth.getUser();
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
+    const supabaseClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
 
+    const { data: { user }, error: userError } = await supabaseClient.auth.getUser(accessToken);
     if (userError || !user) {
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),
@@ -47,12 +47,15 @@ serve(async (req) => {
           .select('id, role, content, attachments, created_at')
           .eq('user_id', user.id)
           .order('created_at', { ascending: true })
-          .limit(100); // Load last 100 messages
+          .limit(100);
         
         if (historyError) {
-          console.error('Error loading chat history:', historyError);
+          console.error('Error loading chat history:', historyError?.code, historyError?.message, historyError?.details);
           return new Response(
-            JSON.stringify({ error: 'Failed to load chat history' }),
+            JSON.stringify({
+              error: 'Failed to load chat history',
+              details: historyError?.message || String(historyError),
+            }),
             { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
@@ -70,9 +73,12 @@ serve(async (req) => {
           .eq('user_id', user.id);
         
         if (deleteError) {
-          console.error('Error clearing chat history:', deleteError);
+          console.error('Error clearing chat history:', deleteError?.code, deleteError?.message, deleteError?.details);
           return new Response(
-            JSON.stringify({ error: 'Failed to clear chat history' }),
+            JSON.stringify({
+              error: 'Failed to clear chat history',
+              details: deleteError?.message || String(deleteError),
+            }),
             { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }

@@ -104,21 +104,52 @@ export default function AiAssistantPage() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '';
-      const cleanUrl = supabaseUrl.replace('/rest/v1', '');
+      const supabaseUrl = (import.meta.env.VITE_PUBLIC_SUPABASE_URL || import.meta.env.VITE_SUPABASE_URL || '').replace('/rest/v1', '');
+      const anonKey = import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || '';
       const response = await fetch(
-        `${cleanUrl}/functions/v1/ai-assistant?action=load-history`,
+        `${supabaseUrl}/functions/v1/ai-assistant?action=load-history`,
         {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${session.access_token}`,
+            'apikey': anonKey,
             'Content-Type': 'application/json',
           },
         }
       );
 
       if (!response.ok) {
-        console.error('Failed to load chat history');
+        let errBody: { error?: string; details?: string } = {};
+        try {
+          errBody = await response.json();
+        } catch {
+          errBody = { error: 'Unknown error' };
+        }
+        console.error('Failed to load chat history:', response.status, errBody?.error, errBody?.details);
+        // Fall through to welcome message below
+        setMessages([{
+          id: 'welcome',
+          role: 'assistant',
+          content: `👋 Hello! I'm your AI Trading Assistant. I can help you with:
+
+• **Bot Configuration**: Explain any setting, strategy, or parameter
+• **Trading Strategies**: Understand RSI, ADX, Bollinger Bands, and more
+• **Risk Management**: Help configure stop-loss, take-profit, and position sizing
+• **Platform Features**: Guide you through creating bots, managing trades, and more
+• **Trading Questions**: Answer questions about cryptocurrency trading, technical analysis, and market behavior
+• **Create & Edit Bots**: I can create new bots or modify existing ones based on your requests!
+• **Edit User Settings**: I can update your notification preferences, alert settings, and risk management settings!
+
+**Try saying:**
+- "Create a BTCUSDT bot with RSI strategy, low risk"
+- "Update my bot to use tighter stop loss"
+- "Show me my bot performance"
+- "Enable email notifications for trade executed"
+- "Set my daily loss limit to 500 USDT"
+
+What would you like to know?`,
+          timestamp: new Date()
+        }]);
         return;
       }
 
