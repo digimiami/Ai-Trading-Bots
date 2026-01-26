@@ -145,7 +145,7 @@ serve(async (req) => {
       const { data: { user: authUser } } = await supabaseClient.auth.getUser()
       if (!authUser) {
         return new Response(
-          JSON.stringify({ error: 'Unauthorized' }),
+          JSON.stringify({ success: false, error: 'Unauthorized' }),
           { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
@@ -159,7 +159,7 @@ serve(async (req) => {
       // GET endpoints require user authentication (not for internal calls)
       if (!user) {
         return new Response(
-          JSON.stringify({ error: 'User authentication required for GET requests' }),
+          JSON.stringify({ success: false, error: 'User authentication required for GET requests' }),
           { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
@@ -590,14 +590,17 @@ serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ error: 'Invalid action or method' }),
+      JSON.stringify({ success: false, error: 'Invalid action or method' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
 
   } catch (error) {
     console.error('ML Predictions error:', error)
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ 
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
   }

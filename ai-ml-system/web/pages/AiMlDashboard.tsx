@@ -67,15 +67,23 @@ const AiMlDashboard: React.FC = () => {
       );
 
       if (!response.ok) {
-        throw new Error('Failed to fetch ML predictions');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP ${response.status}: Failed to fetch ML predictions`);
       }
 
       const result = await response.json();
-      if (result.success && result.predictions) {
+      
+      // Check for error in response
+      if (result.error || result.success === false) {
+        throw new Error(result.error || 'Failed to load predictions');
+      }
+      
+      // Handle successful response (even if predictions array is empty)
+      if (result.success && Array.isArray(result.predictions)) {
         const formattedPredictions = result.predictions.map((p: any) => ({
           id: p.id,
           symbol: p.symbol,
-          signal: p.prediction.toUpperCase() as 'BUY' | 'SELL' | 'HOLD',
+          signal: p.prediction?.toUpperCase() as 'BUY' | 'SELL' | 'HOLD',
           confidence: p.confidence,
           timestamp: new Date(p.timestamp),
           outcome: p.actual_outcome ? p.actual_outcome === p.prediction : undefined,
@@ -85,10 +93,20 @@ const AiMlDashboard: React.FC = () => {
           features: p.features || {}
         }));
         setMLPredictions(formattedPredictions);
+        // Clear error if we successfully got an empty array
+        if (formattedPredictions.length === 0) {
+          setError(null);
+        }
+      } else {
+        // Unexpected response format
+        console.warn('Unexpected response format:', result);
+        setMLPredictions([]);
       }
     } catch (error) {
       console.error('Error fetching ML predictions:', error);
-      setError('Failed to load predictions');
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load predictions';
+      setError(errorMessage);
+      setMLPredictions([]); // Clear predictions on error
     }
   };
 
