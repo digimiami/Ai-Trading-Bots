@@ -10,7 +10,21 @@ const corsHeaders = {
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+    try {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          ...corsHeaders,
+          'Access-Control-Max-Age': '86400'
+        }
+      });
+    } catch (error) {
+      console.error('Error handling OPTIONS request:', error);
+      return new Response(null, {
+        status: 204,
+        headers: corsHeaders
+      });
+    }
   }
 
   try {
@@ -267,6 +281,7 @@ serve(async (req) => {
           )
           
           return new Response(JSON.stringify({ users: usersWithStats }), {
+            status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         } catch (error) {
@@ -395,6 +410,7 @@ serve(async (req) => {
           message: planId ? 'User created successfully with subscription' : 'User created successfully',
           user: newUser.user 
         }), {
+          status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
 
@@ -443,6 +459,7 @@ serve(async (req) => {
           success: true,
           message: 'User role updated successfully'
         }), {
+          status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
       }
@@ -487,6 +504,7 @@ serve(async (req) => {
           success: true,
           message: 'User status updated successfully'
         }), {
+          status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
       }
@@ -523,6 +541,7 @@ serve(async (req) => {
           message: 'Password reset link generated successfully',
           resetLink: resetData?.properties?.action_link ?? null
         }), {
+          status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
       }
@@ -544,6 +563,7 @@ serve(async (req) => {
         }))
         
         return new Response(JSON.stringify({ codes: codesWithUsed }), {
+          status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
 
@@ -580,6 +600,7 @@ serve(async (req) => {
           message: 'Invitation code generated successfully',
           invitation: invitationWithUsed
         }), {
+          status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
 
@@ -741,6 +762,7 @@ serve(async (req) => {
             message: 'User deleted successfully',
             deletedUserId: userId
           }), {
+            status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         } catch (error: any) {
@@ -777,6 +799,7 @@ serve(async (req) => {
         }))
         
         return new Response(JSON.stringify({ bots: transformedBots }), {
+          status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
 
@@ -819,6 +842,7 @@ serve(async (req) => {
         }))
         
         return new Response(JSON.stringify({ analytics: transformedStats }), {
+          status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
 
@@ -879,6 +903,7 @@ serve(async (req) => {
             recentTrades: recentTrades?.length || 0
           }
         }), {
+          status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
       }
@@ -907,6 +932,7 @@ serve(async (req) => {
               trades: []
             }
           }), {
+            status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         }
@@ -941,6 +967,7 @@ serve(async (req) => {
             trades: trades?.slice(0, 50) || [] // Last 50 trades
           }
         }), {
+          status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
       }
@@ -983,6 +1010,7 @@ serve(async (req) => {
             netProfit: totalPnL - totalFees
           }
         }), {
+          status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
         } catch (err) {
@@ -996,6 +1024,7 @@ serve(async (req) => {
               netProfit: 0
             }
           }), {
+            status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         }
@@ -1016,6 +1045,7 @@ serve(async (req) => {
           .order('last_sign_in_at', { ascending: false })
 
         return new Response(JSON.stringify({ userActivity }), {
+          status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
 
@@ -1030,6 +1060,7 @@ serve(async (req) => {
           .limit(limit)
 
         return new Response(JSON.stringify({ logs }), {
+          status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
 
@@ -1049,6 +1080,7 @@ serve(async (req) => {
               riskScore: 0
             }
           }), {
+            status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         }
@@ -1074,6 +1106,7 @@ serve(async (req) => {
             riskScore: failedTrades.length
           }
         }), {
+          status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
       }
@@ -1123,6 +1156,7 @@ serve(async (req) => {
         }
 
         return new Response(JSON.stringify({ data: result || [] }), {
+          status: 200,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
       }
@@ -1263,6 +1297,7 @@ serve(async (req) => {
             .slice(0, limit)
 
           return new Response(JSON.stringify({ trades: allTrades }), {
+            status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         } catch (error: any) {
@@ -1300,6 +1335,7 @@ serve(async (req) => {
                   message: 'The website is currently in test mode. Some features may be limited.' 
                 } 
               }), {
+                status: 200,
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
               })
             }
@@ -1315,6 +1351,7 @@ serve(async (req) => {
               message: 'The website is currently in test mode. Some features may be limited.' 
             } 
           }), {
+            status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         } catch (error: any) {
@@ -1329,6 +1366,7 @@ serve(async (req) => {
             },
             warning: 'Could not load test period settings, using defaults'
           }), {
+            status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         }
@@ -1404,6 +1442,7 @@ serve(async (req) => {
             message: enabled ? 'Test period enabled successfully' : 'Test period disabled successfully',
             settings: result
           }), {
+            status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         } catch (error: any) {
@@ -1490,6 +1529,7 @@ serve(async (req) => {
             total_found: usersToDelete.length,
             errors: errors.length > 0 ? errors : undefined
           }), {
+            status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         } catch (error: any) {
@@ -1643,6 +1683,7 @@ serve(async (req) => {
               message: 'Subscription created successfully',
               subscription: newSubscription
             }), {
+              status: 200,
               headers: { ...corsHeaders, 'Content-Type': 'application/json' }
             })
           }
@@ -1745,6 +1786,7 @@ serve(async (req) => {
             subscription: updatedSubscription,
             action: action
           }), {
+            status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
 
@@ -1784,6 +1826,7 @@ serve(async (req) => {
             if (scriptsError.code === 'PGRST116' || scriptsError.message?.includes('does not exist') || scriptsError.message?.includes('relation')) {
               console.warn('tracking_scripts table does not exist, returning empty array')
               return new Response(JSON.stringify({ scripts: [] }), {
+                status: 200,
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' }
               })
             }
@@ -1799,6 +1842,7 @@ serve(async (req) => {
           }
           
           return new Response(JSON.stringify({ scripts: scripts || [] }), {
+            status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         } catch (err: any) {
@@ -1859,6 +1903,7 @@ serve(async (req) => {
           }
           
           return new Response(JSON.stringify({ success: true, script }), {
+            status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         } catch (err: any) {
@@ -1919,6 +1964,7 @@ serve(async (req) => {
           }
           
           return new Response(JSON.stringify({ success: true, script }), {
+            status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         } catch (err: any) {
@@ -1966,6 +2012,7 @@ serve(async (req) => {
           }
           
           return new Response(JSON.stringify({ success: true }), {
+            status: 200,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' }
           })
         } catch (err) {
