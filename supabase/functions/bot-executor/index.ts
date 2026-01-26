@@ -574,15 +574,16 @@ function calculateTradeSizing(bot: any, price: number, riskContext?: RiskContext
   // Get actual leverage from exchange-specific function (ensures Bitunix uses 3x default)
   const actualLeverage = resolveLeverage(bot.exchange, tradingType, userLeverage);
   
-  // Log leverage resolution for debugging
-  if (bot.exchange?.toLowerCase() === 'bitunix' && isFutures) {
-    console.log(`🔧 Leverage resolution: userLeverage=${userLeverage}, actualLeverage=${actualLeverage} (Bitunix futures)`);
-  }
+  // Log leverage resolution for debugging (for all exchanges, not just Bitunix)
+  console.log(`🔧 Leverage resolution for ${bot.exchange || 'unknown'}: bot.leverage=${bot.leverage}, bot.leverage_ratio=${bot.leverage_ratio}, userLeverage=${userLeverage}, actualLeverage=${actualLeverage}x (${tradingType})`);
 
   // Always use the latest trade amount value, prioritizing database field (snake_case)
   const baseAmount = bot.trade_amount ?? bot.tradeAmount ?? 100;
   const minTradeAmount = isFutures ? 50 : 10;
   const effectiveBaseAmount = Math.max(minTradeAmount, baseAmount);
+  
+  // Log trade amount resolution for debugging
+  console.log(`💰 Trade amount resolution: bot.trade_amount=${bot.trade_amount}, bot.tradeAmount=${bot.tradeAmount}, baseAmount=${baseAmount}, effectiveBaseAmount=${effectiveBaseAmount}`);
 
   const adaptiveMultiplier = riskContext?.sizeMultiplier && Number.isFinite(riskContext.sizeMultiplier)
     ? clamp(riskContext.sizeMultiplier, 0.2, 2)
@@ -591,6 +592,16 @@ function calculateTradeSizing(bot: any, price: number, riskContext?: RiskContext
   // Use actual leverage (not userLeverage) for calculations
   const totalAmount = effectiveBaseAmount * actualLeverage * riskMultiplier * adaptiveMultiplier;
   const rawQuantity = totalAmount / price;
+  
+  // Log detailed calculation for debugging
+  console.log(`📊 Trade sizing calculation for ${bot.symbol}:`);
+  console.log(`   Base Amount: $${effectiveBaseAmount} (min: $${minTradeAmount})`);
+  console.log(`   Leverage: ${actualLeverage}x (user: ${userLeverage}x)`);
+  console.log(`   Risk Multiplier: ${riskMultiplier}x`);
+  console.log(`   Adaptive Multiplier: ${adaptiveMultiplier.toFixed(2)}x`);
+  console.log(`   Total Amount: $${totalAmount.toFixed(2)}`);
+  console.log(`   Price: $${price.toFixed(8)}`);
+  console.log(`   Raw Quantity: ${rawQuantity.toFixed(8)}`);
 
   const quantityConstraints = getQuantityConstraints(bot.symbol);
   const steps = getSymbolSteps(bot.symbol);
@@ -7995,6 +8006,69 @@ class BotExecutor {
             throw new Error(`Insufficient balance for ${bot.symbol} ${tradeSignal.side} order. Available: $${balanceCheck.availableBalance.toFixed(2)}, Required: $${balanceCheck.totalRequired.toFixed(2)} (order: $${orderValue.toFixed(2)} + 5% buffer). Shortfall: $${shortfall.toFixed(2)}. Please add funds to your Bybit ${tradingType === 'futures' ? 'UNIFIED/Futures' : 'Spot'} wallet.`);
           }
         }
+        
+        // For futures, set leverage and margin mode BEFORE placing order (CRITICAL for Bybit)
+        if (tradingType === 'futures' || tradingType === 'linear') {
+          let userLeverage = bot.leverage ?? bot.leverage_ratio ?? 1;
+          if (!userLeverage || userLeverage < 1) {
+            userLeverage = 1; // Default to 1x if not set or invalid
+          }
+          const expectedLeverage = resolveLeverage(bot.exchange, tradingType, userLeverage);
+          const expectedMarginMode = 'Isolated'; // Bybit uses 'Isolated' (capitalized)
+          
+          console.log(`🔧 Bybit leverage calculation: bot.leverage=${bot.leverage}, userLeverage=${userLeverage}, expectedLeverage=${expectedLeverage}x`);
+          console.log(`   Symbol: ${bot.symbol}, Expected Leverage: ${expectedLeverage}x, Expected Margin Mode: ${expectedMarginMode}`);
+          
+          // Check current settings first
+          try {
+            const currentSettings = await this.getBybitPositionSettings(apiKey, apiSecret, bot.symbol);
+            if (currentSettings) {
+              const currentLeverage = currentSettings.leverage || currentSettings.buyLeverage || currentSettings.sellLeverage;
+              const currentMarginMode = currentSettings.tradeMode === 1 ? 'Isolated' : (currentSettings.tradeMode === 0 ? 'Cross' : currentSettings.marginMode);
+              
+              console.log(`📊 Current Bybit settings: Leverage: ${currentLeverage}x, Margin Mode: ${currentMarginMode || 'Unknown'}`);
+              
+              if (currentLeverage === expectedLeverage && (currentMarginMode === 'Isolated' || currentMarginMode === '1')) {
+                console.log(`✅ Current settings are already correct: ${currentLeverage}x ${currentMarginMode} - Proceeding with order`);
+              } else {
+                console.log(`⚙️ Need to update: ${currentLeverage}x ${currentMarginMode} → ${expectedLeverage}x ${expectedMarginMode}`);
+                await this.setBybitLeverageAndMarginMode(apiKey, apiSecret, bot.symbol, expectedLeverage, expectedMarginMode);
+                
+                // Verify after setting
+                await new Promise(resolve => setTimeout(resolve, 500)); // Small delay for API to update
+                const verifySettings = await this.getBybitPositionSettings(apiKey, apiSecret, bot.symbol);
+                if (verifySettings) {
+                  const verifyLeverage = verifySettings.leverage || verifySettings.buyLeverage || verifySettings.sellLeverage;
+                  const verifyMarginMode = verifySettings.tradeMode === 1 ? 'Isolated' : (verifySettings.tradeMode === 0 ? 'Cross' : verifySettings.marginMode);
+                  if (verifyLeverage === expectedLeverage && (verifyMarginMode === 'Isolated' || verifyMarginMode === '1')) {
+                    console.log(`✅ Leverage and margin mode set successfully: ${verifyLeverage}x ${verifyMarginMode}`);
+                  } else {
+                    console.warn(`⚠️ Settings may not have updated correctly. Current: ${verifyLeverage}x ${verifyMarginMode}, Expected: ${expectedLeverage}x ${expectedMarginMode}`);
+                  }
+                }
+              }
+            } else {
+              // No existing position, set leverage/margin mode before placing order
+              console.log(`⚙️ No existing position found, setting leverage/margin mode before placing order...`);
+              await this.setBybitLeverageAndMarginMode(apiKey, apiSecret, bot.symbol, expectedLeverage, expectedMarginMode);
+            }
+          } catch (leverageError: any) {
+            console.error(`❌ Error setting Bybit leverage/margin mode:`, leverageError);
+            // Log but don't throw - some exchanges allow setting leverage after position is opened
+            await this.addBotLog(bot.id, {
+              level: 'warning',
+              category: 'trade',
+              message: `Could not set leverage/margin mode before order. Will attempt to set after position is opened.`,
+              details: {
+                symbol: bot.symbol,
+                expectedLeverage: expectedLeverage,
+                expectedMarginMode: expectedMarginMode,
+                error: leverageError?.message || String(leverageError)
+              }
+            });
+          }
+        }
+        
         return await this.placeBybitOrder(apiKey, apiSecret, bot.symbol, tradeSignal.side, amount, price, tradingType, bot, tradeSignal);
       } else if (exchange === 'okx') {
         // TODO: Add balance check for OKX
@@ -11267,6 +11341,111 @@ class BotExecutor {
     const hashArray = Array.from(new Uint8Array(signature));
     // Bybit expects lowercase hex string
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toLowerCase();
+  }
+  
+  /**
+   * Get current Bybit position leverage and margin mode settings
+   */
+  private async getBybitPositionSettings(apiKey: string, apiSecret: string, symbol: string): Promise<any> {
+    try {
+      const baseUrl = 'https://api.bybit.com';
+      const timestamp = Date.now().toString();
+      const recvWindow = '5000';
+      
+      // Use /v5/position/list to get current position settings
+      const queryParams = `category=linear&symbol=${symbol}`;
+      const signaturePayload = timestamp + apiKey + recvWindow + queryParams;
+      const signature = await this.createBybitSignature(signaturePayload, apiSecret);
+      
+      const response = await fetch(`${baseUrl}/v5/position/list?${queryParams}`, {
+        method: 'GET',
+        headers: this.buildBybitHeaders(apiKey, timestamp, recvWindow, signature),
+      });
+      
+      if (!response.ok) {
+        console.warn(`⚠️ Failed to get Bybit position settings: HTTP ${response.status}`);
+        return null;
+      }
+      
+      const data = await response.json();
+      if (data.retCode === 0 && data.result?.list && data.result.list.length > 0) {
+        const position = data.result.list[0];
+        return {
+          leverage: position.leverage ? parseFloat(position.leverage) : null,
+          buyLeverage: position.buyLeverage ? parseFloat(position.buyLeverage) : null,
+          sellLeverage: position.sellLeverage ? parseFloat(position.sellLeverage) : null,
+          tradeMode: position.tradeMode, // 0 = cross margin, 1 = isolated margin
+          marginMode: position.tradeMode === 1 ? 'Isolated' : (position.tradeMode === 0 ? 'Cross' : null),
+          size: position.size ? parseFloat(position.size) : 0
+        };
+      } else if (data.retCode === 0 && (!data.result?.list || data.result.list.length === 0)) {
+        // No position exists yet - this is normal for new positions
+        console.log(`ℹ️ No existing position for ${symbol} on Bybit (will set leverage when position is created)`);
+        return null;
+      } else {
+        console.warn(`⚠️ Bybit position API returned error: ${data.retMsg || data.retCode}`);
+        return null;
+      }
+    } catch (error: any) {
+      console.warn(`⚠️ Error getting Bybit position settings:`, error?.message || error);
+      return null;
+    }
+  }
+  
+  /**
+   * Set Bybit leverage and margin mode for a symbol
+   * Uses /v5/position/switch-isolated endpoint
+   */
+  private async setBybitLeverageAndMarginMode(apiKey: string, apiSecret: string, symbol: string, leverage: number, marginMode: string = 'Isolated'): Promise<void> {
+    try {
+      const baseUrl = 'https://api.bybit.com';
+      const timestamp = Date.now().toString();
+      const recvWindow = '5000';
+      
+      // Bybit requires tradeMode: 0 = cross margin, 1 = isolated margin
+      const tradeMode = marginMode === 'Isolated' || marginMode === 'ISOLATED' ? 1 : 0;
+      
+      const requestBody = {
+        category: 'linear',
+        symbol: symbol,
+        tradeMode: tradeMode,
+        buyLeverage: leverage.toString(),
+        sellLeverage: leverage.toString()
+      };
+      
+      const signaturePayload = timestamp + apiKey + recvWindow + JSON.stringify(requestBody);
+      const signature = await this.createBybitSignature(signaturePayload, apiSecret);
+      
+      console.log(`⚙️ Setting Bybit leverage/margin mode: ${symbol}, Leverage: ${leverage}x, Margin Mode: ${marginMode} (tradeMode: ${tradeMode})`);
+      
+      const response = await fetch(`${baseUrl}/v5/position/switch-isolated`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-BAPI-API-KEY': apiKey,
+          'X-BAPI-TIMESTAMP': timestamp,
+          'X-BAPI-RECV-WINDOW': recvWindow,
+          'X-BAPI-SIGN': signature
+        },
+        body: JSON.stringify(requestBody)
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
+      }
+      
+      const data = await response.json();
+      if (data.retCode === 0) {
+        console.log(`✅ Bybit leverage and margin mode set successfully: ${leverage}x ${marginMode}`);
+      } else {
+        throw new Error(`Bybit API error: retCode=${data.retCode}, retMsg=${data.retMsg || 'Unknown error'}`);
+      }
+    } catch (error: any) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error(`❌ Failed to set Bybit leverage/margin mode:`, errorMsg);
+      throw error;
+    }
   }
   
   private async createOKXSignature(timestamp: string, method: string, requestPath: string, body: string, secret: string): Promise<string> {
