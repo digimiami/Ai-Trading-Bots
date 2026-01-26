@@ -18409,10 +18409,55 @@ class PaperTradingExecutor {
           }
         }
         
-        await this.supabaseClient
+        // Update position with error handling for race conditions
+        const { data: updatedPosition, error: updateError } = await this.supabaseClient
           .from('paper_trading_positions')
           .update(updateData)
-          .eq('id', position.id);
+          .eq('id', position.id)
+          .select()
+          .single();
+        
+        if (updateError) {
+          // Check if it's a "no rows updated" error (PGRST204) - this can happen if position was already closed
+          // PostgREST returns 400 with PGRST204 when no rows match the update
+          const isNoRowsError = updateError.code === 'PGRST204' || 
+                                updateError.code === 'PGRST116' ||
+                                (updateError.message && (
+                                  updateError.message.includes('No rows') ||
+                                  updateError.message.includes('PGRST204') ||
+                                  updateError.message.includes('could not be found')
+                                ));
+          
+          if (isNoRowsError) {
+            // Verify if position is already in the desired state
+            const { data: currentPosition } = await this.supabaseClient
+              .from('paper_trading_positions')
+              .select('status, closed_at')
+              .eq('id', position.id)
+              .single();
+            
+            if (currentPosition) {
+              // If position is already closed, this is not an error - just a race condition
+              if (shouldClose && currentPosition.status !== 'open') {
+                console.log(`ℹ️ [PAPER] Position ${position.id} was already closed (status: ${currentPosition.status}), skipping update`);
+              } else {
+                // Position still exists but update failed for another reason
+                console.warn(`⚠️ [PAPER] Failed to update position ${position.id}:`, updateError);
+              }
+            } else {
+              // Position doesn't exist anymore - was deleted
+              console.log(`ℹ️ [PAPER] Position ${position.id} no longer exists, skipping update`);
+            }
+          } else {
+            // Other error - log it
+            console.error(`❌ [PAPER] Error updating position ${position.id}:`, updateError);
+          }
+        } else if (updatedPosition) {
+          // Update successful
+          if (shouldClose) {
+            console.log(`✅ [PAPER] Position ${position.id} closed successfully (status: ${updatedPosition.status})`);
+          }
+        }
       }
     } catch (error) {
       console.error('Error updating paper positions:', error);

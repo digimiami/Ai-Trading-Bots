@@ -646,10 +646,16 @@ export default function AdminPage() {
       console.log('✅ Admin data loaded successfully');
       
       console.log('📊 Users data received:', usersData);
+      console.log('📊 Users data type:', typeof usersData);
+      console.log('📊 Users data is array?', Array.isArray(usersData));
+      console.log('📊 Users count:', usersData?.length || 0);
       console.log('📊 First user sample:', usersData?.[0]);
       console.log('📊 First user stats:', usersData?.[0]?.stats);
       
-      setUsers(usersData || []);
+      // Ensure usersData is an array
+      const usersArray = Array.isArray(usersData) ? usersData : (usersData?.users || []);
+      console.log('📊 Final users array count:', usersArray.length);
+      setUsers(usersArray);
       setInvitationCodes(codesData || []);
       setAllBots(botsData || []);
       setSystemStats(statsData);
@@ -679,9 +685,19 @@ export default function AdminPage() {
       if (activeTab === 'users') {
         await fetchUserSubscriptions();
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Error loading admin data:', error);
-      console.error('❌ Error details:', error.message);
+      console.error('❌ Error details:', error?.message || error);
+      console.error('❌ Error stack:', error?.stack);
+      
+      // Show user-friendly error message
+      const errorMessage = error?.message || error?.error || 'Failed to load admin data';
+      alert(`❌ Error: ${errorMessage}\n\nPlease check the browser console for more details.`);
+      
+      // Set empty arrays to prevent undefined errors
+      setUsers([]);
+      setInvitationCodes([]);
+      setAllBots([]);
     } finally {
       setLoading(false);
     }
@@ -1331,6 +1347,18 @@ export default function AdminPage() {
               {loading ? (
                 <div className="text-center py-8">
                   <i className="ri-loader-4-line animate-spin text-2xl text-gray-400"></i>
+                </div>
+              ) : users.length === 0 ? (
+                <div className="text-center py-12">
+                  <i className="ri-user-line text-6xl text-gray-400 mb-4"></i>
+                  <p className="text-gray-500 dark:text-gray-400 text-lg mb-2">No users found</p>
+                  <p className="text-gray-400 dark:text-gray-500 text-sm mb-4">
+                    Users will appear here once they sign up, or you can create a new user.
+                  </p>
+                  <Button onClick={() => setShowCreateUser(true)}>
+                    <i className="ri-user-add-line mr-2"></i>
+                    Create User
+                  </Button>
                 </div>
               ) : (
                 <div className="space-y-3">
