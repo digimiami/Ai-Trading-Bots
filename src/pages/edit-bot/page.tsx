@@ -7,7 +7,9 @@ import type { TradingStrategy, TradingBot, AdvancedStrategyConfig } from '../../
 import { useBots } from '../../hooks/useBots';
 import AutoOptimizer from '../../components/bot/AutoOptimizer';
 import { STRATEGY_PRESETS, type StrategyPreset } from '../../constants/strategyPresets';
+import { HTF_TIMEFRAME_OPTIONS, HTF_TREND_INDICATOR_OPTIONS } from '../../constants/strategyOptions';
 import HelpTooltip from '../../components/ui/HelpTooltip';
+import { getOptimizedSettingsForIndicator } from '../../utils/htfIndicatorSettings';
 import { useEmailNotifications } from '../../hooks/useEmailNotifications';
 import { supabase } from '../../lib/supabase';
 
@@ -193,6 +195,15 @@ export default function EditBotPage() {
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [soundNotificationsEnabled, setSoundNotificationsEnabled] = useState(false);
+  const [sectionEnabled, setSectionEnabled] = useState({
+    directionalBias: true,
+    indicatorSettings: true,
+    riskManagement: true,
+    adaptiveRiskEngine: true,
+    executionIntelligence: true,
+    signalLearning: true,
+    exitStrategy: true,
+  });
 
   const popularSymbols = [
     'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'ADAUSDT', 'DOTUSDT', 'AVAXUSDT',
@@ -665,9 +676,74 @@ export default function EditBotPage() {
                   </div>
                 </div>
 
+                {/* Directional Bias */}
+                <div className="border-l-4 border-purple-500 pl-4 mt-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-md font-semibold text-gray-800 mb-0">🎯 Directional Bias</h3>
+                    <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                      <input type="checkbox" checked={sectionEnabled.directionalBias} onChange={() => setSectionEnabled(s => ({ ...s, directionalBias: !s.directionalBias }))} className="sr-only peer" />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                      <span className="ml-2 text-sm text-gray-600">{sectionEnabled.directionalBias ? 'On' : 'Off'}</span>
+                    </label>
+                  </div>
+                  {sectionEnabled.directionalBias && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                        Bias Mode
+                        <HelpTooltip text="Directional bias for trading. Auto: Follow higher timeframe trend. Long Only: Only buy/long positions. Short Only: Only sell/short positions. Both: Trade in both directions." />
+                      </label>
+                      <select value={advancedConfig.bias_mode} onChange={(e) => setAdvancedConfig(prev => ({ ...prev, bias_mode: e.target.value as any }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="auto">Auto (Follow HTF Trend)</option>
+                        <option value="long-only">Long Only</option>
+                        <option value="short-only">Short Only</option>
+                        <option value="both">Both Directions</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                        HTF Timeframe
+                        <HelpTooltip text="Higher Timeframe for trend analysis." />
+                      </label>
+                      <select value={advancedConfig.htf_timeframe} onChange={(e) => setAdvancedConfig(prev => ({ ...prev, htf_timeframe: e.target.value as typeof prev.htf_timeframe }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        {HTF_TIMEFRAME_OPTIONS.map(option => (<option key={option.value} value={option.value}>{option.label}</option>))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                        HTF Trend Indicator
+                        <HelpTooltip text="Technical indicator used to determine trend direction on the higher timeframe." />
+                      </label>
+                      <select value={advancedConfig.htf_trend_indicator} onChange={(e) => {
+                        const newIndicator = e.target.value as typeof advancedConfig.htf_trend_indicator;
+                        const optimizedSettings = getOptimizedSettingsForIndicator(newIndicator, advancedConfig);
+                        setAdvancedConfig(prev => ({ ...prev, htf_trend_indicator: newIndicator, ...optimizedSettings }));
+                      }} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        {HTF_TREND_INDICATOR_OPTIONS.map(option => (<option key={option.value} value={option.value}>{option.label}</option>))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                        ADX Min (HTF): {advancedConfig.adx_min_htf}
+                        <HelpTooltip text="Minimum ADX on higher timeframe to confirm trend." />
+                      </label>
+                      <input type="number" value={advancedConfig.adx_min_htf ?? 23} onChange={(e) => setAdvancedConfig(prev => ({ ...prev, adx_min_htf: parseInt(e.target.value) || 23 }))} className="w-full px-3 py-2 border border-gray-300 rounded-lg" min={15} max={35} />
+                    </div>
+                  </div>
+                  )}
+                </div>
+
                 {/* Risk Management */}
                 <div className="border-l-4 border-red-500 pl-4 mt-6">
-                  <h3 className="text-md font-semibold text-gray-800 mb-3">🛡️ Risk Management</h3>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-md font-semibold text-gray-800 mb-0">🛡️ Risk Management</h3>
+                    <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                      <input type="checkbox" checked={sectionEnabled.riskManagement} onChange={() => setSectionEnabled(s => ({ ...s, riskManagement: !s.riskManagement }))} className="sr-only peer" />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-red-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
+                      <span className="ml-2 text-sm text-gray-600">{sectionEnabled.riskManagement ? 'On' : 'Off'}</span>
+                    </label>
+                  </div>
+                  {sectionEnabled.riskManagement && (
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
@@ -751,11 +827,21 @@ export default function EditBotPage() {
                       <p className="text-xs text-gray-500 mt-1">Max open positions simultaneously</p>
                     </div>
                   </div>
+                  )}
                 </div>
 
                 {/* Adaptive Risk Engine */}
                 <div className="border-l-4 border-blue-500 pl-4 mt-6">
-                  <h3 className="text-md font-semibold text-gray-800 mb-3">🧠 Adaptive Risk Engine</h3>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-md font-semibold text-gray-800 mb-0">🧠 Adaptive Risk Engine</h3>
+                    <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                      <input type="checkbox" checked={sectionEnabled.adaptiveRiskEngine} onChange={() => setSectionEnabled(s => ({ ...s, adaptiveRiskEngine: !s.adaptiveRiskEngine }))} className="sr-only peer" />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                      <span className="ml-2 text-sm text-gray-600">{sectionEnabled.adaptiveRiskEngine ? 'On' : 'Off'}</span>
+                    </label>
+                  </div>
+                  {sectionEnabled.adaptiveRiskEngine && (
+                  <>
                   <p className="text-sm text-gray-600 mb-4">
                     Dynamic sizing based on volatility, liquidity, drawdown, and loss streaks.
                   </p>
@@ -1057,11 +1143,22 @@ export default function EditBotPage() {
                       />
                     </div>
                   </div>
+                  </>
+                  )}
                 </div>
 
                 {/* Execution Intelligence */}
                 <div className="border-l-4 border-indigo-500 pl-4 mt-6">
-                  <h3 className="text-md font-semibold text-gray-800 mb-3">⚡ Execution Intelligence</h3>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-md font-semibold text-gray-800 mb-0">⚡ Execution Intelligence</h3>
+                    <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                      <input type="checkbox" checked={sectionEnabled.executionIntelligence} onChange={() => setSectionEnabled(s => ({ ...s, executionIntelligence: !s.executionIntelligence }))} className="sr-only peer" />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                      <span className="ml-2 text-sm text-gray-600">{sectionEnabled.executionIntelligence ? 'On' : 'Off'}</span>
+                    </label>
+                  </div>
+                  {sectionEnabled.executionIntelligence && (
+                  <>
                   <p className="text-sm text-gray-600 mb-4">
                     Control slippage-driven sizing and limit/market selection.
                   </p>
@@ -1121,11 +1218,22 @@ export default function EditBotPage() {
                       />
                     </div>
                   </div>
+                  </>
+                  )}
                 </div>
 
                 {/* Signal Learning */}
                 <div className="border-l-4 border-teal-500 pl-4 mt-6">
-                  <h3 className="text-md font-semibold text-gray-800 mb-3">🧬 Signal Learning</h3>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-md font-semibold text-gray-800 mb-0">🧬 Signal Learning</h3>
+                    <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                      <input type="checkbox" checked={sectionEnabled.signalLearning} onChange={() => setSectionEnabled(s => ({ ...s, signalLearning: !s.signalLearning }))} className="sr-only peer" />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-teal-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal-600"></div>
+                      <span className="ml-2 text-sm text-gray-600">{sectionEnabled.signalLearning ? 'On' : 'Off'}</span>
+                    </label>
+                  </div>
+                  {sectionEnabled.signalLearning && (
+                  <>
                   <p className="text-sm text-gray-600 mb-4">
                     Auto-tune signal weights based on recent outcomes.
                   </p>
@@ -1186,6 +1294,8 @@ export default function EditBotPage() {
                       />
                     </div>
                   </div>
+                  </>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1377,10 +1487,18 @@ export default function EditBotPage() {
 
                 {/* Indicator Settings */}
                 <div className="border border-indigo-200 rounded-lg p-4 bg-indigo-50">
-                  <h3 className="text-md font-semibold text-indigo-900 mb-3 flex items-center gap-2">
-                    <i className="ri-sliders-line"></i>
-                    Indicator Settings
-                  </h3>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-md font-semibold text-indigo-900 mb-0 flex items-center gap-2">
+                      <i className="ri-sliders-line"></i>
+                      Indicator Settings
+                    </h3>
+                    <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                      <input type="checkbox" checked={sectionEnabled.indicatorSettings} onChange={() => setSectionEnabled(s => ({ ...s, indicatorSettings: !s.indicatorSettings }))} className="sr-only peer" />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                      <span className="ml-2 text-sm text-gray-600">{sectionEnabled.indicatorSettings ? 'On' : 'Off'}</span>
+                    </label>
+                  </div>
+                  {sectionEnabled.indicatorSettings && (
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1517,7 +1635,47 @@ export default function EditBotPage() {
                       />
                     </div>
                   </div>
+                  )}
                 </div>
+
+                {/* Exit Strategy */}
+                <div className="border-l-4 border-green-500 pl-4 mt-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-md font-semibold text-gray-800 mb-0">🎯 Exit Strategy</h3>
+                    <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                      <input type="checkbox" checked={sectionEnabled.exitStrategy} onChange={() => setSectionEnabled(s => ({ ...s, exitStrategy: !s.exitStrategy }))} className="sr-only peer" />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-green-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
+                      <span className="ml-2 text-sm text-gray-600">{sectionEnabled.exitStrategy ? 'On' : 'Off'}</span>
+                    </label>
+                  </div>
+                  {sectionEnabled.exitStrategy && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                        TP1 (R): {advancedConfig.tp1_r}
+                        <HelpTooltip text="First take profit target in Risk:Reward ratio (R)." />
+                      </label>
+                      <input type="range" value={advancedConfig.tp1_r} onChange={(e) => setAdvancedConfig(prev => ({ ...prev, tp1_r: parseFloat(e.target.value) }))} className="w-full" min="0.5" max="3.0" step="0.25" />
+                      <p className="text-xs text-gray-500">First take profit (R = Risk units)</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                        TP2 (R): {advancedConfig.tp2_r}
+                        <HelpTooltip text="Second take profit target for remaining position after TP1." />
+                      </label>
+                      <input type="range" value={advancedConfig.tp2_r} onChange={(e) => setAdvancedConfig(prev => ({ ...prev, tp2_r: parseFloat(e.target.value) }))} className="w-full" min="1.0" max="5.0" step="0.25" />
+                      <p className="text-xs text-gray-500">Second take profit</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
+                        TP1 Size: {(advancedConfig.tp1_size * 100).toFixed(0)}%
+                        <HelpTooltip text="Percentage of position to close when TP1 is reached." />
+                      </label>
+                      <input type="range" value={advancedConfig.tp1_size} onChange={(e) => setAdvancedConfig(prev => ({ ...prev, tp1_size: parseFloat(e.target.value) }))} className="w-full" min="0.25" max="0.75" step="0.05" />
+                      <p className="text-xs text-gray-500">% to close at TP1</p>
+                    </div>
+                  </div>
+                  )}
                 </div>
 
                 {/* Advanced Exit & Trailing Features */}
@@ -2174,6 +2332,7 @@ export default function EditBotPage() {
                   </Button>
                 </div>
               </div>
+            </div>
             </Card>
           </form>
 

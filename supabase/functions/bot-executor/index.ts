@@ -5657,6 +5657,8 @@ class BotExecutor {
       const rsiOverbought = config.rsi_overbought || 70;
       const atrPeriod = config.atr_period || 14;
       const atrMultiplier = config.atr_multiplier || 1.5;
+      const tp1_r = typeof config.tp1_r === 'number' ? config.tp1_r : 1.5;
+      const tp2_r = typeof config.tp2_r === 'number' ? config.tp2_r : 3.0;
       // Make ADX check optional - if adx_min is 0 or negative, skip the check
       const adxMin = config.adx_min !== undefined && config.adx_min !== null && config.adx_min > 0
         ? config.adx_min 
@@ -5789,8 +5791,8 @@ class BotExecutor {
             confidence: 0.7,
             entryPrice: currentPrice,
             stopLoss: currentPrice - (atr * atrMultiplier),
-            takeProfit1: currentPrice + (atr * atrMultiplier * 1.5),
-            takeProfit2: currentPrice + (atr * atrMultiplier * 3.0),
+            takeProfit1: currentPrice + (atr * atrMultiplier * tp1_r),
+            takeProfit2: currentPrice + (atr * atrMultiplier * tp2_r),
             indicators: {
               emaFast: emaFastValue,
               emaSlow: emaSlowValue,
@@ -5811,8 +5813,8 @@ class BotExecutor {
             confidence: 0.7,
             entryPrice: currentPrice,
             stopLoss: currentPrice + (atr * atrMultiplier),
-            takeProfit1: currentPrice - (atr * atrMultiplier * 1.5),
-            takeProfit2: currentPrice - (atr * atrMultiplier * 3.0),
+            takeProfit1: currentPrice - (atr * atrMultiplier * tp1_r),
+            takeProfit2: currentPrice - (atr * atrMultiplier * tp2_r),
             indicators: {
               emaFast: emaFastValue,
               emaSlow: emaSlowValue,
@@ -5860,8 +5862,8 @@ class BotExecutor {
             confidence: confidence,
             entryPrice: currentPrice,
             stopLoss: currentPrice - (atr * atrMultiplier),
-            takeProfit1: currentPrice + (atr * atrMultiplier * 1.5),
-            takeProfit2: currentPrice + (atr * atrMultiplier * 3.0),
+            takeProfit1: currentPrice + (atr * atrMultiplier * tp1_r),
+            takeProfit2: currentPrice + (atr * atrMultiplier * tp2_r),
             indicators: {
               emaFast: emaFastValue,
               emaSlow: emaSlowValue,
@@ -5909,8 +5911,8 @@ class BotExecutor {
             confidence: confidence,
             entryPrice: currentPrice,
             stopLoss: currentPrice + (atr * atrMultiplier),
-            takeProfit1: currentPrice - (atr * atrMultiplier * 1.5),
-            takeProfit2: currentPrice - (atr * atrMultiplier * 3.0),
+            takeProfit1: currentPrice - (atr * atrMultiplier * tp1_r),
+            takeProfit2: currentPrice - (atr * atrMultiplier * tp2_r),
             indicators: {
               emaFast: emaFastValue,
               emaSlow: emaSlowValue,
@@ -6056,6 +6058,8 @@ class BotExecutor {
       const bbStdDev = config.bb_stddev || 2.0;
       const atrPeriod = config.atr_period || 14;
       const atrSLMultiplier = config.atr_sl_multiplier || 1.2;
+      const tp1_r = typeof config.tp1_r === 'number' ? config.tp1_r : 1.0;
+      const tp2_r = typeof config.tp2_r === 'number' ? config.tp2_r : 2.0;
       const volumeMultiplierReversal = config.volume_multiplier_reversal || 1.5;
       const volumeMultiplierContinuation = config.volume_multiplier_continuation || 1.2;
       const minVolatilityATRReversal = config.min_volatility_atr_reversal || 0.25;
@@ -6218,9 +6222,9 @@ class BotExecutor {
                 confidence: confidence,
                 entryPrice: currentPrice,
                 stopLoss: currentPrice - (atr * atrSLMultiplier),
-                takeProfit1: currentPrice + (atr * atrSLMultiplier * 1.0),
-                takeProfit2: currentPrice + (atr * atrSLMultiplier * 1.5),
-                takeProfit3: currentPrice + (atr * atrSLMultiplier * 2.0),
+                takeProfit1: currentPrice + (atr * atrSLMultiplier * tp1_r),
+                takeProfit2: currentPrice + (atr * atrSLMultiplier * tp2_r),
+                takeProfit3: currentPrice + (atr * atrSLMultiplier * Math.max(tp2_r * 1.33, tp2_r + 0.5)),
                 mode: 'reversal',
                 indicators: {
                   htfSupertrend: htfSupertrend.trend,
@@ -6260,9 +6264,9 @@ class BotExecutor {
                 confidence: confidence,
                 entryPrice: currentPrice,
                 stopLoss: currentPrice + (atr * atrSLMultiplier),
-                takeProfit1: currentPrice - (atr * atrSLMultiplier * 1.0),
-                takeProfit2: currentPrice - (atr * atrSLMultiplier * 1.5),
-                takeProfit3: currentPrice - (atr * atrSLMultiplier * 2.0),
+                takeProfit1: currentPrice - (atr * atrSLMultiplier * tp1_r),
+                takeProfit2: currentPrice - (atr * atrSLMultiplier * tp2_r),
+                takeProfit3: currentPrice - (atr * atrSLMultiplier * Math.max(tp2_r * 1.33, tp2_r + 0.5)),
                 mode: 'reversal',
                 indicators: {
                   htfSupertrend: htfSupertrend.trend,
@@ -6317,9 +6321,9 @@ class BotExecutor {
                 confidence: confidence,
                 entryPrice: currentPrice,
                 stopLoss: currentPrice - (atr * atrSLMultiplier),
-                takeProfit1: currentPrice + (atr * atrSLMultiplier * 1.0),
-                takeProfit2: currentPrice + (atr * atrSLMultiplier * 1.5),
-                takeProfit3: currentPrice + (atr * atrSLMultiplier * 2.0),
+                takeProfit1: currentPrice + (atr * atrSLMultiplier * tp1_r),
+                takeProfit2: currentPrice + (atr * atrSLMultiplier * tp2_r),
+                takeProfit3: currentPrice + (atr * atrSLMultiplier * Math.max(tp2_r * 1.33, tp2_r + 0.5)),
                 mode: 'continuation',
                 indicators: {
                   htfSupertrend: htfSupertrend.trend,
@@ -6364,9 +6368,9 @@ class BotExecutor {
                 confidence: confidence,
                 entryPrice: currentPrice,
                 stopLoss: currentPrice + (atr * atrSLMultiplier),
-                takeProfit1: currentPrice - (atr * atrSLMultiplier * 1.0),
-                takeProfit2: currentPrice - (atr * atrSLMultiplier * 1.5),
-                takeProfit3: currentPrice - (atr * atrSLMultiplier * 2.0),
+                takeProfit1: currentPrice - (atr * atrSLMultiplier * tp1_r),
+                takeProfit2: currentPrice - (atr * atrSLMultiplier * tp2_r),
+                takeProfit3: currentPrice - (atr * atrSLMultiplier * Math.max(tp2_r * 1.33, tp2_r + 0.5)),
                 mode: 'continuation',
                 indicators: {
                   htfSupertrend: htfSupertrend.trend,
@@ -17895,9 +17899,6 @@ class PaperTradingExecutor {
       // Determine position side after sizing (long/short)
       const side = positionSide;
 
-      // Calculate SL/TP using executed price and exchange tick sizes
-      const stopLossPct = bot.stop_loss || bot.stopLoss || 2.0;
-      const takeProfitPct = bot.take_profit || bot.takeProfit || 4.0;
       const roundToTick = (value: number) => {
         if (!sizing.steps.tickSize || sizing.steps.tickSize <= 0) return value;
         return Math.round(value / sizing.steps.tickSize) * sizing.steps.tickSize;
@@ -17905,13 +17906,24 @@ class PaperTradingExecutor {
 
       let stopLossPrice: number;
       let takeProfitPrice: number;
+      let tp2Price: number | null = null;
+      const cfg = (typeof bot.strategy_config === 'string' ? (() => { try { return JSON.parse(bot.strategy_config || '{}'); } catch { return {}; } })() : bot.strategy_config) || {};
+      const tp1Size = typeof cfg.tp1_size === 'number' && cfg.tp1_size > 0 && cfg.tp1_size < 1 ? cfg.tp1_size : 0;
 
-      if (side === 'long') {
-        stopLossPrice = roundToTick(executedPrice * (1 - stopLossPct / 100));
-        takeProfitPrice = roundToTick(executedPrice * (1 + takeProfitPct / 100));
+      if (tradeSignal?.stopLoss != null && tradeSignal?.takeProfit1 != null) {
+        stopLossPrice = roundToTick(Number(tradeSignal.stopLoss));
+        takeProfitPrice = roundToTick(Number(tradeSignal.takeProfit1));
+        if (tradeSignal.takeProfit2 != null) tp2Price = roundToTick(Number(tradeSignal.takeProfit2));
       } else {
-        stopLossPrice = roundToTick(executedPrice * (1 + stopLossPct / 100));
-        takeProfitPrice = roundToTick(executedPrice * (1 - takeProfitPct / 100));
+        const stopLossPct = bot.stop_loss || bot.stopLoss || 2.0;
+        const takeProfitPct = bot.take_profit || bot.takeProfit || 4.0;
+        if (side === 'long') {
+          stopLossPrice = roundToTick(executedPrice * (1 - stopLossPct / 100));
+          takeProfitPrice = roundToTick(executedPrice * (1 + takeProfitPct / 100));
+        } else {
+          stopLossPrice = roundToTick(executedPrice * (1 + stopLossPct / 100));
+          takeProfitPrice = roundToTick(executedPrice * (1 - takeProfitPct / 100));
+        }
       }
 
       const feeRate = resolveFeeRate(bot.exchange, bot.tradingType || bot.trading_type || 'futures');
@@ -17929,6 +17941,18 @@ class PaperTradingExecutor {
         })
         .eq('user_id', this.user.id);
       
+      const entryNum = finalExecutedPrice;
+      const exitStrategyMeta: Record<string, unknown> = {
+        highest_price: entryNum,
+        lowest_price: entryNum,
+        tp1_hit: false
+      };
+      if (tp1Size > 0) {
+        exitStrategyMeta.tp1_price = takeProfitPrice;
+        if (tp2Price != null) exitStrategyMeta.tp2_price = tp2Price;
+        exitStrategyMeta.tp1_size = tp1Size;
+      }
+
       // Create virtual position
       const { data: position, error: posError } = await this.supabaseClient
         .from('paper_trading_positions')
@@ -17946,7 +17970,8 @@ class PaperTradingExecutor {
           take_profit_price: takeProfitPrice,
           current_price: finalExecutedPrice,
           margin_used: marginRequired,
-          status: 'open'
+          status: 'open',
+          metadata: exitStrategyMeta
         })
         .select()
         .single();
@@ -18207,16 +18232,21 @@ class PaperTradingExecutor {
         const enableDynamicTrailing = botConfig.enable_dynamic_trailing || false;
         const enableTrailingTP = botConfig.enable_trailing_take_profit || false;
         const trailingTPATR = parseFloat(botConfig.trailing_take_profit_atr || 1.0);
+        const trailAfterTp1ATR = typeof botConfig.trail_after_tp1_atr === 'number' ? botConfig.trail_after_tp1_atr : null;
         const smartExitEnabled = botConfig.smart_exit_enabled || false;
         const smartExitRetracementPct = parseFloat(botConfig.smart_exit_retracement_pct || 2.0);
         const enableAutomaticExecution = botConfig.enable_automatic_execution || false;
         const enableSlippageConsideration = botConfig.enable_slippage_consideration !== false; // Default true
         
-        // Get position metadata (for tracking highest price, retracement, etc.)
+        // Get position metadata (for tracking highest price, retracement, exit strategy, etc.)
         const positionMetadata = position.metadata || {};
         let highestPrice = parseFloat(positionMetadata.highest_price || position.entry_price);
         let lowestPrice = parseFloat(positionMetadata.lowest_price || position.entry_price);
         const entryPrice = parseFloat(position.entry_price);
+        const tp1Hit = positionMetadata.tp1_hit === true;
+        const tp1Price = positionMetadata.tp1_price != null ? parseFloat(String(positionMetadata.tp1_price)) : null;
+        const tp2Price = positionMetadata.tp2_price != null ? parseFloat(String(positionMetadata.tp2_price)) : null;
+        const tp1Size = typeof positionMetadata.tp1_size === 'number' && positionMetadata.tp1_size > 0 && positionMetadata.tp1_size < 1 ? positionMetadata.tp1_size : 0;
         
         // Update highest/lowest price tracking
         if (position.side === 'long') {
@@ -18240,6 +18270,8 @@ class PaperTradingExecutor {
         const skipExpensiveOps = positionRemaining < TIME_PER_POSITION_MS || (positions.length > 5 && positionRemaining < TIME_PER_POSITION_MS * 2);
         
         // 1. TRAILING TAKE-PROFIT: Lock in profits as equity reaches new highs
+        // Use trail_after_tp1_atr when TP1 already hit (Exit Strategy), else trailing_take_profit_atr
+        const effectiveTrailingATR = (tp1Hit && trailAfterTp1ATR != null) ? trailAfterTp1ATR : trailingTPATR;
         // SKIP if time is running low (klines fetch is expensive)
         if (enableTrailingTP && currentEquity >= newHighestEquity * 0.99 && !skipExpensiveOps) { // Within 1% of highest equity
           try {
@@ -18252,21 +18284,21 @@ class PaperTradingExecutor {
               const atr = this.calculateATR(highs, lows, closes, 14);
               
               if (atr > 0) {
-                const trailingDistance = atr * trailingTPATR;
+                const trailingDistance = atr * effectiveTrailingATR;
                 
                 if (position.side === 'long') {
                   // For longs: move stop loss up as price increases
                   const newTrailingStop = currentPrice - trailingDistance;
                   if (newTrailingStop > stopLossPrice) {
                     stopLossPrice = newTrailingStop;
-                    console.log(`📈 [TRAILING TP] Long position: Moved stop loss from $${parseFloat(position.stop_loss_price).toFixed(4)} to $${stopLossPrice.toFixed(4)} (trailing by ${trailingTPATR} ATR)`);
+                    console.log(`📈 [TRAILING TP] Long position: Moved stop loss from $${parseFloat(position.stop_loss_price).toFixed(4)} to $${stopLossPrice.toFixed(4)} (trailing by ${effectiveTrailingATR} ATR${tp1Hit ? ' after TP1' : ''})`);
                   }
                 } else {
                   // For shorts: move stop loss down as price decreases
                   const newTrailingStop = currentPrice + trailingDistance;
                   if (newTrailingStop < stopLossPrice || stopLossPrice === 0) {
                     stopLossPrice = newTrailingStop;
-                    console.log(`📈 [TRAILING TP] Short position: Moved stop loss from $${parseFloat(position.stop_loss_price).toFixed(4)} to $${stopLossPrice.toFixed(4)} (trailing by ${trailingTPATR} ATR)`);
+                    console.log(`📈 [TRAILING TP] Short position: Moved stop loss from $${parseFloat(position.stop_loss_price).toFixed(4)} to $${stopLossPrice.toFixed(4)} (trailing by ${effectiveTrailingATR} ATR${tp1Hit ? ' after TP1' : ''})`);
                   }
                 }
               }
@@ -18344,6 +18376,10 @@ class PaperTradingExecutor {
         
         // Check SL/TP triggers with realistic execution (only if Smart Exit didn't trigger)
         // In real trading, SL/TP may not execute at exact price due to gaps, slippage, etc.
+        let doPartialClose = false;
+        let partialCloseQty = 0;
+        let partialCloseExitPrice = 0;
+        let partialClosePnL = 0;
         if (!shouldClose) {
           // 🎯 REALISTIC SL/TP EXECUTION: Use current price, not exact SL/TP price
           // In real trading, stop losses often execute worse than set price, especially during volatility
@@ -18362,44 +18398,69 @@ class PaperTradingExecutor {
               exitPrice = slSlippage.price;
               shouldClose = true;
             } else if (currentPrice >= takeProfitPrice) {
-              newStatus = 'taken_profit';
-              // TP can execute at or near the trigger price, but still with some slippage
-              const tpSlippage = applySlippage(
-                Math.max(currentPrice, takeProfitPrice),
-                'sell',
-                position.symbol,
-                parseFloat(position.quantity) * currentPrice,
-                { isExit: true, severity: 1.3 } // Increased from 1.0 for more realism
-              );
-              exitPrice = tpSlippage.price;
-              shouldClose = true;
+              if (!tp1Hit && tp1Size > 0 && tp2Price != null && tp2Price > takeProfitPrice) {
+                doPartialClose = true;
+                partialCloseQty = parseFloat(position.quantity) * tp1Size;
+                const tpSlippage = applySlippage(
+                  Math.max(currentPrice, takeProfitPrice),
+                  'sell',
+                  position.symbol,
+                  partialCloseQty * currentPrice,
+                  { isExit: true, severity: 1.3 }
+                );
+                partialCloseExitPrice = tpSlippage.price;
+                partialClosePnL = (partialCloseExitPrice - entryPrice) * partialCloseQty;
+              } else {
+                newStatus = 'taken_profit';
+                const tpSlippage = applySlippage(
+                  Math.max(currentPrice, takeProfitPrice),
+                  'sell',
+                  position.symbol,
+                  parseFloat(position.quantity) * currentPrice,
+                  { isExit: true, severity: 1.3 }
+                );
+                exitPrice = tpSlippage.price;
+                shouldClose = true;
+              }
             }
           } else {
             // Short positions
             if (currentPrice >= stopLossPrice) {
               newStatus = 'stopped';
-              // Short stop loss: price went up, execute with significant slippage
               const slSlippage = applySlippage(
                 Math.max(currentPrice, stopLossPrice),
                 'buy',
                 position.symbol,
                 parseFloat(position.quantity) * currentPrice,
-                { isExit: true, severity: 2.5 } // Much higher slippage for stop losses (increased from 1.5 to match real trading)
+                { isExit: true, severity: 2.5 }
               );
               exitPrice = slSlippage.price;
               shouldClose = true;
             } else if (currentPrice <= takeProfitPrice) {
-              newStatus = 'taken_profit';
-              // Short TP: price went down, execute with slippage
-              const tpSlippage = applySlippage(
-                Math.min(currentPrice, takeProfitPrice),
-                'buy',
-                position.symbol,
-                parseFloat(position.quantity) * currentPrice,
-                { isExit: true, severity: 1.3 } // Increased from 1.0 for more realism
-              );
-              exitPrice = tpSlippage.price;
-              shouldClose = true;
+              if (!tp1Hit && tp1Size > 0 && tp2Price != null && tp2Price < takeProfitPrice) {
+                doPartialClose = true;
+                partialCloseQty = parseFloat(position.quantity) * tp1Size;
+                const tpSlippage = applySlippage(
+                  Math.min(currentPrice, takeProfitPrice),
+                  'buy',
+                  position.symbol,
+                  partialCloseQty * currentPrice,
+                  { isExit: true, severity: 1.3 }
+                );
+                partialCloseExitPrice = tpSlippage.price;
+                partialClosePnL = (entryPrice - partialCloseExitPrice) * partialCloseQty;
+              } else {
+                newStatus = 'taken_profit';
+                const tpSlippage = applySlippage(
+                  Math.min(currentPrice, takeProfitPrice),
+                  'buy',
+                  position.symbol,
+                  parseFloat(position.quantity) * currentPrice,
+                  { isExit: true, severity: 1.3 }
+                );
+                exitPrice = tpSlippage.price;
+                shouldClose = true;
+              }
             }
           }
         } // End of if (!shouldClose) block
@@ -18418,7 +18479,55 @@ class PaperTradingExecutor {
           console.log(`📝 [POSITION UPDATE] Updated stop loss: $${parseFloat(position.stop_loss_price).toFixed(4)} → $${stopLossPrice.toFixed(4)}`);
         }
         
-        if (shouldClose) {
+        if (doPartialClose && partialCloseQty > 0 && tp2Price != null) {
+          const currentQty = parseFloat(position.quantity);
+          const remainQty = currentQty - partialCloseQty;
+          const currentMargin = parseFloat(position.margin_used);
+          const closedMargin = currentMargin * tp1Size;
+          const feeRate = resolveFeeRate(position.exchange, position.trading_type);
+          const partialFees = (partialCloseQty * entryPrice + partialCloseQty * partialCloseExitPrice) * feeRate;
+          partialClosePnL -= partialFees;
+          updateData.quantity = remainQty;
+          updateData.take_profit_price = tp2Price;
+          updateData.margin_used = currentMargin - closedMargin;
+          updateData.metadata = { ...updatedMetadata, tp1_hit: true, highest_price: highestPrice, lowest_price: lowestPrice };
+          const account = await this.getPaperAccount();
+          if (account != null) {
+            const newBal = parseFloat(account.balance) + closedMargin + partialClosePnL;
+            await this.supabaseClient.from('paper_trading_accounts').update({ balance: newBal, updated_at: TimeSync.getCurrentTimeISO() }).eq('user_id', this.user.id);
+          }
+          await this.supabaseClient
+            .from('paper_trading_trades')
+            .update({ quantity: remainQty, margin_used: currentMargin - closedMargin })
+            .eq('position_id', position.id)
+            .eq('status', 'filled');
+          await this.supabaseClient.from('paper_trading_trades').insert({
+            bot_id: position.bot_id,
+            user_id: position.user_id,
+            position_id: position.id,
+            symbol: position.symbol,
+            exchange: position.exchange,
+            side: position.side,
+            entry_price: position.entry_price,
+            quantity: partialCloseQty,
+            exit_price: partialCloseExitPrice,
+            pnl: partialClosePnL,
+            fees: partialFees,
+            margin_used: closedMargin,
+            status: 'closed',
+            closed_at: TimeSync.getCurrentTimeISO(),
+            executed_at: TimeSync.getCurrentTimeISO()
+          });
+          try {
+            await botLogger.addBotLog(position.bot_id, {
+              level: 'info',
+              category: 'trade',
+              message: `📝 [PAPER] Partial close at TP1: ${(tp1Size * 100).toFixed(0)}% of ${position.symbol} @ $${partialCloseExitPrice.toFixed(4)}, PnL: $${partialClosePnL.toFixed(2)}. Remainder targets TP2 @ $${tp2Price.toFixed(4)}`,
+              details: { paper_trading: true, tp1_size: tp1Size, partial_close_qty: partialCloseQty, partial_pnl: partialClosePnL, tp2_price: tp2Price }
+            });
+          } catch (_) {}
+          console.log(`🎯 [EXIT STRATEGY] Partial close at TP1: ${(tp1Size * 100).toFixed(0)}% of ${position.symbol}, remainder → TP2 @ $${tp2Price.toFixed(4)}`);
+        } else if (shouldClose) {
           updateData.status = newStatus;
           updateData.closed_at = TimeSync.getCurrentTimeISO();
           
