@@ -81,9 +81,12 @@ server {
         access_log off;
     }
 
-    # SPA routing - must come after static assets
+    # SPA routing - serve index.html for all non-file routes (create-bot, futures-pairs-finder, etc.)
     location / {
-        try_files $uri $uri/ /index.html;
+        try_files $uri $uri/ @spa;
+    }
+    location @spa {
+        rewrite ^ /index.html last;
     }
 
     # API proxy to Supabase Edge Functions
@@ -141,11 +144,20 @@ else
     exit 1
 fi
 
-# Reload nginx
+# Reload or start nginx
 echo "🔄 Reloading nginx..."
-if systemctl reload nginx; then
+if systemctl reload nginx 2>/dev/null; then
     echo "✅ Nginx reloaded successfully"
     echo ""
+elif ! systemctl is-active --quiet nginx; then
+    echo "⚠️  Nginx was not running. Starting nginx..."
+    if systemctl start nginx; then
+        echo "✅ Nginx started successfully"
+        echo ""
+    else
+        echo "❌ Failed to start nginx. Run: sudo systemctl start nginx"
+        exit 1
+    fi
 else
     echo "❌ Failed to reload nginx"
     exit 1
@@ -168,5 +180,11 @@ echo "📝 Next steps:"
 echo "   1. Configure DNS A records for all domains to point to your server IP"
 echo "   2. Set up SSL certificates (Let's Encrypt recommended)"
 echo "   3. Add domains to Supabase redirect URLs"
+echo ""
+echo "⚠️  If you saw 'conflicting server name' or nginx failed to start:"
+echo "   - List enabled sites: ls -la /etc/nginx/sites-enabled/"
+echo "   - Remove any duplicate pablobots config (keep only one): sudo rm /etc/nginx/sites-enabled/<other-file>"
+echo "   - Start nginx: sudo systemctl start nginx"
+echo "   - Enable nginx on boot: sudo systemctl enable nginx"
 echo ""
 

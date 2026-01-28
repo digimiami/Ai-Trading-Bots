@@ -10,7 +10,7 @@ import PortfolioPnLChart from '../../components/positions/PortfolioPnLChart';
 
 export default function PositionsPage() {
   const navigate = useNavigate();
-  const [exchangeFilter, setExchangeFilter] = useState<'all' | 'bybit' | 'okx' | 'bitunix'>('all');
+  const [exchangeFilter, setExchangeFilter] = useState<'all' | 'bybit' | 'okx' | 'bitunix' | 'btcc'>('all');
   const [sortBy, setSortBy] = useState<'pnl' | 'size' | 'exchange' | 'symbol'>('pnl');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [closingPositionId, setClosingPositionId] = useState<string | null>(null);
@@ -69,6 +69,8 @@ export default function PositionsPage() {
         return 'ri-exchange-line';
       case 'bitunix':
         return 'ri-bit-coin-line';
+      case 'btcc':
+        return 'ri-exchange-line';
       default:
         return 'ri-exchange-box-line';
     }
@@ -169,7 +171,7 @@ export default function PositionsPage() {
               <div className="flex-1">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Exchange</label>
                 <div className="flex space-x-2">
-                  {['all', 'bybit', 'okx', 'bitunix'].map((exchange) => (
+                  {['all', 'bybit', 'okx', 'bitunix', 'btcc'].map((exchange) => (
                     <button
                       key={exchange}
                       onClick={() => setExchangeFilter(exchange as any)}

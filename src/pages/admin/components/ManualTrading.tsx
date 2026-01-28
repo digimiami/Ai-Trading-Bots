@@ -36,7 +36,7 @@ interface OpenPosition {
 
 interface OrderForm {
   userId: string
-  exchange: 'bybit' | 'okx' | 'bitunix' | 'mexc'
+  exchange: 'bybit' | 'okx' | 'bitunix' | 'mexc' | 'btcc'
   symbol: string
   side: 'buy' | 'sell' | 'long' | 'short'
   orderType: 'limit' | 'market'
@@ -424,6 +424,7 @@ export default function ManualTrading() {
                   <option value="okx">OKX</option>
                   <option value="bitunix">Bitunix</option>
                   <option value="mexc">MEXC</option>
+                  <option value="btcc">BTCC</option>
                 </select>
               </div>
 
@@ -662,6 +663,7 @@ export default function ManualTrading() {
                   <option value="okx">OKX</option>
                   <option value="bitunix">Bitunix</option>
                   <option value="mexc">MEXC</option>
+                  <option value="btcc">BTCC</option>
                 </select>
               </div>
               

@@ -9,7 +9,7 @@ interface ApiKeyStepProps {
 
 export default function ApiKeyStep({ onSkip, onComplete }: ApiKeyStepProps) {
   const { saveApiKey, testApiConnection } = useApiKeys();
-  const [exchange, setExchange] = useState<'bybit' | 'mexc' | 'bitunix'>('bybit');
+  const [exchange, setExchange] = useState<'bybit' | 'mexc' | 'bitunix' | 'btcc'>('bybit');
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
   const [openaiApiKey, setOpenaiApiKey] = useState('');
@@ -98,12 +98,13 @@ export default function ApiKeyStep({ onSkip, onComplete }: ApiKeyStepProps) {
           {[
             { value: 'bybit', label: 'Bybit' },
             { value: 'mexc', label: 'MEXC' },
-            { value: 'bitunix', label: 'Bitunix' }
+            { value: 'bitunix', label: 'Bitunix' },
+            { value: 'btcc', label: 'BTCC' }
           ].map((ex) => (
             <button
               key={ex.value}
               onClick={() => {
-                setExchange(ex.value as 'bybit' | 'mexc' | 'bitunix');
+                setExchange(ex.value as 'bybit' | 'mexc' | 'bitunix' | 'btcc');
                 setError(null);
                 setTestResult(null);
               }}

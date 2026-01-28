@@ -139,7 +139,7 @@ export default function PabloReadyPage() {
       // Create bot with Pablo Ready template
       const botData = {
         name: `${bot.name} - ${symbolToUse}`,
-        exchange: bot.exchange as 'bybit' | 'okx',
+        exchange: bot.exchange as 'bybit' | 'okx' | 'btcc',
         symbol: symbolToUse,
         tradingType: bot.trading_type as 'spot' | 'futures',
         leverage: bot.leverage,

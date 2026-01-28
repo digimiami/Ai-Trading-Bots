@@ -20,22 +20,24 @@ DECLARE
   response_status INT;
   response_body TEXT;
 BEGIN
-  -- Pull config from DB settings (recommended)
+  -- Pull config (only use current_setting(..., true) to avoid "unrecognized configuration parameter")
   supabase_url := current_setting('app.supabase_url', true);
   supabase_key := current_setting('app.supabase_service_role_key', true);
   cron_secret := current_setting('app.cron_secret', true);
 
-  -- Fallback to required settings (if present)
-  IF supabase_url IS NULL THEN
-    supabase_url := current_setting('app.supabase_url');
+  -- Fallback URL when not set (do not call current_setting without true or it raises)
+  IF supabase_url IS NULL OR supabase_url = '' THEN
+    supabase_url := 'https://dkawxgwdqiirgmmjbvhc.supabase.co';
   END IF;
 
-  IF supabase_key IS NULL THEN
-    supabase_key := current_setting('app.supabase_service_role_key');
+  IF supabase_key IS NULL OR supabase_key = '' THEN
+    RAISE WARNING 'app.supabase_service_role_key not set; skipping promo-auto-poster trigger.';
+    RETURN;
   END IF;
 
+  -- cron_secret can be null; function may still work depending on Edge Function config
   IF cron_secret IS NULL THEN
-    cron_secret := current_setting('app.cron_secret');
+    cron_secret := '';
   END IF;
 
   -- Call promo-auto-poster Edge Function

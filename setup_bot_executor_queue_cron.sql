@@ -24,23 +24,19 @@ DECLARE
   response_status INT;
   response_body TEXT;
 BEGIN
-  -- Get Supabase URL and service role key from environment
-  -- Note: In Supabase, these should be set as custom config
-  -- For now, we'll use a placeholder that needs to be configured
-  
-  -- IMPORTANT: Replace these with your actual values
-  -- You can find these in Supabase Dashboard > Settings > API
+  -- Get Supabase URL and service role key (only use current_setting(..., true) to avoid "unrecognized configuration parameter")
   supabase_url := current_setting('app.supabase_url', true);
   supabase_key := current_setting('app.supabase_service_role_key', true);
   
-  -- If settings are not available, use environment variables
-  -- (Supabase automatically provides these)
-  IF supabase_url IS NULL THEN
-    supabase_url := current_setting('app.supabase_url');
+  -- Fallback URL when app.supabase_url is not set (do not call current_setting without true or it raises)
+  IF supabase_url IS NULL OR supabase_url = '' THEN
+    supabase_url := 'https://dkawxgwdqiirgmmjbvhc.supabase.co';
   END IF;
   
-  IF supabase_key IS NULL THEN
-    supabase_key := current_setting('app.supabase_service_role_key');
+  -- Service role key must be set (e.g. via Vault or ALTER DATABASE SET) or we skip the call
+  IF supabase_key IS NULL OR supabase_key = '' THEN
+    RAISE WARNING 'app.supabase_service_role_key not set; skipping bot-executor-queue trigger. Set it in Supabase Vault or Database settings.';
+    RETURN;
   END IF;
   
   -- Call bot-executor-queue Edge Function

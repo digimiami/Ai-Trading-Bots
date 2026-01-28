@@ -199,6 +199,7 @@ export default function Onboarding() {
                 { value: 'bybit', label: 'Bybit', desc: 'Popular derivatives exchange' },
                 { value: 'mexc', label: 'MEXC', desc: 'Global crypto exchange' },
                 { value: 'bitunix', label: 'Bitunix', desc: 'Futures trading platform' },
+                { value: 'btcc', label: 'BTCC', desc: 'Futures & spot API' },
                 { value: 'multiple', label: 'Multiple', desc: 'Use multiple exchanges' }
               ].map(({ value, label, desc }) => (
                 <button

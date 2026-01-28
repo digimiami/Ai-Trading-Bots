@@ -32,7 +32,7 @@ export interface ClosedPosition {
   closedAt: string;
 }
 
-export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix' = 'all') {
+export function usePositions(exchangeFilter: 'all' | 'bybit' | 'okx' | 'bitunix' | 'btcc' = 'all') {
   const [positions, setPositions] = useState<ExchangePosition[]>([]);
   const [closedPositions, setClosedPositions] = useState<ClosedPosition[]>([]);
   const [loading, setLoading] = useState(true);

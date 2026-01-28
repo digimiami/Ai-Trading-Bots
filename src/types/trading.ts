@@ -2,7 +2,7 @@
 export interface TradingBot {
   id: string;
   name: string;
-  exchange: 'bybit' | 'okx' | 'bitunix';
+  exchange: 'bybit' | 'okx' | 'bitunix' | 'btcc';
   tradingType: 'spot' | 'futures';
   symbol: string;
   status: 'active' | 'paused' | 'stopped' | 'running';
@@ -217,7 +217,7 @@ export interface Trade {
   pnl?: number;
   status: 'open' | 'closed';
   timestamp: string;
-  exchange: 'bybit' | 'okx';
+  exchange: 'bybit' | 'okx' | 'btcc';
 }
 
 export interface MarketData {

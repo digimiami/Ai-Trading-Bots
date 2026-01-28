@@ -95,6 +95,8 @@ export default function ExchangeBalanceDisplay({ balances }: ExchangeBalanceProp
         return 'ri-exchange-line';
       case 'mexc':
         return 'ri-exchange-line';
+      case 'btcc':
+        return 'ri-exchange-line';
       default:
         return 'ri-exchange-line';
     }
@@ -110,6 +112,8 @@ export default function ExchangeBalanceDisplay({ balances }: ExchangeBalanceProp
         return 'text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/30';
       case 'mexc':
         return 'text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/30';
+      case 'btcc':
+        return 'text-teal-600 dark:text-teal-400 bg-teal-100 dark:bg-teal-900/30';
       default:
         return 'text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-800';
     }

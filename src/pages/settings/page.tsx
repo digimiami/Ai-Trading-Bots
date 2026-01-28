@@ -95,6 +95,8 @@ export default function Settings() {
     bitunixApiSecret: '',
     mexcApiKey: '',
     mexcApiSecret: '',
+    btccApiKey: '',
+    btccApiSecret: '',
     webhookUrl: '',
     webhookSecret: '',
     alertsEnabled: true
@@ -329,6 +331,7 @@ export default function Settings() {
       const okxKey = apiKeys.find(k => k.exchange === 'okx');
       const bitunixKey = apiKeys.find(k => k.exchange === 'bitunix');
       const mexcKey = apiKeys.find(k => k.exchange === 'mexc');
+      const btccKey = apiKeys.find(k => k.exchange === 'btcc');
       
       setApiSettings(prev => ({
         ...prev,
@@ -342,6 +345,8 @@ export default function Settings() {
         bitunixApiSecret: bitunixKey ? '••••••••••••••••' : '',
         mexcApiKey: mexcKey ? '••••••••••••••••' : '',
         mexcApiSecret: mexcKey ? '••••••••••••••••' : '',
+        btccApiKey: btccKey ? '••••••••••••••••' : '',
+        btccApiSecret: btccKey ? '••••••••••••••••' : '',
       }));
     } else if (showApiConfig && apiKeys.length === 0) {
       // Reset to defaults when opening modal with no existing keys
@@ -356,6 +361,8 @@ export default function Settings() {
         bitunixApiSecret: '',
         mexcApiKey: '',
         mexcApiSecret: '',
+        btccApiKey: '',
+        btccApiSecret: '',
       }));
     }
   }, [showApiConfig, apiKeys]);
@@ -589,6 +596,16 @@ export default function Settings() {
         });
       }
 
+      // Save BTCC API key if provided
+      if (apiSettings.btccApiKey && apiSettings.btccApiSecret) {
+        await saveApiKey({
+          exchange: 'btcc',
+          apiKey: apiSettings.btccApiKey,
+          apiSecret: apiSettings.btccApiSecret,
+          passphrase: '', // BTCC doesn't use passphrase
+        });
+      }
+
       // Clear form fields after saving (for security - keys are encrypted in DB)
       setApiSettings(prev => ({
         bybitApiKey: '',
@@ -600,6 +617,8 @@ export default function Settings() {
         bitunixApiSecret: '',
         mexcApiKey: '',
         mexcApiSecret: '',
+        btccApiKey: '',
+        btccApiSecret: '',
         webhookUrl: prev.webhookUrl,
         webhookSecret: prev.webhookSecret,
         alertsEnabled: prev.alertsEnabled
@@ -612,7 +631,7 @@ export default function Settings() {
     }
   };
 
-  const handleSaveExchange = async (exchange: 'bybit' | 'okx' | 'bitunix' | 'mexc') => {
+  const handleSaveExchange = async (exchange: 'bybit' | 'okx' | 'bitunix' | 'mexc' | 'btcc') => {
     try {
       // Ensure user exists before saving API keys
       const userExists = await ensureUserExists();
@@ -744,6 +763,29 @@ export default function Settings() {
           mexcApiSecret: '',
         }));
         alert('✅ MEXC API keys saved successfully!');
+      } else if (exchange === 'btcc') {
+        if (!apiSettings.btccApiKey || !apiSettings.btccApiSecret) {
+          alert('Please enter both API Key and API Secret for BTCC');
+          return;
+        }
+        const testResult = await testConnection({
+          exchange: 'btcc',
+          apiKey: apiSettings.btccApiKey,
+          apiSecret: apiSettings.btccApiSecret,
+          passphrase: '',
+        });
+        if (!testResult.success) {
+          const proceed = confirm(`⚠️ Connection test failed: ${testResult.message}\n\nDo you still want to save these keys?`);
+          if (!proceed) return;
+        }
+        await saveApiKey({
+          exchange: 'btcc',
+          apiKey: apiSettings.btccApiKey,
+          apiSecret: apiSettings.btccApiSecret,
+          passphrase: '',
+        });
+        setApiSettings(prev => ({ ...prev, btccApiKey: '', btccApiSecret: '' }));
+        alert('✅ BTCC API keys saved successfully!');
       }
     } catch (error: any) {
       alert(`Failed to save ${exchange.toUpperCase()} API keys: ${error.message}`);
@@ -875,7 +917,7 @@ export default function Settings() {
     setShowEditProfile(true);
   };
 
-  const handleTestConnection = async (exchange: 'bybit' | 'okx' | 'bitunix' | 'mexc') => {
+  const handleTestConnection = async (exchange: 'bybit' | 'okx' | 'bitunix' | 'mexc' | 'btcc') => {
     try {
       let formData: ApiKeyFormData;
       
@@ -921,6 +963,17 @@ export default function Settings() {
           apiKey: apiSettings.mexcApiKey,
           apiSecret: apiSettings.mexcApiSecret,
           passphrase: '' // MEXC doesn't use passphrase
+        };
+      } else if (exchange === 'btcc') {
+        if (!apiSettings.btccApiKey || !apiSettings.btccApiSecret) {
+          alert('Please enter both API Key and API Secret for BTCC');
+          return;
+        }
+        formData = {
+          exchange: 'btcc',
+          apiKey: apiSettings.btccApiKey,
+          apiSecret: apiSettings.btccApiSecret,
+          passphrase: '', // BTCC doesn't use passphrase
         };
       } else {
         alert('Invalid exchange');
@@ -1107,11 +1160,15 @@ export default function Settings() {
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
                       apiKey.exchange === 'bybit' ? 'bg-orange-100' : 
                       apiKey.exchange === 'bitunix' ? 'bg-green-100' : 
+                      apiKey.exchange === 'mexc' ? 'bg-purple-100' : 
+                      apiKey.exchange === 'btcc' ? 'bg-teal-100' : 
                       'bg-blue-100'
                     }`}>
                       <i className={`${
                         apiKey.exchange === 'bybit' ? 'ri-currency-line text-orange-600' : 
                         apiKey.exchange === 'bitunix' ? 'ri-exchange-line text-green-600' : 
+                        apiKey.exchange === 'mexc' ? 'ri-exchange-line text-purple-600' : 
+                        apiKey.exchange === 'btcc' ? 'ri-exchange-line text-teal-600' : 
                         'ri-exchange-line text-blue-600'
                       }`}></i>
                 </div>
@@ -2317,6 +2374,78 @@ export default function Settings() {
                       <button
                         onClick={() => handleSaveExchange('mexc')}
                         className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg transition-colors text-sm font-medium"
+                      >
+                        <i className="ri-save-line mr-1"></i>
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* BTCC API */}
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-3 flex items-center">
+                    <i className="ri-exchange-line text-teal-600 mr-2"></i>
+                    BTCC API
+                  </h3>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        API Key
+                      </label>
+                      <input
+                        type="password"
+                        value={apiSettings.btccApiKey}
+                        onChange={(e) => handleApiChange('btccApiKey', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+                        placeholder="Enter BTCC API Key"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        API Secret
+                      </label>
+                      <input
+                        type="password"
+                        value={apiSettings.btccApiSecret}
+                        onChange={(e) => handleApiChange('btccApiSecret', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+                        placeholder="Enter BTCC API Secret"
+                      />
+                    </div>
+                    <div className="p-4 bg-red-50 border-2 border-red-300 rounded-lg">
+                      <p className="text-sm text-red-800 font-semibold flex items-start">
+                        <i className="ri-alert-line text-red-600 mr-2 mt-0.5 text-lg"></i>
+                        <span>
+                          <strong>⚠️ Disable Withdrawals (NEVER check this box).</strong> If your bot is hacked, the hacker can trade your funds but they cannot send them to their own wallet.
+                        </span>
+                      </p>
+                    </div>
+                    <div className="p-3 bg-teal-50 border border-teal-200 rounded-lg">
+                      <p className="text-xs text-gray-700 mb-2">
+                        <i className="ri-information-line text-teal-600 mr-1"></i>
+                        <strong>Don't have a BTCC account?</strong>
+                      </p>
+                      <a
+                        href="https://www.btcc.com/en-US/support-center/detail/24451281100697"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center text-sm font-medium text-teal-600 hover:text-teal-700 hover:underline"
+                      >
+                        <i className="ri-external-link-line mr-1"></i>
+                        BTCC API Futures Trading docs
+                      </a>
+                    </div>
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={() => handleTestConnection('btcc')}
+                        className="flex-1 bg-teal-100 hover:bg-teal-200 text-teal-700 py-2 px-4 rounded-lg transition-colors text-sm"
+                      >
+                        Test Connection
+                      </button>
+                      <button
+                        onClick={() => handleSaveExchange('btcc')}
+                        className="flex-1 bg-teal-600 hover:bg-teal-700 text-white py-2 px-4 rounded-lg transition-colors text-sm font-medium"
                       >
                         <i className="ri-save-line mr-1"></i>
                         Save
