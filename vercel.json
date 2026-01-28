@@ -2,7 +2,7 @@
   "redirects": [
     {
       "source": "/favicon.ico",
-      "destination": "https://dkawxgwdqiirgmmjbvhc.supabase.co/storage/v1/object/public/pablobots-logo/logo_no_bg.png",
+      "destination": "/favicon.svg",
       "permanent": false
     }
   ],
