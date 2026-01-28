@@ -267,7 +267,7 @@ export default function EditBotPage() {
         stop_loss_percentage: prev.stop_loss_percentage ?? riskSettings.stopLossPercentage ?? 5.0,
         take_profit_percentage: prev.take_profit_percentage ?? riskSettings.takeProfitPercentage ?? 10.0,
         max_concurrent: prev.max_concurrent ?? riskSettings.maxOpenPositions ?? 5,
-        risk_per_trade_pct: prev.risk_per_trade_pct ?? (riskSettings.riskPerTrade ? riskSettings.riskPerTrade / 100 : 0.02),
+        risk_per_trade_pct: prev.risk_per_trade_pct ?? (riskSettings.riskPerTrade ?? 1),
         emergency_stop_loss: prev.emergency_stop_loss ?? riskSettings.emergencyStopLoss ?? 20.0
       }));
       console.log('✅ Applied risk management settings from user_settings to edit form');

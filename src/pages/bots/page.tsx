@@ -20,7 +20,7 @@ import AiMlActivityModal from '../../components/bot/AiMlActivityModal';
 
 export default function BotsPage() {
   const navigate = useNavigate();
-  const { bots, loading, fetchBots, startBot, stopBot, pauseBot, updateBot, deleteBot, createBot, getBotById } = useBots();
+  const { bots, loading, error: botsError, fetchBots, startBot, stopBot, pauseBot, updateBot, deleteBot, createBot, getBotById } = useBots();
   const { playTestSound } = useSoundNotifications();
   const { activities, addLog } = useBotActivity(bots);
   const { isExecuting, lastExecution, timeSync, executeBot, executeAllBots } = useBotExecutor();
@@ -1241,6 +1241,21 @@ export default function BotsPage() {
       
       <div className="pt-20 pb-20 px-4">
         <div className="max-w-6xl mx-auto space-y-4">
+          {/* 502 / server error banner with retry */}
+          {botsError && (
+            <Card className="p-4 border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <i className="ri-error-warning-line text-amber-600 dark:text-amber-400 text-xl"></i>
+                  <span className="text-amber-800 dark:text-amber-200">{botsError}</span>
+                </div>
+                <Button variant="primary" size="sm" onClick={() => fetchBots()} disabled={loading}>
+                  <i className={`ri-refresh-line mr-1 ${loading ? 'animate-spin' : ''}`}></i>
+                  Retry
+                </Button>
+              </div>
+            </Card>
+          )}
           {/* Bulk Actions - Paper/Real Trading */}
           <Card className="p-4">
             {/* Desktop: Show all buttons */}

@@ -440,7 +440,10 @@ function getQuantityConstraints(symbol: string): QuantityConstraint {
     'VIRTUALUSDT': { min: 0.1, max: 1000 },
     'WIFUSDT': { min: 0.1, max: 1000 },
     'ZENUSDT': { min: 0.1, max: 1000 },
-    'LTCUSDT': { min: 0.01, max: 100 }
+    'LTCUSDT': { min: 0.01, max: 100 },
+    'HANAUSDT': { min: 0.1, max: 10000 },
+    'PIXELUSDT': { min: 0.1, max: 10000 },
+    'WLFUSDT': { min: 0.1, max: 10000 }
   };
 
   if (isLowLiquiditySymbol(symbol)) {
@@ -481,7 +484,10 @@ function getSymbolSteps(symbol: string): SymbolSteps {
       'ZENUSDT': { stepSize: 0.1, tickSize: 0.0001 },
       'LTCUSDT': { stepSize: 0.01, tickSize: 0.01 },
       'SWARMSUSDT': { stepSize: 1, tickSize: 0.0001 },
-      'ZRXUSDT': { stepSize: 0.1, tickSize: 0.0001 }
+      'ZRXUSDT': { stepSize: 0.1, tickSize: 0.0001 },
+      'HANAUSDT': { stepSize: 0.1, tickSize: 0.0001 },
+      'PIXELUSDT': { stepSize: 0.1, tickSize: 0.0001 },
+      'WLFUSDT': { stepSize: 0.1, tickSize: 0.0001 }
     };
 
   if (isLowLiquiditySymbol(symbol)) {
@@ -580,7 +586,19 @@ function calculateTradeSizing(bot: any, price: number, riskContext?: RiskContext
   // Always use the latest trade amount value, prioritizing database field (snake_case)
   const baseAmount = bot.trade_amount ?? bot.tradeAmount ?? 100;
   const minTradeAmount = isFutures ? 50 : 10;
-  const effectiveBaseAmount = Math.max(minTradeAmount, baseAmount);
+  let effectiveBaseAmount = Math.max(minTradeAmount, baseAmount);
+
+  // Apply risk_per_trade_pct from strategy_config when set (scales nominal size by risk budget)
+  // UI may store as percentage points (1.5 = 1.5%) or decimal from riskSettings (0.02 = 2%) — normalize to percentage points
+  const cfg = typeof bot.strategy_config === 'string' ? (() => { try { return JSON.parse(bot.strategy_config || '{}'); } catch { return {}; } })() : (bot.strategy_config || {});
+  const rawRiskPct = typeof cfg.risk_per_trade_pct === 'number' && cfg.risk_per_trade_pct > 0 ? cfg.risk_per_trade_pct : null;
+  if (rawRiskPct !== null) {
+    // Values < 0.1 (e.g. 0.02, 0.033) are from riskSettings stored as decimal (2%, 3.3%); values >= 0.1 are percentage points (0.5 = 0.5%, 1.5 = 1.5%)
+    const riskPctPct = rawRiskPct < 0.1 ? rawRiskPct * 100 : rawRiskPct;
+    const riskScale = riskPctPct / 1.0; // 1% = baseline
+    effectiveBaseAmount = clamp(effectiveBaseAmount * riskScale, minTradeAmount, Math.max(effectiveBaseAmount * 2, 500));
+    console.log(`💰 Risk-per-trade scaling: risk_per_trade_pct=${rawRiskPct} (→${riskPctPct}%) → effectiveBaseAmount=$${effectiveBaseAmount.toFixed(2)}`);
+  }
   
   // Log trade amount resolution for debugging
   console.log(`💰 Trade amount resolution: bot.trade_amount=${bot.trade_amount}, bot.tradeAmount=${bot.tradeAmount}, baseAmount=${baseAmount}, effectiveBaseAmount=${effectiveBaseAmount}`);
@@ -4640,16 +4658,24 @@ class BotExecutor {
       const side = rsi > 50 ? 'sell' : 'buy';
       const weight = signalWeights.always_trade ?? 1;
       const weightedConfidence = clamp(0.6 * weight, 0, 1);
-      console.log(`🚀 [ALWAYS TRADE MODE] Generating ${side.toUpperCase()} signal regardless of conditions (RSI: ${rsi.toFixed(2)})`);
+      const useConfigSlTp = typeof config.sl_atr_mult === 'number' || typeof config.tp1_r === 'number';
+      const atrH = price * 0.02;
+      const slMult = typeof config.sl_atr_mult === 'number' && config.sl_atr_mult > 0 ? config.sl_atr_mult : 1;
+      const t1r = typeof config.tp1_r === 'number' && config.tp1_r > 0 ? config.tp1_r : 1.5;
+      const t2r = typeof config.tp2_r === 'number' && config.tp2_r > 0 ? config.tp2_r : 3;
+      const stopLoss = useConfigSlTp ? (side === 'buy' ? price - atrH * slMult : price + atrH * slMult) : (side === 'buy' ? price * 0.98 : price * 1.02);
+      const takeProfit1 = useConfigSlTp ? (side === 'buy' ? price + atrH * t1r : price - atrH * t1r) : (side === 'buy' ? price * 1.02 : price * 0.98);
+      const takeProfit2 = useConfigSlTp ? (side === 'buy' ? price + atrH * t2r : price - atrH * t2r) : (side === 'buy' ? price * 1.05 : price * 0.95);
+      console.log(`🚀 [ALWAYS TRADE MODE] Generating ${side.toUpperCase()} signal regardless of conditions (RSI: ${rsi.toFixed(2)})${useConfigSlTp ? ' [SL/TP from strategy_config]' : ''}`);
       return {
         shouldTrade: true,
         side: side,
         reason: `Always Trade Mode: ${side.toUpperCase()} signal (RSI: ${rsi.toFixed(2)}, ADX: ${adx.toFixed(2)})`,
         confidence: 0.6,
         entryPrice: price,
-        stopLoss: side === 'buy' ? price * 0.98 : price * 1.02,
-        takeProfit1: side === 'buy' ? price * 1.02 : price * 0.98,
-        takeProfit2: side === 'buy' ? price * 1.05 : price * 0.95,
+        stopLoss,
+        takeProfit1,
+        takeProfit2,
         indicators: { rsi, adx, price },
         signalComponents: [{
           source: 'always_trade',
@@ -4677,7 +4703,15 @@ class BotExecutor {
       
       if (rsi < rsiOversold) {
         // RSI oversold - BUY signal
-        console.log(`📝 [PAPER TRADING] BUY signal: RSI ${rsi.toFixed(2)} < ${rsiOversold}`);
+        const useConfigSlTp = typeof config.sl_atr_mult === 'number' || typeof config.tp1_r === 'number';
+        const atrH = price * 0.02;
+        const slMult = typeof config.sl_atr_mult === 'number' && config.sl_atr_mult > 0 ? config.sl_atr_mult : 1;
+        const t1r = typeof config.tp1_r === 'number' && config.tp1_r > 0 ? config.tp1_r : 1.5;
+        const t2r = typeof config.tp2_r === 'number' && config.tp2_r > 0 ? config.tp2_r : 3;
+        const stopLoss = useConfigSlTp ? price - atrH * slMult : price * 0.98;
+        const takeProfit1 = useConfigSlTp ? price + atrH * t1r : price * 1.02;
+        const takeProfit2 = useConfigSlTp ? price + atrH * t2r : price * 1.05;
+        console.log(`📝 [PAPER TRADING] BUY signal: RSI ${rsi.toFixed(2)} < ${rsiOversold}${useConfigSlTp ? ' [SL/TP from strategy_config]' : ''}`);
         const weight = signalWeights.paper_rsi ?? 1;
         return {
           shouldTrade: true,
@@ -4685,9 +4719,9 @@ class BotExecutor {
           reason: `Paper Trading: RSI ${rsi.toFixed(2)} < ${rsiOversold} (oversold)`,
           confidence: 0.7,
           entryPrice: price,
-          stopLoss: price * 0.98,
-          takeProfit1: price * 1.02,
-          takeProfit2: price * 1.05,
+          stopLoss,
+          takeProfit1,
+          takeProfit2,
           indicators: { rsi, adx, price },
           signalComponents: [{
             source: 'paper_rsi',
@@ -4699,7 +4733,15 @@ class BotExecutor {
         };
       } else if (rsi > rsiOverbought) {
         // RSI overbought - SELL signal
-        console.log(`📝 [PAPER TRADING] SELL signal: RSI ${rsi.toFixed(2)} > ${rsiOverbought}`);
+        const useConfigSlTp = typeof config.sl_atr_mult === 'number' || typeof config.tp1_r === 'number';
+        const atrH = price * 0.02;
+        const slMult = typeof config.sl_atr_mult === 'number' && config.sl_atr_mult > 0 ? config.sl_atr_mult : 1;
+        const t1r = typeof config.tp1_r === 'number' && config.tp1_r > 0 ? config.tp1_r : 1.5;
+        const t2r = typeof config.tp2_r === 'number' && config.tp2_r > 0 ? config.tp2_r : 3;
+        const stopLoss = useConfigSlTp ? price + atrH * slMult : price * 1.02;
+        const takeProfit1 = useConfigSlTp ? price - atrH * t1r : price * 0.98;
+        const takeProfit2 = useConfigSlTp ? price - atrH * t2r : price * 0.95;
+        console.log(`📝 [PAPER TRADING] SELL signal: RSI ${rsi.toFixed(2)} > ${rsiOverbought}${useConfigSlTp ? ' [SL/TP from strategy_config]' : ''}`);
         const weight = signalWeights.paper_rsi ?? 1;
         return {
           shouldTrade: true,
@@ -4707,9 +4749,9 @@ class BotExecutor {
           reason: `Paper Trading: RSI ${rsi.toFixed(2)} > ${rsiOverbought} (overbought)`,
           confidence: 0.7,
           entryPrice: price,
-          stopLoss: price * 1.02,
-          takeProfit1: price * 0.98,
-          takeProfit2: price * 0.95,
+          stopLoss,
+          takeProfit1,
+          takeProfit2,
           indicators: { rsi, adx, price },
           signalComponents: [{
             source: 'paper_rsi',
@@ -5126,32 +5168,52 @@ class BotExecutor {
     // Note: config and isSuperAggressive are already declared at the top of this function
     // Re-check isSuperAggressive for fallback logic (it may have been false earlier but we want to try again)
     if (isSuperAggressive) {
-      // Generate signal based on RSI direction
+      // Generate signal based on RSI direction; use strategy_config SL/TP when set
       const side = rsi > 50 ? 'sell' : 'buy';
+      const p = marketData.price;
+      const useConfigSlTp = typeof config.sl_atr_mult === 'number' || typeof config.tp1_r === 'number';
+      const atrH = p * 0.02;
+      const slMult = typeof config.sl_atr_mult === 'number' && config.sl_atr_mult > 0 ? config.sl_atr_mult : 1;
+      const t1r = typeof config.tp1_r === 'number' && config.tp1_r > 0 ? config.tp1_r : 1.5;
+      const t2r = typeof config.tp2_r === 'number' && config.tp2_r > 0 ? config.tp2_r : 3;
+      const stopLoss = useConfigSlTp ? (side === 'buy' ? p - atrH * slMult : p + atrH * slMult) : (side === 'buy' ? p * 0.98 : p * 1.02);
+      const takeProfit1 = useConfigSlTp ? (side === 'buy' ? p + atrH * t1r : p - atrH * t1r) : (side === 'buy' ? p * 1.02 : p * 0.98);
+      const takeProfit2 = useConfigSlTp ? (side === 'buy' ? p + atrH * t2r : p - atrH * t2r) : (side === 'buy' ? p * 1.05 : p * 0.95);
       return {
         shouldTrade: true,
         side: side,
         reason: `Super aggressive mode: ${side.toUpperCase()} signal based on RSI ${rsi.toFixed(2)}`,
         confidence: 0.5, // Base confidence for aggressive mode
-        entryPrice: marketData.price,
-        stopLoss: side === 'buy' ? marketData.price * 0.98 : marketData.price * 1.02,
-        takeProfit1: side === 'buy' ? marketData.price * 1.02 : marketData.price * 0.98,
-        indicators: { rsi, adx, price: marketData.price }
+        entryPrice: p,
+        stopLoss,
+        takeProfit1,
+        takeProfit2,
+        indicators: { rsi, adx, price: p }
       };
     }
     
-    // If RSI threshold is set but no signal, generate one anyway (fallback)
+    // If RSI threshold is set but no signal, generate one anyway (fallback); use strategy_config SL/TP when set
     if (strategy.rsiThreshold) {
       const side = rsi >= strategy.rsiThreshold ? 'sell' : 'buy';
+      const p = marketData.price;
+      const useConfigSlTp = typeof config.sl_atr_mult === 'number' || typeof config.tp1_r === 'number';
+      const atrH = p * 0.02;
+      const slMult = typeof config.sl_atr_mult === 'number' && config.sl_atr_mult > 0 ? config.sl_atr_mult : 1;
+      const t1r = typeof config.tp1_r === 'number' && config.tp1_r > 0 ? config.tp1_r : 1.5;
+      const t2r = typeof config.tp2_r === 'number' && config.tp2_r > 0 ? config.tp2_r : 3;
+      const stopLoss = useConfigSlTp ? (side === 'buy' ? p - atrH * slMult : p + atrH * slMult) : (side === 'buy' ? p * 0.98 : p * 1.02);
+      const takeProfit1 = useConfigSlTp ? (side === 'buy' ? p + atrH * t1r : p - atrH * t1r) : (side === 'buy' ? p * 1.02 : p * 0.98);
+      const takeProfit2 = useConfigSlTp ? (side === 'buy' ? p + atrH * t2r : p - atrH * t2r) : (side === 'buy' ? p * 1.05 : p * 0.95);
       return {
         shouldTrade: true,
         side: side,
         reason: `Fallback signal: ${side.toUpperCase()} based on RSI ${rsi.toFixed(2)} vs threshold ${strategy.rsiThreshold}`,
         confidence: 0.4,
-        entryPrice: marketData.price,
-        stopLoss: side === 'buy' ? marketData.price * 0.98 : marketData.price * 1.02,
-        takeProfit1: side === 'buy' ? marketData.price * 1.02 : marketData.price * 0.98,
-        indicators: { rsi, adx, price: marketData.price }
+        entryPrice: p,
+        stopLoss,
+        takeProfit1,
+        takeProfit2,
+        indicators: { rsi, adx, price: p }
       };
     }
     
@@ -7373,9 +7435,10 @@ class BotExecutor {
     console.log(`   bot.paper_trading: ${bot.paper_trading}`);
     console.log(`   effectiveMode: ${effectiveMode}`);
 
-    // Create bot snapshot preserving ALL bot settings (leverage, SL/TP, etc.)
+    // Create bot snapshot preserving ALL bot settings (leverage, SL/TP, strategy_config, etc.)
     const botSnapshot = { ...bot };
-    
+    botSnapshot.strategy_config = bot.strategy_config ?? botSnapshot.strategy_config;
+
     // Ensure all bot settings are preserved and up-to-date (handle both snake_case and camelCase)
     // Always use the latest value from bot object, prioritizing snake_case from DB
     botSnapshot.leverage = bot.leverage || bot.leverage_ratio || botSnapshot.leverage || 1;
@@ -7432,6 +7495,14 @@ class BotExecutor {
     });
 
     try {
+      // Enforce safety limits (includes max concurrent, daily/weekly loss, max trades, allowed hours)
+      const safetyCheck = await this.checkSafetyLimits(botSnapshot);
+      if (!safetyCheck.canTrade) {
+        console.warn(`⏸️ Manual trade skipped: ${safetyCheck.reason}`);
+        await this.addBotLog(bot.id, { level: 'warning', category: 'trade', message: `Trade skipped: ${safetyCheck.reason}`, details: { source: params.source } });
+        return { mode: effectiveMode, success: false, skipped: true, reason: safetyCheck.reason };
+      }
+
       if (effectiveMode === 'paper') {
         // Validate user exists before executing paper trade (prevents foreign key violations)
         const { data: userExists, error: userCheckError } = await this.supabaseClient
@@ -16058,6 +16129,12 @@ class BotExecutor {
   private async checkSafetyLimits(bot: any): Promise<{ canTrade: boolean; reason: string; shouldPause: boolean }> {
     try {
       const isPaperTrading = bot.paper_trading === true;
+
+      // 0a. Check allowed trading hours (session_filter) so all order paths respect it
+      const hoursCheck = this.checkTradingHours(bot);
+      if (!hoursCheck.canTrade && hoursCheck.reason) {
+        return { canTrade: false, reason: hoursCheck.reason, shouldPause: false };
+      }
 
       // 0. Check subscription/trial limits FIRST (only for real trading, not paper trading)
       if (!isPaperTrading) {

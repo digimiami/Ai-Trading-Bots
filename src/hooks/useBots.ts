@@ -51,6 +51,9 @@ export const useBots = () => {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Bot fetch error:', response.status, errorText);
+        if (response.status === 502) {
+          throw new Error('Server temporarily unavailable (502). The backend may be starting up—please try again in a moment.');
+        }
         throw new Error(`Failed to fetch bots: ${response.status} - ${errorText}`);
       }
 
