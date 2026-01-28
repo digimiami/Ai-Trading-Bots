@@ -57,6 +57,22 @@ server {
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-XSS-Protection "1; mode=block" always;
 
+    # Serve favicon directly
+    location = /favicon.ico {
+        try_files /favicon.svg =404;
+        expires 1y;
+        add_header Cache-Control "public, immutable, max-age=31536000";
+        access_log off;
+    }
+
+    # Serve favicon.svg directly
+    location = /favicon.svg {
+        try_files $uri =404;
+        expires 1y;
+        add_header Cache-Control "public, immutable, max-age=31536000";
+        access_log off;
+    }
+
     # Serve static assets directly
     location /assets/ {
         try_files $uri =404;
