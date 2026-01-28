@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4'
-import md5 from "https://esm.sh/js-md5@0.8.3"
+import { createClient } from "npm:@supabase/supabase-js@2.38.4"
+import md5 from "jsr:@takker/md5@0.1.0"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

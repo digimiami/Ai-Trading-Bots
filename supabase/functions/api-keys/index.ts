@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4'
-import md5 from "https://esm.sh/js-md5@0.8.3"
+import { createClient } from "npm:@supabase/supabase-js@2.38.4"
+import md5 from "jsr:@takker/md5@0.1.0"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -996,6 +996,14 @@ function btccSign(params: Record<string, string | number | boolean | undefined |
   return md5(requestString)
 }
 
+function safeJsonParse(text: string): any | null {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
+}
+
 async function fetchBTCCConnection(apiKey: string, apiSecret: string, token?: string) {
   // BTCC Futures REST base URL per docs provided by user
   const baseUrl = 'https://api1.btloginc.com:9081'
@@ -1018,8 +1026,7 @@ async function fetchBTCCConnection(apiKey: string, apiSecret: string, token?: st
       const url = `${baseUrl}/v1/user/keepalive?${query}`
       const resp = await fetch(url, { method: 'GET' })
       const text = await resp.text()
-      let data: any = null
-      try { data = JSON.parse(text) } catch { /* ignore */ }
+      const data: any = safeJsonParse(text)
 
       if (!resp.ok) {
         return { status: 'error' as const, error: `BTCC HTTP ${resp.status}: ${text.substring(0, 200)}` }
@@ -1040,9 +1047,102 @@ async function fetchBTCCConnection(apiKey: string, apiSecret: string, token?: st
   }
 }
 
+async function fetchBTCCAccount(apiKey: string, apiSecret: string, token: string) {
+  const baseUrl = 'https://api1.btloginc.com:9081'
+
+  const keepaliveParams = {
+    token: token.trim(),
+    api_key: apiKey.trim(),
+  }
+  const keepaliveSign = btccSign(keepaliveParams, apiSecret.trim())
+  const keepaliveQuery = btccEncodeParams({ ...keepaliveParams, secret_key: apiSecret.trim(), sign: keepaliveSign })
+
+  const keepaliveUrl = `${baseUrl}/v1/user/keepalive?${keepaliveQuery}`
+  const keepaliveResp = await fetch(keepaliveUrl, { method: 'GET' })
+  const keepaliveText = await keepaliveResp.text()
+  const keepaliveData = safeJsonParse(keepaliveText)
+  if (!keepaliveResp.ok) {
+    throw new Error(`BTCC keepalive HTTP ${keepaliveResp.status}: ${keepaliveText.substring(0, 200)}`)
+  }
+  if (!keepaliveData) {
+    throw new Error(`BTCC keepalive returned non-JSON: ${keepaliveText.substring(0, 200)}`)
+  }
+  if (keepaliveData?.code !== 0) {
+    throw new Error(`BTCC keepalive failed: ${keepaliveData?.msg || keepaliveText.substring(0, 200)}`)
+  }
+
+  const accountid = Number(keepaliveData?.accountid || 0)
+  if (!accountid) throw new Error('BTCC keepalive did not return accountid')
+
+  const accountParams = {
+    token: token.trim(),
+    accountid,
+    api_key: apiKey.trim(),
+  }
+  const accountSign = btccSign(accountParams, apiSecret.trim())
+  const accountQuery = btccEncodeParams({ ...accountParams, secret_key: apiSecret.trim(), sign: accountSign })
+
+  const accountUrl = `${baseUrl}/v1/account/account?${accountQuery}`
+  const accountResp = await fetch(accountUrl, { method: 'GET' })
+  const accountText = await accountResp.text()
+  const accountData = safeJsonParse(accountText)
+
+  if (!accountResp.ok) {
+    throw new Error(`BTCC account HTTP ${accountResp.status}: ${accountText.substring(0, 200)}`)
+  }
+  if (!accountData) {
+    throw new Error(`BTCC account returned non-JSON: ${accountText.substring(0, 200)}`)
+  }
+  if (accountData?.code !== 0) {
+    throw new Error(`BTCC account fetch failed: ${accountData?.msg || accountText.substring(0, 200)}`)
+  }
+
+  return { accountid, account: accountData?.account || {}, raw: accountData }
+}
+
 // Exchange balance shape expected by the UI.
 async function fetchBTCCBalance(apiKey: string, apiSecret: string, token?: string) {
   const conn = await fetchBTCCConnection(apiKey, apiSecret, token)
+
+  if (conn.status === 'connected' && token?.trim()) {
+    try {
+      const { account } = await fetchBTCCAccount(apiKey, apiSecret, token)
+
+      // Map BTCC account fields to UI balance card
+      const totalBalance = Number(account.equity ?? account.balance ?? 0) || 0
+      const availableBalance = Number(account.free_margin ?? 0) || 0
+      const lockedBalance = Math.max(0, totalBalance - availableBalance)
+
+      return {
+        exchange: 'btcc',
+        totalBalance,
+        availableBalance,
+        lockedBalance,
+        assets: [
+          {
+            asset: 'USDT',
+            free: availableBalance,
+            locked: lockedBalance,
+            total: totalBalance,
+          }
+        ],
+        lastUpdated: new Date().toISOString(),
+        status: 'connected',
+      }
+    } catch (e: any) {
+      // Fall back to connected-but-zero balance, with a helpful note
+      return {
+        exchange: 'btcc',
+        totalBalance: 0,
+        availableBalance: 0,
+        lockedBalance: 0,
+        assets: [],
+        lastUpdated: new Date().toISOString(),
+        status: 'connected',
+        note: `BTCC connected, but failed to fetch balance: ${e?.message || 'unknown error'}`
+      }
+    }
+  }
 
   return {
     exchange: 'btcc',
