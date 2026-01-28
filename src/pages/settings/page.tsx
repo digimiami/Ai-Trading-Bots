@@ -97,6 +97,7 @@ export default function Settings() {
     mexcApiSecret: '',
     btccApiKey: '',
     btccApiSecret: '',
+    btccToken: '',
     webhookUrl: '',
     webhookSecret: '',
     alertsEnabled: true
@@ -347,6 +348,7 @@ export default function Settings() {
         mexcApiSecret: mexcKey ? '••••••••••••••••' : '',
         btccApiKey: btccKey ? '••••••••••••••••' : '',
         btccApiSecret: btccKey ? '••••••••••••••••' : '',
+        btccToken: btccKey?.passphrase ? '••••••••••••••••' : '',
       }));
     } else if (showApiConfig && apiKeys.length === 0) {
       // Reset to defaults when opening modal with no existing keys
@@ -363,6 +365,7 @@ export default function Settings() {
         mexcApiSecret: '',
         btccApiKey: '',
         btccApiSecret: '',
+        btccToken: '',
       }));
     }
   }, [showApiConfig, apiKeys]);
@@ -602,7 +605,7 @@ export default function Settings() {
           exchange: 'btcc',
           apiKey: apiSettings.btccApiKey,
           apiSecret: apiSettings.btccApiSecret,
-          passphrase: '', // BTCC doesn't use passphrase
+          passphrase: apiSettings.btccToken || '', // Use passphrase column to store BTCC token (optional)
         });
       }
 
@@ -619,6 +622,7 @@ export default function Settings() {
         mexcApiSecret: '',
         btccApiKey: '',
         btccApiSecret: '',
+        btccToken: '',
         webhookUrl: prev.webhookUrl,
         webhookSecret: prev.webhookSecret,
         alertsEnabled: prev.alertsEnabled
@@ -772,7 +776,7 @@ export default function Settings() {
           exchange: 'btcc',
           apiKey: apiSettings.btccApiKey,
           apiSecret: apiSettings.btccApiSecret,
-          passphrase: '',
+          passphrase: apiSettings.btccToken || '',
         });
         if (!testResult.success) {
           const proceed = confirm(`⚠️ Connection test failed: ${testResult.message}\n\nDo you still want to save these keys?`);
@@ -782,9 +786,9 @@ export default function Settings() {
           exchange: 'btcc',
           apiKey: apiSettings.btccApiKey,
           apiSecret: apiSettings.btccApiSecret,
-          passphrase: '',
+          passphrase: apiSettings.btccToken || '',
         });
-        setApiSettings(prev => ({ ...prev, btccApiKey: '', btccApiSecret: '' }));
+        setApiSettings(prev => ({ ...prev, btccApiKey: '', btccApiSecret: '', btccToken: '' }));
         alert('✅ BTCC API keys saved successfully!');
       }
     } catch (error: any) {
@@ -973,7 +977,7 @@ export default function Settings() {
           exchange: 'btcc',
           apiKey: apiSettings.btccApiKey,
           apiSecret: apiSettings.btccApiSecret,
-          passphrase: '', // BTCC doesn't use passphrase
+          passphrase: apiSettings.btccToken || '', // Store BTCC token here (optional)
         };
       } else {
         alert('Invalid exchange');
@@ -2412,6 +2416,21 @@ export default function Settings() {
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
                         placeholder="Enter BTCC API Secret"
                       />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Token (Optional)
+                      </label>
+                      <input
+                        type="password"
+                        value={apiSettings.btccToken}
+                        onChange={(e) => handleApiChange('btccToken', e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+                        placeholder="Enter BTCC token (from /v1/user/login)"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        BTCC private endpoints require a token. If you paste one here, “Test Connection” will validate it via keepalive.
+                      </p>
                     </div>
                     <div className="p-4 bg-red-50 border-2 border-red-300 rounded-lg">
                       <p className="text-sm text-red-800 font-semibold flex items-start">

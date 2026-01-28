@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.38.4'
+import md5 from "https://esm.sh/js-md5@0.8.3"
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -7939,6 +7940,9 @@ class BotExecutor {
         return await this.placeBitunixOrder(apiKey, apiSecret, symbol, side, amount, price, tradingType, bot);
       } else if (exchange === 'mexc') {
         return await this.placeMEXCOrder(apiKey, apiSecret, symbol, side, amount, price, tradingType, bot);
+      } else if (exchange === 'btcc') {
+        // BTCC uses token-based auth; we store token in the passphrase column
+        return await this.placeBTCCOrder(apiKey, apiSecret, passphrase || '', symbol, side, amount, price, tradingType, bot);
       }
       throw new Error(`Unsupported exchange: ${exchange}`);
     } catch (error) {
@@ -8031,7 +8035,8 @@ class BotExecutor {
         
         throw new Error(`Failed to decrypt or validate API keys. Please re-enter your ${bot.exchange} API keys in your account settings. Error: ${decryptError?.message || decryptError}`);
       }
-      const passphrase = apiKeys.passphrase ? this.decrypt(apiKeys.api_secret) : '';
+      // NOTE: passphrase column is used by OKX and also stores BTCC token (optional/required for private endpoints)
+      const passphrase = apiKeys.passphrase ? this.decrypt(apiKeys.passphrase) : '';
       
       const tradingType = bot.tradingType || bot.trading_type || 'spot';
       
@@ -8927,14 +8932,307 @@ class BotExecutor {
         // TODO: Add balance check for MEXC (similar to Bybit/Bitunix)
         // For now, MEXC will place orders without balance check (like OKX)
         return await this.placeMEXCOrder(apiKey, apiSecret, bot.symbol, tradeSignal.side, amount, price, tradingType, bot);
+      } else if (exchange === 'btcc') {
+        // BTCC: token-based auth; token stored in passphrase column
+        return await this.placeBTCCOrder(apiKey, apiSecret, passphrase, bot.symbol, tradeSignal.side, amount, price, tradingType, bot);
       } else {
-      throw new Error(`Unsupported exchange: ${bot.exchange || 'unknown'} (normalized: ${exchange}). Supported exchanges: bybit, bitunix, okx, mexc`);
+      throw new Error(`Unsupported exchange: ${bot.exchange || 'unknown'} (normalized: ${exchange}). Supported exchanges: bybit, bitunix, okx, mexc, btcc`);
     }
     }
     } catch (error) {
       console.error('Order placement error:', error);
       throw error;
     }
+  }
+
+  // -----------------------------
+  // BTCC (Futures REST) helpers
+  // Base URL per BTCC integration guide:
+  // Trading: https://api1.btloginc.com:9081
+  // Signature: MD5 of sorted query params + secret_key, then send as `sign` query param.
+  // Token-based auth: token returned from /v1/user/login
+  // -----------------------------
+  private btccEncodeParams(params: Record<string, any>): string {
+    return Object.entries(params)
+      .filter(([, v]) => v !== undefined && v !== null && `${v}`.length > 0)
+      .map(([k, v]) => [k, `${v}`] as const)
+      .sort(([a], [b]) => a.localeCompare(b)) // ASCII order
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+      .join('&');
+  }
+
+  private btccSign(params: Record<string, any>, secretKey: string): string {
+    const signingParams: Record<string, any> = { ...params, secret_key: secretKey };
+    const requestString = this.btccEncodeParams(signingParams);
+    return md5(requestString);
+  }
+
+  private async btccRequest(path: string, apiKey: string, apiSecret: string, params: Record<string, any>, method: 'GET' | 'POST' = 'GET'): Promise<any> {
+    const baseUrl = 'https://api1.btloginc.com:9081';
+    const sign = this.btccSign({ ...params, api_key: apiKey }, apiSecret);
+    // Their spec shows secret_key included in params and also included in signature string.
+    const query = this.btccEncodeParams({ ...params, api_key: apiKey, secret_key: apiSecret, sign });
+    const url = `${baseUrl}${path}?${query}`;
+
+    const resp = await fetch(url, { method });
+    const text = await resp.text();
+    let data: any = null;
+    try { data = JSON.parse(text); } catch { /* ignore */ }
+
+    if (!resp.ok) {
+      throw new Error(`BTCC HTTP ${resp.status}: ${text.substring(0, 200)}`);
+    }
+    if (data?.code !== 0) {
+      throw new Error(`BTCC API error: ${data?.msg || text.substring(0, 200)}`);
+    }
+    return data;
+  }
+
+  private async btccGetAccountId(apiKey: string, apiSecret: string, token: string): Promise<number> {
+    const data = await this.btccRequest('/v1/user/keepalive', apiKey, apiSecret, { token }, 'GET');
+    const accountId = Number(data?.accountid || data?.account?.id || 0);
+    if (!accountId) throw new Error('BTCC keepalive did not return accountid');
+    return accountId;
+  }
+
+  private async btccResolveProductName(apiKey: string, apiSecret: string, token: string, desiredSymbol: string): Promise<string> {
+    // If user already stored a full BTCC product name (contains '/'), use it directly.
+    if (desiredSymbol.includes('/')) return desiredSymbol;
+
+    const data = await this.btccRequest('/v1/config/symbollist', apiKey, apiSecret, { token }, 'GET');
+    const symbols: any[] = data?.symbols || [];
+    const needle = desiredSymbol.toUpperCase();
+
+    // Prefer enabled + tradable symbols containing BTCUSDT, ETHUSDT, etc.
+    const match =
+      symbols.find(s => (s?.tradable === 1 || s?.tradable === 2 || s?.tradable === 3) && typeof s?.name === 'string' && s.name.toUpperCase().includes(needle)) ||
+      symbols.find(s => typeof s?.name === 'string' && s.name.toUpperCase().includes(needle));
+
+    if (!match?.name) {
+      throw new Error(`BTCC symbol not found in symbollist: ${desiredSymbol}. Try using full product name from /v1/config/symbollist.`);
+    }
+    return match.name;
+  }
+
+  private async btccResolveSymbolMeta(apiKey: string, apiSecret: string, token: string, desiredSymbol: string): Promise<{ name: string; digits: number; volumes_step: number; volumes_min: number; stop_level: number }> {
+    // If full product name is already provided, we still try to find its meta.
+    const data = await this.btccRequest('/v1/config/symbollist', apiKey, apiSecret, { token }, 'GET');
+    const symbols: any[] = data?.symbols || [];
+
+    const needle = desiredSymbol.toUpperCase();
+    const match =
+      symbols.find(s => typeof s?.name === 'string' && s.name.toUpperCase() === needle) ||
+      symbols.find(s => typeof s?.name === 'string' && s.name.toUpperCase().includes(needle));
+
+    const name = match?.name || (desiredSymbol.includes('/') ? desiredSymbol : await this.btccResolveProductName(apiKey, apiSecret, token, desiredSymbol));
+    const digits = Number(match?.digits ?? 2);
+    const volumes_step = Number(match?.volumes_step ?? 0.01);
+    const volumes_min = Number(match?.volumes_min ?? 0.01);
+    const stop_level = Number(match?.stop_level ?? 0);
+
+    return { name, digits, volumes_step, volumes_min, stop_level };
+  }
+
+  private btccSideToDirection(side: string): 1 | 2 {
+    const s = (side || '').toLowerCase();
+    // BTCC: direction 1=Buy, 2=Sell
+    if (s === 'buy' || s === 'long') return 1;
+    if (s === 'sell' || s === 'short') return 2;
+    // fallback: treat unknown as buy
+    return 1;
+  }
+
+  private async placeBTCCOrder(apiKey: string, apiSecret: string, token: string, symbol: string, side: string, amount: number, price: number, tradingType: string = 'futures', bot: any = null): Promise<any> {
+    if (!token) {
+      throw new Error('BTCC requires a token (store it in Settings → BTCC → Token).');
+    }
+
+    // BTCC endpoints are futures-oriented; treat all as futures for now.
+    const accountid = await this.btccGetAccountId(apiKey, apiSecret, token);
+    const meta = await this.btccResolveSymbolMeta(apiKey, apiSecret, token, symbol);
+    const productName = meta.name;
+    const direction = this.btccSideToDirection(side);
+
+    let leverage = bot?.leverage ?? bot?.leverage_ratio ?? 1;
+    if (!leverage || leverage < 1) leverage = 1;
+
+    // BTCC uses request_volume and request_price.
+    // For market-style requests in this executor, `price` may be 0; BTCC still requires a value.
+    let entryPrice = Number(price) || 0;
+    if (!entryPrice || entryPrice <= 0) {
+      // Use a proxy price feed for now (Bybit). BTCC does not provide a public ticker in the docs you shared.
+      entryPrice = await MarketDataFetcher.fetchPrice(
+        symbol.includes('/') ? symbol.split('/').pop()?.replace(/[^A-Z0-9]/gi, '') || symbol : symbol,
+        'bybit',
+        'futures'
+      );
+    }
+
+    // Round volume to BTCC step/min
+    const step = meta.volumes_step > 0 ? meta.volumes_step : 0.01;
+    let request_volume = Math.floor(Number(amount) / step) * step;
+    request_volume = Math.max(request_volume, meta.volumes_min || step);
+    request_volume = Number(request_volume.toFixed(step < 1 ? (step.toString().split('.')[1]?.length || 0) : 0));
+
+    // Price rounding by digits
+    const request_price = Number(entryPrice.toFixed(meta.digits >= 0 ? meta.digits : 2));
+
+    // Optional TP/SL:
+    // In this codebase bot.stop_loss / bot.take_profit are percentages (not absolute prices).
+    const stopLossPct = bot?.stop_loss ?? bot?.stopLoss ?? null;
+    const takeProfitPct = bot?.take_profit ?? bot?.takeProfit ?? null;
+
+    let stop_loss: number | undefined;
+    let take_profit: number | undefined;
+    if (stopLossPct !== null && takeProfitPct !== null) {
+      const slp = Number(stopLossPct);
+      const tpp = Number(takeProfitPct);
+
+      if (Number.isFinite(slp) && slp > 0 && Number.isFinite(tpp) && tpp > 0) {
+        if (direction === 1) {
+          // long/buy
+          stop_loss = Number((request_price * (1 - slp / 100)).toFixed(meta.digits));
+          take_profit = Number((request_price * (1 + tpp / 100)).toFixed(meta.digits));
+        } else {
+          // short/sell
+          stop_loss = Number((request_price * (1 + slp / 100)).toFixed(meta.digits));
+          take_profit = Number((request_price * (1 - tpp / 100)).toFixed(meta.digits));
+        }
+      }
+    }
+
+    const data = await this.btccRequest(
+      '/v1/account/openposition',
+      apiKey,
+      apiSecret,
+      {
+        token,
+        accountid,
+        direction,
+        symbol: productName,
+        request_volume,
+        request_price,
+        multiple: leverage,
+        ...(stop_loss !== undefined ? { stop_loss } : {}),
+        ...(take_profit !== undefined ? { take_profit } : {}),
+      },
+      'POST'
+    );
+
+    // Normalize a response object similar to other exchanges
+    return {
+      exchange: 'btcc',
+      success: true,
+      // BTCC returns a position object. We treat its `id` as the exchange_position_id.
+      positionId: data?.position?.id || null,
+      orderId: data?.position?.deal_id || data?.position?.order_refid || null,
+      sltp_orders: data?.sltp_orders || [],
+      raw: data,
+    };
+  }
+
+  private btccCloseDirectionFromPositionDirection(positionDirection: number): 1 | 2 {
+    // To close: send the opposite direction
+    return positionDirection === 1 ? 2 : 1;
+  }
+
+  private async closeBTCCPositionMarket(apiKey: string, apiSecret: string, token: string, symbol: string, positionId: number, positionDirection: number, volume: number): Promise<any> {
+    if (!token) throw new Error('BTCC requires a token to close positions.');
+
+    const accountid = await this.btccGetAccountId(apiKey, apiSecret, token);
+    const meta = await this.btccResolveSymbolMeta(apiKey, apiSecret, token, symbol);
+    const productName = meta.name;
+
+    // Get a market-ish price for request_price (use proxy feed)
+    const currentPrice = await MarketDataFetcher.fetchPrice(
+      symbol.includes('/') ? symbol.split('/').pop()?.replace(/[^A-Z0-9]/gi, '') || symbol : symbol,
+      'bybit',
+      'futures'
+    );
+
+    // volume rounding
+    const step = meta.volumes_step > 0 ? meta.volumes_step : 0.01;
+    let request_volume = Math.floor(Number(volume) / step) * step;
+    request_volume = Math.max(request_volume, meta.volumes_min || step);
+    request_volume = Number(request_volume.toFixed(step < 1 ? (step.toString().split('.')[1]?.length || 0) : 0));
+
+    const direction = this.btccCloseDirectionFromPositionDirection(Number(positionDirection));
+
+    const data = await this.btccRequest(
+      '/v1/account/closeposition',
+      apiKey,
+      apiSecret,
+      {
+        token,
+        accountid,
+        positionid: positionId,
+        direction,
+        symbol: productName,
+        request_volume,
+        request_price: Number(Number(currentPrice).toFixed(meta.digits)),
+      },
+      'POST'
+    );
+
+    return { exchange: 'btcc', success: true, raw: data };
+  }
+
+  private async updateBTCCPositionStops(apiKey: string, apiSecret: string, token: string, symbol: string, positionId: number, stopLossPrice?: number, takeProfitPrice?: number): Promise<any> {
+    if (!token) throw new Error('BTCC requires a token to update TP/SL.');
+
+    const accountid = await this.btccGetAccountId(apiKey, apiSecret, token);
+    const meta = await this.btccResolveSymbolMeta(apiKey, apiSecret, token, symbol);
+    const productName = meta.name;
+
+    const data = await this.btccRequest(
+      '/v1/account/updateposition',
+      apiKey,
+      apiSecret,
+      {
+        token,
+        accountid,
+        id: positionId,
+        symbol: productName,
+        stop_loss: stopLossPrice !== undefined ? Number(Number(stopLossPrice).toFixed(meta.digits)) : 0,
+        take_profit: takeProfitPrice !== undefined ? Number(Number(takeProfitPrice).toFixed(meta.digits)) : 0,
+      },
+      'POST'
+    );
+
+    return { exchange: 'btcc', success: true, raw: data };
+  }
+
+  private async createBTCCLimitCloseOrder(apiKey: string, apiSecret: string, token: string, symbol: string, positionId: number, positionDirection: number, volume: number, targetPrice: number, leverage: number): Promise<any> {
+    if (!token) throw new Error('BTCC requires a token to create pending orders.');
+    const accountid = await this.btccGetAccountId(apiKey, apiSecret, token);
+    const meta = await this.btccResolveSymbolMeta(apiKey, apiSecret, token, symbol);
+
+    const step = meta.volumes_step > 0 ? meta.volumes_step : 0.01;
+    let request_volume = Math.floor(Number(volume) / step) * step;
+    request_volume = Math.max(request_volume, meta.volumes_min || step);
+    request_volume = Number(request_volume.toFixed(step < 1 ? (step.toString().split('.')[1]?.length || 0) : 0));
+
+    const direction = this.btccCloseDirectionFromPositionDirection(Number(positionDirection));
+
+    const data = await this.btccRequest(
+      '/v1/account/openpending',
+      apiKey,
+      apiSecret,
+      {
+        token,
+        accountid,
+        direction,
+        type: 3, // Limit close
+        symbol: meta.name,
+        request_volume,
+        request_price: Number(Number(targetPrice).toFixed(meta.digits)),
+        positionid: positionId,
+        multiple: leverage || 1,
+      },
+      'POST'
+    );
+
+    return { exchange: 'btcc', success: true, raw: data };
   }
   
   private async placeBybitOrder(apiKey: string, apiSecret: string, symbol: string, side: string, amount: number, price: number, tradingType: string = 'spot', bot: any = null, tradeSignal: any = null): Promise<any> {
@@ -15525,6 +15823,8 @@ class BotExecutor {
         .eq('bot_id', bot.id)
         .eq('symbol', bot.symbol)
         .eq('exchange', bot.exchange)
+        // Hedging mode (B): track long/short separately per bot+symbol+exchange
+        .eq('side', normalizedSide)
         .eq('status', 'open')
         .maybeSingle();
       
@@ -15621,6 +15921,8 @@ class BotExecutor {
         .eq('bot_id', bot.id)
         .eq('symbol', bot.symbol)
         .eq('exchange', bot.exchange)
+        // Hedging mode (B): close the matching side only
+        .eq('side', normalizedSide)
         .eq('status', 'open')
         .maybeSingle();
       
@@ -15720,33 +16022,71 @@ class BotExecutor {
         return;
       }
       
+      // Decrypt API keys (api_keys values are stored encrypted)
+      const decryptedApiKey = this.decrypt(apiKeys.api_key);
+      const decryptedApiSecret = this.decrypt(apiKeys.api_secret);
+      const decryptedToken = apiKeys.passphrase ? this.decrypt(apiKeys.passphrase) : '';
+
       // Fetch positions from exchange
-      const baseUrl = 'https://api.bybit.com';
-      const timestamp = Date.now().toString();
-      const recvWindow = '5000';
-      const category = tradingType === 'futures' ? 'linear' : tradingType === 'spot' ? 'spot' : 'linear';
-      
-      const queryParams = `category=${category}&symbol=${symbol}`;
-      const signaturePayload = timestamp + apiKeys.api_key + recvWindow + queryParams;
-      const signature = await this.createBybitSignature(signaturePayload, apiKeys.api_secret);
-      
-      const response = await fetch(`${baseUrl}/v5/position/list?${queryParams}`, {
-        method: 'GET',
-        headers: this.buildBybitHeaders(String(apiKeys.api_key || ''), timestamp, recvWindow, String(signature || '')),
-      });
-      
-      if (!response.ok) {
-        console.warn(`⚠️ Failed to fetch positions from exchange: ${response.status}`);
+      let exchangePositions: any[] = [];
+
+      if ((exchange || '').toLowerCase() === 'bybit') {
+        const baseUrl = 'https://api.bybit.com';
+        const timestamp = Date.now().toString();
+        const recvWindow = '5000';
+        const category = tradingType === 'futures' ? 'linear' : tradingType === 'spot' ? 'spot' : 'linear';
+        
+        const queryParams = `category=${category}&symbol=${symbol}`;
+        const signaturePayload = timestamp + decryptedApiKey + recvWindow + queryParams;
+        const signature = await this.createBybitSignature(signaturePayload, decryptedApiSecret);
+        
+        const response = await fetch(`${baseUrl}/v5/position/list?${queryParams}`, {
+          method: 'GET',
+          headers: this.buildBybitHeaders(String(decryptedApiKey || ''), timestamp, recvWindow, String(signature || '')),
+        });
+        
+        if (!response.ok) {
+          console.warn(`⚠️ Failed to fetch positions from exchange: ${response.status}`);
+          return;
+        }
+        
+        const data = await response.json();
+        if (data.retCode !== 0 || !data.result?.list) {
+          console.warn(`⚠️ Exchange position fetch error: ${data.retMsg || 'Unknown error'}`);
+          return;
+        }
+        
+        exchangePositions = data.result.list.filter((p: any) => parseFloat(p.size || 0) !== 0);
+      } else if ((exchange || '').toLowerCase() === 'btcc') {
+        if (!decryptedToken) {
+          console.warn('⚠️ BTCC position sync skipped: missing token (stored in api_keys.passphrase).');
+          return;
+        }
+        const accountid = await this.btccGetAccountId(decryptedApiKey, decryptedApiSecret, decryptedToken);
+
+        // Pull multiple pages to be safe
+        const pageSize = 50;
+        const maxPages = 5;
+        const productName = await this.btccResolveProductName(decryptedApiKey, decryptedApiSecret, decryptedToken, symbol);
+
+        const allPositions: any[] = [];
+        for (let pageNo = 1; pageNo <= maxPages; pageNo++) {
+          const res = await this.btccRequest(
+            '/v1/account/positionlist',
+            decryptedApiKey,
+            decryptedApiSecret,
+            { token: decryptedToken, accountid, symbol: productName, pageNo, pageSize },
+            'GET'
+          );
+          const list: any[] = res?.positions || [];
+          allPositions.push(...list);
+          if (list.length < pageSize) break;
+        }
+        exchangePositions = allPositions.filter((p: any) => (p?.status === 1 || p?.status === 0) && parseFloat(p?.volume || 0) !== 0);
+      } else {
+        console.warn(`⚠️ Position sync not implemented for exchange: ${exchange}`);
         return;
       }
-      
-      const data = await response.json();
-      if (data.retCode !== 0 || !data.result?.list) {
-        console.warn(`⚠️ Exchange position fetch error: ${data.retMsg || 'Unknown error'}`);
-        return;
-      }
-      
-      const exchangePositions = data.result.list.filter((p: any) => parseFloat(p.size || 0) !== 0);
       
       // Get database positions
       const { data: dbPositions } = await this.supabaseClient
@@ -15759,12 +16099,28 @@ class BotExecutor {
       
       // Update or close positions based on exchange data
       for (const dbPos of dbPositions || []) {
-        const exchangePos = exchangePositions.find((ep: any) => 
-          ep.symbol === symbol && 
-          (ep.side?.toLowerCase() === dbPos.side || 
-           (ep.side === 'Buy' && dbPos.side === 'long') ||
-           (ep.side === 'Sell' && dbPos.side === 'short'))
-        );
+        const exchangePos = exchangePositions.find((ep: any) => {
+          // Bybit format
+          if (ep.symbol && (exchange || '').toLowerCase() === 'bybit') {
+            return (
+              ep.symbol === symbol &&
+              (ep.side?.toLowerCase() === dbPos.side ||
+                (ep.side === 'Buy' && dbPos.side === 'long') ||
+                (ep.side === 'Sell' && dbPos.side === 'short'))
+            );
+          }
+
+          // BTCC format: `symbol` is product name, direction is numeric
+          if ((exchange || '').toLowerCase() === 'btcc') {
+            const dir = Number(ep?.direction);
+            const side = dir === 1 ? 'long' : dir === 2 ? 'short' : '';
+            const epSymbol = String(ep?.symbol || '').toUpperCase();
+            const wanted = String(symbol || '').toUpperCase();
+            return epSymbol.includes(wanted) && side === dbPos.side;
+          }
+
+          return false;
+        });
         
         if (!exchangePos || parseFloat(exchangePos.size || 0) === 0) {
           // Position closed on exchange, close in database
@@ -15779,8 +16135,13 @@ class BotExecutor {
           }
         } else {
           // Update position with current price and unrealized PnL
-          const currentPrice = parseFloat(exchangePos.markPrice || exchangePos.lastPrice || 0);
-          const unrealizedPnL = parseFloat(exchangePos.unrealisedPnl || 0);
+          const currentPrice = (exchange || '').toLowerCase() === 'btcc'
+            ? parseFloat(exchangePos.exec_price || exchangePos.open_price || dbPos.current_price || 0)
+            : parseFloat(exchangePos.markPrice || exchangePos.lastPrice || 0);
+
+          const unrealizedPnL = (exchange || '').toLowerCase() === 'btcc'
+            ? parseFloat(exchangePos.profit || 0)
+            : parseFloat(exchangePos.unrealisedPnl || 0);
           
           if (currentPrice > 0) {
             await this.supabaseClient
@@ -20265,9 +20626,9 @@ serve(async (req) => {
 
             // Set SL/TP for futures/linear orders if provided
             if ((order.tradingType === 'futures' || order.tradingType === 'linear') && 
-                (order.exchange === 'bybit' || order.exchange === 'bitunix') && 
+                (order.exchange === 'bybit' || order.exchange === 'bitunix' || order.exchange === 'btcc') && 
                 order.stopLoss && order.takeProfit && 
-                orderResult.orderId) {
+                (orderResult.orderId || orderResult.positionId)) {
               try {
                 console.log(`🛡️ Setting SL/TP for manual order (${order.exchange}): SL=${order.stopLoss}%, TP=${order.takeProfit}%`);
                 
@@ -20344,6 +20705,33 @@ serve(async (req) => {
                   } else {
                     console.warn('⚠️ Could not fetch Bitunix position, skipping SL/TP (position may not have been created yet)');
                     console.warn('   Background retry will attempt to set SL/TP once position appears');
+                  }
+                } else if (order.exchange === 'btcc') {
+                  // BTCC: update TP/SL on the position via /v1/account/updateposition
+                  const token = decryptedPassphrase || '';
+                  if (!token) {
+                    console.warn('⚠️ BTCC SL/TP skipped: missing token (stored in api_keys.passphrase)');
+                  } else if (!orderResult.positionId) {
+                    console.warn('⚠️ BTCC SL/TP skipped: missing positionId from openposition response');
+                  } else {
+                    const slPct = Number(order.stopLoss);
+                    const tpPct = Number(order.takeProfit);
+                    const entry = Number(priceForConversion);
+                    const dir = normalizedSide === 'buy' ? 1 : 2;
+                    const stopLossPrice = dir === 1 ? entry * (1 - slPct / 100) : entry * (1 + slPct / 100);
+                    const takeProfitPrice = dir === 1 ? entry * (1 + tpPct / 100) : entry * (1 - tpPct / 100);
+
+                    const updateStops = (executor as any).updateBTCCPositionStops.bind(executor);
+                    await updateStops(
+                      decryptedApiKey,
+                      decryptedApiSecret,
+                      token,
+                      order.symbol,
+                      Number(orderResult.positionId),
+                      stopLossPrice,
+                      takeProfitPrice
+                    );
+                    console.log(`✅ SL/TP set successfully for manual BTCC order`);
                   }
                 }
               } catch (slTpError: any) {
