@@ -1,4 +1,7 @@
 {
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": null,
   "redirects": [
     {
       "source": "/favicon.ico",
@@ -66,7 +69,11 @@
   ],
   "rewrites": [
     {
-      "source": "/((?!assets/|favicon\\.svg|favicon\\.ico|robots\\.txt|sitemap\\.xml).*)",
+      "source": "/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/((?!assets/|favicon\\.svg|favicon\\.ico|robots\\.txt|sitemap\\.xml).+)",
       "destination": "/index.html"
     }
   ],
