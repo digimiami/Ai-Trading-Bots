@@ -594,7 +594,12 @@ export default function BotActivityPage() {
         {/* Activity Report Generator */}
         <ActivityReportGenerator />
 
-        {/* Errors Report Generator */}
+        {/* Errors Report Generator — detailed reports of bot errors and warnings */}
+        <div className="flex items-center justify-between mb-2">
+          <a href="#errors-report" className="text-sm text-blue-600 hover:underline">
+            Jump to Errors Report Generator
+          </a>
+        </div>
         <ErrorsReportGenerator />
 
         {/* Bot Performance Report */}

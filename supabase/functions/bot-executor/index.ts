@@ -16153,6 +16153,24 @@ class BotExecutor {
                 updated_at: TimeSync.getCurrentTimeISO()
               })
               .eq('id', dbPos.id);
+
+            // Apply advanced exit/trailing features to LIVE exchange positions.
+            // This can update stops on the exchange (Bybit/BTCC) and/or trigger a market close (Smart Exit).
+            try {
+              await this.applyAdvancedExitAndTrailingLivePosition(
+                bot,
+                dbPos,
+                {
+                  currentPrice,
+                  exchangePos,
+                  decryptedApiKey,
+                  decryptedApiSecret,
+                  decryptedToken,
+                },
+              );
+            } catch (advErr) {
+              console.warn(`⚠️ Advanced exit/trailing skipped for position ${dbPos.id}:`, advErr);
+            }
           }
         }
       }
@@ -16160,6 +16178,377 @@ class BotExecutor {
       console.log(`✅ Position sync completed for ${bot.symbol}`);
     } catch (error: any) {
       console.error('❌ Error syncing positions from exchange:', error);
+    }
+  }
+
+  /**
+   * Apply advanced exit + trailing features to a REAL exchange position.
+   *
+   * Notes:
+   * - Requires `trading_positions.metadata` (see migration 20260128_add_trading_positions_metadata.sql)
+   * - Bybit: updates stops via /v5/position/trading-stop and can close via reduceOnly market order
+   * - BTCC: updates stops via /v1/account/updateposition and can close via /v1/account/closeposition
+   * - Bitunix: trailing stop updates are not reliably supported yet (needs cancel/replace TP/SL orders); we only update DB metadata and log.
+   */
+  private async applyAdvancedExitAndTrailingLivePosition(
+    bot: any,
+    dbPos: any,
+    ctx: {
+      currentPrice: number;
+      exchangePos: any;
+      decryptedApiKey: string;
+      decryptedApiSecret: string;
+      decryptedToken: string;
+    },
+  ): Promise<void> {
+    const exchange = String(bot.exchange || dbPos.exchange || '').toLowerCase();
+    const tradingType = String(dbPos.trading_type || bot.tradingType || bot.trading_type || 'futures').toLowerCase();
+
+    // Feature flags (stored on trading_bots)
+    const enableDynamicTrailing = bot.enable_dynamic_trailing || false;
+    const enableTrailingTP = bot.enable_trailing_take_profit || false;
+    const trailingTPATR = parseFloat(bot.trailing_take_profit_atr || 1.0);
+    const trailAfterTp1ATR = typeof bot.trail_after_tp1_atr === 'number' ? bot.trail_after_tp1_atr : null;
+    const smartExitEnabled = bot.smart_exit_enabled || false;
+    const smartExitRetracementPct = parseFloat(bot.smart_exit_retracement_pct || 2.0);
+
+    // If nothing enabled, bail early.
+    if (!enableDynamicTrailing && !enableTrailingTP && !smartExitEnabled) return;
+
+    const side = String(dbPos.side || '').toLowerCase(); // long|short
+    const symbol = String(dbPos.symbol || bot.symbol || '');
+    const entryPrice = parseFloat(dbPos.entry_price || 0);
+    const currentPrice = ctx.currentPrice;
+    if (!symbol || !side || !entryPrice || !currentPrice) return;
+
+    const positionMetadata = dbPos.metadata || {};
+    let highestPrice = parseFloat(positionMetadata.highest_price || dbPos.entry_price);
+    let lowestPrice = parseFloat(positionMetadata.lowest_price || dbPos.entry_price);
+    const tp1Hit = positionMetadata.tp1_hit === true;
+
+    // Track best/worst price since entry
+    highestPrice = Math.max(highestPrice, currentPrice);
+    lowestPrice = Math.min(lowestPrice, currentPrice);
+
+    let stopLossPrice = dbPos.stop_loss_price != null ? parseFloat(dbPos.stop_loss_price) : 0;
+    const takeProfitPrice = dbPos.take_profit_price != null ? parseFloat(dbPos.take_profit_price) : 0;
+    const existingSL = dbPos.stop_loss_price != null ? parseFloat(dbPos.stop_loss_price) : 0;
+    const existingTP = dbPos.take_profit_price != null ? parseFloat(dbPos.take_profit_price) : 0;
+    let advancedAction: any = null;
+
+    // 1) TRAILING TAKE-PROFIT (ATR): trail STOP LOSS behind price.
+    // For LIVE trading, use price highs/lows instead of paper equity highs.
+    const effectiveTrailingATR = (tp1Hit && trailAfterTp1ATR != null) ? trailAfterTp1ATR : trailingTPATR;
+    if (enableTrailingTP) {
+      try {
+        // Only do ATR fetch when we're near best price (reduces calls)
+        const nearBest = side === 'long'
+          ? currentPrice >= highestPrice * 0.99
+          : currentPrice <= lowestPrice * 1.01;
+
+        if (nearBest) {
+          const klines = await MarketDataFetcher.fetchKlines(symbol, exchange, '1h', 20);
+          if (klines.length >= 14) {
+            const highs = klines.map(k => k[2]);
+            const lows = klines.map(k => k[3]);
+            const closes = klines.map(k => k[4]);
+            const atr = this.calculateATR(highs, lows, closes, 14);
+
+            if (atr > 0) {
+              const trailingDistance = atr * effectiveTrailingATR;
+              if (side === 'long') {
+                const newTrailingStop = currentPrice - trailingDistance;
+                if (newTrailingStop > stopLossPrice) {
+                  stopLossPrice = newTrailingStop;
+                  advancedAction = {
+                    type: 'trailing_atr',
+                    atr,
+                    atr_multiplier: effectiveTrailingATR,
+                    trailing_distance: trailingDistance,
+                  };
+                }
+              } else {
+                const newTrailingStop = currentPrice + trailingDistance;
+                if (stopLossPrice === 0 || newTrailingStop < stopLossPrice) {
+                  stopLossPrice = newTrailingStop;
+                  advancedAction = {
+                    type: 'trailing_atr',
+                    atr,
+                    atr_multiplier: effectiveTrailingATR,
+                    trailing_distance: trailingDistance,
+                  };
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn(`⚠️ [LIVE TRAILING TP] ATR trailing failed for ${symbol}:`, e);
+      }
+    }
+
+    // 2) DYNAMIC UPWARD TRAILING (price-based approximation for live)
+    // Paper mode uses "highest equity". For live we approximate with best price move since entry.
+    if (enableDynamicTrailing) {
+      const bestMovePct = side === 'long'
+        ? ((highestPrice - entryPrice) / entryPrice) * 100
+        : ((entryPrice - lowestPrice) / entryPrice) * 100;
+
+      if (bestMovePct > 0 && stopLossPrice > 0) {
+        const multiplier = 1 + (bestMovePct / 100);
+        if (side === 'long') {
+          const newDynamicStop = entryPrice + (stopLossPrice - entryPrice) * multiplier;
+          if (newDynamicStop > stopLossPrice && newDynamicStop < currentPrice) {
+            stopLossPrice = newDynamicStop;
+            advancedAction = {
+              type: 'dynamic_trailing',
+              best_move_pct: bestMovePct,
+              multiplier,
+            };
+          }
+        } else {
+          const newDynamicStop = entryPrice - (entryPrice - stopLossPrice) * multiplier;
+          if ((stopLossPrice === 0 || newDynamicStop < stopLossPrice) && newDynamicStop > currentPrice) {
+            stopLossPrice = newDynamicStop;
+            advancedAction = {
+              type: 'dynamic_trailing',
+              best_move_pct: bestMovePct,
+              multiplier,
+            };
+          }
+        }
+      }
+    }
+
+    // 3) SMART EXIT (retracement)
+    if (smartExitEnabled) {
+      const retracementPct = side === 'long'
+        ? ((highestPrice - currentPrice) / highestPrice) * 100
+        : ((currentPrice - lowestPrice) / lowestPrice) * 100;
+
+      if (retracementPct >= smartExitRetracementPct) {
+        console.log(`🚨 [LIVE SMART EXIT] ${symbol} ${side} retraced ${retracementPct.toFixed(2)}% (threshold ${smartExitRetracementPct}%) → closing at market`);
+        if (bot?.id) {
+          await this.addBotLog(bot.id, {
+            level: 'warning',
+            category: 'trade',
+            message: `🚨 Smart Exit (LIVE): ${symbol} ${side} retraced ${retracementPct.toFixed(2)}% → market close`,
+            details: {
+              feature: 'smart_exit',
+              exchange,
+              symbol,
+              side,
+              retracement_pct: retracementPct,
+              threshold_pct: smartExitRetracementPct,
+              highest_price: highestPrice,
+              lowest_price: lowestPrice,
+              entry_price: entryPrice,
+              current_price: currentPrice,
+            },
+          });
+        }
+        await this.closeLivePositionMarket(bot, dbPos, ctx);
+        return;
+      }
+    }
+
+    // Persist metadata updates regardless of whether we changed stops
+    const updatedMetadata = {
+      ...positionMetadata,
+      highest_price: highestPrice,
+      lowest_price: lowestPrice,
+      last_advanced_action: advancedAction,
+      last_advanced_seen_at: new Date().toISOString(),
+    };
+
+    // If stop loss changed meaningfully, update on exchange (where supported) and in DB
+    const slChanged = stopLossPrice > 0 && (existingSL === 0 || Math.abs(stopLossPrice - existingSL) / Math.max(1, existingSL) > 0.00005);
+
+    const updatePayload: any = { metadata: updatedMetadata, updated_at: TimeSync.getCurrentTimeISO() };
+    if (slChanged) {
+      updatePayload.stop_loss_price = stopLossPrice;
+    }
+
+    // Update DB first (so UI reflects trailing even if exchange update fails)
+    await this.supabaseClient.from('trading_positions').update(updatePayload).eq('id', dbPos.id);
+
+    if (!slChanged) return;
+
+    if (bot?.id) {
+      await this.addBotLog(bot.id, {
+        level: 'info',
+        category: 'trade',
+        message: `📈 Trailing updated SL (LIVE): ${symbol} ${side} ${existingSL ? `${existingSL} → ` : ''}${stopLossPrice}`,
+        details: {
+          feature: advancedAction?.type || 'trailing',
+          exchange,
+          symbol,
+          side,
+          entry_price: entryPrice,
+          current_price: currentPrice,
+          old_stop_loss: existingSL || null,
+          new_stop_loss: stopLossPrice,
+          take_profit: existingTP || null,
+          meta: advancedAction,
+        },
+      });
+    }
+
+    // Now update the exchange stops
+    if (exchange === 'bybit') {
+      await this.updateBybitTradingStopPrices(
+        ctx.decryptedApiKey,
+        ctx.decryptedApiSecret,
+        symbol,
+        stopLossPrice,
+        takeProfitPrice || undefined,
+        tradingType,
+      );
+    } else if (exchange === 'btcc') {
+      if (!ctx.decryptedToken) {
+        console.warn(`⚠️ [LIVE TRAILING] BTCC token missing; cannot update stops for ${symbol}`);
+        return;
+      }
+      const positionId = dbPos.exchange_position_id ? Number(dbPos.exchange_position_id) : null;
+      if (!positionId || Number.isNaN(positionId)) {
+        console.warn(`⚠️ [LIVE TRAILING] BTCC positionId missing for ${symbol}; cannot update stops`);
+        return;
+      }
+      await this.updateBTCCPositionStops(ctx.decryptedApiKey, ctx.decryptedApiSecret, ctx.decryptedToken, symbol, positionId, stopLossPrice, takeProfitPrice || undefined);
+    } else if (exchange === 'bitunix') {
+      console.warn(`⚠️ [LIVE TRAILING] Bitunix trailing stop updates are not enabled yet (needs TP/SL amend/cancel+replace support). DB updated only for ${symbol}.`);
+      if (bot?.id) {
+        await this.addBotLog(bot.id, {
+          level: 'warning',
+          category: 'trade',
+          message: `⚠️ Trailing (LIVE) computed but NOT applied on Bitunix: ${symbol} (${existingSL || 'n/a'} → ${stopLossPrice})`,
+          details: {
+            feature: advancedAction?.type || 'trailing',
+            exchange,
+            symbol,
+            side,
+            reason: 'Bitunix TP/SL amend/cancel+replace not implemented; DB only',
+            old_stop_loss: existingSL || null,
+            new_stop_loss: stopLossPrice,
+            meta: advancedAction,
+          },
+        });
+      }
+    }
+  }
+
+  private async updateBybitTradingStopPrices(
+    apiKey: string,
+    apiSecret: string,
+    symbol: string,
+    stopLossPrice: number,
+    takeProfitPrice: number | undefined,
+    tradingType: string,
+  ): Promise<void> {
+    const baseUrl = 'https://api.bybit.com';
+    const timestamp = Date.now().toString();
+    const recvWindow = '5000';
+
+    const category = tradingType === 'spot' ? 'spot' : 'linear';
+    const { tickSize } = getSymbolSteps(symbol);
+    const tickDecimals = tickSize < 1 ? (tickSize.toString().split('.')[1]?.length || 0) : 0;
+
+    const requestBody: any = {
+      category,
+      symbol,
+      stopLoss: Number(stopLossPrice.toFixed(tickDecimals)).toString(),
+      positionIdx: 0,
+    };
+
+    if (takeProfitPrice != null && takeProfitPrice > 0) {
+      requestBody.takeProfit = Number(takeProfitPrice.toFixed(tickDecimals)).toString();
+    }
+
+    const signaturePayload = timestamp + apiKey + recvWindow + JSON.stringify(requestBody);
+    const signature = await this.createBybitSignature(signaturePayload, apiSecret);
+
+    const response = await fetch(`${baseUrl}/v5/position/trading-stop`, {
+      method: 'POST',
+      headers: this.buildBybitHeaders(String(apiKey || ''), timestamp, recvWindow, String(signature || '')),
+      body: JSON.stringify(requestBody),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.retCode !== 0) {
+      console.warn(`⚠️ [LIVE TRAILING] Bybit trading-stop failed for ${symbol}:`, data?.retMsg || data);
+    } else {
+      console.log(`✅ [LIVE TRAILING] Bybit stop updated for ${symbol}: SL=${requestBody.stopLoss}${requestBody.takeProfit ? ` TP=${requestBody.takeProfit}` : ''}`);
+    }
+  }
+
+  private async closeLivePositionMarket(bot: any, dbPos: any, ctx: any): Promise<void> {
+    const exchange = String(bot.exchange || dbPos.exchange || '').toLowerCase();
+    const tradingType = String(dbPos.trading_type || bot.tradingType || bot.trading_type || 'futures').toLowerCase();
+    const symbol = String(dbPos.symbol || bot.symbol || '');
+    const side = String(dbPos.side || '').toLowerCase();
+    const qty = Math.abs(parseFloat(dbPos.quantity || 0));
+    const currentPrice = Number(ctx.currentPrice || 0);
+
+    if (!symbol || !side || !qty || !currentPrice) return;
+
+    if (exchange === 'bybit') {
+      // Futures: reduceOnly market close
+      const baseUrl = 'https://api.bybit.com';
+      const timestamp = Date.now().toString();
+      const recvWindow = '5000';
+      const category = tradingType === 'spot' ? 'spot' : 'linear';
+
+      const closeSide = side === 'long' ? 'Sell' : 'Buy';
+      const { stepSize } = getSymbolSteps(symbol);
+      let formattedQty = qty;
+      if (stepSize > 0) {
+        const factor = 1 / stepSize;
+        formattedQty = Math.floor(qty * factor) / factor;
+      }
+      const stepDecimals = stepSize < 1 ? (stepSize.toString().split('.')[1]?.length || 0) : 0;
+
+      const closeOrderBody: any = {
+        category,
+        symbol,
+        side: closeSide,
+        orderType: 'Market',
+        qty: Number(formattedQty.toFixed(stepDecimals)).toString(),
+      };
+
+      if (category === 'linear') {
+        closeOrderBody.reduceOnly = true;
+        closeOrderBody.positionIdx = 0;
+      }
+
+      const sigPayload = timestamp + ctx.decryptedApiKey + recvWindow + JSON.stringify(closeOrderBody);
+      const sig = await this.createBybitSignature(sigPayload, ctx.decryptedApiSecret);
+
+      const resp = await fetch(`${baseUrl}/v5/order/create`, {
+        method: 'POST',
+        headers: this.buildBybitHeaders(String(ctx.decryptedApiKey || ''), timestamp, recvWindow, String(sig || '')),
+        body: JSON.stringify(closeOrderBody),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || data.retCode !== 0) {
+        console.warn(`⚠️ [LIVE SMART EXIT] Bybit close failed for ${symbol}:`, data?.retMsg || data);
+        return;
+      }
+      await this.trackPositionClose(bot, { id: dbPos.trade_id, side: side === 'long' ? 'buy' : 'sell' }, currentPrice, 'smart_exit');
+    } else if (exchange === 'btcc') {
+      if (!ctx.decryptedToken) {
+        console.warn(`⚠️ [LIVE SMART EXIT] BTCC token missing; cannot close ${symbol}`);
+        return;
+      }
+      const positionId = dbPos.exchange_position_id ? Number(dbPos.exchange_position_id) : null;
+      if (!positionId || Number.isNaN(positionId)) {
+        console.warn(`⚠️ [LIVE SMART EXIT] BTCC positionId missing; cannot close ${symbol}`);
+        return;
+      }
+      const direction = side === 'long' ? 1 : 2;
+      await this.closeBTCCPositionMarket(ctx.decryptedApiKey, ctx.decryptedApiSecret, ctx.decryptedToken, symbol, positionId, direction, qty);
+      await this.trackPositionClose(bot, { id: dbPos.trade_id, side: side === 'long' ? 'buy' : 'sell' }, currentPrice, 'smart_exit');
+    } else if (exchange === 'bitunix') {
+      console.warn(`⚠️ [LIVE SMART EXIT] Bitunix smart-exit market close not implemented yet for ${symbol}.`);
     }
   }
 

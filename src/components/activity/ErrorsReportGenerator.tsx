@@ -86,23 +86,42 @@ export default function ErrorsReportGenerator() {
       }
 
       // Fetch bots
-      const { data: bots } = await supabase
+      const { data: bots, error: botsError } = await supabase
         .from('trading_bots')
         .select('id, name')
         .eq('user_id', user.id);
 
+      if (botsError) throw new Error(botsError.message || 'Failed to load bots');
       const botIds = bots?.map(b => b.id) || [];
       const botMap = new Map(bots?.map(b => [b.id, b.name]) || []);
 
-      // Fetch error logs
-      const { data: errorLogs } = await supabase
+      // No bots: show empty report instead of querying with empty list
+      if (botIds.length === 0) {
+        const emptyReport: ErrorReport = {
+          generated_at: new Date().toISOString(),
+          period: { start: startDate.toISOString(), end: endDate.toISOString() },
+          summary: { total_errors: 0, unique_errors: 0, bots_with_errors: 0, critical_errors: 0, warnings: 0 },
+          errors_by_bot: [],
+          errors_by_type: [],
+          recent_errors: [],
+        };
+        setReport(emptyReport);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch error logs (limit to avoid timeouts / large responses)
+      const { data: errorLogs, error: logsError } = await supabase
         .from('bot_activity_logs')
         .select('*')
         .in('bot_id', botIds)
         .in('level', ['error', 'warning'])
         .gte('timestamp', startDate.toISOString())
         .lte('timestamp', endDate.toISOString())
-        .order('timestamp', { ascending: false });
+        .order('timestamp', { ascending: false })
+        .limit(2000);
+
+      if (logsError) throw new Error(logsError.message || 'Failed to load error logs');
 
       const errors = errorLogs || [];
       const errorLogsList = errors.filter(e => e.level === 'error');
@@ -215,8 +234,10 @@ export default function ErrorsReportGenerator() {
 
       setReport(reportData);
     } catch (err: any) {
-      setError(err.message || 'Failed to generate error report');
-      console.error('Error report generation error:', err);
+      const msg = err?.message || (typeof err === 'string' ? err : 'Failed to generate error report');
+      const details = err?.details || err?.error_description || (err?.code ? `Code: ${err.code}` : '');
+      setError(details ? `${msg} — ${details}` : msg);
+      console.error('Errors report generation error:', err);
     } finally {
       setLoading(false);
     }
@@ -303,7 +324,7 @@ export default function ErrorsReportGenerator() {
   };
 
   return (
-    <Card className="p-6">
+    <Card id="errors-report" className="p-6">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="text-lg font-semibold text-gray-900 flex items-center">
@@ -311,7 +332,7 @@ export default function ErrorsReportGenerator() {
             Errors Report Generator
           </h3>
           <p className="text-sm text-gray-500 mt-1">
-            Generate detailed reports of bot errors and warnings
+            Generate detailed reports of bot errors and warnings. Select a period and click &quot;Generate Errors Report&quot; below.
           </p>
         </div>
       </div>
@@ -348,7 +369,7 @@ export default function ErrorsReportGenerator() {
           {loading ? (
             <>
               <i className="ri-loader-4-line animate-spin mr-2"></i>
-              Generating Report...
+              Getting errors...
             </>
           ) : (
             <>
@@ -361,15 +382,26 @@ export default function ErrorsReportGenerator() {
 
       {/* Error Message */}
       {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-          <i className="ri-error-warning-line mr-2"></i>
-          {error}
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+          <div className="flex items-start">
+            <i className="ri-error-warning-line mr-2 mt-0.5 flex-shrink-0"></i>
+            <div>
+              <div className="font-medium">Errors Report Generator — Error</div>
+              <div className="mt-1 break-words">{error}</div>
+            </div>
+          </div>
         </div>
       )}
 
       {/* Report Display */}
       {report && (
         <div className="space-y-6 mt-6">
+          {report.summary.total_errors === 0 && report.summary.warnings === 0 ? (
+            <div className="p-4 bg-green-50 border border-green-200 rounded-lg text-green-800 text-sm">
+              <i className="ri-checkbox-circle-line mr-2"></i>
+              No errors or warnings in the selected period. You can still export the report (summary will be zero).
+            </div>
+          ) : null}
           {/* Summary Stats */}
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <div className="bg-red-50 p-4 rounded-lg text-center">
