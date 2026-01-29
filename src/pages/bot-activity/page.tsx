@@ -39,6 +39,13 @@ export default function BotActivityPage() {
     filter === 'all' || activity.status === filter
   );
 
+  // Smart Exit triggered: from all activity logs where message contains "Smart Exit"
+  const smartExitEvents = activities.flatMap(a =>
+    (a.logs || [])
+      .filter((log: { message?: string }) => (log.message || '').toLowerCase().includes('smart exit'))
+      .map((log: any) => ({ ...log, botName: a.botName, botId: a.botId }))
+  ).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 20);
+
   const handleAddTestLog = async (botId: string) => {
     await addLog(botId, {
       level: 'info',
@@ -87,7 +94,7 @@ export default function BotActivityPage() {
             </h3>
             <div className="flex items-center gap-3">
               <span className="text-xs text-gray-500">
-                Updates every 10s
+                Updates every 1 min
               </span>
               <div className="relative" ref={downloadMenuRef}>
                 <Button
@@ -125,6 +132,7 @@ export default function BotActivityPage() {
                         csvRows.push(`Analyzing,${activities.filter(a => a.executionState === 'analyzing').length}`);
                         csvRows.push(`Waiting,${activities.filter(a => a.executionState === 'waiting').length}`);
                         csvRows.push(`Errors,${activities.filter(a => a.executionState === 'error').length}`);
+                        csvRows.push(`Smart Exit triggered,${smartExitEvents.length}`);
                         csvRows.push(`Total Errors,${activities.reduce((sum, a) => sum + a.errorCount, 0)}`);
                         csvRows.push(`Total Success,${activities.reduce((sum, a) => sum + a.successCount, 0)}`);
                         csvRows.push('');
@@ -163,6 +171,19 @@ export default function BotActivityPage() {
                           ].join(','));
                         });
                         
+                        // Smart Exit triggered section
+                        if (smartExitEvents.length > 0) {
+                          csvRows.push('');
+                          csvRows.push('SMART EXIT TRIGGERED');
+                          csvRows.push('Timestamp,Bot Name,Message');
+                          smartExitEvents.forEach((e: { timestamp?: string; botName?: string; message?: string }) => {
+                            csvRows.push([
+                              e.timestamp || 'N/A',
+                              `"${(e.botName || '').replace(/"/g, '""')}"`,
+                              `"${(e.message || '').replace(/"/g, '""')}"`,
+                            ].join(','));
+                          });
+                        }
                         // Recent errors section
                         const botsWithErrors = activities.filter(a => a.errorCount > 0);
                         if (botsWithErrors.length > 0) {
@@ -227,8 +248,16 @@ export default function BotActivityPage() {
                               total_errors: activities.reduce((sum, a) => sum + a.errorCount, 0),
                               total_success: activities.reduce((sum, a) => sum + a.successCount, 0),
                               total_logs: activities.reduce((sum, a) => sum + a.logs.length, 0),
+                              smart_exit_triggered: smartExitEvents.length,
                             },
                           },
+                          smart_exit_triggered: smartExitEvents.map((e: any) => ({
+                            timestamp: e.timestamp,
+                            bot_id: e.botId,
+                            bot_name: e.botName,
+                            message: e.message,
+                            details: e.details,
+                          })),
                           activities_by_state: {
                             executing: activities
                               .filter(a => a.executionState === 'executing')
@@ -354,6 +383,64 @@ export default function BotActivityPage() {
                       <i className="ri-file-code-line mr-2"></i>
                       Download JSON
                     </button>
+                    <button
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center"
+                      onClick={() => {
+                        setShowDownloadMenu(false);
+                        const now = new Date();
+                        const formatDate = (dateStr: string | null | undefined): string => {
+                          if (!dateStr || dateStr === 'N/A') return 'N/A';
+                          try { return new Date(dateStr).toLocaleString(); } catch { return String(dateStr); }
+                        };
+                        const html = `
+<!DOCTYPE html>
+<html><head><title>Recent Activity Report - ${now.toISOString().split('T')[0]}</title>
+<style>
+body{font-family:Arial,sans-serif;padding:20px;color:#333;}
+h1{color:#1e40af;border-bottom:2px solid #1e40af;padding-bottom:8px;}
+h2{margin-top:24px;margin-bottom:12px;color:#374151;}
+table{width:100%;border-collapse:collapse;margin:12px 0;}
+th,td{border:1px solid #ddd;padding:8px;text-align:left;}
+th{background:#f3f4f6;font-weight:bold;}
+.stat{display:inline-block;padding:12px;margin:8px;border:1px solid #ddd;border-radius:6px;min-width:100px;text-align:center;}
+.smart-exit{background:#fffbeb;border-left:4px solid #f59e0b;padding:10px;margin:8px 0;}
+</style></head><body>
+<h1>Recent Activity Report</h1>
+<p><strong>Generated:</strong> ${now.toLocaleString()}</p>
+<h2>Summary</h2>
+<div>
+  <span class="stat">Total Bots: ${activities.length}</span>
+  <span class="stat">Running: ${activities.filter(a => a.status === 'running').length}</span>
+  <span class="stat">Executing: ${activities.filter(a => a.executionState === 'executing').length}</span>
+  <span class="stat">Analyzing: ${activities.filter(a => a.executionState === 'analyzing').length}</span>
+  <span class="stat">Waiting: ${activities.filter(a => a.executionState === 'waiting').length}</span>
+  <span class="stat">Smart Exit: ${smartExitEvents.length}</span>
+  <span class="stat">Errors: ${activities.filter(a => a.executionState === 'error').length}</span>
+</div>
+${smartExitEvents.length > 0 ? `
+<h2>Smart Exit triggered</h2>
+<table><tr><th>Timestamp</th><th>Bot Name</th><th>Message</th></tr>
+${smartExitEvents.map((e: { timestamp?: string; botName?: string; message?: string }) =>
+  `<tr><td>${formatDate(e.timestamp)}</td><td>${(e.botName || '').replace(/</g, '&lt;')}</td><td>${(e.message || '').replace(/</g, '&lt;')}</td></tr>`
+).join('')}
+</table>` : ''}
+<h2>Bot Activity Details</h2>
+<table><tr><th>Bot Name</th><th>Status</th><th>State</th><th>Current Action</th><th>Last Activity</th><th>Errors</th></tr>
+${activities.map(a => `<tr><td>${(a.botName || '').replace(/</g, '&lt;')}</td><td>${a.status}</td><td>${a.executionState || 'N/A'}</td><td>${(a.currentAction || '').replace(/</g, '&lt;')}</td><td>${formatDate(a.lastActivity)}</td><td>${a.errorCount}</td></tr>`).join('')}
+</table>
+</body></html>`;
+                        const w = window.open('', '_blank');
+                        if (w) {
+                          w.document.write(html);
+                          w.document.close();
+                          w.focus();
+                          setTimeout(() => w.print(), 300);
+                        }
+                      }}
+                    >
+                      <i className="ri-file-pdf-line mr-2"></i>
+                      Download PDF
+                    </button>
                   </div>
                 )}
               </div>
@@ -440,10 +527,36 @@ export default function BotActivityPage() {
                 </div>
               </div>
             )}
+
+            {/* Smart Exit triggered */}
+            {smartExitEvents.length > 0 && (
+              <div className="p-4 bg-amber-50 border-2 border-amber-200 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-amber-800">Smart Exit triggered</span>
+                  <i className="ri-external-link-line text-amber-600"></i>
+                </div>
+                <div className="space-y-2">
+                  {smartExitEvents.slice(0, 5).map((evt, idx) => (
+                    <div key={idx} className="text-sm">
+                      <span className="font-medium text-amber-900">{evt.botName}</span>
+                      <span className="text-amber-700 ml-2">• {evt.message || 'Smart Exit'}</span>
+                      <div className="text-xs text-amber-600 mt-0.5">
+                        {evt.timestamp ? new Date(evt.timestamp).toLocaleString() : ''}
+                      </div>
+                    </div>
+                  ))}
+                  {smartExitEvents.length > 5 && (
+                    <div className="text-xs text-amber-600">
+                      +{smartExitEvents.length - 5} more
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Quick Stats Row */}
-          <div className="mt-4 pt-4 border-t border-gray-200 grid grid-cols-4 gap-4 text-center">
+          <div className="mt-4 pt-4 border-t border-gray-200 grid grid-cols-5 gap-4 text-center">
             <div>
               <div className="text-2xl font-bold text-purple-600">
                 {activities.filter(a => a.executionState === 'executing').length}
@@ -461,6 +574,12 @@ export default function BotActivityPage() {
                 {activities.filter(a => a.executionState === 'waiting').length}
               </div>
               <div className="text-xs text-gray-500">Waiting</div>
+            </div>
+            <div>
+              <div className="text-2xl font-bold text-amber-600">
+                {smartExitEvents.length}
+              </div>
+              <div className="text-xs text-gray-500">Smart Exit</div>
             </div>
             <div>
               <div className="text-2xl font-bold text-red-600">

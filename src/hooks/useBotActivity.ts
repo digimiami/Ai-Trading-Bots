@@ -490,8 +490,8 @@ export function useBotActivity(bots?: any[]) {
   useEffect(() => {
     fetchAllActivities();
     
-    // Set up polling for real-time updates (every 10 seconds for more responsive UI)
-    const interval = setInterval(fetchAllActivities, 10000); // Update every 10 seconds
+    // Set up polling for real-time updates (every 1 minute)
+    const interval = setInterval(fetchAllActivities, 60000); // Update every 1 minute
     
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps

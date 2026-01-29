@@ -30,8 +30,76 @@ export default function BotReportViewer() {
     }).format(value);
   };
 
-  const handleDownloadReport = (reportData: BotReport, format: 'csv' | 'json') => {
+  const handleDownloadReport = (reportData: BotReport, format: 'csv' | 'json' | 'pdf') => {
     if (!reportData) return;
+
+    if (format === 'pdf') {
+      const fmt = (v: number) => formatCurrency(v);
+      const html = `
+<!DOCTYPE html>
+<html><head><title>Bot Performance Report - ${new Date(reportData.generated_at).toISOString().split('T')[0]}</title>
+<style>
+body{font-family:Arial,sans-serif;padding:20px;color:#333;}
+h1{color:#1e40af;border-bottom:2px solid #1e40af;padding-bottom:8px;}
+h2{margin-top:24px;margin-bottom:12px;color:#374151;}
+table{width:100%;border-collapse:collapse;margin:12px 0;}
+th,td{border:1px solid #ddd;padding:8px;text-align:left;}
+th{background:#f3f4f6;font-weight:bold;}
+td.text-right{text-align:right;}
+.green{color:#059669;}
+.red{color:#dc2626;}
+</style></head><body>
+<h1>Bot Performance Report</h1>
+<p><strong>Generated:</strong> ${new Date(reportData.generated_at).toLocaleString()}</p>
+<h2>Overview Summary</h2>
+<table>
+<tr><th>Total Bots</th><th>Active Bots</th><th>Total P&L</th><th>Net Profit/Loss</th><th>Total Fees</th><th>Total Trades</th></tr>
+<tr>
+<td>${reportData.overview.total_bots}</td>
+<td>${reportData.overview.active_bots}</td>
+<td class="text-right ${reportData.overview.total_pnl >= 0 ? 'green' : 'red'}">${fmt(reportData.overview.total_pnl)}</td>
+<td class="text-right ${reportData.overview.net_profit_loss >= 0 ? 'green' : 'red'}">${fmt(reportData.overview.net_profit_loss)}</td>
+<td class="text-right">${fmt(reportData.overview.total_fees)}</td>
+<td>${reportData.overview.total_trades}</td>
+</tr>
+</table>
+${reportData.contract_summary && reportData.contract_summary.length > 0 ? `
+<h2>Contract Performance</h2>
+<table>
+<tr><th>Contract</th><th>Exchange</th><th>Trades</th><th>Total P&L</th><th>Fees</th><th>Net P/L</th><th>Win Rate</th></tr>
+${reportData.contract_summary.map(c => `
+<tr>
+<td>${c.contract}</td><td>${c.exchange}</td><td class="text-right">${c.total_trades}</td>
+<td class="text-right ${c.total_net_pnl >= 0 ? 'green' : 'red'}">${fmt(c.total_net_pnl)}</td>
+<td class="text-right">${fmt(c.total_fees_paid)}</td>
+<td class="text-right ${c.net_profit_loss >= 0 ? 'green' : 'red'}">${fmt(c.net_profit_loss)}</td>
+<td class="text-right">${(c.win_rate ?? 0).toFixed(1)}%</td>
+</tr>`).join('')}
+</table>` : ''}
+${reportData.active_bots && reportData.active_bots.length > 0 ? `
+<h2>Active Bots</h2>
+<table>
+<tr><th>Bot Name</th><th>Symbol</th><th>Exchange</th><th>P&L</th><th>Fees</th><th>Net P/L</th><th>Trades</th><th>Win Rate</th></tr>
+${reportData.active_bots.map(b => `
+<tr>
+<td>${b.name}</td><td>${b.symbol}</td><td>${b.exchange}</td>
+<td class="text-right ${b.pnl >= 0 ? 'green' : 'red'}">${fmt(b.pnl)}</td>
+<td class="text-right">${fmt(b.total_fees || 0)}</td>
+<td class="text-right ${(b.net_profit_loss || 0) >= 0 ? 'green' : 'red'}">${fmt(b.net_profit_loss || 0)}</td>
+<td class="text-right">${b.total_trades}</td>
+<td class="text-right">${b.win_rate.toFixed(1)}%</td>
+</tr>`).join('')}
+</table>` : ''}
+</body></html>`;
+      const w = window.open('', '_blank');
+      if (w) {
+        w.document.write(html);
+        w.document.close();
+        w.focus();
+        setTimeout(() => w.print(), 300);
+      }
+      return;
+    }
 
     if (format === 'json') {
       // Download as JSON
@@ -98,6 +166,15 @@ export default function BotReportViewer() {
           <p className="text-sm text-gray-500">Generate comprehensive report with P&L and fees</p>
         </div>
         <div className="flex space-x-2">
+          {report && (
+            <Button
+              variant="secondary"
+              onClick={() => handleDownloadReport(report, 'pdf')}
+            >
+              <i className="ri-file-pdf-line mr-2"></i>
+              Download PDF
+            </Button>
+          )}
           {report && (
             <Button
               variant="secondary"
