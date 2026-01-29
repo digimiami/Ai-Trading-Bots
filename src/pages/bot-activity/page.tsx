@@ -171,16 +171,26 @@ export default function BotActivityPage() {
                           ].join(','));
                         });
                         
-                        // Smart Exit triggered section
+                        // Smart Exit triggered section (details report)
                         if (smartExitEvents.length > 0) {
                           csvRows.push('');
-                          csvRows.push('SMART EXIT TRIGGERED');
-                          csvRows.push('Timestamp,Bot Name,Message');
-                          smartExitEvents.forEach((e: { timestamp?: string; botName?: string; message?: string }) => {
+                          csvRows.push('SMART EXIT TRIGGERED – DETAILS REPORT');
+                          csvRows.push('Timestamp,Bot Name,Message,Symbol,Side,Exchange,Retracement %,Threshold %,Highest Price,Lowest Price,Entry Price,Current Price');
+                          smartExitEvents.forEach((e: any) => {
+                            const d = e.details || {};
                             csvRows.push([
                               e.timestamp || 'N/A',
                               `"${(e.botName || '').replace(/"/g, '""')}"`,
                               `"${(e.message || '').replace(/"/g, '""')}"`,
+                              (d.symbol ?? '').toString(),
+                              (d.side ?? '').toString(),
+                              (d.exchange ?? '').toString(),
+                              d.retracement_pct != null ? Number(d.retracement_pct).toFixed(2) : '',
+                              d.threshold_pct != null ? Number(d.threshold_pct).toFixed(2) : '',
+                              d.highest_price != null ? Number(d.highest_price).toFixed(4) : '',
+                              d.lowest_price != null ? Number(d.lowest_price).toFixed(4) : '',
+                              d.entry_price != null ? Number(d.entry_price).toFixed(4) : '',
+                              d.current_price != null ? Number(d.current_price).toFixed(4) : '',
                             ].join(','));
                           });
                         }
@@ -251,13 +261,26 @@ export default function BotActivityPage() {
                               smart_exit_triggered: smartExitEvents.length,
                             },
                           },
-                          smart_exit_triggered: smartExitEvents.map((e: any) => ({
-                            timestamp: e.timestamp,
-                            bot_id: e.botId,
-                            bot_name: e.botName,
-                            message: e.message,
-                            details: e.details,
-                          })),
+                          smart_exit_triggered: smartExitEvents.map((e: any) => {
+                            const d = e.details || {};
+                            return {
+                              timestamp: e.timestamp,
+                              bot_id: e.botId,
+                              bot_name: e.botName,
+                              message: e.message,
+                              details: e.details,
+                              // Flattened details report fields
+                              symbol: d.symbol,
+                              side: d.side,
+                              exchange: d.exchange,
+                              retracement_pct: d.retracement_pct != null ? Number(d.retracement_pct) : null,
+                              threshold_pct: d.threshold_pct != null ? Number(d.threshold_pct) : null,
+                              highest_price: d.highest_price != null ? Number(d.highest_price) : null,
+                              lowest_price: d.lowest_price != null ? Number(d.lowest_price) : null,
+                              entry_price: d.entry_price != null ? Number(d.entry_price) : null,
+                              current_price: d.current_price != null ? Number(d.current_price) : null,
+                            };
+                          }),
                           activities_by_state: {
                             executing: activities
                               .filter(a => a.executionState === 'executing')
@@ -418,11 +441,18 @@ th{background:#f3f4f6;font-weight:bold;}
   <span class="stat">Errors: ${activities.filter(a => a.executionState === 'error').length}</span>
 </div>
 ${smartExitEvents.length > 0 ? `
-<h2>Smart Exit triggered</h2>
-<table><tr><th>Timestamp</th><th>Bot Name</th><th>Message</th></tr>
-${smartExitEvents.map((e: { timestamp?: string; botName?: string; message?: string }) =>
-  `<tr><td>${formatDate(e.timestamp)}</td><td>${(e.botName || '').replace(/</g, '&lt;')}</td><td>${(e.message || '').replace(/</g, '&lt;')}</td></tr>`
-).join('')}
+<h2>Smart Exit triggered – details report</h2>
+<table><tr><th>Timestamp</th><th>Bot Name</th><th>Message</th><th>Symbol</th><th>Side</th><th>Exchange</th><th>Retracement %</th><th>Threshold %</th><th>Highest</th><th>Lowest</th><th>Entry</th><th>Price</th></tr>
+${smartExitEvents.map((e: any) => {
+  const d = e.details || {};
+  return `<tr>
+<td>${formatDate(e.timestamp)}</td><td>${(e.botName || '').replace(/</g, '&lt;')}</td><td>${(e.message || '').replace(/</g, '&lt;')}</td>
+<td>${(d.symbol ?? '').toString().replace(/</g, '&lt;')}</td><td>${(d.side ?? '').toString().replace(/</g, '&lt;')}</td><td>${(d.exchange ?? '').toString().replace(/</g, '&lt;')}</td>
+<td>${d.retracement_pct != null ? Number(d.retracement_pct).toFixed(2) : ''}</td><td>${d.threshold_pct != null ? Number(d.threshold_pct).toFixed(2) : ''}</td>
+<td>${d.highest_price != null ? Number(d.highest_price).toFixed(4) : ''}</td><td>${d.lowest_price != null ? Number(d.lowest_price).toFixed(4) : ''}</td>
+<td>${d.entry_price != null ? Number(d.entry_price).toFixed(4) : ''}</td><td>${d.current_price != null ? Number(d.current_price).toFixed(4) : ''}</td>
+</tr>`;
+}).join('')}
 </table>` : ''}
 <h2>Bot Activity Details</h2>
 <table><tr><th>Bot Name</th><th>Status</th><th>State</th><th>Current Action</th><th>Last Activity</th><th>Errors</th></tr>
@@ -535,16 +565,37 @@ ${activities.map(a => `<tr><td>${(a.botName || '').replace(/</g, '&lt;')}</td><t
                   <span className="text-sm font-medium text-amber-800">Smart Exit triggered</span>
                   <i className="ri-external-link-line text-amber-600"></i>
                 </div>
-                <div className="space-y-2">
-                  {smartExitEvents.slice(0, 5).map((evt, idx) => (
-                    <div key={idx} className="text-sm">
-                      <span className="font-medium text-amber-900">{evt.botName}</span>
-                      <span className="text-amber-700 ml-2">• {evt.message || 'Smart Exit'}</span>
-                      <div className="text-xs text-amber-600 mt-0.5">
-                        {evt.timestamp ? new Date(evt.timestamp).toLocaleString() : ''}
+                <div className="space-y-3">
+                  {smartExitEvents.slice(0, 5).map((evt, idx) => {
+                    const d = evt.details || {};
+                    const hasDetails = d.symbol != null || d.retracement_pct != null || d.threshold_pct != null;
+                    return (
+                      <div key={idx} className="text-sm border border-amber-200 rounded-lg p-2 bg-white/60">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <span className="font-medium text-amber-900">{evt.botName}</span>
+                            <span className="text-amber-700 ml-2">• {evt.message || 'Smart Exit'}</span>
+                          </div>
+                          <div className="text-xs text-amber-600 whitespace-nowrap">
+                            {evt.timestamp ? new Date(evt.timestamp).toLocaleString() : ''}
+                          </div>
+                        </div>
+                        {hasDetails && (
+                          <div className="mt-2 pt-2 border-t border-amber-200 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-amber-800">
+                            {d.symbol != null && <span><strong>Symbol:</strong> {d.symbol}</span>}
+                            {d.side != null && <span><strong>Side:</strong> {d.side}</span>}
+                            {d.exchange != null && <span><strong>Exchange:</strong> {d.exchange}</span>}
+                            {d.retracement_pct != null && <span><strong>Retracement:</strong> {Number(d.retracement_pct).toFixed(2)}%</span>}
+                            {d.threshold_pct != null && <span><strong>Threshold:</strong> {Number(d.threshold_pct).toFixed(2)}%</span>}
+                            {d.highest_price != null && <span><strong>High:</strong> {Number(d.highest_price).toFixed(4)}</span>}
+                            {d.lowest_price != null && <span><strong>Low:</strong> {Number(d.lowest_price).toFixed(4)}</span>}
+                            {d.entry_price != null && <span><strong>Entry:</strong> {Number(d.entry_price).toFixed(4)}</span>}
+                            {d.current_price != null && <span><strong>Price:</strong> {Number(d.current_price).toFixed(4)}</span>}
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {smartExitEvents.length > 5 && (
                     <div className="text-xs text-amber-600">
                       +{smartExitEvents.length - 5} more
