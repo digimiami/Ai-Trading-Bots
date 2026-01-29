@@ -1556,19 +1556,19 @@ export default function BotsPage() {
                             <span className="inline-flex items-center gap-1.5 ml-0.5" aria-label="Status indicators">
                               {dailyLimitReached && (
                                 <span
-                                  className="w-2 h-2 rounded-full bg-red-500 status-blink-indicator flex-shrink-0"
+                                  className="w-4 h-4 rounded-full bg-red-500 status-blink-indicator flex-shrink-0"
                                   title={`Daily trade limit reached (${limit?.tradesToday ?? 0}/${limit?.maxTradesPerDay ?? 0} trades today)`}
                                 />
                               )}
                               {riskStop && (
                                 <span
-                                  className="w-2 h-2 rounded-full bg-amber-500 status-blink-indicator flex-shrink-0"
+                                  className="w-4 h-4 rounded-full bg-amber-500 status-blink-indicator flex-shrink-0"
                                   title={`Bot stopped for risk management: ${bot.pauseReason ?? (bot as any).pause_reason ?? 'Paused'}`}
                                 />
                               )}
                               {onCooldown && (
                                 <span
-                                  className="w-2 h-2 rounded-full bg-blue-500 status-blink-indicator flex-shrink-0"
+                                  className="w-4 h-4 rounded-full bg-blue-500 status-blink-indicator flex-shrink-0"
                                   title={`Waiting for cooldown (${cooldownInfo?.barsPassed ?? 0}/${cooldownInfo?.requiredBars ?? 0} bars)`}
                                 />
                               )}
