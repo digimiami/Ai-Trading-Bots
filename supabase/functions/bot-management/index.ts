@@ -745,6 +745,9 @@ serve(async (req) => {
         console.log('💾 [bot-management] Final strategyConfig to save:', JSON.stringify(finalStrategyConfig, null, 2));
         
         // Prepare insert data
+        // Normalize numeric fields so DB and executor always get numbers (handles string from frontend)
+        const numLeverage = Number(leverage);
+        const numTradeAmount = Number(tradeAmount);
         const insertData: any = {
           user_id: user.id,
           name,
@@ -752,9 +755,9 @@ serve(async (req) => {
           trading_type: tradingType || 'spot',
           symbol,
           timeframe: timeframe || '1h',
-          leverage,
+          leverage: Number.isFinite(numLeverage) && numLeverage >= 1 ? numLeverage : 1,
           risk_level: riskLevel,
-          trade_amount: tradeAmount || 100,
+          trade_amount: Number.isFinite(numTradeAmount) && numTradeAmount > 0 ? numTradeAmount : 100,
           stop_loss: stopLoss || 2.0,
           take_profit: takeProfit || 4.0,
           strategy: JSON.stringify(strategy),
@@ -857,15 +860,21 @@ serve(async (req) => {
           throw new Error('Bot ID is required for update')
         }
 
-        // Transform frontend field names to database field names
+        // Transform frontend field names to database field names; normalize numbers for trade_amount/leverage
         const dbUpdates: any = {}
         if (updates.name) dbUpdates.name = updates.name
         if (updates.exchange) dbUpdates.exchange = updates.exchange
         if (updates.tradingType) dbUpdates.trading_type = updates.tradingType
         if (updates.symbol) dbUpdates.symbol = updates.symbol
         if (updates.timeframe) dbUpdates.timeframe = updates.timeframe
-        if (updates.leverage !== undefined) dbUpdates.leverage = updates.leverage
-        if (updates.tradeAmount !== undefined) dbUpdates.trade_amount = updates.tradeAmount
+        if (updates.leverage !== undefined) {
+          const n = Number(updates.leverage);
+          dbUpdates.leverage = Number.isFinite(n) && n >= 1 ? n : 1;
+        }
+        if (updates.tradeAmount !== undefined) {
+          const n = Number(updates.tradeAmount);
+          dbUpdates.trade_amount = Number.isFinite(n) && n > 0 ? n : 100;
+        }
         if (updates.stopLoss !== undefined) dbUpdates.stop_loss = updates.stopLoss
         if (updates.takeProfit !== undefined) dbUpdates.take_profit = updates.takeProfit
         if (updates.status) dbUpdates.status = updates.status

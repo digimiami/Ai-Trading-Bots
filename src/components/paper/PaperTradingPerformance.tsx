@@ -69,7 +69,7 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
   const [resetting, setResetting] = useState(false);
   const [activityLogs, setActivityLogs] = useState<any[]>([]);
   const [loadingLogs, setLoadingLogs] = useState(false);
-  const [expandedLogs, setExpandedLogs] = useState(false);
+  const [expandedLogs, setExpandedLogs] = useState(true);
   const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [sharingPairSymbol, setSharingPairSymbol] = useState<string | null>(null);
 
@@ -119,12 +119,12 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
 
       const botIds = paperBots.map(b => b.id);
 
-      // Fetch activity logs for paper trading bots
+      // Fetch activity logs for paper trading bots (order by created_at for compatibility)
       const { data: logs, error } = await supabase
         .from('bot_activity_logs')
         .select('*')
         .in('bot_id', botIds)
-        .order('timestamp', { ascending: false })
+        .order('created_at', { ascending: false })
         .limit(100); // Limit to last 100 logs
 
       if (error) {
@@ -984,10 +984,11 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
           </span>
         </h3>
         {positions.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">
+          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
             <i className="ri-inbox-line text-4xl mb-3 block"></i>
-            <p>No open positions</p>
-            <p className="text-sm mt-1">Positions will appear here when bots open trades</p>
+            <p className="font-medium">No open positions</p>
+            <p className="text-sm mt-1">Positions will appear here when paper trading bots open trades.</p>
+            <p className="text-xs mt-2 text-gray-400 dark:text-gray-500">Ensure you have bots with <strong>Paper Trading</strong> enabled and they have opened positions.</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -1256,9 +1257,10 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
                 <p className="text-sm text-gray-500 mt-2">Loading logs...</p>
               </div>
             ) : activityLogs.length === 0 ? (
-              <div className="text-center py-4 text-gray-500">
-                <i className="ri-file-list-line text-2xl mb-2"></i>
-                <p className="text-sm">No activity logs available</p>
+              <div className="text-center py-6 text-gray-500 dark:text-gray-400">
+                <i className="ri-file-list-line text-3xl mb-2 block"></i>
+                <p className="text-sm font-medium">No activity logs yet</p>
+                <p className="text-xs mt-1">Logs appear when paper trading bots run (signals, opens, closes). Ensure you have bots with <strong>Paper Trading</strong> enabled.</p>
               </div>
             ) : (
               activityLogs.map((log: any) => {
@@ -1311,7 +1313,7 @@ export default function PaperTradingPerformance({ selectedPair = '', onReset }: 
                         )}
                       </div>
                       <span className="text-xs text-gray-500 ml-4 whitespace-nowrap">
-                        {formatLogTime(log.timestamp)}
+                        {formatLogTime(log.timestamp || log.created_at || '')}
                       </span>
                     </div>
                   </div>

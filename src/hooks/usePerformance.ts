@@ -40,16 +40,38 @@ export interface PerformanceMetrics {
   symbolRanking: SymbolPnL[];
 }
 
+export type PerformanceMode = 'real' | 'paper';
+
 export function usePerformance(
   startDate?: Date,
   endDate?: Date,
-  assetType?: 'all' | 'perpetuals' | 'spot'
+  assetType?: 'all' | 'perpetuals' | 'spot',
+  mode: PerformanceMode = 'real'
 ) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [metrics, setMetrics] = useState<PerformanceMetrics | null>(null);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
+
+  const emptyMetrics = (): PerformanceMetrics => ({
+    overview: {
+      totalPnL: 0,
+      tradingVolume: 0,
+      totalTrades: 0,
+      winRate: 0,
+      avgWin: 0,
+      avgLoss: 0,
+      profitableDays: 0,
+      totalDays: 0,
+      totalFees: 0,
+      maxDrawdown: 0,
+      winningTrades: 0,
+      losingTrades: 0,
+    },
+    dailyPnL: [],
+    symbolRanking: [],
+  });
 
   const fetchPerformance = async () => {
     // Cancel any pending request
@@ -70,25 +92,7 @@ export function usePerformance(
       if (!currentUser) {
         const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
         if (authError || !authUser) {
-          // Set empty metrics if no user
-          setMetrics({
-            overview: {
-              totalPnL: 0,
-              tradingVolume: 0,
-              totalTrades: 0,
-              winRate: 0,
-              avgWin: 0,
-              avgLoss: 0,
-              profitableDays: 0,
-              totalDays: 0,
-              totalFees: 0,
-              maxDrawdown: 0,
-              winningTrades: 0,
-              losingTrades: 0,
-            },
-            dailyPnL: [],
-            symbolRanking: [],
-          });
+          setMetrics(emptyMetrics());
           setLoading(false);
           return;
         }
@@ -99,8 +103,137 @@ export function usePerformance(
       const end = endDate || new Date();
       const start = startDate || new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-      // Fetch all trades for the current user first (with user_id filter)
-      // Then filter by date range in JavaScript to handle both executed_at and created_at
+      // --- Paper trading: fetch from paper_trading_trades ---
+      if (mode === 'paper') {
+        const { data: paperTrades, error: paperError } = await supabase
+          .from('paper_trading_trades')
+          .select('*')
+          .eq('user_id', currentUser.id)
+          .eq('status', 'closed')
+          .not('closed_at', 'is', null)
+          .order('closed_at', { ascending: false })
+          .limit(10000);
+
+        if (controller.signal.aborted) return;
+        if (paperError) throw paperError;
+
+        const filtered = (paperTrades || []).filter((t: any) => {
+          const d = t.closed_at || t.executed_at || t.created_at;
+          if (!d) return false;
+          const date = new Date(d);
+          return date >= start && date <= end;
+        });
+
+        if (filtered.length === 0) {
+          const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+          setMetrics({
+            ...emptyMetrics(),
+            overview: { ...emptyMetrics().overview, totalDays: daysDiff },
+          });
+          setLoading(false);
+          return;
+        }
+
+        const tradesWithPnL = filtered.filter((t: any) => {
+          const p = parseFloat(t.pnl);
+          return !isNaN(p) && p !== 0;
+        });
+        const winningTrades = tradesWithPnL.filter((t: any) => (parseFloat(t.pnl) || 0) > 0);
+        const losingTrades = tradesWithPnL.filter((t: any) => (parseFloat(t.pnl) || 0) <= 0);
+        const totalPnL = tradesWithPnL.reduce((s: number, t: any) => s + (parseFloat(t.pnl) || 0), 0);
+        const totalFees = filtered.reduce((s: number, t: any) => s + (parseFloat(t.fees) || 0), 0);
+        const tradingVolume = filtered.reduce((s: number, t: any) => {
+          const q = parseFloat(t.quantity) || 0;
+          const p = parseFloat(t.entry_price || t.price) || 0;
+          return s + q * p;
+        }, 0);
+        const winRate = tradesWithPnL.length > 0 ? (winningTrades.length / tradesWithPnL.length) * 100 : 0;
+        const avgWin = winningTrades.length > 0 ? winningTrades.reduce((s, t) => s + (parseFloat(t.pnl) || 0), 0) / winningTrades.length : 0;
+        const avgLoss = losingTrades.length > 0 ? losingTrades.reduce((s, t) => s + Math.abs(parseFloat(t.pnl) || 0), 0) / losingTrades.length : 0;
+
+        const dailyPnLMap = new Map<string, DailyPnL>();
+        filtered.forEach((t: any) => {
+          const d = (t.closed_at || t.executed_at || t.created_at || '').toString().split('T')[0];
+          if (!d) return;
+          if (!dailyPnLMap.has(d)) dailyPnLMap.set(d, { date: d, pnl: 0, volume: 0, trades: 0, profit: 0, loss: 0 });
+          const daily = dailyPnLMap.get(d)!;
+          const pnl = parseFloat(t.pnl) || 0;
+          daily.pnl += pnl;
+          daily.volume += (parseFloat(t.quantity) || 0) * (parseFloat(t.entry_price || t.price) || 0);
+          daily.trades += 1;
+          if (pnl > 0) daily.profit += pnl; else if (pnl < 0) daily.loss += Math.abs(pnl);
+        });
+        const dailyPnL = Array.from(dailyPnLMap.values()).sort((a, b) => a.date.localeCompare(b.date)).map(day => ({
+          ...day,
+          pnl: parseFloat(day.pnl.toFixed(2)),
+          volume: parseFloat(day.volume.toFixed(2)),
+        }));
+
+        const symbolMap = new Map<string, SymbolPnL>();
+        tradesWithPnL.forEach((t: any) => {
+          const sym = t.symbol || 'UNKNOWN';
+          if (!symbolMap.has(sym)) symbolMap.set(sym, { symbol: sym, pnl: 0, volume: 0, trades: 0, winRate: 0 });
+          const data = symbolMap.get(sym)!;
+          data.pnl += parseFloat(t.pnl) || 0;
+          data.volume += (parseFloat(t.quantity) || 0) * (parseFloat(t.entry_price || t.price) || 0);
+          data.trades += 1;
+        });
+        filtered.forEach((t: any) => {
+          const sym = t.symbol || 'UNKNOWN';
+          if (!symbolMap.has(sym)) symbolMap.set(sym, { symbol: sym, pnl: 0, volume: 0, trades: 0, winRate: 0 });
+          const data = symbolMap.get(sym)!;
+          const pnl = parseFloat(t.pnl) || 0;
+          if (tradesWithPnL.some((x: any) => x.id === t.id)) return;
+          data.volume += (parseFloat(t.quantity) || 0) * (parseFloat(t.entry_price || t.price) || 0);
+          data.trades += 1;
+        });
+        symbolMap.forEach((data, symbol) => {
+          const symTrades = tradesWithPnL.filter((t: any) => (t.symbol || 'UNKNOWN') === symbol);
+          if (symTrades.length > 0) {
+            const wins = symTrades.filter((t: any) => (parseFloat(t.pnl) || 0) > 0).length;
+            data.winRate = (wins / symTrades.length) * 100;
+          }
+        });
+        const symbolRanking = Array.from(symbolMap.values()).sort((a, b) => a.pnl - b.pnl).map(s => ({
+          ...s,
+          pnl: parseFloat(s.pnl.toFixed(2)),
+          volume: parseFloat(s.volume.toFixed(2)),
+          winRate: parseFloat(s.winRate.toFixed(2)),
+        }));
+
+        let maxDrawdown = 0, peakPnL = 0, runningPnL = 0;
+        const sorted = [...tradesWithPnL].sort((a, b) => new Date(a.closed_at || a.executed_at || 0).getTime() - new Date(b.closed_at || b.executed_at || 0).getTime());
+        sorted.forEach((t: any) => {
+          runningPnL += parseFloat(t.pnl) || 0;
+          if (runningPnL > peakPnL) peakPnL = runningPnL;
+          const dd = peakPnL - runningPnL;
+          if (dd > maxDrawdown) maxDrawdown = dd;
+        });
+
+        const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+        setMetrics({
+          overview: {
+            totalPnL: parseFloat(totalPnL.toFixed(2)),
+            tradingVolume: parseFloat(tradingVolume.toFixed(2)),
+            totalTrades: filtered.length,
+            winRate: parseFloat(winRate.toFixed(2)),
+            avgWin: parseFloat(avgWin.toFixed(2)),
+            avgLoss: parseFloat(avgLoss.toFixed(2)),
+            profitableDays: dailyPnL.filter(day => day.pnl > 0).length,
+            totalDays: daysDiff,
+            totalFees: parseFloat(totalFees.toFixed(2)),
+            maxDrawdown: parseFloat(maxDrawdown.toFixed(2)),
+            winningTrades: winningTrades.length,
+            losingTrades: losingTrades.length,
+          },
+          dailyPnL,
+          symbolRanking,
+        });
+        setLoading(false);
+        return;
+      }
+
+      // --- Real trading: fetch from trades ---
       let query = supabase
         .from('trades')
         .select('*, trading_bots(symbol, trading_type, user_id)')
@@ -138,24 +271,7 @@ export function usePerformance(
       }
 
       if (!filteredTrades || filteredTrades.length === 0) {
-        setMetrics({
-          overview: {
-            totalPnL: 0,
-            tradingVolume: 0,
-            totalTrades: 0,
-            winRate: 0,
-            avgWin: 0,
-            avgLoss: 0,
-            profitableDays: 0,
-            totalDays: 0,
-            totalFees: 0,
-            maxDrawdown: 0,
-            winningTrades: 0,
-            losingTrades: 0,
-          },
-          dailyPnL: [],
-          symbolRanking: [],
-        });
+        setMetrics(emptyMetrics());
         return;
       }
 
@@ -594,7 +710,7 @@ export function usePerformance(
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id, startDate?.getTime(), endDate?.getTime(), assetType]);
+  }, [user?.id, startDate?.getTime(), endDate?.getTime(), assetType, mode]);
 
   return {
     metrics,

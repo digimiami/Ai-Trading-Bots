@@ -1110,6 +1110,15 @@ export default function BotsPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <style>{`
+        @keyframes status-blink {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.35; }
+        }
+        .status-blink-indicator {
+          animation: status-blink 1.2s ease-in-out infinite;
+        }
+      `}</style>
       <Header 
         title="Trading Bots"
         action={
@@ -1534,6 +1543,37 @@ export default function BotsPage() {
                             );
                           }
                           return null;
+                        })()}
+                        {/* Blinking status indicators: daily limit, risk stop, cooldown */}
+                        {(() => {
+                          const limit = getLimit(bot.id);
+                          const dailyLimitReached = limit?.isLimitReached ?? false;
+                          const riskStop = (bot.status === 'paused' || bot.status === 'stopped') && (bot.pauseReason ?? (bot as any).pause_reason);
+                          const cooldownInfo = getCooldownInfo(bot);
+                          const onCooldown = cooldownInfo?.isActive ?? false;
+                          if (!dailyLimitReached && !riskStop && !onCooldown) return null;
+                          return (
+                            <span className="inline-flex items-center gap-1.5 ml-0.5" aria-label="Status indicators">
+                              {dailyLimitReached && (
+                                <span
+                                  className="w-2 h-2 rounded-full bg-red-500 status-blink-indicator flex-shrink-0"
+                                  title={`Daily trade limit reached (${limit?.tradesToday ?? 0}/${limit?.maxTradesPerDay ?? 0} trades today)`}
+                                />
+                              )}
+                              {riskStop && (
+                                <span
+                                  className="w-2 h-2 rounded-full bg-amber-500 status-blink-indicator flex-shrink-0"
+                                  title={`Bot stopped for risk management: ${bot.pauseReason ?? (bot as any).pause_reason ?? 'Paused'}`}
+                                />
+                              )}
+                              {onCooldown && (
+                                <span
+                                  className="w-2 h-2 rounded-full bg-blue-500 status-blink-indicator flex-shrink-0"
+                                  title={`Waiting for cooldown (${cooldownInfo?.barsPassed ?? 0}/${cooldownInfo?.requiredBars ?? 0} bars)`}
+                                />
+                              )}
+                            </span>
+                          );
                         })()}
                       </div>
                     </div>

@@ -548,6 +548,14 @@ type TradeSizingResult = {
   riskContext?: RiskContext;
 };
 
+// Read numeric bot setting from snake_case or camelCase; return default if missing/NaN
+function getBotNumber(bot: any, keySnake: string, keyCamel: string, defaultVal: number): number {
+  const raw = bot[keySnake] ?? bot[keyCamel];
+  if (raw === undefined || raw === null) return defaultVal;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : defaultVal;
+}
+
 // Resolve leverage based on exchange and trading type
 // Ensures Bitunix uses 3x by default instead of 20x
 function resolveLeverage(exchange?: string, tradingType?: string, userLeverage?: number): number {
@@ -572,8 +580,9 @@ function resolveLeverage(exchange?: string, tradingType?: string, userLeverage?:
 }
 
 function calculateTradeSizing(bot: any, price: number, riskContext?: RiskContext): TradeSizingResult {
-  // Always use the latest values from bot, prioritizing database fields (snake_case)
-  const userLeverage = bot.leverage ?? bot.leverage_ratio ?? 1;
+  // Read trade amount and leverage from bot (DB uses snake_case; support both and parse to number)
+  const userLeverage = getBotNumber(bot, 'leverage', 'leverage_ratio', 1);
+  const baseAmount = getBotNumber(bot, 'trade_amount', 'tradeAmount', 100);
   const riskMultiplier = getRiskMultiplier(bot);
   const tradingType = bot.tradingType || bot.trading_type;
   const isFutures = (tradingType === 'futures' || tradingType === 'linear');
@@ -584,8 +593,6 @@ function calculateTradeSizing(bot: any, price: number, riskContext?: RiskContext
   // Log leverage resolution for debugging (for all exchanges, not just Bitunix)
   console.log(`🔧 Leverage resolution for ${bot.exchange || 'unknown'}: bot.leverage=${bot.leverage}, bot.leverage_ratio=${bot.leverage_ratio}, userLeverage=${userLeverage}, actualLeverage=${actualLeverage}x (${tradingType})`);
 
-  // Always use the latest trade amount value, prioritizing database field (snake_case)
-  const baseAmount = bot.trade_amount ?? bot.tradeAmount ?? 100;
   const minTradeAmount = isFutures ? 50 : 10;
   let effectiveBaseAmount = Math.max(minTradeAmount, baseAmount);
 
@@ -3971,6 +3978,12 @@ class BotExecutor {
             message: `⏸️ Cooldown active: ${cooldownCheck.reason}`,
             details: { ...cooldownCheck, step: 'cooldown_check', stopped: true }
           });
+          // Still sync real positions so trailing/Smart Exit can run on open positions
+          try {
+            await this.syncPositionsFromExchange(bot);
+          } catch (syncErr: any) {
+            console.warn(`⚠️ [${bot.name}] Position sync (cooldown path) failed:`, syncErr?.message || syncErr);
+          }
           return; // Stop execution - wait for cooldown
         }
         console.log(`✅ [${bot.name}] Cooldown check passed - can trade`);
@@ -4012,6 +4025,12 @@ class BotExecutor {
             message: `🕐 Outside trading hours: ${tradingHoursCheck.reason}`,
             details: { ...tradingHoursCheck, step: 'trading_hours_check', stopped: true }
           });
+          // Still sync real positions so trailing/Smart Exit can run on open positions
+          try {
+            await this.syncPositionsFromExchange(bot);
+          } catch (syncErr: any) {
+            console.warn(`⚠️ [${bot.name}] Position sync (trading hours path) failed:`, syncErr?.message || syncErr);
+          }
           return; // Stop execution - outside allowed hours
         }
       } else {
@@ -4096,6 +4115,14 @@ class BotExecutor {
         message: `✅ Safety checks passed - can trade`,
         details: { step: 'safety_check', passed: true }
       });
+
+      // Sync real positions from exchange and apply advanced exit/trailing (when enabled in bot settings)
+      try {
+        await this.syncPositionsFromExchange(bot);
+      } catch (syncErr: any) {
+        console.warn(`⚠️ [${bot.name}] Position sync skipped or failed:`, syncErr?.message || syncErr);
+        // Do not abort execution - continue with strategy evaluation
+      }
       
       // Fetch market data
       console.log(`📊 [${bot.name}] Starting market data fetch...`);
@@ -6638,9 +6665,9 @@ class BotExecutor {
     const volatilityHigh = riskConfig.volatility_high ?? 2.5;
     const volatilityRegime = atrPercent > volatilityHigh ? 'high' : atrPercent > 0 && atrPercent < volatilityLow ? 'low' : 'normal';
 
-    const userLeverage = bot.leverage || 1;
+    const userLeverage = getBotNumber(bot, 'leverage', 'leverage_ratio', 1);
     const actualLeverage = resolveLeverage(bot.exchange, bot.tradingType || bot.trading_type, userLeverage);
-    const expectedNotional = (bot.trade_amount || bot.tradeAmount || 100) * actualLeverage * getRiskMultiplier(bot);
+    const expectedNotional = getBotNumber(bot, 'trade_amount', 'tradeAmount', 100) * actualLeverage * getRiskMultiplier(bot);
     const liquiditySnapshot = await this.getLiquiditySnapshot(bot, currentPrice, expectedNotional);
 
     const consecutiveLosses = await this.getConsecutiveLosses(bot.id, isPaperTrading);
@@ -7440,12 +7467,11 @@ class BotExecutor {
     const botSnapshot = { ...bot };
     botSnapshot.strategy_config = bot.strategy_config ?? botSnapshot.strategy_config;
 
-    // Ensure all bot settings are preserved and up-to-date (handle both snake_case and camelCase)
-    // Always use the latest value from bot object, prioritizing snake_case from DB
-    botSnapshot.leverage = bot.leverage || bot.leverage_ratio || botSnapshot.leverage || 1;
-    botSnapshot.leverage_ratio = botSnapshot.leverage;
+    // Ensure all bot settings are preserved and up-to-date (parse numbers from snake_case/camelCase)
+    const leverageValue = Math.max(1, getBotNumber(bot, 'leverage', 'leverage_ratio', 1));
+    botSnapshot.leverage = leverageValue;
+    botSnapshot.leverage_ratio = leverageValue;
     
-    // Use the latest value, prioritizing database field (snake_case)
     const stopLossValue = bot.stop_loss ?? bot.stopLoss ?? botSnapshot.stop_loss ?? botSnapshot.stopLoss ?? 2.0;
     botSnapshot.stop_loss = stopLossValue;
     botSnapshot.stopLoss = stopLossValue;
@@ -7454,7 +7480,7 @@ class BotExecutor {
     botSnapshot.take_profit = takeProfitValue;
     botSnapshot.takeProfit = takeProfitValue;
     
-    const tradeAmountValue = bot.trade_amount ?? bot.tradeAmount ?? botSnapshot.trade_amount ?? botSnapshot.tradeAmount ?? 100;
+    const tradeAmountValue = getBotNumber(bot, 'trade_amount', 'tradeAmount', 100);
     botSnapshot.trade_amount = tradeAmountValue;
     botSnapshot.tradeAmount = tradeAmountValue;
     
@@ -8089,10 +8115,7 @@ class BotExecutor {
         
         // For futures, set leverage and margin mode BEFORE placing order (CRITICAL for Bybit)
         if (tradingType === 'futures' || tradingType === 'linear') {
-          let userLeverage = bot.leverage ?? bot.leverage_ratio ?? 1;
-          if (!userLeverage || userLeverage < 1) {
-            userLeverage = 1; // Default to 1x if not set or invalid
-          }
+          const userLeverage = Math.max(1, getBotNumber(bot, 'leverage', 'leverage_ratio', 1));
           const expectedLeverage = resolveLeverage(bot.exchange, tradingType, userLeverage);
           const expectedMarginMode = 'Isolated'; // Bybit uses 'Isolated' (capitalized)
           
@@ -8178,16 +8201,11 @@ class BotExecutor {
         // First check current settings - if already correct, proceed without setting
         // If setting fails, retry up to 3 times with 1-second delays
         if (tradingType === 'futures') {
-          // Use resolveLeverage to ensure Bitunix uses 3x default instead of 20x
-          // CRITICAL: For Bitunix futures, always use at least 3x leverage (minimum allowed)
-          // If bot.leverage is 0, null, undefined, or less than 3, use 3x minimum
-          let userLeverage = bot.leverage;
-          if (!userLeverage || userLeverage < 1) {
-            userLeverage = 3; // Default to 3x if not set or invalid
-          }
+          // Read leverage from bot (snake_case/camelCase, parsed number)
+          let userLeverage = Math.max(1, getBotNumber(bot, 'leverage', 'leverage_ratio', 3));
           // CRITICAL: Force minimum 3x for Bitunix futures (even if user set 1x or 2x)
           if (bot.exchange?.toLowerCase() === 'bitunix' && userLeverage < 3) {
-            console.warn(`⚠️ Bot leverage is set to ${bot.leverage}x, but Bitunix futures minimum is 3x. Using 3x instead.`);
+            console.warn(`⚠️ Bot leverage is set to ${userLeverage}x, but Bitunix futures minimum is 3x. Using 3x instead.`);
             userLeverage = 3; // Force minimum 3x for Bitunix futures
           }
           let expectedLeverage = resolveLeverage(bot.exchange, tradingType, userLeverage);
@@ -8833,8 +8851,7 @@ class BotExecutor {
             if (positionInfo && positionInfo.size > 0) {
               console.log(`📊 Current position: ${positionInfo.size} @ ${positionInfo.entryPrice}, Leverage: ${positionInfo.leverage}x, Margin: ${positionInfo.marginMode}`);
               
-              // Use resolveLeverage to ensure Bitunix uses 3x default instead of 20x
-              const userLeverage = bot.leverage || 3;
+              const userLeverage = Math.max(1, getBotNumber(bot, 'leverage', 'leverage_ratio', 3));
               const expectedPositionLeverage = resolveLeverage(bot.exchange, tradingType, userLeverage);
               
               // Always try to set if different from desired (even if account setting failed)
@@ -16204,15 +16221,18 @@ class BotExecutor {
     const exchange = String(bot.exchange || dbPos.exchange || '').toLowerCase();
     const tradingType = String(dbPos.trading_type || bot.tradingType || bot.trading_type || 'futures').toLowerCase();
 
-    // Feature flags (stored on trading_bots)
-    const enableDynamicTrailing = bot.enable_dynamic_trailing || false;
-    const enableTrailingTP = bot.enable_trailing_take_profit || false;
-    const trailingTPATR = parseFloat(bot.trailing_take_profit_atr || 1.0);
-    const trailAfterTp1ATR = typeof bot.trail_after_tp1_atr === 'number' ? bot.trail_after_tp1_atr : null;
-    const smartExitEnabled = bot.smart_exit_enabled || false;
-    const smartExitRetracementPct = parseFloat(bot.smart_exit_retracement_pct || 2.0);
+    // Feature flags: read from strategy_config (bot settings); off by default
+    const cfg = typeof bot.strategy_config === 'string'
+      ? (() => { try { return JSON.parse(bot.strategy_config || '{}'); } catch { return {}; } })()
+      : (bot.strategy_config || {});
+    const enableDynamicTrailing = cfg.enable_dynamic_trailing === true || bot.enable_dynamic_trailing === true;
+    const enableTrailingTP = cfg.enable_trailing_take_profit === true || bot.enable_trailing_take_profit === true;
+    const trailingTPATR = parseFloat(cfg.trailing_take_profit_atr ?? bot.trailing_take_profit_atr ?? 1.0);
+    const trailAfterTp1ATR = typeof cfg.trail_after_tp1_atr === 'number' ? cfg.trail_after_tp1_atr : (typeof bot.trail_after_tp1_atr === 'number' ? bot.trail_after_tp1_atr : null);
+    const smartExitEnabled = cfg.smart_exit_enabled === true || bot.smart_exit_enabled === true;
+    const smartExitRetracementPct = parseFloat(cfg.smart_exit_retracement_pct ?? bot.smart_exit_retracement_pct ?? 2.0);
 
-    // If nothing enabled, bail early.
+    // If nothing enabled, bail early (all off by default).
     if (!enableDynamicTrailing && !enableTrailingTP && !smartExitEnabled) return;
 
     const side = String(dbPos.side || '').toLowerCase(); // long|short

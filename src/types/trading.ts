@@ -31,6 +31,8 @@ export interface TradingBot {
   customPairs?: string; // Raw user input for custom pairs
   soundNotificationsEnabled?: boolean; // Enable/disable sound notifications for real trades
   timeframe?: string; // Trading timeframe
+  /** Set when bot is paused by safety/risk (e.g. daily loss limit, max trades) */
+  pauseReason?: string | null;
 }
 
 export interface TradingStrategy {
