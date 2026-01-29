@@ -16012,6 +16012,14 @@ class BotExecutor {
   }
 
   /**
+   * Run only position sync + Exit Strategy (trailing, Smart Exit) for a bot.
+   * No strategy evaluation or new orders. Used by sync_positions_exit_strategy action for frequent checks.
+   */
+  async runPositionSyncAndExitStrategy(bot: any): Promise<void> {
+    return this.syncPositionsFromExchange(bot);
+  }
+
+  /**
    * Sync positions from exchange and update database
    */
   private async syncPositionsFromExchange(bot: any): Promise<void> {
@@ -20296,6 +20304,83 @@ serve(async (req) => {
         return new Response(JSON.stringify({ success: true, message: 'Bot executed' }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })
+
+      case 'sync_positions_exit_strategy':
+        // Apply Exit Strategy (trailing, Smart Exit) to all running real bots without running strategy or placing orders.
+        // Call this every 1 min (or every 5 sec via external trigger) to check positions and apply exit logic.
+        console.log('🎯 === SYNC POSITIONS + EXIT STRATEGY STARTED ===');
+        console.log(`📅 Timestamp: ${new Date().toISOString()}`);
+        try {
+          const serviceRoleClient = createClient(
+            Deno.env.get('SUPABASE_URL') ?? '',
+            Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+          );
+          const { data: exitBots, error: exitBotsError } = await serviceRoleClient
+            .from('trading_bots')
+            .select('*')
+            .eq('status', 'running')
+            .eq('paper_trading', false);
+
+          if (exitBotsError) {
+            console.error('❌ Failed to fetch bots for exit strategy sync:', exitBotsError);
+            return new Response(JSON.stringify({
+              success: false,
+              error: exitBotsError.message,
+              action: 'sync_positions_exit_strategy'
+            }), {
+              status: 500,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
+          const botsToSync = exitBots || [];
+          console.log(`📊 Found ${botsToSync.length} running real bot(s) to sync positions + apply Exit Strategy`);
+          if (botsToSync.length === 0) {
+            return new Response(JSON.stringify({
+              success: true,
+              action: 'sync_positions_exit_strategy',
+              botsProcessed: 0,
+              message: 'No running real bots to sync'
+            }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+            });
+          }
+
+          const executorUserId = botsToSync[0]?.user_id || user?.id;
+          const executor = new BotExecutor(supabaseClient, { id: executorUserId });
+          const results = await Promise.allSettled(
+            botsToSync.map((bot: any) => executor.runPositionSyncAndExitStrategy(bot))
+          );
+          const fulfilled = results.filter(r => r.status === 'fulfilled').length;
+          const rejected = results.filter(r => r.status === 'rejected').length;
+          if (rejected > 0) {
+            results.forEach((r, i) => {
+              if (r.status === 'rejected') {
+                console.warn(`⚠️ Exit strategy sync failed for bot ${botsToSync[i]?.name}:`, (r as PromiseRejectedResult).reason);
+              }
+            });
+          }
+          console.log(`✅ Exit strategy sync completed: ${fulfilled} ok, ${rejected} failed`);
+          return new Response(JSON.stringify({
+            success: true,
+            action: 'sync_positions_exit_strategy',
+            botsProcessed: botsToSync.length,
+            ok: fulfilled,
+            failed: rejected
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        } catch (syncErr: any) {
+          console.error('❌ sync_positions_exit_strategy error:', syncErr);
+          return new Response(JSON.stringify({
+            success: false,
+            error: syncErr?.message || String(syncErr),
+            action: 'sync_positions_exit_strategy'
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+          });
+        }
 
       case 'execute_all_bots':
         console.log('🚀 === BOT EXECUTION STARTED ===');

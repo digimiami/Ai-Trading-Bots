@@ -113,7 +113,44 @@ serve(async (req) => {
     }
 
     const executorUrl = `${SUPABASE_URL}/functions/v1/bot-executor`;
-    console.log(`🚀 [${requestId}] Calling bot-executor:`);
+    const authToken = SERVICE_ROLE_KEY || ANON_KEY;
+    const authType = SERVICE_ROLE_KEY ? 'SERVICE_ROLE_KEY' : 'ANON_KEY';
+    if (!authToken) {
+      throw new Error('No authentication token available (set SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY)');
+    }
+    const executorHeaders = {
+      'Content-Type': 'application/json',
+      'x-cron-secret': CRON_SECRET,
+      'apikey': ANON_KEY || authToken,
+      'Authorization': `Bearer ${authToken}` as const
+    };
+
+    // 1) Run Exit Strategy (sync positions + apply trailing/Smart Exit) for all running real bots
+    console.log(`🚀 [${requestId}] Calling bot-executor: sync_positions_exit_strategy`);
+    const syncStartTime = Date.now();
+    try {
+      const syncResponse = await fetch(executorUrl, {
+        method: 'POST',
+        headers: executorHeaders,
+        body: JSON.stringify({ action: 'sync_positions_exit_strategy' })
+      });
+      const syncBody = await syncResponse.text();
+      const syncDuration = Date.now() - syncStartTime;
+      console.log(`📥 [${requestId}] sync_positions_exit_strategy: ${syncResponse.status} in ${syncDuration}ms`);
+      if (!syncResponse.ok) {
+        console.warn(`⚠️ [${requestId}] sync_positions_exit_strategy non-OK: ${syncBody.substring(0, 300)}`);
+      } else {
+        try {
+          const parsed = JSON.parse(syncBody);
+          if (parsed.botsProcessed !== undefined) console.log(`   Bots processed: ${parsed.botsProcessed}`);
+        } catch (_) {}
+      }
+    } catch (syncErr) {
+      console.warn(`⚠️ [${requestId}] sync_positions_exit_strategy failed (continuing):`, syncErr instanceof Error ? syncErr.message : syncErr);
+    }
+
+    // 2) Run full bot execution (execute_all_bots)
+    console.log(`🚀 [${requestId}] Calling bot-executor: execute_all_bots`);
     console.log(`   URL: ${executorUrl}`);
     console.log(`   Method: POST`);
     console.log(`   Body: ${JSON.stringify({ action: 'execute_all_bots' })}`);
@@ -123,25 +160,11 @@ serve(async (req) => {
     let responseBody: string;
     
     try {
-      // Use SERVICE_ROLE_KEY for Authorization if available (preferred for service-to-service calls)
-      // Fall back to ANON_KEY if SERVICE_ROLE_KEY is not set
-      const authToken = SERVICE_ROLE_KEY || ANON_KEY;
-      const authType = SERVICE_ROLE_KEY ? 'SERVICE_ROLE_KEY' : 'ANON_KEY';
-      
-      if (!authToken) {
-        throw new Error('No authentication token available (set SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY)');
-      }
-      
       console.log(`🔑 [${requestId}] Using ${authType} for bot-executor authentication`);
       
       executorResponse = await fetch(executorUrl, {
         method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json', 
-          'x-cron-secret': CRON_SECRET,  // Internal authentication (bot-executor recognizes this)
-          'apikey': ANON_KEY || authToken,  // Supabase edge runtime access (prefer ANON_KEY for apikey)
-          'Authorization': `Bearer ${authToken}`  // Use SERVICE_ROLE_KEY if available, else ANON_KEY
-        },
+        headers: executorHeaders,
         body: JSON.stringify({ action: 'execute_all_bots' })
       });
       
