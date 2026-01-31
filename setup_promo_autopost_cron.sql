@@ -4,6 +4,9 @@
 -- This script sets up pg_cron to run promo-auto-poster
 -- every hour.
 -- =====================================================
+-- If you see "app.supabase_service_role_key not set" or
+-- "unrecognized configuration parameter app.supabase_url",
+-- run set_cron_app_settings.sql first (or use Dashboard schedules).
 -- Note: Run this in Supabase SQL Editor
 -- =====================================================
 

@@ -20,16 +20,20 @@
 --    - HTTP method: POST
 --    - Headers:
 --        Key: x-cron-secret
---        Value: [same as CRON_SECRET in Edge Function env / secrets]
+--        Value: [same as BOT_SCHEDULER_SECRET in Edge Function secrets; see BOT_SCHEDULER_SECRET_SETUP.md to generate a new key]
 --    - Body (optional): {}  or leave empty
 -- 4. Enable the schedule and save
 --
--- Ensure bot-scheduler has env: CRON_SECRET, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_ANON_KEY).
+-- Ensure bot-scheduler and bot-executor have BOT_SCHEDULER_SECRET (or CRON_SECRET), SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
 
 -- =====================================================
 -- Option 2: pg_cron (if extensions available)
 -- =====================================================
--- Requires: pg_cron and the http() extension (e.g. pgsql-http).
+-- Requires: pg_cron, http() extension, and app.* settings in the DB.
+-- If you see "app.supabase_service_role_key not set" or
+-- "unrecognized configuration parameter app.supabase_url":
+--   1) Run set_cron_app_settings.sql once (replace placeholders), OR
+--   2) Use Option 1 (Dashboard schedules) instead — no DB secrets.
 -- If http() or http_header() do not exist, use Option 1 (Dashboard) instead.
 
 CREATE EXTENSION IF NOT EXISTS pg_cron;

@@ -3057,6 +3057,17 @@ class BotExecutor {
     const botId = bot.id;
     const botName = bot.name || 'Unknown';
     const botSymbol = bot.symbol || 'Unknown';
+
+    // Normalize Trade Amount and Leverage from settings so all code paths use the same numeric values
+    // (DB may return snake_case, camelCase, string, or null; getBotNumber parses and applies defaults)
+    const resolvedTradeAmount = getBotNumber(bot, 'trade_amount', 'tradeAmount', 100);
+    const resolvedLeverage = Math.max(1, getBotNumber(bot, 'leverage', 'leverage_ratio', 1));
+    (bot as any).trade_amount = resolvedTradeAmount;
+    (bot as any).tradeAmount = resolvedTradeAmount;
+    (bot as any).leverage = resolvedLeverage;
+    (bot as any).leverage_ratio = resolvedLeverage;
+    console.log(`   Trade Amount (resolved): $${resolvedTradeAmount}`);
+    console.log(`   Leverage (resolved): ${resolvedLeverage}x`);
     
     console.log(`\n🚀 === EXECUTING BOT ===`);
     console.log(`   Bot ID: ${botId}`);
@@ -16179,6 +16190,17 @@ class BotExecutor {
               })
               .eq('id', dbPos.id);
 
+            // Ensure position has SL/TP on exchange (every sync). If DB has none, set from bot % and update DB.
+            try {
+              await this.ensurePositionSlTpOnExchange(bot, dbPos, exchangePos, {
+                decryptedApiKey: decryptedApiKey,
+                decryptedApiSecret: decryptedApiSecret,
+                decryptedToken: decryptedToken,
+              });
+            } catch (ensureErr: any) {
+              console.warn(`⚠️ Ensure SL/TP skipped for position ${dbPos.id}:`, ensureErr?.message || ensureErr);
+            }
+
             // Apply advanced exit/trailing features to LIVE exchange positions.
             // This can update stops on the exchange (Bybit/BTCC) and/or trigger a market close (Smart Exit).
             try {
@@ -16203,6 +16225,94 @@ class BotExecutor {
       console.log(`✅ Position sync completed for ${bot.symbol}`);
     } catch (error: any) {
       console.error('❌ Error syncing positions from exchange:', error);
+    }
+  }
+
+  /**
+   * Ensure position has SL/TP on the exchange. Called every sync (e.g. every minute).
+   * If DB has stop_loss_price/take_profit_price use those; otherwise compute from bot % and set on exchange + update DB.
+   * Bybit: uses /v5/position/trading-stop. BTCC: uses updateposition when position id available.
+   */
+  private async ensurePositionSlTpOnExchange(
+    bot: any,
+    dbPos: any,
+    exchangePos: any,
+    ctx: {
+      decryptedApiKey: string;
+      decryptedApiSecret: string;
+      decryptedToken: string;
+    },
+  ): Promise<void> {
+    const exchange = String(bot.exchange || dbPos.exchange || '').toLowerCase();
+    const tradingType = String(dbPos.trading_type || bot.tradingType || bot.trading_type || 'futures').toLowerCase();
+    const symbol = String(bot.symbol || dbPos.symbol || '');
+    const entryPrice = parseFloat(
+      exchangePos.avgPrice || exchangePos.entryPrice || exchangePos.open_price || dbPos.entry_price || 0
+    );
+    if (!symbol || !entryPrice || entryPrice <= 0) return;
+
+    const side = String(dbPos.side || '').toLowerCase();
+    const isLong = side === 'long' || exchangePos.side === 'Buy';
+    const stopLossPct = parseFloat(bot.stop_loss || bot.stopLoss || '2.0');
+    const takeProfitPct = parseFloat(bot.take_profit || bot.takeProfit || '4.0');
+
+    let slPrice: number;
+    let tpPrice: number;
+    const hasSlTpInDb =
+      dbPos.stop_loss_price != null && parseFloat(dbPos.stop_loss_price) > 0 &&
+      dbPos.take_profit_price != null && parseFloat(dbPos.take_profit_price) > 0;
+
+    if (hasSlTpInDb) {
+      slPrice = parseFloat(dbPos.stop_loss_price);
+      tpPrice = parseFloat(dbPos.take_profit_price);
+    } else {
+      if (isLong) {
+        slPrice = entryPrice * (1 - stopLossPct / 100);
+        tpPrice = entryPrice * (1 + takeProfitPct / 100);
+      } else {
+        slPrice = entryPrice * (1 + stopLossPct / 100);
+        tpPrice = entryPrice * (1 - takeProfitPct / 100);
+      }
+    }
+
+    try {
+      if (exchange === 'bybit') {
+        await this.updateBybitTradingStopPrices(
+          ctx.decryptedApiKey,
+          ctx.decryptedApiSecret,
+          symbol,
+          slPrice,
+          tpPrice,
+          tradingType,
+        );
+        console.log(`🎯 [ENSURE SL/TP] Bybit ${symbol}: set SL=$${slPrice.toFixed(4)} TP=$${tpPrice.toFixed(4)}`);
+      } else if (exchange === 'btcc' && ctx.decryptedToken) {
+        const positionId = exchangePos.id != null ? Number(exchangePos.id) : (dbPos.exchange_position_id ? Number(dbPos.exchange_position_id) : null);
+        if (positionId != null && Number.isFinite(positionId)) {
+          await this.updateBTCCPositionStops(
+            ctx.decryptedApiKey,
+            ctx.decryptedApiSecret,
+            ctx.decryptedToken,
+            symbol,
+            positionId,
+            slPrice,
+            tpPrice,
+          );
+          console.log(`🎯 [ENSURE SL/TP] BTCC ${symbol} position ${positionId}: set SL=$${slPrice.toFixed(4)} TP=$${tpPrice.toFixed(4)}`);
+        }
+      }
+      if (!hasSlTpInDb && bot.id && dbPos.id) {
+        await this.supabaseClient
+          .from('trading_positions')
+          .update({
+            stop_loss_price: slPrice.toFixed(8),
+            take_profit_price: tpPrice.toFixed(8),
+            updated_at: TimeSync.getCurrentTimeISO(),
+          })
+          .eq('id', dbPos.id);
+      }
+    } catch (err: any) {
+      console.warn(`⚠️ [ENSURE SL/TP] Failed for ${symbol}:`, err?.message || err);
     }
   }
 
@@ -17580,20 +17690,36 @@ class BotExecutor {
    */
   private async pauseBotForSafety(botId: string, reason: string): Promise<void> {
     try {
-      const { error } = await this.supabaseClient
+      const updatePayload = {
+        status: 'paused' as const,
+        pause_reason: reason,
+        updated_at: TimeSync.getCurrentTimeISO()
+      };
+      let result = await this.supabaseClient
         .from('trading_bots')
-        .update({
-          status: 'paused',
-          pause_reason: reason,
-          updated_at: TimeSync.getCurrentTimeISO()
-        })
+        .update(updatePayload)
         .eq('id', botId);
 
-      if (error) {
-        console.error('Failed to pause bot for safety:', error);
+      // If update failed due to missing 'pause_reason' column (migration not applied), retry without it
+      const isPauseReasonColumnMissing = result.error?.code === 'PGRST204' &&
+        result.error?.message != null &&
+        (result.error.message.includes("'pause_reason'") || result.error.message.includes('pause_reason')) &&
+        (result.error.message.includes('trading_bots') || result.error.message.includes('schema cache'));
+      if (result.error && isPauseReasonColumnMissing) {
+        const { pause_reason: _omit, ...updateWithoutPauseReason } = updatePayload;
+        result = await this.supabaseClient
+          .from('trading_bots')
+          .update(updateWithoutPauseReason)
+          .eq('id', botId);
+        if (!result.error) {
+          console.log(`ℹ️ Bot ${botId} paused (run migration to add pause_reason column for reason text in DB).`);
+        }
+      }
+
+      if (result.error) {
+        console.error('Failed to pause bot for safety:', result.error);
       } else {
         console.log(`🛡️ Bot ${botId} paused for safety: ${reason}`);
-        
         await this.addBotLog(botId, {
           level: 'warning',
           category: 'system',
@@ -18809,28 +18935,43 @@ class PaperTradingExecutor {
       }
 
       // Create virtual position
-      const { data: position, error: posError } = await this.supabaseClient
+      const insertPayload: Record<string, unknown> = {
+        bot_id: bot.id,
+        user_id: this.user.id,
+        symbol: bot.symbol,
+        exchange: bot.exchange,
+        trading_type: bot.tradingType || bot.trading_type || 'futures',
+        side: side,
+        entry_price: finalExecutedPrice,
+        quantity: quantity,
+        leverage: leverage,
+        stop_loss_price: stopLossPrice,
+        take_profit_price: takeProfitPrice,
+        current_price: finalExecutedPrice,
+        margin_used: marginRequired,
+        status: 'open',
+        metadata: exitStrategyMeta
+      };
+      let insertResult = await this.supabaseClient
         .from('paper_trading_positions')
-        .insert({
-          bot_id: bot.id,
-          user_id: this.user.id,
-          symbol: bot.symbol,
-          exchange: bot.exchange,
-          trading_type: bot.tradingType || bot.trading_type || 'futures',
-          side: side,
-          entry_price: finalExecutedPrice,
-          quantity: quantity,
-          leverage: leverage,
-          stop_loss_price: stopLossPrice,
-          take_profit_price: takeProfitPrice,
-          current_price: finalExecutedPrice,
-          margin_used: marginRequired,
-          status: 'open',
-          metadata: exitStrategyMeta
-        })
+        .insert(insertPayload)
         .select()
         .single();
-      
+      let position = insertResult.data;
+      let posError = insertResult.error;
+      // If insert failed due to missing 'metadata' column (migration not applied), retry without metadata
+      if (posError?.code === 'PGRST204' && posError?.message != null &&
+          (posError.message.includes("'metadata'") || posError.message.includes('metadata')) &&
+          (posError.message.includes('paper_trading_positions') || posError.message.includes('schema cache'))) {
+        const { metadata: _m, ...insertWithoutMetadata } = insertPayload;
+        insertResult = await this.supabaseClient
+          .from('paper_trading_positions')
+          .insert(insertWithoutMetadata)
+          .select()
+          .single();
+        position = insertResult.data;
+        posError = insertResult.error;
+      }
       if (posError) throw posError;
       
       // Record trade
@@ -19383,7 +19524,11 @@ class PaperTradingExecutor {
           } catch (_) {}
           console.log(`🎯 [EXIT STRATEGY] Partial close at TP1: ${(tp1Size * 100).toFixed(0)}% of ${position.symbol}, remainder → TP2 @ $${tp2Price.toFixed(4)}`);
         } else if (shouldClose) {
-          updateData.status = newStatus;
+          // paper_trading_positions.status_check allows only: open, closed, stopped, taken_profit, manual_close
+          // Map semantic exit reasons (e.g. smart_exit, automatic_execution) to allowed DB status
+          const allowedPaperStatuses = ['open', 'closed', 'stopped', 'taken_profit', 'manual_close'];
+          const dbStatus = allowedPaperStatuses.includes(newStatus) ? newStatus : 'closed';
+          updateData.status = dbStatus;
           updateData.closed_at = TimeSync.getCurrentTimeISO();
           
           // Calculate final PnL (exitPrice already has slippage applied above)
@@ -19553,13 +19698,37 @@ class PaperTradingExecutor {
         }
         
         // Update position with error handling for race conditions
-        const { data: updatedPosition, error: updateError } = await this.supabaseClient
+        let updatedPosition: any = null;
+        let updateError: any = null;
+        let result = await this.supabaseClient
           .from('paper_trading_positions')
           .update(updateData)
           .eq('id', position.id)
           .select()
           .single();
-        
+        updatedPosition = result.data;
+        updateError = result.error;
+
+        // If update failed due to missing 'metadata' column (migration not applied), retry without metadata
+        const isMetadataColumnMissing = updateError?.code === 'PGRST204' &&
+          updateError?.message != null &&
+          (updateError.message.includes("'metadata'") || updateError.message.includes('metadata')) &&
+          (updateError.message.includes('paper_trading_positions') || updateError.message.includes('schema cache'));
+        if (updateError && isMetadataColumnMissing && updateData.metadata !== undefined) {
+          const { metadata: _omit, ...updateWithoutMetadata } = updateData;
+          result = await this.supabaseClient
+            .from('paper_trading_positions')
+            .update(updateWithoutMetadata)
+            .eq('id', position.id)
+            .select()
+            .single();
+          updatedPosition = result.data;
+          updateError = result.error;
+          if (!updateError) {
+            console.log(`ℹ️ [PAPER] Position ${position.id} updated without metadata (run migration 20260128_add_paper_trading_positions_metadata.sql to enable metadata).`);
+          }
+        }
+
         if (updateError) {
           // Check if it's a "no rows updated" error (PGRST204) - this can happen if position was already closed
           // PostgREST returns 400 with PGRST204 when no rows match the update
@@ -19800,7 +19969,7 @@ serve(async (req) => {
 
   try {
     const cronSecretHeader = req.headers.get('x-cron-secret') ?? ''
-    const cronSecretEnv = Deno.env.get('CRON_SECRET') ?? ''
+    const cronSecretEnv = Deno.env.get('BOT_SCHEDULER_SECRET') ?? Deno.env.get('CRON_SECRET') ?? ''
     // Optional override to keep positions open even if SL/TP setup fails.
     // Set DISABLE_SLTPSAFETY=true in environment to disable auto-close on SL/TP failure.
     const disableSlTpSafety = (Deno.env.get('DISABLE_SLTPSAFETY') || '').toLowerCase() === 'true'
@@ -19816,19 +19985,18 @@ serve(async (req) => {
     if (req.method === 'POST') {
       console.log('🔍 [bot-executor] Authentication detection:');
       console.log(`   x-cron-secret header present: ${!!cronSecretHeader} (length: ${cronSecretHeader.length})`);
-      console.log(`   CRON_SECRET env present: ${!!cronSecretEnv} (length: ${cronSecretEnv.length})`);
+      console.log(`   BOT_SCHEDULER_SECRET/CRON_SECRET env present: ${!!cronSecretEnv} (length: ${cronSecretEnv.length})`);
       console.log(`   Secrets match: ${cronSecretHeader === cronSecretEnv}`);
       console.log(`   Detected as cron: ${isCron}`);
       console.log(`   Detected as service call: ${isServiceCall}`);
       console.log(`   Detected as internal call: ${isInternalCall}`);
       
-      // Enhanced error messages for missing CRON_SECRET
+      // Enhanced error messages for missing secret
       if (cronSecretHeader && !cronSecretEnv) {
-        console.error('❌ [bot-executor] CRITICAL: CRON_SECRET environment variable is NOT SET!');
-        console.error('   This function received an x-cron-secret header but CRON_SECRET env var is missing.');
-        console.error('   ACTION REQUIRED: Set CRON_SECRET environment variable in bot-executor function settings.');
-        console.error('   The value must match the CRON_SECRET in bot-scheduler function.');
-        console.error('   Without this, bot-executor cannot recognize cron requests and will return 401 Invalid JWT.');
+        console.error('❌ [bot-executor] CRITICAL: BOT_SCHEDULER_SECRET (or CRON_SECRET) environment variable is NOT SET!');
+        console.error('   This function received an x-cron-secret header but the env var is missing.');
+        console.error('   ACTION REQUIRED: Set BOT_SCHEDULER_SECRET in bot-executor (and bot-scheduler) function settings.');
+        console.error('   The value must match the header sent by the scheduler. Without this, cron requests return 401.');
       } else if (!isCron && cronSecretHeader) {
         console.warn(`   ⚠️ Cron secret mismatch - header doesn't match env var`);
         if (cronSecretHeader.length === cronSecretEnv.length) {

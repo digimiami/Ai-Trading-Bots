@@ -8,9 +8,12 @@
 -- For 100 users with 3 bots each = 300 bots total
 -- All bots processed in ~30 minutes
 -- =====================================================
-
--- Note: This requires the pg_cron extension to be enabled
--- Run this in Supabase SQL Editor
+-- If you see "app.supabase_service_role_key not set" or
+-- "unrecognized configuration parameter app.supabase_url",
+-- run set_cron_app_settings.sql first (or use Dashboard schedules).
+-- Note: This requires the pg_cron extension to be enabled.
+-- Run this in Supabase SQL Editor.
+-- =====================================================
 
 -- 1. Enable pg_cron extension (if not already enabled)
 CREATE EXTENSION IF NOT EXISTS pg_cron;

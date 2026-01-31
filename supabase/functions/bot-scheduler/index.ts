@@ -1,10 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 // This Edge Function is intended to be triggered by Supabase Scheduled Triggers.
 // Setup:
-// 1) Set env vars: CRON_SECRET, SUPABASE_URL (project), SUPABASE_SERVICE_ROLE_KEY (on bot-executor only)
+// 1) Set env vars: BOT_SCHEDULER_SECRET (or CRON_SECRET), SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
 // 2) Deploy: supabase functions deploy bot-scheduler
 // 3) Add schedule in Dashboard → Edge Functions → bot-scheduler (every 1 minute: * * * * *)
-// 4) Add header: x-cron-secret: <CRON_SECRET>
+// 4) Add header: x-cron-secret: <same value as BOT_SCHEDULER_SECRET>
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -39,15 +39,15 @@ serve(async (req) => {
     }
     console.log(`📋 [${requestId}] Request headers:`, JSON.stringify(maskedHeaders, null, 2));
     
-    // Environment variables check
-    const CRON_SECRET = Deno.env.get('CRON_SECRET') ?? '';
+    // Environment variables check (BOT_SCHEDULER_SECRET preferred; CRON_SECRET fallback)
+    const CRON_SECRET = Deno.env.get('BOT_SCHEDULER_SECRET') ?? Deno.env.get('CRON_SECRET') ?? '';
     const headerSecret = req.headers.get('x-cron-secret') ?? '';
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
     const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 
     console.log(`🔐 [${requestId}] Environment check:`);
-    console.log(`   CRON_SECRET present: ${!!CRON_SECRET} (length: ${CRON_SECRET.length})`);
+    console.log(`   BOT_SCHEDULER_SECRET/CRON_SECRET present: ${!!CRON_SECRET} (length: ${CRON_SECRET.length})`);
     console.log(`   Header secret present: ${!!headerSecret} (length: ${headerSecret.length})`);
     console.log(`   SUPABASE_URL present: ${!!SUPABASE_URL}`);
     console.log(`   SERVICE_ROLE_KEY present: ${!!SERVICE_ROLE_KEY} (length: ${SERVICE_ROLE_KEY.length})`);
@@ -64,18 +64,18 @@ serve(async (req) => {
       }
     } else {
       console.warn(`   ⚠️ [${requestId}] Missing secrets:`);
-      if (!CRON_SECRET) console.warn(`      - CRON_SECRET env var is empty`);
+      if (!CRON_SECRET) console.warn(`      - BOT_SCHEDULER_SECRET / CRON_SECRET env var is empty`);
       if (!headerSecret) console.warn(`      - x-cron-secret header is missing or empty`);
     }
 
     // Authentication check
     if (!CRON_SECRET || headerSecret !== CRON_SECRET) {
-      const error = 'Unauthorized: CRON_SECRET mismatch or missing';
+      const error = 'Unauthorized: x-cron-secret mismatch or missing';
       console.error(`❌ [${requestId}] AUTHENTICATION FAILED: ${error}`);
       console.error(`   This usually means:`);
-      console.error(`   1. x-cron-secret header doesn't match CRON_SECRET env var`);
+      console.error(`   1. x-cron-secret header doesn't match BOT_SCHEDULER_SECRET (or CRON_SECRET) env var`);
       console.error(`   2. Header is missing from the scheduled trigger`);
-      console.error(`   3. Environment variable is not set`);
+      console.error(`   3. BOT_SCHEDULER_SECRET / CRON_SECRET environment variable is not set`);
       console.error(`📊 [${requestId}] Request duration: ${Date.now() - requestStartTime}ms`);
       console.log(`${'='.repeat(60)}\n`);
       return new Response(JSON.stringify({ 
