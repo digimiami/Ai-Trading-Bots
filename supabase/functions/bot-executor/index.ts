@@ -16350,13 +16350,33 @@ class BotExecutor {
     const smartExitEnabled = cfg.smart_exit_enabled === true || bot.smart_exit_enabled === true;
     const smartExitRetracementPct = parseFloat(cfg.smart_exit_retracement_pct ?? bot.smart_exit_retracement_pct ?? 2.0);
 
+    // Take profit check first: if price has reached or passed TP, close at market (backup when exchange TP doesn't fire).
+    // Runs every sync regardless of advanced features so 10% TP etc. are honored even if exchange TP didn't trigger.
+    const side = String(dbPos.side || '').toLowerCase();
+    const symbol = String(dbPos.symbol || bot.symbol || '');
+    const currentPrice = ctx.currentPrice;
+    const takeProfitPriceDb = dbPos.take_profit_price != null ? parseFloat(dbPos.take_profit_price) : 0;
+    if (symbol && side && currentPrice > 0 && takeProfitPriceDb > 0) {
+      const tpHit = (side === 'long' && currentPrice >= takeProfitPriceDb) || (side === 'short' && currentPrice <= takeProfitPriceDb);
+      if (tpHit) {
+        console.log(`🎯 [LIVE TAKE PROFIT] ${symbol} ${side} price ${currentPrice} reached TP ${takeProfitPriceDb} → closing at market`);
+        if (bot?.id) {
+          await this.addBotLog(bot.id, {
+            level: 'info',
+            category: 'trade',
+            message: `🎯 Take profit (LIVE): ${symbol} ${side} at ${currentPrice.toFixed(4)} (TP ${takeProfitPriceDb.toFixed(4)})`,
+            details: { exchange, symbol, side, current_price: currentPrice, take_profit_price: takeProfitPriceDb },
+          });
+        }
+        await this.closeLivePositionMarket(bot, dbPos, ctx, 'taken_profit');
+        return;
+      }
+    }
+
     // If nothing enabled, bail early (all off by default).
     if (!enableDynamicTrailing && !enableTrailingTP && !smartExitEnabled) return;
 
-    const side = String(dbPos.side || '').toLowerCase(); // long|short
-    const symbol = String(dbPos.symbol || bot.symbol || '');
     const entryPrice = parseFloat(dbPos.entry_price || 0);
-    const currentPrice = ctx.currentPrice;
     if (!symbol || !side || !entryPrice || !currentPrice) return;
 
     const positionMetadata = dbPos.metadata || {};
@@ -16463,6 +16483,9 @@ class BotExecutor {
       const retracementPct = side === 'long'
         ? ((highestPrice - currentPrice) / highestPrice) * 100
         : ((currentPrice - lowestPrice) / lowestPrice) * 100;
+
+      // Diagnostic: log every sync so you can verify smart exit is evaluating (Supabase function logs)
+      console.log(`[SMART EXIT CHECK] ${symbol} ${side} retracement=${retracementPct.toFixed(2)}% threshold=${smartExitRetracementPct}% (high=${highestPrice} low=${lowestPrice} current=${currentPrice})`);
 
       if (retracementPct >= smartExitRetracementPct) {
         console.log(`🚨 [LIVE SMART EXIT] ${symbol} ${side} retraced ${retracementPct.toFixed(2)}% (threshold ${smartExitRetracementPct}%) → closing at market`);
@@ -16619,7 +16642,7 @@ class BotExecutor {
     }
   }
 
-  private async closeLivePositionMarket(bot: any, dbPos: any, ctx: any): Promise<void> {
+  private async closeLivePositionMarket(bot: any, dbPos: any, ctx: any, closeReason: string = 'smart_exit'): Promise<void> {
     const exchange = String(bot.exchange || dbPos.exchange || '').toLowerCase();
     const tradingType = String(dbPos.trading_type || bot.tradingType || bot.trading_type || 'futures').toLowerCase();
     const symbol = String(dbPos.symbol || bot.symbol || '');
@@ -16684,7 +16707,7 @@ class BotExecutor {
       }
       const direction = side === 'long' ? 1 : 2;
       await this.closeBTCCPositionMarket(ctx.decryptedApiKey, ctx.decryptedApiSecret, ctx.decryptedToken, symbol, positionId, direction, qty);
-      await this.trackPositionClose(bot, { id: dbPos.trade_id, side: side === 'long' ? 'buy' : 'sell' }, currentPrice, 'smart_exit');
+      await this.trackPositionClose(bot, { id: dbPos.trade_id, side: side === 'long' ? 'buy' : 'sell' }, currentPrice, closeReason);
     } else if (exchange === 'bitunix') {
       console.warn(`⚠️ [LIVE SMART EXIT] Bitunix smart-exit market close not implemented yet for ${symbol}.`);
     }
@@ -20766,20 +20789,14 @@ serve(async (req) => {
                   .limit(1);
                 return (positions?.length || 0) > 0;
               } else {
-                // For real trading bots, positions table may not exist
-                // Check if positions table exists, if not, assume needs execution
-                try {
-                  const { data: positions } = await supabaseClient
-                    .from('positions')
-                    .select('id')
-                    .eq('bot_id', bot.id)
-                    .eq('status', 'open')
-                    .limit(1);
-                  return (positions?.length || 0) > 0;
-                } catch {
-                  // positions table doesn't exist, assume needs execution (safe default)
-                  return true;
-                }
+                // For real trading bots, use trading_positions (live positions)
+                const { data: positions } = await supabaseClient
+                  .from('trading_positions')
+                  .select('id')
+                  .eq('bot_id', bot.id)
+                  .eq('status', 'open')
+                  .limit(1);
+                return (positions?.length || 0) > 0;
               }
             } catch (error: any) {
               // If check fails, assume needs execution (safe default)
