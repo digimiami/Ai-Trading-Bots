@@ -5,11 +5,14 @@
 - **Take profit (TP)**: When price **reaches or passes** your configured TP level (e.g. +10%), the position is closed.  
   - **Live**: We set TP on the exchange and, every sync, we also check `current price >= TP` (long) or `current price <= TP` (short). If the exchange didn’t close (e.g. mark vs last price), we close at market and record as `taken_profit`. So 10% TP is honored even if the exchange TP didn’t fire.
   - **Paper**: Exit Strategy loop checks price vs TP and closes (full or partial TP1/TP2).
+- **Early take profit (%)**: Optional. When **unrealized profit** reaches X% (e.g. 5% or 10%), we close at market **sooner** so profit is locked in before a retrace.  
+  - **Live**: Every sync we compute profit % from entry (long: (current−entry)/entry×100; short: (entry−current)/entry×100). If `early_take_profit_pct` is set (e.g. 5 or 10) and profit % ≥ that, we close at market.  
+  - Set **Take profit sooner** in bot advanced settings (Edit/Create bot → Advanced → “Profit target (%)”). Use 0 to disable, or 5/10 to lock in at 5% or 10% profit.
 - **Smart Exit**: Closes when price **retraces** from the best level (high for long, low for short) by at least your threshold (e.g. 2%).  
   - If price goes up 10% and **stays there**, retracement is 0% → Smart Exit does **not** trigger.  
   - If price goes up 10% then **drops** 2% from that high → Smart Exit triggers and we close at market.
 
-So: “10% TP” is handled by the **Take profit** check (and exchange TP). “Lock in profit when price pulls back” is **Smart Exit**.
+So: “10% TP” = **Take profit** (or **Early take profit** at 10%). “Lock in at 5–10% profit before retrace” = **Early take profit**. “Lock in when price pulls back” = **Smart Exit**.
 
 ---
 

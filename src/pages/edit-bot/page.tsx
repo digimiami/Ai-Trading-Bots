@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import Button from '../../components/base/Button';
 import Card from '../../components/base/Card';
 import Header from '../../components/feature/Header';
-import type { TradingStrategy, TradingBot, AdvancedStrategyConfig } from '../../types/trading';
+import { type TradingStrategy, type TradingBot, type AdvancedStrategyConfig, DEFAULT_ADVANCED_STRATEGY_CONFIG, DEFAULT_RISK_ENGINE } from '../../types/trading';
 import { useBots } from '../../hooks/useBots';
 import AutoOptimizer from '../../components/bot/AutoOptimizer';
 import { STRATEGY_PRESETS, type StrategyPreset } from '../../constants/strategyPresets';
@@ -43,34 +43,9 @@ export default function EditBotPage() {
     minSamplesForML: 100
   });
 
-  const defaultRiskEngine = {
-    volatility_low: 0.6,
-    volatility_high: 2.5,
-    high_volatility_multiplier: 0.75,
-    low_volatility_multiplier: 1.05,
-    max_spread_bps: 20,
-    spread_penalty_multiplier: 0.75,
-    low_liquidity_multiplier: 0.6,
-    medium_liquidity_multiplier: 0.8,
-    drawdown_moderate: 10,
-    drawdown_severe: 20,
-    moderate_drawdown_multiplier: 0.8,
-    severe_drawdown_multiplier: 0.6,
-    loss_streak_threshold: 3,
-    loss_streak_step: 0.15,
-    min_size_multiplier: 0.35,
-    max_size_multiplier: 1.5,
-    max_slippage_bps: 25,
-    min_execution_size_multiplier: 0.35,
-    limit_spread_bps: 8,
-    signal_learning_rate: 0.05,
-    min_signal_weight: 0.6,
-    max_signal_weight: 1.4
-  };
-
   const normalizeRiskEngine = (engine: any) => {
     const resolved = {
-      ...defaultRiskEngine,
+      ...DEFAULT_RISK_ENGINE,
       ...(engine || {})
     };
     const toNumber = (value: any, fallback: number) => {
@@ -79,116 +54,43 @@ export default function EditBotPage() {
     };
     const clampValue = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
-    const volatilityLow = Math.max(0, toNumber(resolved.volatility_low, defaultRiskEngine.volatility_low));
-    const volatilityHigh = Math.max(volatilityLow + 0.1, toNumber(resolved.volatility_high, defaultRiskEngine.volatility_high));
-    const drawdownModerate = Math.max(0, toNumber(resolved.drawdown_moderate, defaultRiskEngine.drawdown_moderate));
-    const drawdownSevere = Math.max(drawdownModerate + 1, toNumber(resolved.drawdown_severe, defaultRiskEngine.drawdown_severe));
-    const minSizeMultiplier = clampValue(toNumber(resolved.min_size_multiplier, defaultRiskEngine.min_size_multiplier), 0.1, 3);
-    const maxSizeMultiplier = clampValue(toNumber(resolved.max_size_multiplier, defaultRiskEngine.max_size_multiplier), minSizeMultiplier, 3);
-    const minSignalWeight = clampValue(toNumber(resolved.min_signal_weight, defaultRiskEngine.min_signal_weight), 0.1, 2);
-    const maxSignalWeight = clampValue(toNumber(resolved.max_signal_weight, defaultRiskEngine.max_signal_weight), minSignalWeight, 2);
+    const volatilityLow = Math.max(0, toNumber(resolved.volatility_low, DEFAULT_RISK_ENGINE.volatility_low));
+    const volatilityHigh = Math.max(volatilityLow + 0.1, toNumber(resolved.volatility_high, DEFAULT_RISK_ENGINE.volatility_high));
+    const drawdownModerate = Math.max(0, toNumber(resolved.drawdown_moderate, DEFAULT_RISK_ENGINE.drawdown_moderate));
+    const drawdownSevere = Math.max(drawdownModerate + 1, toNumber(resolved.drawdown_severe, DEFAULT_RISK_ENGINE.drawdown_severe));
+    const minSizeMultiplier = clampValue(toNumber(resolved.min_size_multiplier, DEFAULT_RISK_ENGINE.min_size_multiplier), 0.1, 3);
+    const maxSizeMultiplier = clampValue(toNumber(resolved.max_size_multiplier, DEFAULT_RISK_ENGINE.max_size_multiplier), minSizeMultiplier, 3);
+    const minSignalWeight = clampValue(toNumber(resolved.min_signal_weight, DEFAULT_RISK_ENGINE.min_signal_weight), 0.1, 2);
+    const maxSignalWeight = clampValue(toNumber(resolved.max_signal_weight, DEFAULT_RISK_ENGINE.max_signal_weight), minSignalWeight, 2);
 
     return {
       ...resolved,
       volatility_low: volatilityLow,
       volatility_high: volatilityHigh,
-      high_volatility_multiplier: clampValue(toNumber(resolved.high_volatility_multiplier, defaultRiskEngine.high_volatility_multiplier), 0.1, 3),
-      low_volatility_multiplier: clampValue(toNumber(resolved.low_volatility_multiplier, defaultRiskEngine.low_volatility_multiplier), 0.1, 3),
-      max_spread_bps: Math.max(1, toNumber(resolved.max_spread_bps, defaultRiskEngine.max_spread_bps)),
-      spread_penalty_multiplier: clampValue(toNumber(resolved.spread_penalty_multiplier, defaultRiskEngine.spread_penalty_multiplier), 0.1, 3),
-      low_liquidity_multiplier: clampValue(toNumber(resolved.low_liquidity_multiplier, defaultRiskEngine.low_liquidity_multiplier), 0.1, 3),
-      medium_liquidity_multiplier: clampValue(toNumber(resolved.medium_liquidity_multiplier, defaultRiskEngine.medium_liquidity_multiplier), 0.1, 3),
+      high_volatility_multiplier: clampValue(toNumber(resolved.high_volatility_multiplier, DEFAULT_RISK_ENGINE.high_volatility_multiplier), 0.1, 3),
+      low_volatility_multiplier: clampValue(toNumber(resolved.low_volatility_multiplier, DEFAULT_RISK_ENGINE.low_volatility_multiplier), 0.1, 3),
+      max_spread_bps: Math.max(1, toNumber(resolved.max_spread_bps, DEFAULT_RISK_ENGINE.max_spread_bps)),
+      spread_penalty_multiplier: clampValue(toNumber(resolved.spread_penalty_multiplier, DEFAULT_RISK_ENGINE.spread_penalty_multiplier), 0.1, 3),
+      low_liquidity_multiplier: clampValue(toNumber(resolved.low_liquidity_multiplier, DEFAULT_RISK_ENGINE.low_liquidity_multiplier), 0.1, 3),
+      medium_liquidity_multiplier: clampValue(toNumber(resolved.medium_liquidity_multiplier, DEFAULT_RISK_ENGINE.medium_liquidity_multiplier), 0.1, 3),
       drawdown_moderate: drawdownModerate,
       drawdown_severe: drawdownSevere,
-      moderate_drawdown_multiplier: clampValue(toNumber(resolved.moderate_drawdown_multiplier, defaultRiskEngine.moderate_drawdown_multiplier), 0.1, 3),
-      severe_drawdown_multiplier: clampValue(toNumber(resolved.severe_drawdown_multiplier, defaultRiskEngine.severe_drawdown_multiplier), 0.1, 3),
-      loss_streak_threshold: Math.max(1, Math.round(toNumber(resolved.loss_streak_threshold, defaultRiskEngine.loss_streak_threshold))),
-      loss_streak_step: clampValue(toNumber(resolved.loss_streak_step, defaultRiskEngine.loss_streak_step), 0.01, 1),
+      moderate_drawdown_multiplier: clampValue(toNumber(resolved.moderate_drawdown_multiplier, DEFAULT_RISK_ENGINE.moderate_drawdown_multiplier), 0.1, 3),
+      severe_drawdown_multiplier: clampValue(toNumber(resolved.severe_drawdown_multiplier, DEFAULT_RISK_ENGINE.severe_drawdown_multiplier), 0.1, 3),
+      loss_streak_threshold: Math.max(1, Math.round(toNumber(resolved.loss_streak_threshold, DEFAULT_RISK_ENGINE.loss_streak_threshold))),
+      loss_streak_step: clampValue(toNumber(resolved.loss_streak_step, DEFAULT_RISK_ENGINE.loss_streak_step), 0.01, 1),
       min_size_multiplier: minSizeMultiplier,
       max_size_multiplier: maxSizeMultiplier,
-      max_slippage_bps: Math.max(1, toNumber(resolved.max_slippage_bps, defaultRiskEngine.max_slippage_bps)),
-      min_execution_size_multiplier: clampValue(toNumber(resolved.min_execution_size_multiplier, defaultRiskEngine.min_execution_size_multiplier), 0.1, 1),
-      limit_spread_bps: Math.max(1, toNumber(resolved.limit_spread_bps, defaultRiskEngine.limit_spread_bps)),
-      signal_learning_rate: clampValue(toNumber(resolved.signal_learning_rate, defaultRiskEngine.signal_learning_rate), 0.01, 1),
+      max_slippage_bps: Math.max(1, toNumber(resolved.max_slippage_bps, DEFAULT_RISK_ENGINE.max_slippage_bps)),
+      min_execution_size_multiplier: clampValue(toNumber(resolved.min_execution_size_multiplier, DEFAULT_RISK_ENGINE.min_execution_size_multiplier), 0.1, 1),
+      limit_spread_bps: Math.max(1, toNumber(resolved.limit_spread_bps, DEFAULT_RISK_ENGINE.limit_spread_bps)),
+      signal_learning_rate: clampValue(toNumber(resolved.signal_learning_rate, DEFAULT_RISK_ENGINE.signal_learning_rate), 0.01, 1),
       min_signal_weight: minSignalWeight,
       max_signal_weight: maxSignalWeight
     };
   };
 
-  const [advancedConfig, setAdvancedConfig] = useState<AdvancedStrategyConfig>({
-    // Directional Bias
-    bias_mode: 'auto',
-    htf_timeframe: '4h',
-    htf_trend_indicator: 'EMA200',
-    ema_fast_period: 50,
-    require_price_vs_trend: 'any',
-    adx_min_htf: 23,
-    require_adx_rising: true,
-    
-    // Regime Filter
-    regime_mode: 'auto',
-    adx_trend_min: 25,
-    adx_meanrev_max: 19,
-    
-    // Session/Timing
-    session_filter_enabled: false,
-    allowed_hours_utc: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23],
-    cooldown_bars: 5,
-    
-    // Volatility/Liquidity Gates
-    atr_percentile_min: 20,
-    bb_width_min: 0.012,
-    bb_width_max: 0.03,
-    min_24h_volume_usd: 500000000,
-    max_spread_bps: 3,
-    
-    // Risk & Exits
-    risk_per_trade_pct: 0.75,
-    daily_loss_limit_pct: 3.0,
-    weekly_loss_limit_pct: 6.0,
-    max_trades_per_day: 8,
-    max_concurrent: 2,
-    max_consecutive_losses: 5,
-    sl_atr_mult: 1.3,
-    tp1_r: 1.0,
-    tp2_r: 2.0,
-    tp1_size: 0.5,
-    breakeven_at_r: 0.8,
-    trail_after_tp1_atr: 1.0,
-    time_stop_hours: 48,
-    
-    // Technical Indicators
-    rsi_period: 14,
-    rsi_oversold: 30,
-    rsi_overbought: 70,
-    atr_period: 14,
-    atr_tp_multiplier: 3,
-    
-    // ML/AI Settings
-    use_ml_prediction: true,
-    ml_confidence_threshold: 0.6,
-    ml_min_samples: 100,
-    
-    // Advanced Exit & Trailing Features
-    enable_dynamic_trailing: false,
-    enable_trailing_take_profit: false,
-    trailing_take_profit_atr: 1.0,
-    smart_exit_enabled: false,
-    smart_exit_retracement_pct: 2.0,
-    enable_automatic_execution: false,
-    enable_slippage_consideration: true,
-    flexible_strategy_integration: [],
-    
-    // Pair-Based Win Rate Calculation
-    enable_pair_win_rate: false,
-    min_trades_for_pair_win_rate: 3,
-    pair_win_rate_update_frequency: 'real-time' as 'real-time' | 'on-close' | 'periodic',
-    // Advanced Features
-    enable_auto_rebalancing: false,
-    enable_funding_rate_filter: false,
-    enable_volatility_pause: false,
-    risk_engine: defaultRiskEngine
-  });
+  const [advancedConfig, setAdvancedConfig] = useState<AdvancedStrategyConfig>({ ...DEFAULT_ADVANCED_STRATEGY_CONFIG });
 
   const riskEngine = normalizeRiskEngine(advancedConfig.risk_engine);
 
@@ -856,7 +758,7 @@ export default function EditBotPage() {
                         value={riskEngine.volatility_low}
                         onChange={(e) => setAdvancedConfig(prev => ({
                           ...prev,
-                          risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), volatility_low: parseFloat(e.target.value) }
+                          risk_engine: { ...DEFAULT_RISK_ENGINE, ...(prev.risk_engine || {}), volatility_low: parseFloat(e.target.value) }
                         }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         min="0"
@@ -874,7 +776,7 @@ export default function EditBotPage() {
                         value={riskEngine.volatility_high}
                         onChange={(e) => setAdvancedConfig(prev => ({
                           ...prev,
-                          risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), volatility_high: parseFloat(e.target.value) }
+                          risk_engine: { ...DEFAULT_RISK_ENGINE, ...(prev.risk_engine || {}), volatility_high: parseFloat(e.target.value) }
                         }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         min="0"
@@ -892,7 +794,7 @@ export default function EditBotPage() {
                         value={riskEngine.high_volatility_multiplier}
                         onChange={(e) => setAdvancedConfig(prev => ({
                           ...prev,
-                          risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), high_volatility_multiplier: parseFloat(e.target.value) }
+                          risk_engine: { ...DEFAULT_RISK_ENGINE, ...(prev.risk_engine || {}), high_volatility_multiplier: parseFloat(e.target.value) }
                         }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         min="0.2"
@@ -911,7 +813,7 @@ export default function EditBotPage() {
                         value={riskEngine.low_volatility_multiplier}
                         onChange={(e) => setAdvancedConfig(prev => ({
                           ...prev,
-                          risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), low_volatility_multiplier: parseFloat(e.target.value) }
+                          risk_engine: { ...DEFAULT_RISK_ENGINE, ...(prev.risk_engine || {}), low_volatility_multiplier: parseFloat(e.target.value) }
                         }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         min="0.2"
@@ -930,7 +832,7 @@ export default function EditBotPage() {
                         value={riskEngine.max_spread_bps}
                         onChange={(e) => setAdvancedConfig(prev => ({
                           ...prev,
-                          risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), max_spread_bps: parseFloat(e.target.value) }
+                          risk_engine: { ...DEFAULT_RISK_ENGINE, ...(prev.risk_engine || {}), max_spread_bps: parseFloat(e.target.value) }
                         }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         min="1"
@@ -948,7 +850,7 @@ export default function EditBotPage() {
                         value={riskEngine.spread_penalty_multiplier}
                         onChange={(e) => setAdvancedConfig(prev => ({
                           ...prev,
-                          risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), spread_penalty_multiplier: parseFloat(e.target.value) }
+                          risk_engine: { ...DEFAULT_RISK_ENGINE, ...(prev.risk_engine || {}), spread_penalty_multiplier: parseFloat(e.target.value) }
                         }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         min="0.2"
@@ -967,7 +869,7 @@ export default function EditBotPage() {
                         value={riskEngine.low_liquidity_multiplier}
                         onChange={(e) => setAdvancedConfig(prev => ({
                           ...prev,
-                          risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), low_liquidity_multiplier: parseFloat(e.target.value) }
+                          risk_engine: { ...DEFAULT_RISK_ENGINE, ...(prev.risk_engine || {}), low_liquidity_multiplier: parseFloat(e.target.value) }
                         }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         min="0.2"
@@ -986,7 +888,7 @@ export default function EditBotPage() {
                         value={riskEngine.medium_liquidity_multiplier}
                         onChange={(e) => setAdvancedConfig(prev => ({
                           ...prev,
-                          risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), medium_liquidity_multiplier: parseFloat(e.target.value) }
+                          risk_engine: { ...DEFAULT_RISK_ENGINE, ...(prev.risk_engine || {}), medium_liquidity_multiplier: parseFloat(e.target.value) }
                         }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         min="0.2"
@@ -1005,7 +907,7 @@ export default function EditBotPage() {
                         value={riskEngine.drawdown_moderate}
                         onChange={(e) => setAdvancedConfig(prev => ({
                           ...prev,
-                          risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), drawdown_moderate: parseFloat(e.target.value) }
+                          risk_engine: { ...DEFAULT_RISK_ENGINE, ...(prev.risk_engine || {}), drawdown_moderate: parseFloat(e.target.value) }
                         }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         min="1"
@@ -1023,7 +925,7 @@ export default function EditBotPage() {
                         value={riskEngine.drawdown_severe}
                         onChange={(e) => setAdvancedConfig(prev => ({
                           ...prev,
-                          risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), drawdown_severe: parseFloat(e.target.value) }
+                          risk_engine: { ...DEFAULT_RISK_ENGINE, ...(prev.risk_engine || {}), drawdown_severe: parseFloat(e.target.value) }
                         }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         min="1"
@@ -1041,7 +943,7 @@ export default function EditBotPage() {
                         value={riskEngine.moderate_drawdown_multiplier}
                         onChange={(e) => setAdvancedConfig(prev => ({
                           ...prev,
-                          risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), moderate_drawdown_multiplier: parseFloat(e.target.value) }
+                          risk_engine: { ...DEFAULT_RISK_ENGINE, ...(prev.risk_engine || {}), moderate_drawdown_multiplier: parseFloat(e.target.value) }
                         }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         min="0.2"
@@ -1060,7 +962,7 @@ export default function EditBotPage() {
                         value={riskEngine.severe_drawdown_multiplier}
                         onChange={(e) => setAdvancedConfig(prev => ({
                           ...prev,
-                          risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), severe_drawdown_multiplier: parseFloat(e.target.value) }
+                          risk_engine: { ...DEFAULT_RISK_ENGINE, ...(prev.risk_engine || {}), severe_drawdown_multiplier: parseFloat(e.target.value) }
                         }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         min="0.2"
@@ -1079,7 +981,7 @@ export default function EditBotPage() {
                         value={riskEngine.loss_streak_threshold}
                         onChange={(e) => setAdvancedConfig(prev => ({
                           ...prev,
-                          risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), loss_streak_threshold: parseInt(e.target.value) }
+                          risk_engine: { ...DEFAULT_RISK_ENGINE, ...(prev.risk_engine || {}), loss_streak_threshold: parseInt(e.target.value) }
                         }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         min="1"
@@ -1097,7 +999,7 @@ export default function EditBotPage() {
                         value={riskEngine.loss_streak_step}
                         onChange={(e) => setAdvancedConfig(prev => ({
                           ...prev,
-                          risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), loss_streak_step: parseFloat(e.target.value) }
+                          risk_engine: { ...DEFAULT_RISK_ENGINE, ...(prev.risk_engine || {}), loss_streak_step: parseFloat(e.target.value) }
                         }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         min="0.01"
@@ -1115,7 +1017,7 @@ export default function EditBotPage() {
                         value={riskEngine.min_size_multiplier}
                         onChange={(e) => setAdvancedConfig(prev => ({
                           ...prev,
-                          risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), min_size_multiplier: parseFloat(e.target.value) }
+                          risk_engine: { ...DEFAULT_RISK_ENGINE, ...(prev.risk_engine || {}), min_size_multiplier: parseFloat(e.target.value) }
                         }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         min="0.1"
@@ -1134,7 +1036,7 @@ export default function EditBotPage() {
                         value={riskEngine.max_size_multiplier}
                         onChange={(e) => setAdvancedConfig(prev => ({
                           ...prev,
-                          risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), max_size_multiplier: parseFloat(e.target.value) }
+                          risk_engine: { ...DEFAULT_RISK_ENGINE, ...(prev.risk_engine || {}), max_size_multiplier: parseFloat(e.target.value) }
                         }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         min="0.5"
@@ -1173,7 +1075,7 @@ export default function EditBotPage() {
                         value={riskEngine.max_slippage_bps}
                         onChange={(e) => setAdvancedConfig(prev => ({
                           ...prev,
-                          risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), max_slippage_bps: parseFloat(e.target.value) }
+                          risk_engine: { ...DEFAULT_RISK_ENGINE, ...(prev.risk_engine || {}), max_slippage_bps: parseFloat(e.target.value) }
                         }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         min="1"
@@ -1191,7 +1093,7 @@ export default function EditBotPage() {
                         value={riskEngine.min_execution_size_multiplier}
                         onChange={(e) => setAdvancedConfig(prev => ({
                           ...prev,
-                          risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), min_execution_size_multiplier: parseFloat(e.target.value) }
+                          risk_engine: { ...DEFAULT_RISK_ENGINE, ...(prev.risk_engine || {}), min_execution_size_multiplier: parseFloat(e.target.value) }
                         }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         min="0.1"
@@ -1210,7 +1112,7 @@ export default function EditBotPage() {
                         value={riskEngine.limit_spread_bps}
                         onChange={(e) => setAdvancedConfig(prev => ({
                           ...prev,
-                          risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), limit_spread_bps: parseFloat(e.target.value) }
+                          risk_engine: { ...DEFAULT_RISK_ENGINE, ...(prev.risk_engine || {}), limit_spread_bps: parseFloat(e.target.value) }
                         }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         min="1"
@@ -1248,7 +1150,7 @@ export default function EditBotPage() {
                         value={riskEngine.signal_learning_rate}
                         onChange={(e) => setAdvancedConfig(prev => ({
                           ...prev,
-                          risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), signal_learning_rate: parseFloat(e.target.value) }
+                          risk_engine: { ...DEFAULT_RISK_ENGINE, ...(prev.risk_engine || {}), signal_learning_rate: parseFloat(e.target.value) }
                         }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         min="0.01"
@@ -1266,7 +1168,7 @@ export default function EditBotPage() {
                         value={riskEngine.min_signal_weight}
                         onChange={(e) => setAdvancedConfig(prev => ({
                           ...prev,
-                          risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), min_signal_weight: parseFloat(e.target.value) }
+                          risk_engine: { ...DEFAULT_RISK_ENGINE, ...(prev.risk_engine || {}), min_signal_weight: parseFloat(e.target.value) }
                         }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         min="0.1"
@@ -1285,7 +1187,7 @@ export default function EditBotPage() {
                         value={riskEngine.max_signal_weight}
                         onChange={(e) => setAdvancedConfig(prev => ({
                           ...prev,
-                          risk_engine: { ...defaultRiskEngine, ...(prev.risk_engine || {}), max_signal_weight: parseFloat(e.target.value) }
+                          risk_engine: { ...DEFAULT_RISK_ENGINE, ...(prev.risk_engine || {}), max_signal_weight: parseFloat(e.target.value) }
                         }))}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                         min="0.5"
@@ -1769,6 +1671,47 @@ export default function EditBotPage() {
                       )}
                     </div>
 
+                    {/* Take Profit Sooner - close when profit reaches X% (long or short) */}
+                    <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <h4 className="font-semibold text-gray-900 flex items-center gap-2">
+                            <i className="ri-money-dollar-circle-line text-green-600"></i>
+                            Take Profit Sooner
+                          </h4>
+                          <p className="text-xs text-gray-600 mt-1">
+                            Close position when unrealized profit reaches this % (locks in profit before retrace)
+                          </p>
+                        </div>
+                      </div>
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Profit target (%): {advancedConfig.early_take_profit_pct ?? 0}% (0 = off)
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            max={50}
+                            step={0.5}
+                            value={advancedConfig.early_take_profit_pct ?? 0}
+                            onChange={(e) => setAdvancedConfig(prev => ({ ...prev, early_take_profit_pct: parseFloat(e.target.value) || 0 } as any))}
+                            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                            placeholder="e.g. 5 or 10"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            E.g. 5% or 10%: close when position is up 5% or 10% (long or short). Reduces losses from holding too long.
+                          </p>
+                        </div>
+                        <div className="p-3 bg-white rounded border border-green-200">
+                          <p className="text-xs text-green-700">
+                            <i className="ri-information-line mr-1"></i>
+                            Checked every sync (~1 min). Use with your main TP or alone to lock in gains sooner.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
                     {/* Smart Exit Trigger */}
                     <div className="bg-gradient-to-r from-orange-50 to-red-50 border border-orange-200 rounded-lg p-4">
                       <div className="flex items-center justify-between mb-3">
@@ -2079,12 +2022,12 @@ export default function EditBotPage() {
                       <div className="mt-3 space-y-3">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">
-                            Minimum Trades Before Display: {advancedConfig.min_trades_for_pair_win_rate || 3}
+                            Minimum Trades Before Display: {(advancedConfig.pair_win_rate_min_trades ?? (advancedConfig as any).min_trades_for_pair_win_rate) || 3}
                           </label>
                           <input
                             type="range"
-                            value={advancedConfig.min_trades_for_pair_win_rate || 3}
-                            onChange={(e) => setAdvancedConfig(prev => ({ ...prev, min_trades_for_pair_win_rate: parseInt(e.target.value) } as any))}
+                            value={(advancedConfig.pair_win_rate_min_trades ?? (advancedConfig as any).min_trades_for_pair_win_rate) || 3}
+                            onChange={(e) => setAdvancedConfig(prev => ({ ...prev, pair_win_rate_min_trades: parseInt(e.target.value) } as any))}
                             className="w-full"
                             min="1"
                             max="10"

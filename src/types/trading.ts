@@ -152,6 +152,7 @@ export interface AdvancedStrategyConfig {
   trailing_take_profit_atr?: number; // ATR multiplier for trailing TP
   smart_exit_enabled?: boolean; // Exit trades if market retraces beyond preset percentage
   smart_exit_retracement_pct?: number; // Percentage retracement to trigger smart exit (e.g., 2.0 = 2%)
+  early_take_profit_pct?: number; // Take profit sooner: close when unrealized profit reaches this % (e.g. 5 or 10). 0 = off.
   enable_slippage_consideration?: boolean; // Show slippage warnings
   strategy_integration?: string[]; // Array of strategy types to integrate (e.g., ['spot_grid', 'futures_grid', 'futures_combo'])
   
@@ -193,6 +194,91 @@ export interface AdvancedStrategyConfig {
     by_symbol_timeframe?: Record<string, Record<string, number>>;
   };
 }
+
+/** Default risk engine parameters used when strategy_config.risk_engine is missing or partial. */
+export const DEFAULT_RISK_ENGINE: NonNullable<AdvancedStrategyConfig['risk_engine']> = {
+  volatility_low: 0.6,
+  volatility_high: 2.5,
+  high_volatility_multiplier: 0.75,
+  low_volatility_multiplier: 1.05,
+  max_spread_bps: 20,
+  spread_penalty_multiplier: 0.75,
+  low_liquidity_multiplier: 0.6,
+  medium_liquidity_multiplier: 0.8,
+  drawdown_moderate: 10,
+  drawdown_severe: 20,
+  moderate_drawdown_multiplier: 0.8,
+  severe_drawdown_multiplier: 0.6,
+  loss_streak_threshold: 3,
+  loss_streak_step: 0.15,
+  min_size_multiplier: 0.35,
+  max_size_multiplier: 1.5,
+  max_slippage_bps: 25,
+  min_execution_size_multiplier: 0.35,
+  limit_spread_bps: 8,
+  signal_learning_rate: 0.05,
+  min_signal_weight: 0.6,
+  max_signal_weight: 1.4
+};
+
+/** Default advanced strategy config for new bots and Pablo Ready merge. */
+export const DEFAULT_ADVANCED_STRATEGY_CONFIG: AdvancedStrategyConfig = {
+  bias_mode: 'auto',
+  regime_mode: 'trend',
+  htf_timeframe: '4h',
+  htf_trend_indicator: 'EMA200',
+  ema_fast_period: 50,
+  require_price_vs_trend: 'any',
+  adx_min_htf: 23,
+  require_adx_rising: true,
+  adx_trend_min: 25,
+  adx_meanrev_max: 19,
+  session_filter_enabled: false,
+  allowed_hours_utc: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23],
+  cooldown_bars: 8,
+  atr_percentile_min: 30,
+  bb_width_min: 0.012,
+  bb_width_max: 0.03,
+  min_24h_volume_usd: 500000000,
+  max_spread_bps: 3,
+  risk_per_trade_pct: 0.5,
+  daily_loss_limit_pct: 1.5,
+  weekly_loss_limit_pct: 4.0,
+  max_trades_per_day: 4,
+  max_concurrent: 1,
+  max_consecutive_losses: 2,
+  sl_atr_mult: 1.2,
+  tp1_r: 1.5,
+  tp2_r: 3.0,
+  tp1_size: 0.7,
+  breakeven_at_r: 0.5,
+  trail_after_tp1_atr: 0.6,
+  time_stop_hours: 12,
+  rsi_period: 14,
+  rsi_oversold: 30,
+  rsi_overbought: 70,
+  atr_period: 14,
+  atr_tp_multiplier: 3,
+  use_ml_prediction: true,
+  ml_confidence_threshold: 0.70,
+  ml_min_samples: 100,
+  enable_dynamic_trailing: false,
+  enable_automatic_execution: false,
+  enable_trailing_take_profit: false,
+  trailing_take_profit_atr: 1.0,
+  smart_exit_enabled: false,
+  smart_exit_retracement_pct: 2.0,
+  early_take_profit_pct: 0,
+  enable_slippage_consideration: true,
+  strategy_integration: [],
+  enable_pair_win_rate: false,
+  pair_win_rate_min_trades: 3,
+  pair_win_rate_update_frequency: 'realtime',
+  enable_auto_rebalancing: false,
+  enable_funding_rate_filter: false,
+  enable_volatility_pause: false,
+  risk_engine: DEFAULT_RISK_ENGINE
+};
 
 export interface ManualTradeSignal {
   id: string;

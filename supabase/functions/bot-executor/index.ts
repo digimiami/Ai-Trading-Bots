@@ -16349,12 +16349,14 @@ class BotExecutor {
     const trailAfterTp1ATR = typeof cfg.trail_after_tp1_atr === 'number' ? cfg.trail_after_tp1_atr : (typeof bot.trail_after_tp1_atr === 'number' ? bot.trail_after_tp1_atr : null);
     const smartExitEnabled = cfg.smart_exit_enabled === true || bot.smart_exit_enabled === true;
     const smartExitRetracementPct = parseFloat(cfg.smart_exit_retracement_pct ?? bot.smart_exit_retracement_pct ?? 2.0);
+    const earlyTakeProfitPct = parseFloat(cfg.early_take_profit_pct ?? bot.early_take_profit_pct ?? 0);
 
-    // Take profit check first: if price has reached or passed TP, close at market (backup when exchange TP doesn't fire).
-    // Runs every sync regardless of advanced features so 10% TP etc. are honored even if exchange TP didn't trigger.
     const side = String(dbPos.side || '').toLowerCase();
     const symbol = String(dbPos.symbol || bot.symbol || '');
     const currentPrice = ctx.currentPrice;
+    const entryPrice = parseFloat(dbPos.entry_price || 0);
+
+    // Take profit check: if price has reached or passed TP, close at market (backup when exchange TP doesn't fire).
     const takeProfitPriceDb = dbPos.take_profit_price != null ? parseFloat(dbPos.take_profit_price) : 0;
     if (symbol && side && currentPrice > 0 && takeProfitPriceDb > 0) {
       const tpHit = (side === 'long' && currentPrice >= takeProfitPriceDb) || (side === 'short' && currentPrice <= takeProfitPriceDb);
@@ -16373,10 +16375,29 @@ class BotExecutor {
       }
     }
 
+    // Early take profit by profit %: close when unrealized profit reaches X% (e.g. 5% or 10%) so we lock in sooner before retrace.
+    if (symbol && side && currentPrice > 0 && entryPrice > 0 && earlyTakeProfitPct > 0) {
+      const profitPct = side === 'long'
+        ? ((currentPrice - entryPrice) / entryPrice) * 100
+        : ((entryPrice - currentPrice) / entryPrice) * 100;
+      if (profitPct >= earlyTakeProfitPct) {
+        console.log(`🎯 [LIVE EARLY TP] ${symbol} ${side} profit ${profitPct.toFixed(2)}% >= ${earlyTakeProfitPct}% → closing at market`);
+        if (bot?.id) {
+          await this.addBotLog(bot.id, {
+            level: 'info',
+            category: 'trade',
+            message: `🎯 Early take profit (LIVE): ${symbol} ${side} at ${profitPct.toFixed(2)}% profit (threshold ${earlyTakeProfitPct}%)`,
+            details: { exchange, symbol, side, entry_price: entryPrice, current_price: currentPrice, profit_pct: profitPct, early_take_profit_pct: earlyTakeProfitPct },
+          });
+        }
+        await this.closeLivePositionMarket(bot, dbPos, ctx, 'taken_profit');
+        return;
+      }
+    }
+
     // If nothing enabled, bail early (all off by default).
     if (!enableDynamicTrailing && !enableTrailingTP && !smartExitEnabled) return;
 
-    const entryPrice = parseFloat(dbPos.entry_price || 0);
     if (!symbol || !side || !entryPrice || !currentPrice) return;
 
     const positionMetadata = dbPos.metadata || {};
@@ -17193,16 +17214,20 @@ class BotExecutor {
         console.warn('Could not check user_settings for emergency_stop:', e);
       }
 
-      // Also check for a global emergency_stop setting
+      // Also check for a global emergency_stop setting (table may not exist yet)
       // This allows admins to stop all trading if needed
-      const { data: globalSettings } = await this.supabaseClient
-        .from('system_settings')
-        .select('value')
-        .eq('key', 'emergency_stop')
-        .single();
+      try {
+        const { data: globalSettings } = await this.supabaseClient
+          .from('system_settings')
+          .select('value')
+          .eq('key', 'emergency_stop')
+          .maybeSingle();
 
-      if (globalSettings?.value === true) {
-        return true;
+        if (globalSettings?.value === true) {
+          return true;
+        }
+      } catch (_) {
+        // system_settings table may not exist (404); treat as no global stop
       }
 
       return false;
