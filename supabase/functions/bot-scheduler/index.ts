@@ -235,6 +235,50 @@ serve(async (req) => {
       throw fetchError; // Re-throw to be caught by outer catch
     }
 
+    // 3) Trigger auto-optimize for bots that are due (autonomous learning)
+    const autoOptimizeUrl = `${SUPABASE_URL}/functions/v1/auto-optimize`;
+    const autoOptimizeTimeoutMs = 45_000;
+    try {
+      console.log(`🚀 [${requestId}] Calling auto-optimize (timeout ${autoOptimizeTimeoutMs / 1000}s)`);
+      const optimizeStart = Date.now();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), autoOptimizeTimeoutMs);
+      const optimizeResponse = await fetch(autoOptimizeUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-cron-secret': CRON_SECRET,
+          'Authorization': `Bearer ${authToken}`,
+          'apikey': ANON_KEY || authToken
+        },
+        body: JSON.stringify({}),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+      const optimizeBody = await optimizeResponse.text();
+      console.log(`   ⏱️ auto-optimize completed in ${Date.now() - optimizeStart}ms`);
+      if (!optimizeResponse.ok) {
+        console.warn(`⚠️ [${requestId}] auto-optimize returned ${optimizeResponse.status}: ${optimizeBody.substring(0, 200)}`);
+      } else {
+        try {
+          const parsed = JSON.parse(optimizeBody);
+          if (parsed.optimized !== undefined) {
+            console.log(`   🤖 Auto-optimize: ${parsed.optimized} bot(s) optimized`);
+          }
+          if (parsed.message) {
+            console.log(`   📋 ${parsed.message}`);
+          }
+        } catch (_) {}
+      }
+    } catch (optimizeErr) {
+      const errMsg = optimizeErr instanceof Error ? optimizeErr.message : String(optimizeErr);
+      if (errMsg.includes('abort')) {
+        console.warn(`⚠️ [${requestId}] auto-optimize timed out after ${autoOptimizeTimeoutMs / 1000}s (continuing)`);
+      } else {
+        console.warn(`⚠️ [${requestId}] auto-optimize failed (continuing):`, errMsg);
+      }
+    }
+
     const totalDuration = Date.now() - requestStartTime;
     console.log(`📊 [${requestId}] Total request duration: ${totalDuration}ms`);
     console.log(`✅ [${requestId}] Bot scheduler completed successfully`);

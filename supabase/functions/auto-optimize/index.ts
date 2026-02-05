@@ -84,10 +84,10 @@ serve(async (req) => {
     
     console.log(`🤖 Using ${AI_PROVIDER} API for optimization`)
 
-    // Fetch active bots with AI/ML enabled
+    // Fetch active bots with AI/ML enabled (include last_optimization_at for due-check)
     let query = supabaseClient
       .from('trading_bots')
-      .select('id, user_id, name, strategy, strategy_config, ai_ml_enabled, paper_trading, optimization_interval_hours')
+      .select('id, user_id, name, strategy, strategy_config, ai_ml_enabled, paper_trading, optimization_interval_hours, last_optimization_at')
       .eq('status', 'running')
       .eq('ai_ml_enabled', true)
 
@@ -99,13 +99,13 @@ serve(async (req) => {
       query = query.eq('user_id', body.userId)
     }
 
-    const { data: bots, error: botsError } = await query
+    const { data: allBots, error: botsError } = await query
 
     if (botsError) {
       throw botsError
     }
 
-    if (!bots || bots.length === 0) {
+    if (!allBots || allBots.length === 0) {
       return new Response(JSON.stringify({ 
         message: 'No active bots with AI/ML enabled',
         optimized: 0
@@ -114,10 +114,35 @@ serve(async (req) => {
       })
     }
 
+    // Only optimize bots that are "due" (unless a specific botId was requested)
+    const now = Date.now()
+    const bots = body.botId
+      ? allBots
+      : allBots.filter((bot: any) => {
+          const lastAt = bot.last_optimization_at ? new Date(bot.last_optimization_at).getTime() : 0
+          const intervalHours = typeof bot.optimization_interval_hours === 'number' && bot.optimization_interval_hours > 0
+            ? bot.optimization_interval_hours
+            : 6
+          const dueAt = lastAt + intervalHours * 60 * 60 * 1000
+          return lastAt === 0 || dueAt <= now
+        })
+
+    if (bots.length === 0) {
+      return new Response(JSON.stringify({ 
+        message: 'No bots due for optimization (respecting optimization_interval_hours)',
+        optimized: 0,
+        totalEligible: allBots.length
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    console.log(`📋 ${bots.length} bot(s) due for optimization (${allBots.length} total with AI/ML enabled)`)
+
     const results = []
     const minConfidence = body.minConfidence || 0.7
 
-    // Optimize each bot
+    // Optimize each due bot
     for (const bot of bots) {
       try {
         // Determine if bot is paper trading
@@ -366,12 +391,13 @@ Provide optimized parameters as JSON with confidence score:
           validatedAdvancedConfig = config;
         }
 
-        // Apply optimization
+        // Apply optimization and set last_optimization_at for per-bot pacing
         const { error: updateError } = await supabaseClient
           .from('trading_bots')
           .update({
             strategy: optimization.strategy,
             strategy_config: validatedAdvancedConfig,
+            last_optimization_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           })
           .eq('id', bot.id)
