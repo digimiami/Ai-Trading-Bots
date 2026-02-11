@@ -415,16 +415,11 @@ export default function ManualTrading() {
                   Exchange <span className="text-red-400">*</span>
                 </label>
                 <select
-                  value={orderForm.exchange}
-                  onChange={(e) => setOrderForm({ ...orderForm, exchange: e.target.value as any })}
-                  className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
+                  value="bybit"
+                  readOnly
+                  className="w-full px-3 py-2 bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg cursor-not-allowed"
                 >
                   <option value="bybit">Bybit</option>
-                  <option value="okx">OKX</option>
-                  <option value="bitunix">Bitunix</option>
-                  <option value="mexc">MEXC</option>
-                  <option value="btcc">BTCC</option>
                 </select>
               </div>
 
@@ -658,12 +653,8 @@ export default function ManualTrading() {
                   }}
                   className="w-full px-3 py-2 bg-white dark:bg-gray-800 text-gray-900 dark:text-white border border-gray-300 dark:border-gray-700 rounded-lg"
                 >
-                  <option value="all">All Exchanges</option>
+                  <option value="all">All</option>
                   <option value="bybit">Bybit</option>
-                  <option value="okx">OKX</option>
-                  <option value="bitunix">Bitunix</option>
-                  <option value="mexc">MEXC</option>
-                  <option value="btcc">BTCC</option>
                 </select>
               </div>
               

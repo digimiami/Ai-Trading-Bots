@@ -9,7 +9,7 @@ interface ApiKeyStepProps {
 
 export default function ApiKeyStep({ onSkip, onComplete }: ApiKeyStepProps) {
   const { saveApiKey, testApiConnection } = useApiKeys();
-  const [exchange, setExchange] = useState<'bybit' | 'mexc' | 'bitunix' | 'btcc'>('bybit');
+  const [exchange] = useState<'bybit'>('bybit');
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
   const [openaiApiKey, setOpenaiApiKey] = useState('');
@@ -92,32 +92,9 @@ export default function ApiKeyStep({ onSkip, onComplete }: ApiKeyStepProps) {
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-2">
-          Select Exchange (Optional)
+          Exchange
         </label>
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            { value: 'bybit', label: 'Bybit' },
-            { value: 'mexc', label: 'MEXC' },
-            { value: 'bitunix', label: 'Bitunix' },
-            { value: 'btcc', label: 'BTCC' }
-          ].map((ex) => (
-            <button
-              key={ex.value}
-              onClick={() => {
-                setExchange(ex.value as 'bybit' | 'mexc' | 'bitunix' | 'btcc');
-                setError(null);
-                setTestResult(null);
-              }}
-              className={`p-3 rounded-lg border-2 text-center transition-colors ${
-                exchange === ex.value
-                  ? 'border-blue-600 bg-blue-50'
-                  : 'border-gray-200 hover:border-gray-300'
-              }`}
-            >
-              <div className="font-medium text-gray-900">{ex.label}</div>
-            </button>
-          ))}
-        </div>
+        <p className="text-sm text-gray-600 mb-2">Bybit (only supported exchange)</p>
       </div>
 
       {exchange && (

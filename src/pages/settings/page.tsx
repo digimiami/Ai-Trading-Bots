@@ -88,13 +88,6 @@ export default function Settings() {
   const [apiSettings, setApiSettings] = useState({
     bybitApiKey: '',
     bybitApiSecret: '',
-    okxApiKey: '',
-    okxApiSecret: '',
-    okxPassphrase: '',
-    bitunixApiKey: '',
-    bitunixApiSecret: '',
-    mexcApiKey: '',
-    mexcApiSecret: '',
     btccApiKey: '',
     btccApiSecret: '',
     btccToken: '',
@@ -329,26 +322,10 @@ export default function Settings() {
   useEffect(() => {
     if (showApiConfig && apiKeys.length > 0) {
       const bybitKey = apiKeys.find(k => k.exchange === 'bybit');
-      const okxKey = apiKeys.find(k => k.exchange === 'okx');
-      const bitunixKey = apiKeys.find(k => k.exchange === 'bitunix');
-      const mexcKey = apiKeys.find(k => k.exchange === 'mexc');
-      const btccKey = apiKeys.find(k => k.exchange === 'btcc');
-      
       setApiSettings(prev => ({
         ...prev,
-        // Don't populate actual keys (they're encrypted, show placeholders instead)
         bybitApiKey: bybitKey ? '••••••••••••••••' : '',
         bybitApiSecret: bybitKey ? '••••••••••••••••' : '',
-        okxApiKey: okxKey ? '••••••••••••••••' : '',
-        okxApiSecret: okxKey ? '••••••••••••••••' : '',
-        okxPassphrase: okxKey ? '••••••••••••••••' : '',
-        bitunixApiKey: bitunixKey ? '••••••••••••••••' : '',
-        bitunixApiSecret: bitunixKey ? '••••••••••••••••' : '',
-        mexcApiKey: mexcKey ? '••••••••••••••••' : '',
-        mexcApiSecret: mexcKey ? '••••••••••••••••' : '',
-        btccApiKey: btccKey ? '••••••••••••••••' : '',
-        btccApiSecret: btccKey ? '••••••••••••••••' : '',
-        btccToken: btccKey?.passphrase ? '••••••••••••••••' : '',
       }));
     } else if (showApiConfig && apiKeys.length === 0) {
       // Reset to defaults when opening modal with no existing keys
@@ -356,16 +333,6 @@ export default function Settings() {
         ...prev,
         bybitApiKey: '',
         bybitApiSecret: '',
-        okxApiKey: '',
-        okxApiSecret: '',
-        okxPassphrase: '',
-        bitunixApiKey: '',
-        bitunixApiSecret: '',
-        mexcApiKey: '',
-        mexcApiSecret: '',
-        btccApiKey: '',
-        btccApiSecret: '',
-        btccToken: '',
       }));
     }
   }, [showApiConfig, apiKeys]);
@@ -560,7 +527,6 @@ export default function Settings() {
         return;
       }
 
-      // Save Bybit API key if provided
       if (apiSettings.bybitApiKey && apiSettings.bybitApiSecret) {
         await saveApiKey({
           exchange: 'bybit',
@@ -569,63 +535,10 @@ export default function Settings() {
         });
       }
 
-      // Save OKX API key if provided
-      if (apiSettings.okxApiKey && apiSettings.okxApiSecret) {
-        await saveApiKey({
-          exchange: 'okx',
-          apiKey: apiSettings.okxApiKey,
-          apiSecret: apiSettings.okxApiSecret,
-          passphrase: apiSettings.okxPassphrase,
-        });
-      }
-
-      // Save Bitunix API key if provided
-      if (apiSettings.bitunixApiKey && apiSettings.bitunixApiSecret) {
-        await saveApiKey({
-          exchange: 'bitunix',
-          apiKey: apiSettings.bitunixApiKey,
-          apiSecret: apiSettings.bitunixApiSecret,
-          passphrase: '', // Bitunix doesn't use passphrase
-        });
-      }
-
-      // Save MEXC API key if provided
-      if (apiSettings.mexcApiKey && apiSettings.mexcApiSecret) {
-        await saveApiKey({
-          exchange: 'mexc',
-          apiKey: apiSettings.mexcApiKey,
-          apiSecret: apiSettings.mexcApiSecret,
-          passphrase: '', // MEXC doesn't use passphrase
-        });
-      }
-
-      // Save BTCC API key if provided
-      if (apiSettings.btccApiKey && apiSettings.btccApiSecret) {
-        await saveApiKey({
-          exchange: 'btcc',
-          apiKey: apiSettings.btccApiKey,
-          apiSecret: apiSettings.btccApiSecret,
-          passphrase: apiSettings.btccToken || '', // Use passphrase column to store BTCC token (optional)
-        });
-      }
-
-      // Clear form fields after saving (for security - keys are encrypted in DB)
       setApiSettings(prev => ({
+        ...prev,
         bybitApiKey: '',
         bybitApiSecret: '',
-        okxApiKey: '',
-        okxApiSecret: '',
-        okxPassphrase: '',
-        bitunixApiKey: '',
-        bitunixApiSecret: '',
-        mexcApiKey: '',
-        mexcApiSecret: '',
-        btccApiKey: '',
-        btccApiSecret: '',
-        btccToken: '',
-        webhookUrl: prev.webhookUrl,
-        webhookSecret: prev.webhookSecret,
-        alertsEnabled: prev.alertsEnabled
       }));
 
     setShowApiConfig(false);
@@ -635,164 +548,35 @@ export default function Settings() {
     }
   };
 
-  const handleSaveExchange = async (exchange: 'bybit' | 'okx' | 'bitunix' | 'mexc' | 'btcc') => {
+  const handleSaveExchange = async (exchange: 'bybit') => {
     try {
-      // Ensure user exists before saving API keys
       const userExists = await ensureUserExists();
       if (!userExists) {
         alert('Failed to create user account. Please try again.');
         return;
       }
-
-      if (exchange === 'bybit') {
-        if (!apiSettings.bybitApiKey || !apiSettings.bybitApiSecret) {
-          alert('Please enter both API Key and API Secret for Bybit');
-          return;
-        }
-        // Test connection first before saving
-        const testResult = await testConnection({
-          exchange: 'bybit',
-          apiKey: apiSettings.bybitApiKey,
-          apiSecret: apiSettings.bybitApiSecret,
-        });
-        
-        if (!testResult.success) {
-          const proceed = confirm(`⚠️ Connection test failed: ${testResult.message}\n\nDo you still want to save these keys?`);
-          if (!proceed) return;
-        }
-        
-        await saveApiKey({
-          exchange: 'bybit',
-          apiKey: apiSettings.bybitApiKey,
-          apiSecret: apiSettings.bybitApiSecret,
-        });
-        // Clear only Bybit fields after saving
-        setApiSettings(prev => ({
-          ...prev,
-          bybitApiKey: '',
-          bybitApiSecret: '',
-        }));
-        alert('✅ Bybit API keys saved successfully!');
-      } else if (exchange === 'okx') {
-        if (!apiSettings.okxApiKey || !apiSettings.okxApiSecret) {
-          alert('Please enter both API Key and API Secret for OKX');
-          return;
-        }
-        // Test connection first before saving
-        const testResult = await testConnection({
-          exchange: 'okx',
-          apiKey: apiSettings.okxApiKey,
-          apiSecret: apiSettings.okxApiSecret,
-          passphrase: apiSettings.okxPassphrase,
-        });
-        
-        if (!testResult.success) {
-          const proceed = confirm(`⚠️ Connection test failed: ${testResult.message}\n\nDo you still want to save these keys?`);
-          if (!proceed) return;
-        }
-        
-        await saveApiKey({
-          exchange: 'okx',
-          apiKey: apiSettings.okxApiKey,
-          apiSecret: apiSettings.okxApiSecret,
-          passphrase: apiSettings.okxPassphrase,
-        });
-        // Clear only OKX fields after saving
-        setApiSettings(prev => ({
-          ...prev,
-          okxApiKey: '',
-          okxApiSecret: '',
-          okxPassphrase: '',
-        }));
-        alert('✅ OKX API keys saved successfully!');
-      } else if (exchange === 'bitunix') {
-        if (!apiSettings.bitunixApiKey || !apiSettings.bitunixApiSecret) {
-          alert('Please enter both API Key and API Secret for Bitunix');
-          return;
-        }
-        // Test connection first before saving
-        const testResult = await testConnection({
-          exchange: 'bitunix',
-            apiKey: apiSettings.bitunixApiKey,
-            apiSecret: apiSettings.bitunixApiSecret,
-            passphrase: '' // Bitunix doesn't use passphrase
-          });
-        
-        if (!testResult.success) {
-          const proceed = confirm(`⚠️ Connection test failed: ${testResult.message}\n\nDo you still want to save these keys?`);
-          if (!proceed) return;
-        }
-        
-        await saveApiKey({
-          exchange: 'bitunix',
-          apiKey: apiSettings.bitunixApiKey,
-          apiSecret: apiSettings.bitunixApiSecret,
-          passphrase: '', // Bitunix doesn't use passphrase
-        });
-        // Clear only Bitunix fields after saving
-        setApiSettings(prev => ({
-          ...prev,
-          bitunixApiKey: '',
-          bitunixApiSecret: '',
-        }));
-        alert('✅ Bitunix API keys saved successfully!');
-      } else if (exchange === 'mexc') {
-        if (!apiSettings.mexcApiKey || !apiSettings.mexcApiSecret) {
-          alert('Please enter both API Key and API Secret for MEXC');
-          return;
-        }
-        // Test connection first before saving
-        const testResult = await testConnection({
-          exchange: 'mexc',
-          apiKey: apiSettings.mexcApiKey,
-          apiSecret: apiSettings.mexcApiSecret,
-          passphrase: '' // MEXC doesn't use passphrase
-        });
-        
-        if (!testResult.success) {
-          const proceed = confirm(`⚠️ Connection test failed: ${testResult.message}\n\nDo you still want to save these keys?`);
-          if (!proceed) return;
-        }
-        
-        await saveApiKey({
-          exchange: 'mexc',
-          apiKey: apiSettings.mexcApiKey,
-          apiSecret: apiSettings.mexcApiSecret,
-          passphrase: '', // MEXC doesn't use passphrase
-        });
-        // Clear only MEXC fields after saving
-        setApiSettings(prev => ({
-          ...prev,
-          mexcApiKey: '',
-          mexcApiSecret: '',
-        }));
-        alert('✅ MEXC API keys saved successfully!');
-      } else if (exchange === 'btcc') {
-        if (!apiSettings.btccApiKey || !apiSettings.btccApiSecret) {
-          alert('Please enter both API Key and API Secret for BTCC');
-          return;
-        }
-        const testResult = await testConnection({
-          exchange: 'btcc',
-          apiKey: apiSettings.btccApiKey,
-          apiSecret: apiSettings.btccApiSecret,
-          passphrase: apiSettings.btccToken || '',
-        });
-        if (!testResult.success) {
-          const proceed = confirm(`⚠️ Connection test failed: ${testResult.message}\n\nDo you still want to save these keys?`);
-          if (!proceed) return;
-        }
-        await saveApiKey({
-          exchange: 'btcc',
-          apiKey: apiSettings.btccApiKey,
-          apiSecret: apiSettings.btccApiSecret,
-          passphrase: apiSettings.btccToken || '',
-        });
-        setApiSettings(prev => ({ ...prev, btccApiKey: '', btccApiSecret: '', btccToken: '' }));
-        alert('✅ BTCC API keys saved successfully!');
+      if (!apiSettings.bybitApiKey || !apiSettings.bybitApiSecret) {
+        alert('Please enter both API Key and API Secret for Bybit');
+        return;
       }
+      const testResult = await testConnection({
+        exchange: 'bybit',
+        apiKey: apiSettings.bybitApiKey,
+        apiSecret: apiSettings.bybitApiSecret,
+      });
+      if (!testResult.success) {
+        const proceed = confirm(`⚠️ Connection test failed: ${testResult.message}\n\nDo you still want to save these keys?`);
+        if (!proceed) return;
+      }
+      await saveApiKey({
+        exchange: 'bybit',
+        apiKey: apiSettings.bybitApiKey,
+        apiSecret: apiSettings.bybitApiSecret,
+      });
+      setApiSettings(prev => ({ ...prev, bybitApiKey: '', bybitApiSecret: '' }));
+      alert('✅ Bybit API keys saved successfully!');
     } catch (error: any) {
-      alert(`Failed to save ${exchange.toUpperCase()} API keys: ${error.message}`);
+      alert(`Failed to save Bybit API keys: ${error.message}`);
     }
   };
 
@@ -921,79 +705,26 @@ export default function Settings() {
     setShowEditProfile(true);
   };
 
-  const handleTestConnection = async (exchange: 'bybit' | 'okx' | 'bitunix' | 'mexc' | 'btcc') => {
+  const handleTestConnection = async () => {
     try {
-      let formData: ApiKeyFormData;
-      
-      if (exchange === 'bybit') {
-        if (!apiSettings.bybitApiKey || !apiSettings.bybitApiSecret) {
-          alert('Please enter both API Key and API Secret for Bybit');
-          return;
-        }
-        formData = {
-          exchange: 'bybit',
-          apiKey: apiSettings.bybitApiKey,
-          apiSecret: apiSettings.bybitApiSecret,
-        };
-      } else if (exchange === 'okx') {
-        if (!apiSettings.okxApiKey || !apiSettings.okxApiSecret) {
-          alert('Please enter both API Key and API Secret for OKX');
-          return;
-        }
-        formData = {
-          exchange: 'okx',
-          apiKey: apiSettings.okxApiKey,
-          apiSecret: apiSettings.okxApiSecret,
-          passphrase: apiSettings.okxPassphrase,
-        };
-      } else if (exchange === 'bitunix') {
-        if (!apiSettings.bitunixApiKey || !apiSettings.bitunixApiSecret) {
-          alert('Please enter both API Key and API Secret for Bitunix');
-          return;
-        }
-        formData = {
-          exchange: 'bitunix',
-            apiKey: apiSettings.bitunixApiKey,
-            apiSecret: apiSettings.bitunixApiSecret,
-            passphrase: '' // Bitunix doesn't use passphrase
-          };
-      } else if (exchange === 'mexc') {
-        if (!apiSettings.mexcApiKey || !apiSettings.mexcApiSecret) {
-          alert('Please enter both API Key and API Secret for MEXC');
-          return;
-        }
-        formData = {
-          exchange: 'mexc',
-          apiKey: apiSettings.mexcApiKey,
-          apiSecret: apiSettings.mexcApiSecret,
-          passphrase: '' // MEXC doesn't use passphrase
-        };
-      } else if (exchange === 'btcc') {
-        if (!apiSettings.btccApiKey || !apiSettings.btccApiSecret) {
-          alert('Please enter both API Key and API Secret for BTCC');
-          return;
-        }
-        formData = {
-          exchange: 'btcc',
-          apiKey: apiSettings.btccApiKey,
-          apiSecret: apiSettings.btccApiSecret,
-          passphrase: apiSettings.btccToken || '', // Store BTCC token here (optional)
-        };
-      } else {
-        alert('Invalid exchange');
+      if (!apiSettings.bybitApiKey || !apiSettings.bybitApiSecret) {
+        alert('Please enter both API Key and API Secret for Bybit');
         return;
       }
-
+      const formData: ApiKeyFormData = {
+        exchange: 'bybit',
+        apiKey: apiSettings.bybitApiKey,
+        apiSecret: apiSettings.bybitApiSecret,
+      };
       const result = await testConnection(formData);
-      
       if (result.success) {
-        alert(`✅ ${exchange.toUpperCase()} API connection successful!`);
+        alert('✅ Bybit API connection successful!');
       } else {
-        alert(`❌ ${exchange.toUpperCase()} API connection failed: ${result.message || 'Unknown error'}`);
+        alert(`❌ Bybit API connection failed: ${result.message || 'Unknown error'}`);
       }
     } catch (error: any) {
       console.error('Test connection error:', error);
-      alert(`❌ Failed to test ${exchange.toUpperCase()} API: ${error.message || 'Network error'}`);
+      alert(`❌ Failed to test Bybit API: ${error.message || 'Network error'}`);
     }
   };
 
@@ -2209,7 +1940,7 @@ export default function Settings() {
                     </div>
                     <div className="flex space-x-2">
                       <button
-                        onClick={() => handleTestConnection('bybit')}
+                        onClick={handleTestConnection}
                         className="flex-1 bg-orange-100 hover:bg-orange-200 text-orange-700 py-2 px-4 rounded-lg transition-colors text-sm"
                       >
                         Test Connection
@@ -2225,169 +1956,8 @@ export default function Settings() {
                   </div>
                 </div>
 
-                {/* OKX API - Coming Soon */}
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-3 flex items-center">
-                    <i className="ri-exchange-line text-blue-600 mr-2"></i>
-                    OKX API
-                    <span className="ml-2 px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded-full font-medium">
-                      Coming Soon
-                    </span>
-                  </h3>
-                  <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                    <p className="text-sm text-yellow-800 flex items-center">
-                      <i className="ri-time-line mr-2"></i>
-                      OKX exchange integration is coming soon. We're working on it and will notify you when it's available!
-                    </p>
-                  </div>
-                </div>
-
-                {/* Bitunix API */}
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-3 flex items-center">
-                    <i className="ri-exchange-line text-green-600 mr-2"></i>
-                    Bitunix API
-                  </h3>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        API Key
-                      </label>
-                      <input
-                        type="password"
-                        value={apiSettings.bitunixApiKey}
-                        onChange={(e) => handleApiChange('bitunixApiKey', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
-                        placeholder="Enter Bitunix API Key"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        API Secret
-                      </label>
-                      <input
-                        type="password"
-                        value={apiSettings.bitunixApiSecret}
-                        onChange={(e) => handleApiChange('bitunixApiSecret', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent text-sm"
-                        placeholder="Enter Bitunix API Secret"
-                      />
-                    </div>
-                    <div className="p-4 bg-red-50 border-2 border-red-300 rounded-lg">
-                      <p className="text-sm text-red-800 font-semibold flex items-start">
-                        <i className="ri-alert-line text-red-600 mr-2 mt-0.5 text-lg"></i>
-                        <span>
-                          <strong>⚠️ Disable Withdrawals (NEVER check this box).</strong> If your bot is hacked, the hacker can trade your funds but they cannot send them to their own wallet.
-                        </span>
-                      </p>
-                    </div>
-                    <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                      <p className="text-xs text-gray-700 mb-2">
-                        <i className="ri-information-line text-green-600 mr-1"></i>
-                        <strong>Don't have a Bitunix account?</strong>
-                      </p>
-                      <a
-                        href="https://www.bitunix.com"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center text-sm font-medium text-green-600 hover:text-green-700 hover:underline"
-                      >
-                        <i className="ri-external-link-line mr-1"></i>
-                        Sign up for Bitunix Account
-                      </a>
-                    </div>
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={() => handleTestConnection('bitunix')}
-                        className="flex-1 bg-green-100 hover:bg-green-200 text-green-700 py-2 px-4 rounded-lg transition-colors text-sm"
-                      >
-                        Test Connection
-                      </button>
-                      <button
-                        onClick={() => handleSaveExchange('bitunix')}
-                        className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-lg transition-colors text-sm font-medium"
-                      >
-                        <i className="ri-save-line mr-1"></i>
-                        Save
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* MEXC API */}
-                <div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-3 flex items-center">
-                    <i className="ri-exchange-line text-blue-600 mr-2"></i>
-                    MEXC API
-                  </h3>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        API Key
-                      </label>
-                      <input
-                        type="password"
-                        value={apiSettings.mexcApiKey}
-                        onChange={(e) => handleApiChange('mexcApiKey', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                        placeholder="Enter MEXC API Key"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        API Secret
-                      </label>
-                      <input
-                        type="password"
-                        value={apiSettings.mexcApiSecret}
-                        onChange={(e) => handleApiChange('mexcApiSecret', e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                        placeholder="Enter MEXC API Secret"
-                      />
-                    </div>
-                    <div className="p-4 bg-red-50 border-2 border-red-300 rounded-lg">
-                      <p className="text-sm text-red-800 font-semibold flex items-start">
-                        <i className="ri-alert-line text-red-600 mr-2 mt-0.5 text-lg"></i>
-                        <span>
-                          <strong>⚠️ Disable Withdrawals (NEVER check this box).</strong> If your bot is hacked, the hacker can trade your funds but they cannot send them to their own wallet.
-                        </span>
-                      </p>
-                    </div>
-                    <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                      <p className="text-xs text-gray-700 mb-2">
-                        <i className="ri-information-line text-blue-600 mr-1"></i>
-                        <strong>Don't have a MEXC account?</strong>
-                      </p>
-                      <a
-                        href="https://promote.mexc.com/r/jprBX8cE"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"
-                      >
-                        <i className="ri-external-link-line mr-1"></i>
-                        Sign up for MEXC Account
-                      </a>
-                    </div>
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={() => handleTestConnection('mexc')}
-                        className="flex-1 bg-blue-100 hover:bg-blue-200 text-blue-700 py-2 px-4 rounded-lg transition-colors text-sm"
-                      >
-                        Test Connection
-                      </button>
-                      <button
-                        onClick={() => handleSaveExchange('mexc')}
-                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg transition-colors text-sm font-medium"
-                      >
-                        <i className="ri-save-line mr-1"></i>
-                        Save
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* BTCC API */}
-                <div>
+                {/* BTCC API - disabled: Bybit only */}
+                <div style={{ display: 'none' }}>
                   <h3 className="text-lg font-medium text-gray-900 mb-3 flex items-center">
                     <i className="ri-exchange-line text-teal-600 mr-2"></i>
                     BTCC API

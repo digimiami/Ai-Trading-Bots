@@ -51,8 +51,7 @@ export default function CreateBotPage() {
   // Get initial values from URL params (for navigation from Futures Pairs Finder or Pablo Ready)
   const urlSymbol = searchParams.get('symbol') || 'BTCUSDT';
   const urlExchangeParam = searchParams.get('exchange') || 'bybit';
-  // Allow all exchanges including Bitunix and MEXC
-  const urlExchange = urlExchangeParam as 'bybit' | 'okx' | 'bitunix' | 'mexc' | 'btcc';
+  const urlExchange = (urlExchangeParam === 'bybit' ? 'bybit' : 'bybit') as 'bybit';
   const urlTradingType = (searchParams.get('tradingType') || 'futures') as 'spot' | 'futures';
   const urlLeverage = searchParams.get('leverage') ? parseInt(searchParams.get('leverage')!) : 5;
   const urlRiskLevel = (searchParams.get('riskLevel') || 'medium') as 'low' | 'medium' | 'high';
@@ -213,8 +212,7 @@ export default function CreateBotPage() {
 
             setFormData(prev => {
               const exchangeParam = searchParams.get('exchange') || data.exchange || prev.exchange;
-              // Force bybit only if okx is passed (coming soon); preserve others including btcc
-              const finalExchange = exchangeParam === 'okx' ? 'bybit' : (exchangeParam as 'bybit' | 'okx' | 'bitunix' | 'mexc' | 'btcc');
+              const finalExchange = exchangeParam === 'bybit' ? 'bybit' : 'bybit';
               return {
                 ...prev,
                 name: searchParams.get('name') || data.name || prev.name,
@@ -396,9 +394,8 @@ export default function CreateBotPage() {
         return;
       }
       
-      // Validate exchange is enabled (Bitunix and MEXC are now enabled)
-      if (formData.exchange === 'okx') {
-        setError('OKX exchange is coming soon. Please use Bybit, Bitunix, MEXC, or BTCC for now.');
+      if (formData.exchange !== 'bybit') {
+        setError('Only Bybit is supported. Please use Bybit.');
         setIsCreating(false);
         return;
       }
@@ -846,18 +843,14 @@ All settings have been applied to your bot configuration.`;
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center">
                     Exchange
-                    <HelpTooltip text="Select the cryptocurrency exchange where your bot will trade. Currently supports Bybit, Bitunix, MEXC, and BTCC. OKX is coming soon." />
+                    <HelpTooltip text="Trading is supported on Bybit only." />
                   </label>
                   <select
-                    value={formData.exchange}
-                    onChange={(e) => handleInputChange('exchange', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value="bybit"
+                    readOnly
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 cursor-not-allowed"
                   >
                     <option value="bybit">Bybit</option>
-                    <option value="bitunix">Bitunix</option>
-                    <option value="mexc">MEXC</option>
-                    <option value="btcc">BTCC</option>
-                    <option value="okx" disabled>OKX (Coming Soon)</option>
                   </select>
                 </div>
 

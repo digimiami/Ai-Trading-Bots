@@ -571,9 +571,9 @@ function resolveLeverage(exchange?: string, tradingType?: string, userLeverage?:
     return 1; // Spot trading has no leverage
   }
   
-  // For other exchanges
+  // For other exchanges (Bybit, OKX, BTCC): respect user leverage; cap at 100x (exchange will reject if symbol limit is lower)
   if (type === 'futures' || type === 'linear') {
-    return Math.min(userLeverage || 3, 10); // Default 3x for futures
+    return Math.min(Math.max(1, userLeverage || 3), 100);
   }
   
   return 1; // Spot trading
@@ -8752,19 +8752,25 @@ class BotExecutor {
 
             runInBackground(sltpPromise, `Bitunix SL/TP ${bot.symbol}`);
 
-            // Calculate and log SL/TP values for success tracking
-            const stopLossPercent = bot.stop_loss ?? bot.stopLoss ?? 2.0;
-            const takeProfitPercent = bot.take_profit ?? bot.takeProfit ?? 4.0;
+            // Log SL/TP values used (strategy ATR-based when available, else bot percentage)
             const isLong = tradeSignal.side.toUpperCase() === 'BUY' || tradeSignal.side === 'Buy';
-            const stopLossPrice = isLong
-              ? entryPrice * (1 - stopLossPercent / 100)
-              : entryPrice * (1 + stopLossPercent / 100);
-            const takeProfitPrice = isLong
-              ? entryPrice * (1 + takeProfitPercent / 100)
-              : entryPrice * (1 - takeProfitPercent / 100);
-
+            let logStopLossPrice: number;
+            let logTakeProfitPrice: number;
+            let logStopLossPct: number;
+            let logTakeProfitPct: number;
+            if (tradeSignal?.stopLoss != null && tradeSignal?.takeProfit1 != null && Number.isFinite(tradeSignal.stopLoss) && Number.isFinite(tradeSignal.takeProfit1)) {
+              logStopLossPrice = tradeSignal.stopLoss;
+              logTakeProfitPrice = tradeSignal.takeProfit1;
+              logStopLossPct = isLong ? (1 - logStopLossPrice / entryPrice) * 100 : (logStopLossPrice / entryPrice - 1) * 100;
+              logTakeProfitPct = isLong ? (logTakeProfitPrice / entryPrice - 1) * 100 : (1 - logTakeProfitPrice / entryPrice) * 100;
+            } else {
+              logStopLossPct = bot.stop_loss ?? bot.stopLoss ?? 2.0;
+              logTakeProfitPct = bot.take_profit ?? bot.takeProfit ?? 4.0;
+              logStopLossPrice = isLong ? entryPrice * (1 - logStopLossPct / 100) : entryPrice * (1 + logStopLossPct / 100);
+              logTakeProfitPrice = isLong ? entryPrice * (1 + logTakeProfitPct / 100) : entryPrice * (1 - logTakeProfitPct / 100);
+            }
             console.log(`✅ Bitunix SL/TP scheduled for ${bot.symbol}:`);
-            console.log(`   Entry: ${entryPrice.toFixed(8)}, SL: ${stopLossPrice.toFixed(8)} (${stopLossPercent}%), TP: ${takeProfitPrice.toFixed(8)} (${takeProfitPercent}%)`);
+            console.log(`   Entry: ${entryPrice.toFixed(8)}, SL: ${logStopLossPrice.toFixed(8)} (${logStopLossPct.toFixed(2)}%), TP: ${logTakeProfitPrice.toFixed(8)} (${logTakeProfitPct.toFixed(2)}%)`);
 
             // Log success to bot logs for analytics
             if (bot?.id) {
@@ -8776,10 +8782,10 @@ class BotExecutor {
                   symbol: bot.symbol,
                   side: tradeSignal.side,
                   entryPrice: entryPrice.toFixed(8),
-                  stopLossPrice: stopLossPrice.toFixed(8),
-                  takeProfitPrice: takeProfitPrice.toFixed(8),
-                  stopLossPercent,
-                  takeProfitPercent,
+                  stopLossPrice: logStopLossPrice.toFixed(8),
+                  takeProfitPrice: logTakeProfitPrice.toFixed(8),
+                  stopLossPercent: logStopLossPct,
+                  takeProfitPercent: logTakeProfitPct,
                   orderId: orderResult?.orderId || orderResult?.id || orderResult?.response?.data?.orderId || orderResult?.response?.data?.id
                 }
               });
@@ -13940,19 +13946,34 @@ class BotExecutor {
     const normalizedSymbol = symbol.toUpperCase();
     
     try {
-      // Get bot stop loss and take profit percentages - always use latest values, prioritizing database field (snake_case)
-      const stopLossPercent = bot.stop_loss ?? bot.stopLoss ?? 2.0;
-      const takeProfitPercent = bot.take_profit ?? bot.takeProfit ?? 4.0;
-      
-      // Calculate SL/TP prices based on percentage
+      // PRIORITY: Use strategy-calculated SL/TP from tradeSignal when available (ATR-based from strategy_config), same as Bybit
       const isLong = side.toUpperCase() === 'BUY' || side === 'Buy';
-      const stopLossPrice = isLong 
-        ? entryPrice * (1 - stopLossPercent / 100)  // Long: SL below entry
-        : entryPrice * (1 + stopLossPercent / 100); // Short: SL above entry
-      
-      const takeProfitPrice = isLong
-        ? entryPrice * (1 + takeProfitPercent / 100)  // Long: TP above entry
-        : entryPrice * (1 - takeProfitPercent / 100); // Short: TP below entry
+      let stopLossPrice: number;
+      let takeProfitPrice: number;
+      let stopLossPercent: number;
+      let takeProfitPercent: number;
+
+      if (tradeSignal?.stopLoss != null && tradeSignal?.takeProfit1 != null && Number.isFinite(tradeSignal.stopLoss) && Number.isFinite(tradeSignal.takeProfit1)) {
+        stopLossPrice = tradeSignal.stopLoss;
+        takeProfitPrice = tradeSignal.takeProfit1;
+        stopLossPercent = isLong
+          ? (1 - stopLossPrice / entryPrice) * 100
+          : (stopLossPrice / entryPrice - 1) * 100;
+        takeProfitPercent = isLong
+          ? (takeProfitPrice / entryPrice - 1) * 100
+          : (1 - takeProfitPrice / entryPrice) * 100;
+        console.log(`🛡️ Setting Bitunix SL/TP for ${symbol} ${side}: Using STRATEGY-CALCULATED (ATR-based) values`);
+      } else {
+        stopLossPercent = bot.stop_loss ?? bot.stopLoss ?? 2.0;
+        takeProfitPercent = bot.take_profit ?? bot.takeProfit ?? 4.0;
+        stopLossPrice = isLong
+          ? entryPrice * (1 - stopLossPercent / 100)
+          : entryPrice * (1 + stopLossPercent / 100);
+        takeProfitPrice = isLong
+          ? entryPrice * (1 + takeProfitPercent / 100)
+          : entryPrice * (1 - takeProfitPercent / 100);
+        console.log(`🛡️ Setting Bitunix SL/TP for ${symbol} ${side}: Using BOT PERCENTAGE settings (fallback)`);
+      }
       
       // #region agent log
       console.log(`[DEBUG-SLTP] SL/TP prices calculated:`, JSON.stringify({
@@ -13964,8 +13985,7 @@ class BotExecutor {
       }));
       // #endregion
       
-      console.log(`🛡️ Setting Bitunix SL/TP for ${symbol} ${side}:`);
-      console.log(`   Entry: ${entryPrice}, SL: ${stopLossPrice.toFixed(4)} (${stopLossPercent}%), TP: ${takeProfitPrice.toFixed(4)} (${takeProfitPercent}%)`);
+      console.log(`   Entry: ${entryPrice}, SL: ${stopLossPrice.toFixed(4)} (${stopLossPercent.toFixed(2)}%), TP: ${takeProfitPrice.toFixed(4)} (${takeProfitPercent.toFixed(2)}%)`);
       console.log(`   Margin Mode: ISOLATED, Order Type: MARKET`);
       
       // Sync Bitunix server time to prevent timestamp errors
@@ -20241,7 +20261,7 @@ serve(async (req) => {
       try {
         const bodyText = await req.text();
         console.log(`📦 POST body (raw, first 500 chars):`, bodyText.substring(0, 500));
-        body = JSON.parse(bodyText);
+        body = (bodyText.trim() === '') ? {} : JSON.parse(bodyText);
         console.log(`✅ POST body parsed successfully:`, { action: body?.action, botId: body?.botId });
       } catch (parseError: any) {
         console.error(`❌ Failed to parse POST body:`, parseError);
@@ -20254,7 +20274,13 @@ serve(async (req) => {
         });
       }
       
-      const { action: bodyAction, botId, bot_id } = body || {};
+      let { action: bodyAction, botId, bot_id } = body || {};
+      if (typeof bodyAction === 'string') bodyAction = bodyAction.trim();
+      // Cron/scheduler often sends POST with empty body; treat as execute_all_bots so scheduler gets 200
+      if ((bodyAction === undefined || bodyAction === '') && req.headers.get('x-cron-secret')) {
+        bodyAction = 'execute_all_bots';
+        console.log(`🔧 Empty/missing action with x-cron-secret: defaulting to execute_all_bots`);
+      }
       // Support both camelCase (botId) and snake_case (bot_id)
       const effectiveBotId = botId || bot_id;
 
@@ -21466,7 +21492,12 @@ serve(async (req) => {
         }
 
       default:
-        return new Response(JSON.stringify({ error: 'Invalid action' }), {
+        console.warn(`⚠️ Unhandled POST action: "${bodyAction}" (type: ${typeof bodyAction})`);
+        return new Response(JSON.stringify({
+          error: 'Invalid action',
+          received: bodyAction,
+          supported: ['execute_bot', 'execute_all_bots', 'sync_positions_exit_strategy', 'place_manual_order', 'time']
+        }), {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' }
         })

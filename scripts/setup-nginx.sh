@@ -46,6 +46,13 @@ server {
     root /var/www/Ai-Trading-Bots/dist;
     index index.html;
 
+    # Health check (no proxy – if /health returns 200 but / returns 502, another config may be proxying /)
+    location = /health {
+        access_log off;
+        return 200 'ok';
+        add_header Content-Type text/plain;
+    }
+
     # Gzip compression
     gzip on;
     gzip_vary on;

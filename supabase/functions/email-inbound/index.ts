@@ -17,10 +17,19 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+/** Extract plain email from "Display Name <email@domain.com>" or return as-is if no angle brackets */
+function extractEmail(address: string): string {
+  if (!address || typeof address !== 'string') return ''
+  const trimmed = address.trim()
+  const match = trimmed.match(/<([^>]+)>/)
+  return match ? match[1].trim().toLowerCase() : trimmed.toLowerCase()
+}
+
 interface InboundEmailPayload {
-  // Resend format
+  // Resend format (webhook often only has email_id; body fetched via API)
   type?: string
   data?: {
+    email_id?: string
     from?: string
     to?: string | string[]
     subject?: string
@@ -211,9 +220,10 @@ serve(async (req) => {
     let messageId: string = ''
     let inReplyTo: string = ''
 
-    // Resend format - check for email.received event
+    // Resend format - check for email.received event (webhook may only include email_id; fetch full content via API)
+    const resendEmailId = (payload.data as { email_id?: string })?.email_id
     if (payload.type === 'email.received' && payload.data) {
-      console.log('📧 [email-inbound] Processing Resend email.received event')
+      console.log('📧 [email-inbound] Processing Resend email.received event', { email_id: resendEmailId })
       fromAddress = payload.data.from || ''
       toAddress = payload.data.to || ''
       subject = payload.data.subject || ''
@@ -221,6 +231,34 @@ serve(async (req) => {
       textBody = payload.data.text || ''
       messageId = payload.data.message_id || payload.data.headers?.['Message-Id'] || ''
       inReplyTo = payload.data.in_reply_to || payload.data.headers?.['In-Reply-To'] || ''
+
+      if (resendEmailId && !htmlBody && !textBody) {
+        const apiKey = Deno.env.get('RESEND_API_KEY')
+        if (apiKey) {
+          try {
+            const res = await fetch(`https://api.resend.com/emails/receiving/${resendEmailId}`, {
+              headers: { 'Authorization': `Bearer ${apiKey}` },
+            })
+            if (res.ok) {
+              const emailContent = await res.json()
+              fromAddress = emailContent.from || fromAddress
+              toAddress = emailContent.to || toAddress
+              subject = emailContent.subject ?? subject
+              htmlBody = emailContent.html || htmlBody
+              textBody = emailContent.text || textBody
+              if (emailContent.headers?.['Message-Id']) messageId = emailContent.headers['Message-Id']
+              if (emailContent.headers?.['In-Reply-To']) inReplyTo = emailContent.headers['In-Reply-To']
+              console.log('📧 [email-inbound] Fetched full content from Resend API')
+            } else {
+              console.warn('⚠️ [email-inbound] Resend API get failed:', res.status, await res.text())
+            }
+          } catch (fetchErr) {
+            console.error('❌ [email-inbound] Resend API fetch error:', fetchErr)
+          }
+        } else {
+          console.warn('⚠️ [email-inbound] RESEND_API_KEY not set – cannot fetch email body for email_id:', resendEmailId)
+        }
+      }
       console.log('📧 [email-inbound] Parsed Resend email:', { fromAddress, toAddress, subject, messageId })
     }
     // Mailgun format
@@ -261,24 +299,26 @@ serve(async (req) => {
       hasText: !!textBody
     })
 
-    // Normalize to address (handle arrays)
+    // Normalize to address (handle arrays and "Display Name <email@x.com>" format)
     const toArray = Array.isArray(toAddress) ? toAddress : [toAddress]
-    const toAddressString = toArray.join(', ')
+    const toAddressString = toArray.map((a: any) => typeof a === 'string' ? a : String(a)).join(', ')
+    const toNormalized = toArray.map((a: any) => extractEmail(String(a))).filter(Boolean) as string[]
 
-    // Find matching mailbox(es)
-    const { data: mailboxes, error: mailboxError } = await supabaseClient
+    // Find matching mailbox(es) – case-insensitive, by normalized email
+    const { data: allActive, error: mailboxFetchError } = await supabaseClient
       .from('mailboxes')
       .select('*')
       .eq('is_active', true)
-      .in('email_address', toArray)
-
-    if (mailboxError) {
-      console.error('❌ Error fetching mailboxes:', mailboxError)
+    if (mailboxFetchError) {
+      console.error('❌ Error fetching mailboxes:', mailboxFetchError)
       return new Response(
         JSON.stringify({ error: 'Failed to find mailbox' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
+    const mailboxes = (allActive || []).filter(
+      (m: { email_address?: string }) => toNormalized.includes(extractEmail(m.email_address || ''))
+    )
 
     if (!mailboxes || mailboxes.length === 0) {
       console.warn('⚠️ [email-inbound] No active mailbox found for:', toArray)
@@ -312,13 +352,16 @@ serve(async (req) => {
       threadId = cleanSubject.toLowerCase().replace(/[^a-z0-9]/g, '-').substring(0, 50)
     }
 
-    // Save email to database (for each matching mailbox)
+    // Save email to database (for each matching mailbox, or once with mailbox_id null if none match)
     const savedEmails = []
-    for (const mailbox of mailboxes || []) {
+    const mailboxesToSave = Array.isArray(mailboxes) && mailboxes.length > 0
+      ? mailboxes
+      : [null as { id?: string; email_address: string; forward_to?: string } | null]
+    for (const mailbox of mailboxesToSave) {
       const { data: savedEmail, error: saveError } = await supabaseClient
         .from('emails')
         .insert({
-          mailbox_id: mailbox.id,
+          mailbox_id: mailbox?.id ?? null,
           direction: 'inbound',
           from_address: fromAddress,
           to_address: toAddressString,
@@ -335,11 +378,12 @@ serve(async (req) => {
         .single()
 
       if (saveError) {
-        console.error(`❌ Error saving email to mailbox ${mailbox.email_address}:`, saveError)
+        console.error(`❌ Error saving email${mailbox ? ` to mailbox ${mailbox.email_address}` : ''}:`, saveError)
       } else {
         savedEmails.push(savedEmail)
-        console.log(`✅ Email saved to mailbox ${mailbox.email_address}`)
+        console.log(`✅ Email saved${mailbox ? ` to mailbox ${mailbox.email_address}` : ' (no matching mailbox)'}`)
         
+        if (!mailbox) break
         // Auto-forward if mailbox has forward_to configured
         if (mailbox.forward_to && mailbox.forward_to.trim() !== '') {
           console.log(`📤 [email-inbound] Mailbox ${mailbox.email_address} has forward_to: "${mailbox.forward_to}"`)

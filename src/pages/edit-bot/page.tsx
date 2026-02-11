@@ -249,7 +249,7 @@ export default function EditBotPage() {
 
       const botData = {
         name: formData.name,
-        exchange: formData.exchange,
+        exchange: 'bybit',
         tradingType: formData.tradingType,
         symbol: formData.symbol,
         timeframe: formData.timeframe,
@@ -432,14 +432,11 @@ export default function EditBotPage() {
                       Exchange
                     </label>
                     <select
-                      value={formData.exchange}
-                      onChange={(e) => handleInputChange('exchange', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      value="bybit"
+                      readOnly
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 cursor-not-allowed"
                     >
                       <option value="bybit">Bybit</option>
-                      <option value="okx">OKX</option>
-                      <option value="bitunix">Bitunix</option>
-                      <option value="mexc">MEXC</option>
                     </select>
                   </div>
 

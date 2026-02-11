@@ -49,7 +49,7 @@ export default function Onboarding() {
             <i className="ri-checkbox-circle-line text-blue-600 text-xl"></i>
             <div>
               <div className="font-medium text-blue-900">Connect Exchange & AI (Optional)</div>
-              <div className="text-sm text-blue-700">Link exchange API keys (Bybit, MEXC, Bitunix) and OpenAI API key</div>
+              <div className="text-sm text-blue-700">Link Bybit API key and OpenAI API key</div>
             </div>
           </div>
           <div className="flex items-start space-x-3">
@@ -196,11 +196,7 @@ export default function Onboarding() {
             </label>
             <div className="space-y-2">
               {[
-                { value: 'bybit', label: 'Bybit', desc: 'Popular derivatives exchange' },
-                { value: 'mexc', label: 'MEXC', desc: 'Global crypto exchange' },
-                { value: 'bitunix', label: 'Bitunix', desc: 'Futures trading platform' },
-                { value: 'btcc', label: 'BTCC', desc: 'Futures & spot API' },
-                { value: 'multiple', label: 'Multiple', desc: 'Use multiple exchanges' }
+                { value: 'bybit', label: 'Bybit', desc: 'Only supported exchange' }
               ].map(({ value, label, desc }) => (
                 <button
                   key={value}
