@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Button from '../../components/base/Button';
 import { useAuth } from '../../hooks/useAuth';
-import { useSubscription } from '../../hooks/useSubscription';
 import SocialShare from '../../components/ui/SocialShare';
 import TradingRobot3D from '../../components/ui/TradingRobot3D';
 
@@ -58,8 +57,6 @@ type MetaDefinition = {
 export default function LandingPage() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
-  const { plans, loading: plansLoading } = useSubscription();
-  const selectedCurrency = 'USD'; // Fixed to USD for landing page
 
   useEffect(() => {
     if (!loading && user) {
@@ -186,8 +183,8 @@ export default function LandingPage() {
             <button onClick={() => navigate('/crypto-news')} className="transition hover:text-white">
               Crypto News
             </button>
-            <button onClick={() => document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' })} className="transition hover:text-white">
-              Pricing
+            <button onClick={() => document.getElementById('get-started')?.scrollIntoView({ behavior: 'smooth' })} className="transition hover:text-white">
+              Get Started
             </button>
             <button onClick={() => navigate('/contact')} className="transition hover:text-white">
               Contact
@@ -198,7 +195,7 @@ export default function LandingPage() {
             <Button variant="secondary" size="sm" onClick={() => navigate('/auth')}>
               Sign In
             </Button>
-            <Button size="sm" onClick={handleSignup}>Start Free Trial</Button>
+            <Button size="sm" onClick={handleSignup}>Sign Up Free</Button>
           </div>
         </div>
       </header>
@@ -219,7 +216,7 @@ export default function LandingPage() {
             </p>
             <div className="flex flex-col items-center space-y-3 sm:flex-row sm:space-x-4 sm:space-y-0 justify-center">
               <Button size="lg" onClick={handleSignup}>
-                Start Free Trial
+                Sign Up Free
                 <i className="ri-arrow-right-up-line ml-2 text-lg" />
               </Button>
               <Button variant="secondary" size="lg" onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}>
@@ -353,126 +350,19 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Pricing Section */}
-        <section id="pricing" className="relative mx-auto max-w-6xl px-6 py-24">
-          <div className="mx-auto max-w-2xl text-center mb-16">
-            <p className="text-sm uppercase tracking-[0.4em] text-blue-200 mb-4">Pricing</p>
+        {/* Get Started - Free to use */}
+        <section id="get-started" className="relative mx-auto max-w-6xl px-6 py-24">
+          <div className="mx-auto max-w-2xl text-center">
+            <p className="text-sm uppercase tracking-[0.4em] text-blue-200 mb-4">Free to use</p>
             <h2 className="text-3xl font-semibold text-white sm:text-4xl mb-4">
-              Start free, scale as you grow
+              Sign up and start trading
             </h2>
-            <p className="text-base text-white">
-              Transparent pricing. Unlimited paper trading. Start with a 14-day free trial—no credit card required.
+            <p className="text-base text-white mb-8">
+              No subscription, no credit card. Create bots, paper trade, and connect Bybit—all free.
             </p>
-          </div>
-
-          {plansLoading ? (
-            <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
-              <p className="mt-4 text-white">Loading plans...</p>
-            </div>
-          ) : (
-            <div className="grid gap-8 lg:grid-cols-4">
-              {plans.map((plan) => {
-                const priceCrypto = plan.price_crypto as Record<string, string> || {};
-                const displayPrice = selectedCurrency === 'USD' 
-                  ? `$${plan.price_monthly_usd.toFixed(2)}`
-                  : `${priceCrypto[selectedCurrency] || plan.price_monthly_usd} ${selectedCurrency}`;
-                const isTesting = plan.name === 'Testing';
-                const isPopular = plan.name === 'Pro';
-
-                return (
-                  <div
-                    key={plan.id}
-                    className={`relative overflow-hidden rounded-3xl border border-slate-800/70 bg-slate-900/70 p-8 shadow-xl shadow-blue-500/10 transition ${
-                      isPopular ? 'scale-[1.02] border-blue-500/50 shadow-blue-500/20' : 'hover:-translate-y-1'
-                    }`}
-                  >
-                    {isPopular && (
-                      <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
-                        <span className="bg-blue-500 text-white px-4 py-1 rounded-full text-sm font-semibold">
-                          Most Popular
-                        </span>
-                      </div>
-                    )}
-                    {isTesting && (
-                      <div className="absolute -top-4 right-4">
-                        <span className="bg-yellow-500 text-white px-3 py-1 rounded-full text-xs font-semibold">
-                          14-Day Trial
-                        </span>
-                      </div>
-                    )}
-
-                    <div className="relative mt-8 space-y-6">
-                      <div>
-                        <h3 className="text-2xl font-semibold text-white">{plan.display_name}</h3>
-                        <p className="mt-3 text-sm text-white min-h-[40px]">{plan.description}</p>
-                      </div>
-                      <div className="flex items-end space-x-2">
-                        <span className="text-4xl font-semibold text-white">
-                          {plan.price_monthly_usd === 0 ? 'Free' : displayPrice}
-                        </span>
-                        {plan.price_monthly_usd > 0 && (
-                          <span className="text-sm text-white">/month</span>
-                        )}
-                      </div>
-                      <ul className="space-y-3 text-sm">
-                        <li className="flex items-center space-x-2">
-                          <i className="ri-checkbox-circle-fill text-emerald-400" />
-                          <span className="text-white">{plan.max_bots === null ? 'Unlimited' : plan.max_bots} Trading Bots</span>
-                        </li>
-                        <li className="flex items-center space-x-2">
-                          <i className="ri-checkbox-circle-fill text-emerald-400" />
-                          <span className="text-white">
-                            {plan.max_trades_per_day === null 
-                              ? 'Unlimited' 
-                              : `${plan.max_trades_per_day}`} Trades/Day
-                          </span>
-                        </li>
-                        <li className="flex items-center space-x-2">
-                          <i className="ri-checkbox-circle-fill text-emerald-400" />
-                          <span className="text-white">
-                            {plan.max_exchanges === null 
-                              ? 'Unlimited' 
-                              : `${plan.max_exchanges}`} Exchange{plan.max_exchanges !== 1 ? 's' : ''}
-                          </span>
-                        </li>
-                        {plan.features?.paper_trading && (
-                          <li className="flex items-center space-x-2">
-                            <i className="ri-checkbox-circle-fill text-emerald-400" />
-                            <span className="text-white">Paper Trading</span>
-                          </li>
-                        )}
-                        {plan.features?.real_trading && (
-                          <li className="flex items-center space-x-2">
-                            <i className="ri-checkbox-circle-fill text-emerald-400" />
-                            <span className="text-white">Real Trading</span>
-                          </li>
-                        )}
-                        {plan.features?.ai_optimization && (
-                          <li className="flex items-center space-x-2">
-                            <i className="ri-checkbox-circle-fill text-emerald-400" />
-                            <span className="text-white">AI Optimization</span>
-                          </li>
-                        )}
-                      </ul>
-                      <Button
-                        className="w-full"
-                        variant={isPopular ? 'primary' : 'secondary'}
-                        onClick={handleSignup}
-                      >
-                        {isTesting ? 'Start Free Trial' : `Get ${plan.display_name}`}
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          <div className="mt-8 text-center">
-            <p className="text-sm text-white">
-              All plans include access to all features. Upgrade anytime. Cancel anytime.
-            </p>
+            <Button size="lg" onClick={handleSignup}>
+              Sign Up Free
+            </Button>
           </div>
         </section>
       </main>
@@ -516,8 +406,8 @@ export default function LandingPage() {
             <button onClick={() => navigate('/crypto-news')} className="text-white transition hover:text-blue-300">
               Crypto News
             </button>
-            <button onClick={() => document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' })} className="text-white transition hover:text-blue-300">
-              Pricing
+            <button onClick={() => document.getElementById('get-started')?.scrollIntoView({ behavior: 'smooth' })} className="text-white transition hover:text-blue-300">
+              Get Started
             </button>
             <button onClick={() => navigate('/contact')} className="text-white transition hover:text-blue-300">
               Contact

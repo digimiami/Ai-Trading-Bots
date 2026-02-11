@@ -183,7 +183,7 @@ export default function PrivacyPolicyPage() {
                   </button>
                 </li>
                 <li>
-                  <button onClick={() => navigate('/pricing')} className="hover:text-white transition">
+                  <button onClick={() => navigate('/auth')} className="hover:text-white transition">
                     Pricing
                   </button>
                 </li>

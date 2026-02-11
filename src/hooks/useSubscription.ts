@@ -133,108 +133,22 @@ export function useSubscription() {
     }
   }
 
-  // Check if user can create more bots
+  // Free to use: always allow creating bots for authenticated users
   const canCreateBot = async (): Promise<{ allowed: boolean; reason?: string; currentCount?: number }> => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useSubscription.ts:136',message:'canCreateBot called',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H7'})}).catch(()=>{});
-    // #endregion
     try {
       const { data: { user } } = await supabase.auth.getUser()
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useSubscription.ts:140',message:'User check',data:{hasUser:!!user,userId:user?.id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H7'})}).catch(()=>{});
-      // #endregion
       if (!user) {
         return { allowed: false, reason: 'Not authenticated' }
       }
-
-      // Check if user is admin - admins get unlimited access
-      const { data: userData } = await supabase
-        .from('users')
-        .select('role')
-        .eq('id', user.id)
-        .single()
-
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useSubscription.ts:150',message:'User role check',data:{role:userData?.role,isAdmin:userData?.role === 'admin'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H7'})}).catch(()=>{});
-      // #endregion
-      if (userData?.role === 'admin') {
-        // Get current bot count for display
-        const { count } = await supabase
-          .from('trading_bots')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-          .neq('status', 'deleted')
-
-        return { 
-          allowed: true, 
-          reason: 'Admin users have unlimited access',
-          currentCount: count || 0 
-        }
-      }
-
-      // Call database function (returns JSONB)
-      const { data, error } = await supabase
-        .rpc('can_user_create_bot', { p_user_id: user.id })
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useSubscription.ts:168',message:'RPC can_user_create_bot called',data:{hasError:!!error,error:error?.message,hasData:!!data,dataType:typeof data,dataValue:data},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H5'})}).catch(()=>{});
-      // #endregion
-
-      if (error) throw error
-
-      // Handle JSONB response
-      if (data && typeof data === 'object') {
-        const result = data as any
-        const allowed = result.allowed === true
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useSubscription.ts:175',message:'RPC result parsed',data:{allowed,reason:result.reason,currentBots:result.current_bots},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H5'})}).catch(()=>{});
-        // #endregion
-        
-        if (allowed) {
-          return { 
-            allowed: true, 
-            reason: result.reason || 'Allowed',
-            currentCount: result.current_bots || 0 
-          }
-        } else {
-          return { 
-            allowed: false, 
-            reason: result.reason || 'You have reached your bot creation limit. Please upgrade your plan.',
-            currentCount: result.current_bots || 0
-          }
-        }
-      }
-
-      // Fallback for old boolean response (shouldn't happen, but handle it)
-      if (data === true) {
-        const { count } = await supabase
-          .from('trading_bots')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', user.id)
-          .neq('status', 'deleted')
-
-        return { 
-          allowed: true, 
-          currentCount: count || 0 
-        }
-      }
-
-      // Default deny
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useSubscription.ts:205',message:'Default deny - unable to verify',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H5'})}).catch(()=>{});
-      // #endregion
-      return { 
-        allowed: false, 
-        reason: 'Unable to verify subscription limits' 
-      }
+      const { count } = await supabase
+        .from('trading_bots')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .neq('status', 'deleted')
+      return { allowed: true, currentCount: count || 0 }
     } catch (err) {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/4c7e68c2-00cd-41d9-aaf6-c7e5035d647a',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'useSubscription.ts:212',message:'canCreateBot exception',data:{error:err instanceof Error ? err.message : String(err)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'H5'})}).catch(()=>{});
-      // #endregion
-      console.error('Error checking bot creation limit:', err)
-      return { 
-        allowed: false, 
-        reason: 'Error checking subscription limits' 
-      }
+      console.error('Error checking bot count:', err)
+      return { allowed: true, currentCount: 0 }
     }
   }
 

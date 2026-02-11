@@ -363,7 +363,7 @@ export default function CampaignLandingPage() {
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <Button variant="secondary" size="lg" onClick={() => navigate('/pricing')}>
+              <Button variant="secondary" size="lg" onClick={() => navigate('/dashboard')}>
                 View Pricing
               </Button>
               <Button size="lg" onClick={handleSignup}>

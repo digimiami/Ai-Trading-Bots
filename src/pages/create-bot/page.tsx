@@ -7,7 +7,6 @@ import Card from '../../components/base/Card';
 import Header from '../../components/feature/Header';
 import { type TradingStrategy, type AdvancedStrategyConfig, DEFAULT_ADVANCED_STRATEGY_CONFIG, DEFAULT_RISK_ENGINE } from '../../types/trading';
 import { useBots } from '../../hooks/useBots';
-import { useSubscription } from '../../hooks/useSubscription';
 import { useApiKeys } from '../../hooks/useApiKeys';
 import { supabase } from '../../lib/supabase';
 import PairRecommendations from '../../components/bot/PairRecommendations';
@@ -25,7 +24,6 @@ export default function CreateBotPage() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const { createBot, getBotById } = useBots();
-  const { canCreateBot, subscription } = useSubscription();
   const { apiKeys, loading: apiKeysLoading } = useApiKeys();
   
   // Check if coming from backtest
@@ -377,21 +375,6 @@ export default function CreateBotPage() {
           setIsCreating(false);
           return;
         }
-      }
-      
-      // Check subscription limits before creating bot
-      const subscriptionCheck = await canCreateBot();
-      if (!subscriptionCheck.allowed) {
-        const reason = subscriptionCheck.reason || 'You have reached your bot creation limit. Please upgrade your plan.';
-        setError(reason);
-        setIsCreating(false);
-        // Show upgrade prompt after a short delay
-        setTimeout(() => {
-          if (window.confirm(`${reason}\n\nWould you like to upgrade your plan to create more bots?`)) {
-            navigate('/pricing');
-          }
-        }, 1500);
-        return;
       }
       
       if (formData.exchange !== 'bybit') {
