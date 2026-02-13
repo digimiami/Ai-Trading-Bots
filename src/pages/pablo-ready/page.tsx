@@ -407,8 +407,11 @@ export default function PabloReadyPage() {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
+      // Include bots from built-in strategies (Mean Reversion -, etc.) OR from DB templates (e.g. "AI Combo - ")
+      const templatePrefixes = bots.map(b => `${b.name} - `);
       const fromPabloReady = (userBots || []).filter(ub =>
-        PABLO_READY_BOT_NAME_PREFIXES.some(prefix => ub.name.startsWith(prefix))
+        PABLO_READY_BOT_NAME_PREFIXES.some(prefix => ub.name.startsWith(prefix)) ||
+        templatePrefixes.some(prefix => ub.name.startsWith(prefix))
       );
       setActiveBotsFromPabloReady(fromPabloReady);
       fromPabloReady.forEach(b => {
