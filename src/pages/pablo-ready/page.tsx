@@ -9,6 +9,11 @@ import NotificationBell from '../../components/feature/NotificationBell';
 import { useAuth } from '../../hooks/useAuth';
 import { useBots } from '../../hooks/useBots';
 import { useBotExecutor } from '../../hooks/useBotExecutor';
+import {
+  PABLO_READY_STRATEGIES,
+  PABLO_READY_BOT_NAME_PREFIXES,
+  type PabloReadyStrategyPreset
+} from '../../constants/pabloReadyStrategies';
 
 interface PabloReadyBot {
   id: string;
@@ -56,8 +61,56 @@ export default function PabloReadyPage() {
   const [expandedLogs, setExpandedLogs] = useState<Record<string, boolean>>({});
   const [loadingLogs, setLoadingLogs] = useState<Record<string, boolean>>({});
 
+  // Built-in strategies: form state per strategy key (pair, leverage, amount, tp, sl, timeframe, paperTrading)
+  const [builtInConfigs, setBuiltInConfigs] = useState<Record<string, {
+    pair: string;
+    leverage: number;
+    amount: number;
+    tp: number;
+    sl: number;
+    timeframe: string;
+    paperTrading: boolean;
+  }>>({});
+  const [activatingKey, setActivatingKey] = useState<string | null>(null);
+  // User's bots created from Pablo Ready (name starts with strategy label) — for same-page activity/PnL
+  const [activeBotsFromPabloReady, setActiveBotsFromPabloReady] = useState<Array<{
+    id: string;
+    name: string;
+    symbol: string;
+    status: string;
+    pnl: number;
+    pnl_percentage: number;
+    total_trades: number;
+    win_rate: number;
+    win_trades?: number;
+    loss_trades?: number;
+  }>>([]);
+  const [activeBotLogs, setActiveBotLogs] = useState<Record<string, any[]>>({});
+  const [expandedActiveLogs, setExpandedActiveLogs] = useState<Record<string, boolean>>({});
+
   useEffect(() => {
     fetchBots();
+  }, []);
+
+  // Initialize built-in form defaults from presets
+  useEffect(() => {
+    const initial: Record<string, { pair: string; leverage: number; amount: number; tp: number; sl: number; timeframe: string; paperTrading: boolean }> = {};
+    PABLO_READY_STRATEGIES.forEach(p => {
+      if (!builtInConfigs[p.key]) {
+        initial[p.key] = {
+          pair: 'BTCUSDT',
+          leverage: p.defaultLeverage,
+          amount: p.defaultTradeAmount,
+          tp: p.defaultTakeProfit,
+          sl: p.defaultStopLoss,
+          timeframe: p.defaultTimeframe,
+          paperTrading: true
+        };
+      }
+    });
+    if (Object.keys(initial).length > 0) {
+      setBuiltInConfigs(prev => ({ ...prev, ...initial }));
+    }
   }, []);
 
   useEffect(() => {
@@ -177,8 +230,8 @@ export default function PabloReadyPage() {
           // Don't fail the whole operation - bot will still be picked up by cron
         }
         
-        alert(`✅ Bot "${createdBot.name}" created and started successfully! It will begin trading immediately.`);
-        navigate('/bots');
+        alert(`✅ Bot "${createdBot.name}" created and started. It will trade here—check "Your active bots" below.`);
+        fetchActiveBotsFromPabloReady();
       }
     } catch (error: any) {
       console.error('Error starting bot:', error);
@@ -344,6 +397,111 @@ export default function PabloReadyPage() {
     }
   };
 
+  const fetchActiveBotsFromPabloReady = async () => {
+    if (!user) return;
+    try {
+      const { data: userBots, error } = await supabase
+        .from('trading_bots')
+        .select('id, name, symbol, status, pnl, pnl_percentage, total_trades, win_rate, win_trades, loss_trades')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      const fromPabloReady = (userBots || []).filter(ub =>
+        PABLO_READY_BOT_NAME_PREFIXES.some(prefix => ub.name.startsWith(prefix))
+      );
+      setActiveBotsFromPabloReady(fromPabloReady);
+      fromPabloReady.forEach(b => {
+        if (!activeBotLogs[b.id]) {
+          supabase.from('bot_activity_logs').select('*').eq('bot_id', b.id).order('timestamp', { ascending: false }).limit(20)
+            .then(({ data }) => setActiveBotLogs(prev => ({ ...prev, [b.id]: data || [] })));
+        }
+      });
+    } catch (e) {
+      console.error('Fetch active bots from Pablo Ready:', e);
+    }
+  };
+
+  useEffect(() => {
+    if (user) fetchActiveBotsFromPabloReady();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || activeBotsFromPabloReady.length === 0) return;
+    const interval = setInterval(fetchActiveBotsFromPabloReady, 15000);
+    return () => clearInterval(interval);
+  }, [user, activeBotsFromPabloReady.length]);
+
+  const updateBuiltInConfig = (key: string, field: string, value: string | number | boolean) => {
+    setBuiltInConfigs(prev => ({
+      ...prev,
+      [key]: { ...prev[key], [field]: value }
+    }));
+  };
+
+  const handleActivateBuiltIn = async (preset: PabloReadyStrategyPreset) => {
+    if (!user) {
+      navigate('/auth');
+      return;
+    }
+    const config = builtInConfigs[preset.key] || {
+      pair: 'BTCUSDT',
+      leverage: preset.defaultLeverage,
+      amount: preset.defaultTradeAmount,
+      tp: preset.defaultTakeProfit,
+      sl: preset.defaultStopLoss,
+      timeframe: preset.defaultTimeframe,
+      paperTrading: true
+    };
+    const pair = (config.pair || '').trim().toUpperCase();
+    if (!pair || !/^[A-Z0-9]{2,20}USDT$/.test(pair)) {
+      alert('Enter a valid pair (e.g. BTCUSDT, ETHUSDT)');
+      return;
+    }
+    try {
+      setActivatingKey(preset.key);
+      const botData = {
+        name: `${preset.label} - ${pair}`,
+        exchange: 'bybit' as const,
+        symbol: pair,
+        tradingType: 'futures' as const,
+        leverage: config.leverage || preset.defaultLeverage,
+        riskLevel: 'medium' as const,
+        tradeAmount: config.amount || preset.defaultTradeAmount,
+        stopLoss: config.sl ?? preset.defaultStopLoss,
+        takeProfit: config.tp ?? preset.defaultTakeProfit,
+        timeframe: config.timeframe || preset.defaultTimeframe,
+        strategy: preset.strategy,
+        strategyConfig: preset.advanced,
+        paperTrading: config.paperTrading ?? true,
+        status: 'running' as const,
+        pnl: 0,
+        pnlPercentage: 0,
+        totalTrades: 0,
+        winRate: 0
+      };
+      const created = await createBot(botData);
+      if (created && created.status !== 'running') await startBot(created.id);
+      try {
+        await executeBot(created!.id);
+      } catch (_) {}
+      await fetchActiveBotsFromPabloReady();
+      alert(`✅ ${preset.label} bot created and started. See "Your active bots" below.`);
+    } catch (err: any) {
+      alert(`Failed to start bot: ${err?.message || err}`);
+    } finally {
+      setActivatingKey(null);
+    }
+  };
+
+  const toggleActiveBotLogs = (botId: string) => {
+    setExpandedActiveLogs(prev => ({ ...prev, [botId]: !prev[botId] }));
+    if (!activeBotLogs[botId]) {
+      supabase.from('bot_activity_logs').select('*').eq('bot_id', botId).order('timestamp', { ascending: false }).limit(20)
+        .then(({ data }) => setActiveBotLogs(prev => ({ ...prev, [botId]: data || [] })));
+    }
+  };
+
   const formatLogTime = (timestamp: string) => {
     const date = new Date(timestamp);
     const now = new Date();
@@ -414,7 +572,216 @@ export default function PabloReadyPage() {
       />
 
       <main className="px-4 pt-24 pb-16">
-        <div className="mx-auto max-w-6xl space-y-6">
+        <div className="mx-auto max-w-6xl space-y-8">
+          {/* Built-in strategies: pick pair, leverage, amount, TP/SL, timeframe → Activate (no redirect) */}
+          <section>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              Strategies — activate and trade on this page
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Choose a strategy, set pair / leverage / amount / TP / SL / timeframe, then Activate. Your bot will appear in &quot;Your active bots&quot; below with live PnL and activity.
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {PABLO_READY_STRATEGIES.map((preset) => {
+                const c = builtInConfigs[preset.key] || {
+                  pair: 'BTCUSDT',
+                  leverage: preset.defaultLeverage,
+                  amount: preset.defaultTradeAmount,
+                  tp: preset.defaultTakeProfit,
+                  sl: preset.defaultStopLoss,
+                  timeframe: preset.defaultTimeframe,
+                  paperTrading: true
+                };
+                return (
+                  <Card key={preset.key} className="p-4 border border-gray-200 dark:border-gray-700">
+                    <div className="space-y-3">
+                      <h3 className="font-semibold text-gray-900 dark:text-white">{preset.label}</h3>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">{preset.description}</p>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div>
+                          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Pair</label>
+                          <input
+                            value={c.pair}
+                            onChange={(e) => updateBuiltInConfig(preset.key, 'pair', e.target.value.toUpperCase())}
+                            placeholder="BTCUSDT"
+                            className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Leverage</label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={100}
+                            value={c.leverage}
+                            onChange={(e) => updateBuiltInConfig(preset.key, 'leverage', parseInt(e.target.value) || 5)}
+                            className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Amount ($)</label>
+                          <input
+                            type="number"
+                            min={10}
+                            step={10}
+                            value={c.amount}
+                            onChange={(e) => updateBuiltInConfig(preset.key, 'amount', parseFloat(e.target.value) || 100)}
+                            className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">TP %</label>
+                          <input
+                            type="number"
+                            min={0.1}
+                            step={0.5}
+                            value={c.tp}
+                            onChange={(e) => updateBuiltInConfig(preset.key, 'tp', parseFloat(e.target.value) || 2)}
+                            className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">SL %</label>
+                          <input
+                            type="number"
+                            min={0.1}
+                            step={0.5}
+                            value={c.sl}
+                            onChange={(e) => updateBuiltInConfig(preset.key, 'sl', parseFloat(e.target.value) || 1.5)}
+                            className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Timeframe</label>
+                          <select
+                            value={c.timeframe}
+                            onChange={(e) => updateBuiltInConfig(preset.key, 'timeframe', e.target.value)}
+                            className="w-full px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-xs"
+                          >
+                            {['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h'].map((tf) => (
+                              <option key={tf} value={tf}>{tf}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-500 dark:text-gray-400">Mode:</span>
+                        <button
+                          type="button"
+                          onClick={() => updateBuiltInConfig(preset.key, 'paperTrading', false)}
+                          className={`px-2 py-1 rounded text-xs ${!c.paperTrading ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}
+                        >
+                          Real
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateBuiltInConfig(preset.key, 'paperTrading', true)}
+                          className={`px-2 py-1 rounded text-xs ${c.paperTrading ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}
+                        >
+                          Paper
+                        </button>
+                      </div>
+                      <Button
+                        size="sm"
+                        className="w-full"
+                        disabled={activatingKey === preset.key}
+                        onClick={() => handleActivateBuiltIn(preset)}
+                      >
+                        {activatingKey === preset.key ? (
+                          <><i className="ri-loader-4-line animate-spin mr-2" /> Activating...</>
+                        ) : (
+                          <><i className="ri-play-line mr-2" /> Activate</>
+                        )}
+                      </Button>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* Your active bots from Pablo Ready — PnL and activity on same page */}
+          {user && activeBotsFromPabloReady.length > 0 && (
+            <section>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Your active bots</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                Bots you activated above. PnL, trades, and activity are shown here—no need to go to Bots page.
+              </p>
+              <div className="space-y-4">
+                {activeBotsFromPabloReady.map((bot) => (
+                  <Card key={bot.id} className="p-4 border border-gray-200 dark:border-gray-700">
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                      <div>
+                        <span className="font-medium text-gray-900 dark:text-white">{bot.name}</span>
+                        <span className="text-gray-500 dark:text-gray-400 text-sm ml-2">{bot.symbol}</span>
+                        <span className={`ml-2 text-xs px-2 py-0.5 rounded capitalize ${bot.status === 'running' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}`}>
+                          {bot.status}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm mb-3">
+                      <div>
+                        <span className="text-gray-500 dark:text-gray-400 block text-xs">PnL</span>
+                        <span className={bot.pnl >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                          ${(bot.pnl || 0).toFixed(2)} ({(bot.pnl_percentage || 0).toFixed(2)}%)
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 dark:text-gray-400 block text-xs">Win rate</span>
+                        <span className="text-gray-900 dark:text-white">{(bot.win_rate || 0).toFixed(1)}%</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 dark:text-gray-400 block text-xs">Trades</span>
+                        <span className="text-gray-900 dark:text-white">{bot.total_trades || 0}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 dark:text-gray-400 block text-xs">W / L</span>
+                        <span className="text-gray-900 dark:text-white">
+                          <span className="text-green-600 dark:text-green-400">{bot.win_trades ?? 0}</span>
+                          <span className="mx-1 text-gray-400">/</span>
+                          <span className="text-red-600 dark:text-red-400">{bot.loss_trades ?? 0}</span>
+                        </span>
+                      </div>
+                    </div>
+                    <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
+                      <button
+                        type="button"
+                        onClick={() => toggleActiveBotLogs(bot.id)}
+                        className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400"
+                      >
+                        <i className="ri-file-list-line" />
+                        Activity log
+                        {activeBotLogs[bot.id]?.length ? (
+                          <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 rounded text-xs">
+                            {activeBotLogs[bot.id].length}
+                          </span>
+                        ) : null}
+                        <i className={`ri-arrow-${expandedActiveLogs[bot.id] ? 'up' : 'down'}-s-line`} />
+                      </button>
+                      {expandedActiveLogs[bot.id] && (
+                        <div className="mt-2 max-h-48 overflow-y-auto space-y-2">
+                          {activeBotLogs[bot.id]?.length ? (
+                            activeBotLogs[bot.id].map((log: any, idx: number) => (
+                              <div key={log.id || idx} className="p-2 bg-gray-50 dark:bg-gray-800 rounded text-xs">
+                                <span className={log.level === 'error' ? 'text-red-600' : log.level === 'success' ? 'text-green-600' : 'text-gray-600 dark:text-gray-400'}>
+                                  {log.level}
+                                </span>
+                                <span className="text-gray-400 dark:text-gray-500 ml-2">{new Date(log.timestamp).toLocaleString()}</span>
+                                <p className="text-gray-700 dark:text-gray-300 mt-1">{log.message}</p>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-gray-500 dark:text-gray-400 text-sm py-2">No activity yet.</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            </section>
+          )}
+
           {bots.length === 0 ? (
             <Card className="p-10 text-center">
               <div className="text-gray-400 dark:text-gray-500 mb-4">
